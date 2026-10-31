@@ -247,7 +247,7 @@ describe('StripView scrolling and mounting', () => {
       v.setCursor(pos, { smooth: false })
       v.flushNow()
       maxMounted = Math.max(maxMounted, v.stats().mountedSegments)
-      expect(v.stats().cachedSegments).toBeLessThanOrEqual(4)
+      expect(v.stats().cachedSegments).toBeLessThanOrEqual(12)
     }
     // viewport (900 px) ± one viewport over 800 px segments
     expect(maxMounted).toBeLessThanOrEqual(Math.ceil((3 * 900) / 800) + 1)

@@ -79,7 +79,7 @@ export interface StripOptions {
   readonly overscan?: number
   /** New segment parses per frame outside the visible range (default 1). */
   readonly mountBudget?: number
-  /** Detached segments kept for quick re-attachment (default 4). */
+  /** Detached segments kept for quick re-attachment (default 12: about three viewports of measure-sized segments). */
   readonly cacheSegments?: number
   /** Built-in "Return to current position" button while browsing (default true). */
   readonly returnButton?: boolean
@@ -431,7 +431,7 @@ export class StripView {
         attached: (seg) => this.onAttached(seg),
         detaching: (seg) => this.onDetaching(seg),
       },
-      opts.cacheSegments ?? 4,
+      opts.cacheSegments ?? 12,
     )
 
     this.bindEvents()

@@ -373,7 +373,8 @@ async function importThroughUi(page: Page, name: string, xml: string): Promise<J
   const second = await page.evaluate(
     async (button) => {
       const nextFrame = () => new Promise<number>((r) => requestAnimationFrame((t) => r(t)))
-      const text = () => document.querySelector('dialog[open]')?.textContent ?? ''
+      // Saving closes the sheet, shows a notice and opens Practice (library workflow, U-series).
+      const text = () => document.body.textContent ?? ''
       window.__perf.startFrames()
       const t0 = performance.now()
       button.click()
@@ -393,8 +394,10 @@ async function importThroughUi(page: Page, name: string, xml: string): Promise<J
     },
     handle as unknown as HTMLButtonElement,
   )
-  await dialog.getByRole('button', { name: 'Done' }).click()
   await expect(page.locator('dialog[open]')).toHaveCount(0)
+  // Saving opens Practice; the walk measures Practice openings itself, so return to the list.
+  await page.getByRole('button', { name: 'Back to Library' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Library' })).toBeVisible()
   return { ...out, ...second }
 }
 

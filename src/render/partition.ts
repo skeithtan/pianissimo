@@ -14,11 +14,24 @@ export interface SegmentBound {
   readonly x1: number
 }
 
-/** Default segment width (layout px): small enough to parse within a frame slice. */
-export const DEFAULT_SEGMENT_WIDTH = 1600
+/**
+ * Default segment width (layout px): a measure or two. A segment is parsed, styled and laid out
+ * in the frame that first needs it, so its size bounds the one hitch the strip can cause while
+ * the music scrolls; one measure per staff stays within a fraction of a frame on the reference
+ * tablet (PF6).
+ */
+export const DEFAULT_SEGMENT_WIDTH = 400
 
 /** Segment overlap with its neighbors (layout px) so adjacent copies leave no hairline seam. */
-export const SEAM = 1
+export const SEAM = 2
+
+/**
+ * How far (layout px) a mark must reach into a segment to be copied into it. A measure's barline
+ * and staff-line ends touch the next segment by about a pixel; the seam of the segment that owns
+ * them covers that, so they are not copied (which once put both neighboring measures, two thirds
+ * of all nodes, into every segment).
+ */
+export const CROSSING = 1.5
 
 /**
  * Groups whole measures into segments of at least `target` px. The first segment starts at 0
@@ -81,12 +94,19 @@ export function partitionSvg(
   units.sort((a, b) => a.x0 - b.x0)
 
   return bounds.map((b, index): SegmentData => {
-    const lo = b.x0 - SEAM - 1
-    const hi = b.x1 + SEAM + 1
+    // A unit goes into the segment holding its center (so every unit, even a 1 px connector on a
+    // boundary, is drawn exactly once) and into every other segment it reaches more than
+    // CROSSING px into (ties, slurs, hairpins, pedal lines). A neighboring measure whose barline
+    // only touches the boundary is left out.
+    const lo = b.x0 + CROSSING
+    const hi = b.x1 - CROSSING
+    const first = index === 0 ? -Infinity : b.x0
+    const last = index === bounds.length - 1 ? Infinity : b.x1
     const parts: string[] = []
     for (const u of units) {
-      if (u.x0 > hi) break
-      if (u.x1 >= lo) parts.push(u.html)
+      if (u.x0 >= last) break
+      const mid = (u.x0 + u.x1) / 2
+      if ((u.x1 > lo && u.x0 < hi) || (mid >= first && mid < last)) parts.push(u.html)
     }
     const vx = b.x0 - SEAM
     const vw = b.x1 - b.x0 + 2 * SEAM

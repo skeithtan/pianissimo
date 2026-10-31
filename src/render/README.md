@@ -85,10 +85,12 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   right → left (small x nudges) → half-height stagger (only if nearer its own head) → stack with
   leader → callout above/below the staff with leader (always succeeds, extends vertical label
   space). Never omitted or shrunk.
-- **Segments** (`partition.ts`): measure-range segments ≥ 1600 px; every top-level mark copied into
-  each segment it touches, clipped by the segment viewBox (1 px seam overlap), so ties/slurs/
-  hairpins/pedal lines cross boundaries intact. Noteheads tagged `data-n`, glyphs `data-h`
-  (hand), ottava parts `data-o`.
+- **Segments** (`partition.ts`): measure-range segments ≥ 400 px (a measure or two, PF6). A
+  top-level unit belongs to the segment holding its center and is also copied into every segment
+  it reaches more than 1.5 px into, clipped by the segment viewBox (2 px seam overlap), so ties/
+  slurs/hairpins/pedal lines cross boundaries intact while a neighboring measure whose barline
+  only touches the boundary is not copied. Noteheads tagged `data-n`, glyphs `data-h` (hand),
+  ottava parts `data-o`.
 - **Sanitization** (`sanitize.ts`): element/attribute allow-list, no `url(`/`javascript:`,
   geometry rounded (0.1 px paths), default attributes dropped, engraver black → `currentColor`.
 - **Cursor path** (`strip/cursorPath.ts`, pure): knots are every onset anchor in global position
@@ -212,9 +214,12 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
 | simulated practice (50 ms steps, smooth): frame p95 / max | 0.5 / 9.6 ms (WebKit 1 / 8) | 1.1 / 3.3 ms | 0.4 / 3.2 ms |
 | long tasks during practice | none | none | none |
 
-A synchronous far seek mounts the visible segments at once: 20–65 ms worst case on this machine
-(segment parse ≈ 5–10 ms each). Real iPad numbers are still needed (spec: desktop numbers are not
-proof).
+Mounting one segment (parse, style, layout) is the strip's one synchronous chunk while the music
+scrolls. Reference piece, one measure per segment (PF6): 257 nodes, ≈ 3 ms on the Chromium 4×
+stand-in (1 ms parse + 2 ms layout; worst 5 ms), ≈ 6 ms in WebKit on the dev machine (worst 12).
+Before PF6 (1600 px segments carrying both neighboring measures): 996 nodes, 8.5 ms (worst 12)
+and 8.2 ms (worst 13). A synchronous far seek mounts the visible segments at once. Real tablet
+numbers are still needed (spec: desktop numbers are not proof).
 
 ## Spec coverage
 

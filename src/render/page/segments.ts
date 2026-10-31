@@ -5,6 +5,7 @@
  * found by page y, placed at their page `y0`, and only the bar opening each system shows its
  * measure number. Keep the two in step until they are deduplicated.
  */
+import { SEAM } from '../partition'
 import type { PreparedLayout, SegmentData } from '../types'
 import type { MountedSegment, SegmentHooks } from '../strip/segments'
 
@@ -137,7 +138,8 @@ export class PageSegmentStore {
 
     const el = doc.createElement('div')
     el.className = 'pn-seg'
-    el.style.left = `${data.x0 - 1}px`
+    // The viewBox starts SEAM px before the segment: place the element the same way.
+    el.style.left = `${data.x0 - SEAM}px`
     el.style.top = `${(data.y0 ?? 0) - this.layout.top}px`
     el.dataset['segment'] = String(i)
     el.dataset['system'] = String(data.system ?? i)

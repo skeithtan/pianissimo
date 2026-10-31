@@ -4,6 +4,7 @@
  * leaving the window are detached into a small LRU (re-attaching avoids re-parsing when the
  * player scrolls back); older ones are dropped entirely.
  */
+import { SEAM } from '../partition'
 import type { PreparedLayout, SegmentData } from '../types'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -44,7 +45,7 @@ export class SegmentStore {
     private readonly layout: PreparedLayout,
     private readonly container: HTMLElement,
     private readonly hooks: SegmentHooks,
-    private readonly lruSize = 4,
+    private readonly lruSize = 12,
   ) {
     this.segOfOcc = new Int32Array(layout.occurrences.length).fill(-1)
     for (const s of layout.segments) for (let o = s.occStart; o < s.occEnd; o++) this.segOfOcc[o] = s.index
@@ -159,7 +160,8 @@ export class SegmentStore {
 
     const el = doc.createElement('div')
     el.className = 'pn-seg'
-    el.style.left = `${data.x0 - 1}px`
+    // The viewBox starts SEAM px before the segment: place the element the same way.
+    el.style.left = `${data.x0 - SEAM}px`
     el.dataset['segment'] = String(i)
     el.append(music, over)
     const nodes = music.getElementsByTagName('*').length + data.occEnd - data.occStart + 2

@@ -64,7 +64,7 @@ describe('page segments and keys', () => {
       600,
     )
     expect(segs[0]).toMatchObject({ index: 0, occStart: 0, occEnd: 2, x0: 0, x1: 600, y0: 0, y1: 120, system: 0 })
-    expect(segs[0]!.svg).toContain('viewBox="-1 0 602 120"')
+    expect(segs[0]!.svg).toContain('viewBox="-2 0 604 120"')
     expect(segs[0]!.svg).toContain('<g transform="translate(0 -30)"><g class="staffline">')
     expect(isSafeSvgMarkup(segs[0]!.svg)).toBe(true)
   })

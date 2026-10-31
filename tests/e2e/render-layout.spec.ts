@@ -99,7 +99,8 @@ test.describe('renderer layout gates', () => {
       window.harness.showAllLabels()
       return window.harness.traverse(1, 1)
     })
-    expect(traversal.maxMountedSegments).toBeLessThanOrEqual(6)
+    // Viewport ± one viewport (old and new view while scrolling) over measure-sized segments.
+    expect(traversal.maxMountedSegments).toBeLessThanOrEqual(14)
     expect(traversal.maxMountedNodes).toBeLessThan(8000)
   })
 
@@ -137,8 +138,9 @@ test.describe('renderer layout gates', () => {
       window.harness.showAllLabels()
       return window.harness.traverse(2, 1)
     })
-    expect(traversal.maxMountedSegments).toBeLessThanOrEqual(6)
-    expect(traversal.maxCachedSegments).toBeLessThanOrEqual(4)
+    // Viewport ± one viewport (old and new view while scrolling) over measure-sized segments.
+    expect(traversal.maxMountedSegments).toBeLessThanOrEqual(14)
+    expect(traversal.maxCachedSegments).toBeLessThanOrEqual(12)
     expect(traversal.maxLabelNodes).toBeLessThan(600)
     expect(traversal.maxMountedNodes).toBeLessThan(8000)
     expect(traversal.final.mountedNodes).toBeLessThan(8000)

@@ -149,8 +149,9 @@ Pipeline: dynamic `import('opensheetmusicdisplay')` → one-system engraving
 brackets, glyph groups, obstacle boxes) → `mapNotes` (occ, staff, voice, onset, midi, grace;
 relaxed passes reported) → `layoutLabels` (worst-case box beside every notehead: right / left /
 stagger / stack / callout; widen both staves and re-engrave when > 0.5 % need callouts, at most
-3 engravings) → sanitize (allow-list; black → currentColor) → measure-range segments (≥ 1600
-px; crossing marks copied and clipped) → the full tree is discarded. Label boxes and
+3 engravings) → sanitize (allow-list; black → currentColor) → measure-range segments (≥ 400 px,
+a measure or two; crossing marks copied and clipped, touching neighbors not, PF6) → the full
+tree is discarded. Label boxes and
 measure-number boxes are measured once with canvas `measureText` in the strip font
 (`labels/metrics.ts`, session cache; 0.62 em estimate without canvas; `PrepareOptions.textMeasurer`
 for tests). Measure numbers are placed first (`labels/numbers.ts`: raised in 3 px steps past
