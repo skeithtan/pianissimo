@@ -7,7 +7,7 @@ import { rat, type Rational } from '../../core/music/rational'
 import { BoxGrid, round, unionAll } from '../geom'
 import type { GraphicNote } from '../mapping'
 import type { Box, StaffGeometry } from '../types'
-import type { OsmdFraction, OsmdInstance, OsmdMeasure } from './osmd-types'
+import type { OsmdFraction, OsmdInstance, OsmdMeasure, OsmdStaffLine } from './osmd-types'
 
 /** OSMD unit → layout px at zoom 1. */
 export const UNIT = 10
@@ -87,11 +87,182 @@ export function extract(osmd: OsmdInstance, host: HTMLElement, occurrenceCount: 
     throw new Error(`Engraved ${sheet.MeasureList.length} measures for ${occurrenceCount} occurrences`)
   }
 
-  const staves: StaffGeometry[] = system.StaffLines.map((sl, index) => {
+  const staves = staffGeometry(system.StaffLines)
+  const { graphics, headEls, noteGroupEls, measures } = readMeasures(sheet)
+
+  const stafflineEls = [...svg.children].filter((c) => c.classList.contains('staffline'))
+  const measureEls = stafflineEls.map((sl) => [...sl.children].filter((c) => c.classList.contains('vf-measure')))
+  const glyphs = measureEls.map((list) => list.map(measureGlyphs))
+
+  const ottavas: RawOttava[] = []
+  system.StaffLines.forEach((sl, staff) => readOttavas(sl, staff, stafflineEls[staff], ottavas))
+
+  const { obstacles, content, nodes } = collectObstacles(svg)
+  return {
+    svg,
+    svgNodes: nodes,
+    staves,
+    graphics,
+    headEls,
+    noteGroupEls,
+    measures,
+    ottavas,
+    measureEls,
+    glyphs,
+    obstacles,
+    content,
+  }
+}
+
+/** One engraved system (line) of a page-mode engraving. */
+export interface RawSystem {
+  readonly index: number
+  /** Half-open bar range [occStart, occEnd). */
+  readonly occStart: number
+  readonly occEnd: number
+  /** Engraved staff lines of this system (engraved y). */
+  readonly staves: readonly StaffGeometry[]
+  /** The system's `g.staffline` groups (one per staff) plus the other root marks drawn for it. */
+  readonly elements: readonly Element[]
+  /** Label obstacles drawn by this system's elements (engraved y). */
+  readonly obstacles: readonly Box[]
+  /** Union of the system's drawn marks (engraved y). */
+  readonly content: Box
+}
+
+export interface PageExtraction extends Extraction {
+  readonly systems: readonly RawSystem[]
+  /** System index by occurrence. */
+  readonly systemOfOcc: readonly number[]
+}
+
+/**
+ * Page mode: the same per-note, per-measure and ottava geometry as `extract`, for an engraving
+ * wrapped into systems. `staves` are the first system's; `measureEls` / `glyphs` keep the
+ * [staff][occ] shape by concatenating the systems' measure groups. Root marks outside the
+ * stafflines (braces) go to the system whose staves are nearest.
+ */
+export function extractPage(osmd: OsmdInstance, host: HTMLElement, occurrenceCount: number): PageExtraction {
+  const svg = host.querySelector('svg')
+  if (!svg) throw new Error('OSMD produced no SVG')
+  const sheet = osmd.GraphicSheet
+  const systems = sheet.MusicPages.flatMap((p) => p.MusicSystems)
+  if (!systems[0]) throw new Error('OSMD produced no music system')
+  if (sheet.MeasureList.length !== occurrenceCount) {
+    throw new Error(`Engraved ${sheet.MeasureList.length} measures for ${occurrenceCount} occurrences`)
+  }
+  const staffCount = systems[0].StaffLines.length
+  if (systems.some((s) => s.StaffLines.length !== staffCount))
+    throw new Error('OSMD systems do not all have the same staves')
+
+  const systemOf = new Map<OsmdMeasure, number>()
+  systems.forEach((sys, k) => {
+    for (const sl of sys.StaffLines) for (const m of sl.Measures ?? []) systemOf.set(m, k)
+  })
+  const systemOfOcc = sheet.MeasureList.map((row, occ) => {
+    for (const m of row) {
+      const k = m ? systemOf.get(m) : undefined
+      if (k !== undefined) return k
+    }
+    throw new Error(`Measure ${occ} is in no system`)
+  })
+  for (let o = 1; o < systemOfOcc.length; o++) {
+    if (systemOfOcc[o]! < systemOfOcc[o - 1]!) throw new Error('OSMD systems are not in bar order')
+  }
+
+  const { graphics, headEls, noteGroupEls, measures } = readMeasures(sheet)
+  const stafflineEls = [...svg.children].filter((c) => c.classList.contains('staffline'))
+  if (stafflineEls.length !== systems.length * staffCount)
+    throw new Error(`Expected ${systems.length * staffCount} stafflines, found ${stafflineEls.length}`)
+
+  const measureEls: Element[][] = []
+  for (let staff = 0; staff < staffCount; staff++) {
+    const list: Element[] = []
+    for (let k = 0; k < systems.length; k++) {
+      const group = stafflineEls[k * staffCount + staff]!
+      for (const c of group.children) if (c.classList.contains('vf-measure')) list.push(c)
+    }
+    measureEls.push(list)
+  }
+  const glyphs = measureEls.map((list) => list.map(measureGlyphs))
+
+  const ottavas: RawOttava[] = []
+  const raw = systems.map((sys, k) => {
+    sys.StaffLines.forEach((sl, staff) => readOttavas(sl, staff, stafflineEls[k * staffCount + staff], ottavas))
+    const first = systemOfOcc.indexOf(k)
+    const occStart = first < 0 ? 0 : first
+    let occEnd = occStart
+    while (occEnd < systemOfOcc.length && systemOfOcc[occEnd] === k) occEnd++
+    return {
+      index: k,
+      occStart,
+      occEnd,
+      staves: staffGeometry(sys.StaffLines),
+      elements: stafflineEls.slice(k * staffCount, (k + 1) * staffCount),
+    }
+  })
+  for (const el of svg.children) {
+    if (el.classList.contains('staffline')) continue
+    const b = bbox(el)
+    const cy = b.y + b.h / 2
+    let best = raw[0]!
+    let bestD = Infinity
+    for (const sys of raw) {
+      const top = sys.staves[0]?.top ?? 0
+      const bottom = sys.staves[sys.staves.length - 1]?.bottom ?? top
+      const d = cy < top ? top - cy : cy > bottom ? cy - bottom : 0
+      if (d < bestD) {
+        bestD = d
+        best = sys
+      }
+    }
+    best.elements.push(el)
+  }
+
+  const systemsOut: RawSystem[] = raw.map((sys) => {
+    const obstacles: Box[] = []
+    const all: Box[] = []
+    for (const el of sys.elements) {
+      const c = collectObstacles(el)
+      for (const o of c.obstacles) obstacles.push(o)
+      if (c.content.w > 0 || c.content.h > 0) all.push(c.content)
+    }
+    return { ...sys, obstacles, content: unionAll(all) ?? { x: 0, y: sys.staves[0]?.top ?? 0, w: 0, h: 0 } }
+  })
+  const obstacles = systemsOut.flatMap((s) => s.obstacles)
+  const content = unionAll(systemsOut.map((s) => s.content)) ?? { x: 0, y: 0, w: 0, h: 0 }
+  return {
+    svg,
+    svgNodes: svg.getElementsByTagName('*').length,
+    staves: raw[0]!.staves,
+    graphics,
+    headEls,
+    noteGroupEls,
+    measures,
+    ottavas,
+    measureEls,
+    glyphs,
+    obstacles,
+    content,
+    systems: systemsOut,
+    systemOfOcc,
+  }
+}
+
+function staffGeometry(lines: readonly OsmdStaffLine[]): StaffGeometry[] {
+  return lines.map((sl, index) => {
     const top = sl.PositionAndShape.AbsolutePosition.y * UNIT
     return { index, top: round(top), bottom: round(top + sl.StaffHeight * UNIT) }
   })
+}
 
+/** Graphical notes (for mapping) and measure geometry, in occurrence order. */
+function readMeasures(sheet: OsmdInstance['GraphicSheet']): {
+  graphics: GraphicNote[]
+  headEls: Element[]
+  noteGroupEls: (Element | null)[]
+  measures: RawMeasure[]
+} {
   const graphics: GraphicNote[] = []
   const headEls: Element[] = []
   const noteGroupEls: (Element | null)[] = []
@@ -143,51 +314,30 @@ export function extract(osmd: OsmdInstance, host: HTMLElement, occurrenceCount: 
     const contentX = x0 + first.beginInstructionsWidth * UNIT
     measures.push({ occ, x0, x1, entries: sorted, contentX })
   })
+  return { graphics, headEls, noteGroupEls, measures }
+}
 
-  const stafflineEls = [...svg.children].filter((c) => c.classList.contains('staffline'))
-  const measureEls = stafflineEls.map((sl) => [...sl.children].filter((c) => c.classList.contains('vf-measure')))
-  const glyphs = measureEls.map((list) =>
-    list.map((m): MeasureGlyphs => {
-      const clefs = [...m.querySelectorAll('g.vf-clef')]
-      const out: { clef?: Element; clefs: Element[]; key?: Element; time?: Element } = { clefs }
-      const clef = clefs[0]
-      const key = m.querySelector('g.vf-keysignature')
-      const time = m.querySelector('g.vf-timesignature')
-      if (clef) out.clef = clef
-      if (key) out.key = key
-      if (time) out.time = time
-      return out
-    }),
-  )
+function measureGlyphs(m: Element): MeasureGlyphs {
+  const clefs = [...m.querySelectorAll('g.vf-clef')]
+  const out: { clef?: Element; clefs: Element[]; key?: Element; time?: Element } = { clefs }
+  const clef = clefs[0]
+  const key = m.querySelector('g.vf-keysignature')
+  const time = m.querySelector('g.vf-timesignature')
+  if (clef) out.clef = clef
+  if (key) out.key = key
+  if (time) out.time = time
+  return out
+}
 
-  const ottavas: RawOttava[] = []
-  system.StaffLines.forEach((sl, staff) => {
-    const group = stafflineEls[staff]
-    if (!group) return
-    for (const os of sl.OctaveShifts ?? []) {
-      const start = os.startNote?.getAbsoluteX()
-      const stopNote = os.endNote
-      if (start === undefined || !stopNote || !os.text) continue
-      const stopX = stopNote.getAbsoluteX() + (stopNote.getGlyph?.().getWidth() ?? 10)
-      const raw = findBracket(group, os.text, start, stopX)
-      if (raw) ottavas.push({ staff, startX: start, stopX, text: os.text + (os.supscript ?? ''), ...raw })
-    }
-  })
-
-  const { obstacles, content, nodes } = collectObstacles(svg)
-  return {
-    svg,
-    svgNodes: nodes,
-    staves,
-    graphics,
-    headEls,
-    noteGroupEls,
-    measures,
-    ottavas,
-    measureEls,
-    glyphs,
-    obstacles,
-    content,
+function readOttavas(sl: OsmdStaffLine, staff: number, group: Element | undefined, out: RawOttava[]): void {
+  if (!group) return
+  for (const os of sl.OctaveShifts ?? []) {
+    const start = os.startNote?.getAbsoluteX()
+    const stopNote = os.endNote
+    if (start === undefined || !stopNote || !os.text) continue
+    const stopX = stopNote.getAbsoluteX() + (stopNote.getGlyph?.().getWidth() ?? 10)
+    const raw = findBracket(group, os.text, start, stopX)
+    if (raw) out.push({ staff, startX: start, stopX, text: os.text + (os.supscript ?? ''), ...raw })
   }
 }
 
@@ -234,7 +384,7 @@ const LEAF = 'path,rect,text,line,circle,ellipse,polygon,polyline'
  * Obstacles for label layout: every drawn leaf except staff lines. Long curves and beams are
  * sampled along their outline so the empty area under a slur or a slanted beam stays usable.
  */
-export function collectObstacles(svg: SVGSVGElement): { obstacles: Box[]; content: Box; nodes: number } {
+export function collectObstacles(svg: Element): { obstacles: Box[]; content: Box; nodes: number } {
   const obstacles: Box[] = []
   const all: Box[] = []
   const leaves = svg.querySelectorAll(LEAF)

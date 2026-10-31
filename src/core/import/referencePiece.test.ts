@@ -11,7 +11,8 @@ describe.skipIf(!present)('supplied reference piece (tests/fixtures/private)', a
   const bytes = present ? new Uint8Array(readFileSync(REFERENCE_PIECE)) : new Uint8Array()
   const text = new TextDecoder().decode(bytes)
   const result = present ? await importBytes('reference-piece.musicxml', bytes) : undefined
-  const model = result!.package.model
+  // Without the private fixture the suite is skipped, but this body still runs at collection.
+  const model = result?.package.model as NonNullable<typeof result>['package']['model']
   const bar = (n: string) => model.occurrences.find((o) => o.number === n)!
 
   it('has 59 measure occurrences in written order (no repeats)', () => {

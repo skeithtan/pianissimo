@@ -11,6 +11,7 @@ import type { BrowserAudioModule, MetronomeModule } from '../../core/playback'
 import type { PianissimoStorage } from '../../core/storage'
 import {
   OsmdRenderer,
+  PageView,
   StripView,
   prepareLayout,
   storeLayoutCache,
@@ -32,7 +33,15 @@ export interface StripHandle extends StripSink {
   setZoom(scale: number): void
   returnToCurrent(): void
   destroy(): void
+  /**
+   * Viewport x of the cursor line, for a view whose cursor moves (the portrait page). Absent: the
+   * strip's fixed cursor at one third of the stage.
+   */
+  cursorClientX?(): number
 }
+
+/** Which score view the Practice screen shows: the landscape strip or the portrait page. */
+export type ScoreViewMode = 'strip' | 'page'
 
 export interface PracticeEnv {
   readonly storage: () => Promise<PianissimoStorage>
@@ -46,7 +55,16 @@ export interface PracticeEnv {
     input: RenderInput,
     options: PrepareOptions,
   ) => Promise<PreparedLayout>
-  readonly createStrip: (host: HTMLElement, layout: PreparedLayout, options: PracticeStripOptions) => StripHandle
+  /**
+   * Mounts the score view: the strip, or in portrait the page (`mode: 'page'`, a layout prepared
+   * with `PrepareOptions.mode: 'page'`). Both implement the same handle.
+   */
+  readonly createStrip: (
+    host: HTMLElement,
+    layout: PreparedLayout,
+    options: PracticeStripOptions,
+    mode?: ScoreViewMode,
+  ) => StripHandle
   readonly loadBrowserAudio?: () => Promise<BrowserAudioModule>
   /** Can this device play sound (Web Audio)? Listen falls back to it without a piano (S3). */
   readonly hasWebAudio?: () => boolean
@@ -86,7 +104,8 @@ export function defaultPracticeEnv(): PracticeEnv {
         : null
       return (await prepareLayout(renderer, cache, input, options)).layout
     },
-    createStrip: (host, layout, options) => new StripView(host, layout, options),
+    createStrip: (host, layout, options, mode) =>
+      mode === 'page' ? new PageView(host, layout, options) : new StripView(host, layout, options),
     loadBrowserAudio,
     hasWebAudio: () => getFeatures().features.webAudio.supported,
     loadMetronome: loadWebAudioMetronome,

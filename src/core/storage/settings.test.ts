@@ -57,7 +57,7 @@ const custom: AppSettings = {
   },
   sound: { destination: 'browser', browserVolume: 0.25, monitorInput: true },
   metronome: { enabled: true, volume: 0.1 },
-  view: { zoom: 1.75, theme: 'dark', scorePaper: 'light' },
+  view: { zoom: 1.75, pageZoom: 1.25, theme: 'dark', scorePaper: 'light' },
   suggestions: { enabled: false },
 }
 
@@ -91,6 +91,14 @@ describe('normalizeSettings', () => {
     const loaded = normalizeSettings({ naming: { system: 'fixed-do' }, hints: { fadeMs: 500 } })
     expect(loaded.naming).toEqual({ ...DEFAULT_SETTINGS.naming, system: 'fixed-do' })
     expect(loaded.hints).toEqual({ ...DEFAULT_SETTINGS.hints, fadeMs: 500 })
+  })
+
+  it('reads the page zoom additively: absent (older settings) means 1, out of range falls back', () => {
+    expect(DEFAULT_SETTINGS.view.pageZoom).toBe(1)
+    expect(normalizeSettings({ view: { zoom: 1.5 } }).view).toMatchObject({ zoom: 1.5, pageZoom: 1 })
+    expect(normalizeSettings({ view: { pageZoom: 0.8 } }).view.pageZoom).toBe(0.8)
+    expect(normalizeSettings({ view: { pageZoom: 0 } }).view.pageZoom).toBe(1)
+    expect(normalizeSettings({ view: { pageZoom: 'big' } }).view.pageZoom).toBe(1)
   })
 
   it('falls back per field for wrong types and unknown enum values', () => {

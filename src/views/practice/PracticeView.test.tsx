@@ -508,4 +508,95 @@ describe('PracticeView', () => {
     const piece = await r.storage.getPiece(r.pieceId)
     expect(piece?.lastPassage).toEqual({ fromOcc: 0, toOcc: 1 })
   })
+
+  describe('portrait page mode', () => {
+    let portrait = false
+    const listeners = new Set<() => void>()
+    const original = window.matchMedia
+
+    beforeEach(() => {
+      portrait = false
+      listeners.clear()
+      window.matchMedia = ((query: string) => ({
+        get matches() {
+          return query.includes('portrait') ? portrait : false
+        },
+        media: query,
+        addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+        removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+      })) as unknown as typeof window.matchMedia
+    })
+
+    afterEach(() => {
+      window.matchMedia = original
+    })
+
+    /** A rig recording each view's mode and prepare options. */
+    async function pageRig() {
+      const r = await rig()
+      const modes: (string | undefined)[] = []
+      const prepared: { mode?: string; pageWidth?: number }[] = []
+      const env: PracticeEnv = {
+        ...r.env,
+        prepare: async (_s, _i, options) => {
+          prepared.push({
+            ...(options.mode ? { mode: options.mode } : {}),
+            ...(options.pageWidth ? { pageWidth: options.pageWidth } : {}),
+          })
+          return { key: 'fake' } as unknown as PreparedLayout
+        },
+        createStrip: (host, layout, options, mode) => {
+          modes.push(mode)
+          return r.env.createStrip(host, layout, options, mode)
+        },
+      }
+      return { ...r, env, modes, prepared }
+    }
+
+    const rotate = (to: boolean) =>
+      act(() => {
+        portrait = to
+        for (const fn of [...listeners]) fn()
+      })
+
+    it('portrait creates the page view, landscape the strip, and a rotation swaps them in place', async () => {
+      portrait = true
+      const r = await pageRig()
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={r.env} />)
+      await settle(r)
+      expect(r.modes).toEqual(['page'])
+      expect(r.prepared.at(-1)?.mode).toBe('page')
+      expect(r.prepared.at(-1)?.pageWidth).toBeGreaterThan(0)
+      expect(r.strips[0]!.options.initialZoom).toBe(1)
+
+      rotate(false)
+      await settle(r)
+      expect(r.modes).toEqual(['page', 'strip'])
+      expect(r.strips[0]!.destroyed).toBe(true)
+      expect(r.prepared.at(-1)?.mode).toBeUndefined()
+      expect($(view.container, '[data-testid="strip-host"]')?.dataset['mode']).toBe('strip')
+
+      rotate(true)
+      await settle(r)
+      expect(r.modes).toEqual(['page', 'strip', 'page'])
+      expect(r.strips[1]!.destroyed).toBe(true)
+    })
+
+    it('page zoom persists apart from the strip zoom and re-prepares the page', async () => {
+      portrait = true
+      const r = await pageRig()
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={r.env} />)
+      await settle(r)
+      const width = r.prepared.at(-1)!.pageWidth!
+      act(() => r.strips.at(-1)!.options.onZoomChange?.(2))
+      await settle(r)
+      expect(settings.value.view.pageZoom).toBe(2)
+      expect(settings.value.view.zoom).toBe(1)
+      expect(r.modes).toEqual(['page', 'page'])
+      expect(r.prepared.at(-1)!.pageWidth!).toBeLessThan(width)
+      expect(r.strips.at(-1)!.options.initialZoom).toBe(2)
+    })
+  })
 })

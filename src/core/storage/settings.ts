@@ -218,6 +218,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
     },
     view: {
       zoom: num(view['zoom'], d.view.zoom, 0.1, 20),
+      pageZoom: num(view['pageZoom'], d.view.pageZoom, 0.1, 20),
       theme: oneOf(view['theme'], ['system', 'light', 'dark'], d.view.theme),
       scorePaper: oneOf(view['scorePaper'], ['theme', 'light'], d.view.scorePaper),
     },

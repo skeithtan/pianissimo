@@ -39,6 +39,15 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   `onLoopSelectModeChange`, `onVisibleLabels(addedNotes)`, `onZoomChange`, `onCursorAction()`
   (`cursorActionLabel` overrides the accessible name).
 - Pure helpers: `positionToX`, `occAtX`, `occAtPosition`.
+- **Page mode (portrait)**: `PrepareOptions.mode: 'page'` + `pageWidth` (layout px the systems
+  wrap to; `pageWidthFor(stageWidth, zoom)` = (stage − 2 × 16 px) / zoom, rounded to 8) prepares
+  a page layout: `layout.mode = 'page'`, `layout.systems` (`SystemGeometry`: bar range, page y
+  extent, staves), `system` on occurrences, notes and segments (`SegmentData.y0/y1`),
+  `params.pageWidth`, `contexts` / `contextChanges` empty. Keyed `…|page<width>`; the strip's key
+  is unchanged. `new PageView(host, layout, opts: PageOptions)` implements the strip's whole
+  public API (the practice session's `StripSink` + the view's `StripHandle`) with page
+  semantics, plus `occAt(clientX, clientY?)`, `cursorClientX()`, `currentSystem()`;
+  `PageOptions.followOffset` (default 1/4) and `zoomDebounceMs` (250).
 
 ## Design
 
@@ -141,6 +150,51 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   calls `onCursorSeek` and moves the music beneath the fixed cursor unless refused. `aria-valuetext` and the bar/beat pill
   (visible with `:focus-visible`) come from `cursorDragLabel`; they are set on focus and per key,
   never per frame.
+
+## Page mode (`osmd/page.ts`, `page/`)
+
+- **Prepare** (`preparePage`, dispatched from `OsmdRenderer.prepare`): OSMD engraves a normal
+  endless page (`renderSingleHorizontalStaffline: false`) in a hidden container `pageWidth` wide,
+  page margins 1 / 2.5 OSMD units (room right of a system's last notes for their labels).
+  `extractPage` reads the strip's per-note / per-measure / ottava geometry plus each system's
+  staves, `g.staffline` groups (braces go to the nearest system), bar range and its own label
+  obstacles. The measure number is placed (R6) for the bar opening each system only; labels are
+  reserved per system with the same `layoutLabels`, against that system's marks. One engraving by
+  default: OSMD justifies every system, so widening spacing only pushes bars onto new lines (the
+  reference piece went to one bar per line) while the callouts stayed (36 → 32); the remaining callouts are
+  the spec's linked callouts.
+- **Restacking** (`page/stack.ts`): OSMD's vertical spacing knows nothing about reserved labels, so
+  each system's content extent (marks, labels, number, ottava brackets; + 6 px) is stacked below
+  the previous one with `PAGE_SYSTEM_GAP` 36 px, and every coordinate of that system moves by the
+  same `dy` into page space. Segments (`partitionPage`): one per system, viewBox in page y, the
+  engraving wrapped in one `translate(0 dy)` group (systems share no marks: OSMD draws each tie /
+  slur / bracket piece in its own system's staffline).
+- **View** (`page/PageView.ts`, `page.css` on top of strip.css: the root is `.pn-strip.pn-page`,
+  so every token, note state, label, cursor, loop and correction style is the strip's): a
+  vertically scrolling sheet (`overflow-y: auto`, `overscroll-behavior: contain`, locked while
+  browsing is disabled), content scaled by the zoom and centered with ≥ 16 px gutters, systems
+  mounted for the visible range ± one viewport with the strip's bounded LRU
+  (`page/segments.ts`, a copy of `SegmentStore` by y). The cursor bar (R13 look, staves + 96 px
+  faded) rides on the sheet at the position's x along its system's `CursorPath` (knots = that
+  system's onsets); 180 ms glide per seek, per-frame while following, a jump at a system change.
+  The repeat button rides on it. **Follow**: when the system changes, and on a seek / wrap /
+  return, the sheet scrolls so that system's top sits a quarter down (one `scrollTop` write plus
+  a 300 ms Web Animations FLIP glide in `--ease-standard`; reduced motion: instant); never during
+  a line, never while browsing (a scroll the view did not write, with browsing enabled →
+  `onBrowse(true)`, Return button). A tap is a seek and ends browsing. **Loop**: one band per
+  system crossed (`PageGeometry.loopBands`), handles at the two edges, ✕ on the first band; a
+  handle drags along its own system (snap knots of that system), arrow keys step across systems.
+  **Playhead drag**: within the current system; keyboard (← → Shift Home End) across systems.
+  **Zoom**: pinch / ctrl-wheel / `setZoom` scale the page at once; 250 ms later
+  `onZoomChange(scale)` asks the owner to re-prepare at the new page width.
+- Reference piece at 788 px (Chromium, this Mac): 1 engraving, 1.16 s prepare, 1353/1353 mapped, 8va
+  mapped, 36 callouts (2.7 %), 1.7 MB of segments. Real iPad numbers still needed.
+- **Copied from the strip** (to deduplicate later): note flags + `paintNote`, label painting and
+  visible-label reporting, `withEdge`, loop-handle key stepping, cursor keyboard stepping, the
+  icons, `SegmentStore` (→ `page/segments.ts`), corrections drawing (→ `shared/corrections.ts`).
+  Imported unchanged: `CursorPath`, `snap.ts`, `loop.ts`, `scroll.ts` helpers.
+- Not done: dragging a loop handle or the playhead across systems (keyboard only); the ottava
+  reminder is one pill at the cursor (the strip has one per staff); pinch is synthetic-tested only.
 
 ## Measurements (this container, x86; Playwright, all-note labels, 1180×400 strip)
 

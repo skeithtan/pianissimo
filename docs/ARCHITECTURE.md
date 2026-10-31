@@ -263,6 +263,9 @@ Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `prac
   `render/keyboard` draws all 88 keys (U15). `app/session/output.ts` resolves Auto (S4).
 - Routing: `app/routes.ts` (parse/format) and `app/router.ts` (signal ⇄ URL sync, started in
   `boot.ts`) (A10). Connection setup is `views/connection/ConnectionModal.tsx` over any view (C8).
+  Portrait page mode (U40): `render/page/PageView` implements the same strip contract over a
+  page layout (`PrepareOptions.mode: 'page'`, one segment per system); `views/practice/useOrientation`
+  picks the view, and a rotation re-prepares and recreates it at the current position.
   Practice flow (2026-10-31): every learner onset is a transport gate; nothing at or beyond an
   unreleased gate is emitted, so the automatic part sounds with the press, and an early release
   within the 120 ms grace fast-forwards the transport (P9, E12). In Repeat mode a seek before

@@ -2,10 +2,11 @@
  * Prepared-layout caching (spec "Execution and rendering architecture": cache reusable geometry so
  * reopening a piece avoids repeated engraving). A `PreparedLayout` is plain JSON keyed by score
  * version + renderer version + every parameter that changes geometry (label sizing, segment
- * width). Zoom is not part of the key: it is a CSS scale (R2).
+ * width; in page mode the mode and the page width). Zoom is not part of the key: it is a CSS
+ * scale (R2); page mode turns a zoom into a page width, which is.
  */
 import { isSafeSvgMarkup } from './sanitize'
-import { PREPARED_LAYOUT_FORMAT, type PreparedLayout } from './types'
+import { PREPARED_LAYOUT_FORMAT, type LayoutMode, type PreparedLayout } from './types'
 
 export interface LayoutCache {
   get(key: string): Promise<PreparedLayout | undefined>
@@ -18,16 +19,22 @@ export interface LayoutKeyParts {
   readonly labelChars: number
   readonly labelFontPx: number
   readonly segmentWidth: number
+  /** 'page' (portrait page mode) adds the page width to the key; the strip's key is unchanged. */
+  readonly mode?: LayoutMode
+  /** Page mode: the width the systems wrap to (layout px). */
+  readonly pageWidth?: number
 }
 
 export function layoutKey(p: LayoutKeyParts): string {
-  return [
+  const parts = [
     `f${PREPARED_LAYOUT_FORMAT}`,
     p.scoreVersionId,
     `${p.renderer.name}@${p.renderer.version}`,
     `l${p.labelChars}x${p.labelFontPx}`,
     `s${p.segmentWidth}`,
-  ].join('|')
+  ]
+  if (p.mode === 'page') parts.push(`page${p.pageWidth ?? 0}`)
+  return parts.join('|')
 }
 
 /** Approximate in-memory size: serialized segment text dominates. */
@@ -57,7 +64,8 @@ export function isPreparedLayout(value: unknown, key?: string): value is Prepare
     Array.isArray(v.labels) &&
     Array.isArray(v.occurrences) &&
     Array.isArray(v.staves) &&
-    typeof v.width === 'number'
+    typeof v.width === 'number' &&
+    (v.mode === undefined || v.mode === 'strip' || (v.mode === 'page' && Array.isArray(v.systems)))
   )
 }
 

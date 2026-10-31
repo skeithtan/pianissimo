@@ -52,6 +52,7 @@ import {
 } from '../types'
 import { extract, type Extraction, type RawMeasure, type RawOttava } from './extract'
 import { loadOsmd } from './load'
+import { preparePage } from './page'
 import type { OsmdInstance } from './osmd-types'
 
 export const OSMD_VERSION = '2.2.1'
@@ -72,7 +73,7 @@ const MAX_SHEET_WIDTH = 50_000_000
 /** Widen spacing when more than this share of labels would need a callout. */
 export const CALLOUT_TOLERANCE = 0.005
 
-const OSMD_OPTIONS = {
+export const OSMD_OPTIONS = {
   autoResize: false,
   backend: 'svg',
   renderSingleHorizontalStaffline: true,
@@ -111,7 +112,7 @@ export function labelMetrics(
   return labelBoxSize(maxChars, fontPx, measure, family)
 }
 
-class Aborted extends Error {
+export class Aborted extends Error {
   constructor() {
     super('Layout preparation was canceled')
     this.name = 'AbortError'
@@ -126,6 +127,8 @@ export class OsmdRenderer implements RendererAdapter {
   readonly version = RENDERER_VERSION
 
   async prepare(input: RenderInput, options: PrepareOptions): Promise<PreparedLayout> {
+    // Portrait page mode: wrapped systems (osmd/page.ts); everything below is the strip.
+    if (options.mode === 'page') return preparePage(this, input, options)
     const t0 = now()
     const signal = options.signal
     const check = (): void => {
@@ -335,7 +338,7 @@ export class OsmdRenderer implements RendererAdapter {
   }
 }
 
-function labelIndexByOcc(labels: readonly LabelBox[], occCount: number): number[] {
+export function labelIndexByOcc(labels: readonly LabelBox[], occCount: number): number[] {
   const first = new Array<number>(occCount + 1).fill(labels.length)
   for (let i = labels.length - 1; i >= 0; i--) first[labels[i]!.occ] = i
   for (let o = occCount - 1; o >= 0; o--) first[o] = Math.min(first[o]!, first[o + 1]!)
@@ -359,15 +362,7 @@ function occurrenceGeometry(
   return input.occurrences.map((o, i) => {
     const m = measures[i]!
     const duration = toNumber(o.duration)
-    const anchors: [number, number][] = []
-    for (const [pos, x] of m.entries) {
-      if (pos >= duration - 1e-9) continue
-      const prev = anchors.at(-1)
-      anchors.push([pos, round(prev ? Math.max(prev[1], x) : x)])
-    }
-    if (!anchors.length || anchors[0]![0] > 1e-9)
-      anchors.unshift([0, round(Math.min(m.contentX, anchors[0]?.[1] ?? m.contentX))])
-    anchors.push([duration, round(m.x1)])
+    const anchors = measureAnchors(m, duration)
     const text = texts[i]!
     const labelBox = roundBox(numberBoxes[i]!)
     return {
@@ -383,7 +378,21 @@ function occurrenceGeometry(
   })
 }
 
-function labelUnits(input: RenderInput, ex: Extraction, mapping: NoteMapping): LabelUnitInput[] {
+/** Onset anchors of one engraved measure (see `OccurrenceGeometry.anchors`). */
+export function measureAnchors(m: RawMeasure, duration: number): [number, number][] {
+  const anchors: [number, number][] = []
+  for (const [pos, x] of m.entries) {
+    if (pos >= duration - 1e-9) continue
+    const prev = anchors.at(-1)
+    anchors.push([pos, round(prev ? Math.max(prev[1], x) : x)])
+  }
+  if (!anchors.length || anchors[0]![0] > 1e-9)
+    anchors.unshift([0, round(Math.min(m.contentX, anchors[0]?.[1] ?? m.contentX))])
+  anchors.push([duration, round(m.x1)])
+  return anchors
+}
+
+export function labelUnits(input: RenderInput, ex: Extraction, mapping: NoteMapping): LabelUnitInput[] {
   return mapping.units.map((notes) => {
     const graphics = notes.map((n) => ex.graphics[mapping.graphicOf[n]!]!)
     const first = input.notes[notes[0]!]!
@@ -399,7 +408,7 @@ function labelUnits(input: RenderInput, ex: Extraction, mapping: NoteMapping): L
   })
 }
 
-function noteGeometry(
+export function noteGeometry(
   input: RenderInput,
   ex: Extraction,
   mapping: NoteMapping,
@@ -439,11 +448,17 @@ export function positionX(occurrences: readonly OccurrenceGeometry[], occ: numbe
   return o.x1
 }
 
-function ottavaGeometry(
+export function ottavaGeometry(
   input: RenderInput,
   raw: readonly RawOttava[],
   occurrences: readonly OccurrenceGeometry[],
   staves: readonly StaffGeometry[],
+  page?: {
+    /** The staves of the system holding bar `occ` (fallback brackets). */
+    readonly stavesOf: (occ: number) => readonly StaffGeometry[]
+    /** Whether an engraved bracket lies in the system holding bar `occ`. */
+    readonly inSystem: (r: RawOttava, occ: number) => boolean
+  },
 ): { geometry: (OttavaGeometry | null)[]; unmapped: number[]; raw: Map<number, RawOttava> } {
   const used = new Set<RawOttava>()
   const byIndex = new Map<number, RawOttava>()
@@ -457,6 +472,7 @@ function ottavaGeometry(
     for (const r of raw) {
       if (used.has(r) || r.staff !== span.staff || r.text !== text) continue
       if (Math.abs(r.startX - startX) > 80) continue
+      if (page && !page.inSystem(r, span.startOcc)) continue
       if (!best || Math.abs(r.startX - startX) < Math.abs(best.startX - startX)) best = r
     }
     if (best) {
@@ -476,7 +492,7 @@ function ottavaGeometry(
     const endOccStart =
       input.occurrences[span.endOcc]?.start ?? add(input.occurrences.at(-1)!.start, input.occurrences.at(-1)!.duration)
     const endX = positionX(occurrences, span.endOcc, toNumber(span.end) - toNumber(endOccStart))
-    const staff = staves.find((s) => s.index === span.staff)
+    const staff = (page ? page.stavesOf(span.startOcc) : staves).find((s) => s.index === span.staff)
     const y = span.sounds === 'up' ? (staff?.top ?? 0) - 34 : (staff?.bottom ?? 0) + 14
     const labelBox: Box = { x: round(startX - 6), y: round(y), w: text.length * 8, h: 18 }
     geometry[span.index] = {
@@ -493,7 +509,7 @@ function ottavaGeometry(
 }
 
 /** Adds `data-n` (notes), `data-h` (hand) and `data-o` (ottava span) before sanitizing strips ids. */
-function tagElements(
+export function tagElements(
   input: RenderInput,
   ex: Extraction,
   mapping: NoteMapping,

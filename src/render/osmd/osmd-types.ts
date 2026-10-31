@@ -73,6 +73,8 @@ export interface OsmdStaffLine {
   readonly PositionAndShape: OsmdBoundingBox
   readonly StaffHeight: number
   readonly OctaveShifts?: readonly OsmdOctaveShift[]
+  /** The staff line's graphical measures (page mode reads which system holds a bar). */
+  readonly Measures?: readonly OsmdMeasure[]
 }
 
 export interface OsmdGraphicSheet {

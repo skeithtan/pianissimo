@@ -73,6 +73,8 @@ export interface LayoutParams {
   readonly spacing: SpacingParams
   /** Engravings performed (1 = the first spacing was enough). */
   readonly iterations: number
+  /** Page mode only: the page width the systems were wrapped to (layout px). */
+  readonly pageWidth?: number
 }
 
 export interface StaffGeometry {
@@ -98,6 +100,8 @@ export interface OccurrenceGeometry {
   /** App-drawn measure number text (M5): "12" or "12 (pass 2)". */
   readonly label: string
   readonly labelBox: Box
+  /** Page mode only: the system (line) holding this bar. */
+  readonly system?: number
 }
 
 export interface NoteGeometry {
@@ -113,6 +117,8 @@ export interface NoteGeometry {
   readonly label: number
   /** Engraver graphic id of the note's glyph group (for diagnostics). */
   readonly graphic: string
+  /** Page mode only: the system (line) holding the note. */
+  readonly system?: number
 }
 
 export type LabelPlacement = 'right' | 'stagger' | 'left' | 'stack' | 'callout'
@@ -191,7 +197,33 @@ export interface SegmentData {
   /** Label id range [labelStart, labelEnd) whose notes are in this segment. */
   readonly labelStart: number
   readonly labelEnd: number
+  /**
+   * Page mode only: the segment is one system, drawn from page y `y0` to `y1` (its viewBox is
+   * `x0 y0 (x1-x0) (y1-y0)` in page coordinates; the engraving inside is translated there).
+   */
+  readonly y0?: number
+  readonly y1?: number
+  readonly system?: number
 }
+
+/**
+ * Page mode (portrait): one wrapped line of music. Systems are stacked top to bottom with a fixed
+ * gap; every page-mode coordinate (notes, labels, staves, bars' number boxes) is in this stacked
+ * page space, so a system's content lies within [y0, y1].
+ */
+export interface SystemGeometry {
+  readonly index: number
+  /** Half-open bar range [occStart, occEnd). */
+  readonly occStart: number
+  readonly occEnd: number
+  /** Page y extent of the system's content (notation, labels, numbers), layout px. */
+  readonly y0: number
+  readonly y1: number
+  /** The system's staves (top and bottom staff lines in page y). */
+  readonly staves: readonly StaffGeometry[]
+}
+
+export type LayoutMode = 'strip' | 'page'
 
 export interface MappingReport {
   readonly modelNotes: number
@@ -254,6 +286,14 @@ export interface PreparedLayout {
   readonly segments: readonly SegmentData[]
   readonly report: MappingReport
   readonly stats: LayoutStats
+  /**
+   * 'page' for a portrait page layout (systems wrapped to `params.pageWidth`); absent or 'strip'
+   * for the horizontal strip. In page mode `staves` are the first system's, `contexts` and
+   * `contextChanges` are empty (every system engraves its own clef and key), segments are systems.
+   */
+  readonly mode?: LayoutMode
+  /** Page mode only: the systems, top to bottom (segment `i` is system `i`). */
+  readonly systems?: readonly SystemGeometry[]
 }
 
 export interface PrepareOptions {
@@ -275,6 +315,13 @@ export interface PrepareOptions {
    * strip's `--font-ui`, falling back to a 0.62 em estimate). Tests inject a fixed measurer.
    */
   readonly textMeasurer?: TextMeasurer
+  /** 'page' engraves wrapped systems (portrait page mode); default 'strip' (one staffline). */
+  readonly mode?: LayoutMode
+  /**
+   * Page mode: the width systems wrap to, in layout px (the stage width minus its side gutters,
+   * divided by the zoom; `pageWidthFor` in render/page). Ignored by the strip. Default 800.
+   */
+  readonly pageWidth?: number
 }
 
 export type PrepareStage = 'loading' | 'engraving' | 'extracting' | 'labels' | 'partitioning' | 'done'

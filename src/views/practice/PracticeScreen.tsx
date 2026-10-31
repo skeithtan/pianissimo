@@ -38,6 +38,7 @@ import { useFadePresence } from '../../ui/fade'
 import { Icon } from '../../ui/icons'
 import { WrongNoteFlash } from '../../ui/WrongNoteFlash'
 import { ConnectionChip } from '../shared/ConnectionChip'
+import { pageWidthFor } from '../../render/page/geometry'
 import type { PracticeEnv, StripHandle } from './env'
 import { GuidePanel, OverviewBar, StageCue } from './live'
 import { Banners } from './Banners'
@@ -46,6 +47,7 @@ import { RepeatPanel } from './RepeatPanel'
 import { TempoSheet } from './TempoSheet'
 import { useBrowsedBar } from './browse'
 import { useRecede } from './recede'
+import { useOrientation, useStageWidth } from './useOrientation'
 import { useStore } from './useStore'
 import styles from './practice.module.css'
 
@@ -65,10 +67,15 @@ export const REPEAT_PANEL_FADE_MS = 200
 /** A pointer this close to the fixed cursor line (px either side) reveals the chrome (U13, U14). */
 export const CURSOR_REVEAL_PX = 56
 
-/** Is the pointer near the fixed cursor line at one third of the stage's width (U28)? */
-function nearCursor(event: PointerEvent): boolean {
+/**
+ * Is the pointer near the cursor line: the strip's fixed line at one third of the stage's width
+ * (U28), or the page's moving cursor in portrait?
+ */
+function nearCursor(event: PointerEvent, view: StripHandle | null): boolean {
   const el = event.currentTarget
   if (!(el instanceof Element)) return false
+  const moving = view?.cursorClientX?.()
+  if (moving !== undefined) return Math.abs(event.clientX - moving) <= CURSOR_REVEAL_PX
   const rect = el.getBoundingClientRect()
   return Math.abs(event.clientX - (rect.left + rect.width / 3)) <= CURSOR_REVEAL_PX
 }
@@ -145,6 +152,11 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const maxChars = maxLabelWidthChars(appSettings.naming)
   const lastOcc = model.occurrences.length - 1
   const browsed = useBrowsedBar(host, stripRef, lastOcc, env.frames)
+  // Portrait shows the page (systems, moving cursor), landscape the strip (DECISIONS "Portrait
+  // page mode"). The page is engraved for the stage width at its own zoom (`view.pageZoom`).
+  const mode = useOrientation() === 'portrait' ? 'page' : 'strip'
+  const stageWidth = useStageWidth(host)
+  const pageWidth = mode === 'page' && stageWidth > 0 ? pageWidthFor(stageWidth, appSettings.view.pageZoom) : 0
   // The chrome recedes while something plays; an interruption or pause brings it back (U13).
   const recede = useRecede(ui.playing, env.timers)
   // Leaving Repeat mode (U14): the panel sinks away over the loop it had before it unmounts.
@@ -185,10 +197,14 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     }
   }, [session, saver])
 
-  // Layout: cached → instant; otherwise OSMD prepares it. A label-width change re-prepares.
+  // Layout: cached → instant; otherwise OSMD prepares it. A label-width change re-prepares, so
+  // does a rotation (strip ↔ page) and, in portrait, a page width change (stage size, page zoom).
+  // The session restores the position, loop and hands on `attachStrip`.
   useEffect(() => {
     const el = host.current
     if (!el) return
+    // The page waits for the stage's first measurement (its width decides the systems).
+    if (mode === 'page' && pageWidth <= 0) return
     let live = true
     const ctrl = new AbortController()
     setPrep({ state: 'preparing', fraction: 0 })
@@ -202,26 +218,33 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             labels: { maxChars },
             signal: ctrl.signal,
             onProgress: (_stage, fraction) => live && setPrep({ state: 'preparing', fraction }),
+            ...(mode === 'page' ? { mode, pageWidth } : {}),
           },
         )
         if (!live) return
-        const strip = env.createStrip(el, layout, {
-          initialZoom: settings.peek().view.zoom,
-          returnLabel: 'Return to current position',
-          onBrowse: browsed.onBrowse,
-          onSeekRequest: (occ) => session.seek(occ),
-          // The dragged playhead lands on a note; practice continues from there (U23).
-          onCursorSeek: (position) => session.seekPosition(position),
-          cursorDragLabel: (position) => positionText(model, position),
-          onLoopChange: (range) => session.setSelection({ range }),
-          // The repeat button on the cursor pauses and loops the cursor's bar (U14).
-          onCursorAction: () => session.repeatAtCursor(),
-          onVisibleLabels: (added) => session.onVisibleLabels(added),
-          onZoomChange: (zoom) => {
-            updateSettings({ view: { zoom } })
-            session.viewChanged()
+        const strip = env.createStrip(
+          el,
+          layout,
+          {
+            initialZoom: mode === 'page' ? settings.peek().view.pageZoom : settings.peek().view.zoom,
+            returnLabel: 'Return to current position',
+            onBrowse: browsed.onBrowse,
+            onSeekRequest: (occ) => session.seek(occ),
+            // The dragged playhead lands on a note; practice continues from there (U23).
+            onCursorSeek: (position) => session.seekPosition(position),
+            cursorDragLabel: (position) => positionText(model, position),
+            onLoopChange: (range) => session.setSelection({ range }),
+            // The repeat button on the cursor pauses and loops the cursor's bar (U14).
+            onCursorAction: () => session.repeatAtCursor(),
+            onVisibleLabels: (added) => session.onVisibleLabels(added),
+            // Strip: a CSS scale. Page: a new page width, so the layout is re-prepared (above).
+            onZoomChange: (zoom) => {
+              updateSettings({ view: mode === 'page' ? { pageZoom: zoom } : { zoom } })
+              session.viewChanged()
+            },
           },
-        })
+          mode,
+        )
         stripRef.current = strip
         session.attachStrip(strip)
         setPrep({ state: 'ready' })
@@ -236,7 +259,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       stripRef.current?.destroy()
       stripRef.current = null
     }
-  }, [session, maxChars])
+  }, [session, maxChars, mode, pageWidth])
 
   // Add to library starts once the score is ready. Consume the request so history navigation
   // cannot start it again, and never retry automatically after a pause or an output failure.
@@ -314,14 +337,14 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         // A pointer near the cursor line, or a tap anywhere, leaves focus mode (U13, U14). The
         // events still reach the strip.
         onPointerMove={(event) => {
-          if (ui.playing && nearCursor(event)) recede.zone.onPointerMove()
+          if (ui.playing && nearCursor(event, stripRef.current)) recede.zone.onPointerMove()
         }}
         onPointerDown={(event) => {
           if (!ui.playing) return
-          if (event.pointerType === 'touch' || nearCursor(event)) recede.zone.onPointerDown()
+          if (event.pointerType === 'touch' || nearCursor(event, stripRef.current)) recede.zone.onPointerDown()
         }}
       >
-        <div ref={host} class={styles.stripHost} data-testid="strip-host" />
+        <div ref={host} class={styles.stripHost} data-testid="strip-host" data-mode={mode} />
         {prep.state === 'preparing' ? (
           <div class={styles.preparing} role="status" aria-live="polite">
             <span class={styles.spinner} aria-hidden="true" />

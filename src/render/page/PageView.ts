@@ -1,0 +1,1484 @@
+/**
+ * Portrait page mode (DECISIONS "Portrait page mode"): the score as an engraved page — systems
+ * wrapped to the width and stacked, scrolling vertically — with the cursor moving along the
+ * music instead of the music moving under a fixed cursor. Framework-free DOM; the same contract
+ * the practice session drives on the strip (`StripSink` + the view's `StripHandle`).
+ *
+ * - Systems are segments mounted for the visible range ± one viewport (bounded detached LRU).
+ * - The cursor is the strip's translucent bar (R13 look), spanning the current system's staves
+ *   plus 96 px faded at each end, at the x of the musical position along that system's cursor
+ *   path; the round repeat button rides on it. Within a system it glides (180 ms per seek,
+ *   per-frame while following); at a system boundary it jumps to the next system.
+ * - The page stays still while a line is played. When the current system changes (and on a
+ *   seek, wrap or return), the page scrolls (300 ms `--ease-standard`, instant with reduced
+ *   motion) so that system's top sits a quarter down the viewport, unless the learner browses
+ *   (a manual scroll while browsing is enabled; "Return to current position").
+ * - Note states, labels, ottava emphasis, loop band, corrections: the strip's classes and
+ *   semantics (strip.css styles them; page.css adds the page structure).
+ * - Zoom changes the page width: a pinch / ctrl-wheel / `setZoom` previews the scale at once and,
+ *   250 ms after it settles, reports `onZoomChange(scale)`; the owner re-prepares the layout at
+ *   `pageWidthFor(stage, scale)` and opens a new view at that zoom.
+ */
+import type { Hand } from '../../core/model/score'
+import type { Rational } from '../../core/music/rational'
+import { toNumber } from '../../core/music/rational'
+import { loadLabelFont } from '../labels/metrics'
+import {
+  CORRECTION_LEAVE_MS,
+  CORRECTION_STAGGER_MS,
+  buildCorrection,
+  correctionShape,
+  correctionsKey,
+  type CorrectionMark,
+  type CorrectionShape,
+} from '../shared/corrections'
+import { clampRange, sameRange, tapSelect, type LoopRange } from '../strip/loop'
+import { occAtPosition } from '../strip/scroll'
+import {
+  buildLoopKnots,
+  edgeLimits,
+  firstKnotAtOrAfter,
+  knotAtPosition,
+  nearestKnot,
+  passageFromKnots,
+  passagePositions,
+  type CursorKnots,
+  type LoopKnots,
+} from '../strip/snap'
+import type { StripOptions, StripStats, LoopSelectMode } from '../strip/StripView'
+import type { LabelBox, PreparedLayout } from '../types'
+import { PAGE_GUTTER, PageGeometry, type Band } from './geometry'
+import { PageSegmentStore, type MountedSegment } from './segments'
+import '../strip/strip.css'
+import './page.css'
+
+export interface PageOptions extends StripOptions {
+  /** Where the current system's top rests, as a fraction of the viewport height (default 1/4). */
+  readonly followOffset?: number
+  /** Debounce before a zoom change is reported (`onZoomChange`), ms (default 250). */
+  readonly zoomDebounceMs?: number
+}
+
+export type PageStats = StripStats
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+// Note flags and their classes: COPIED from StripView (same values and class names).
+const TARGET = 1
+const ACCEPTED = 2
+const AUTO = 4
+const PLAY = 8
+const FLAG_CLASSES: readonly [number, string][] = [
+  [TARGET, 'pn-target'],
+  [ACCEPTED, 'pn-acc'],
+  [AUTO, 'pn-auto'],
+  [PLAY, 'pn-play'],
+]
+const TAP_SLOP = 8
+/** Space above the first system (screen px). */
+export const PAGE_PAD_TOP = 16
+/** Cursor bar margin beyond the top and bottom staves, faded by its mask (screen px, R13). */
+const CURSOR_MARGIN = 96
+/** The page's follow scroll (`--dur-slow`), ms. */
+const SCROLL_MS = 300
+/** `--ease-standard` (global.css); read from the theme when available. */
+const EASE_STANDARD = 'cubic-bezier(0.4, 0, 0.2, 1)'
+/** Below this band width on screen (px) the loop's ✕ is drawn small (U14). */
+const CLEAR_SMALL_PX = 150
+/** Consecutive `smooth: false` calls advancing at most this far are one motion (R12). */
+const FOLLOW_MAX_STEP = 0.25
+
+interface LabelNode {
+  readonly text: SVGTextElement
+  readonly leader: SVGLineElement | null
+  str: string
+  opacity: number
+}
+
+const icon = {
+  left: '<svg viewBox="0 0 18 30" aria-hidden="true"><path d="M13 4L4 15l9 11" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  right:
+    '<svg viewBox="0 0 18 30" aria-hidden="true"><path d="M5 4l9 11-9 11" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  clear:
+    '<svg viewBox="0 0 34 34" aria-hidden="true"><path d="M8 8l18 18M26 8L8 26" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/></svg>',
+  back: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6l-6 6 6 6M4 12h16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  repeat:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2.5l3 3-3 3M4 11.5v-1a5 5 0 0 1 5-5h11M7 21.5l-3-3 3-3M20 12.5v1a5 5 0 0 1-5 5H4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+}
+
+export class PageView {
+  private readonly layout: PreparedLayout
+  private readonly opts: PageOptions
+  private readonly geo: PageGeometry
+  private readonly root: HTMLDivElement
+  private readonly scroller: HTMLDivElement
+  private readonly sheet: HTMLDivElement
+  private readonly content: HTMLDivElement
+  private readonly loopLayer: HTMLDivElement
+  private readonly segLayer: HTMLDivElement
+  private readonly corrLayer: HTMLDivElement
+  private readonly overlay: HTMLDivElement
+  private readonly cursorEl: HTMLDivElement
+  private readonly cursorBtn: HTMLButtonElement
+  private readonly cursorGrip: HTMLDivElement
+  private readonly readoutEl: HTMLDivElement
+  private readonly startHandle: HTMLButtonElement
+  private readonly endHandle: HTMLButtonElement
+  private readonly clearBtn: HTMLButtonElement
+  private readonly store: PageSegmentStore
+
+  private readonly flags: Uint8Array
+  private readonly dirtyNotes = new Set<number>()
+  private readonly lists = new Map<number, ReadonlySet<number>>()
+  private readonly marks = new Map<number, SVGEllipseElement>()
+
+  private readonly noteText = new Map<number, string>()
+  private readonly noteOpacity: Float32Array
+  private readonly visibleOpacityNotes = new Set<number>()
+  private readonly dirtyLabels = new Set<number>()
+  private readonly labelNodes = new Map<number, LabelNode>()
+  private visibleLabelIds = new Set<number>()
+  private labelsChanged = true
+
+  /** Musical position of the cursor and where it is drawn (system, layout x). */
+  private cursorPos: number
+  private cursor: { system: number; x: number }
+  private followPos: number | null = null
+  private following = false
+  private cursorAction = false
+  /** The page should bring the current system to its resting place in the next frame. */
+  private followRequest: 'smooth' | 'instant' | null = 'instant'
+  private lastSystem = -1
+  private readonly reducedMotion =
+    typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+  private readonly ease: string
+
+  private scale: number
+  private hostW = 0
+  private hostH = 0
+  /** Last scroll offset read or written (scroll events update it; no reads in the frame). */
+  private scrollY = 0
+  /** The offset this view last wrote; a scroll event elsewhere is the learner's. */
+  private writtenY = 0
+  /** A follow scroll gliding (Web Animations FLIP on the sheet) until `until`. */
+  private glide: { from: number; to: number; until: number } | null = null
+  private glideAnim: Animation | null = null
+  private instant = true
+  private applied = {
+    cursor: '',
+    cursorH: NaN,
+    sheetH: NaN,
+    transform: '',
+    gx: NaN,
+  }
+  private browsing = false
+  private browseEnabled = false
+  private subdued: Hand | null = null
+  private wrongOn = false
+  private earlyOn = false
+  private ottavaSpans: number[] = []
+  private readonly ottavaBoxes = new Map<number, HTMLDivElement>()
+  private readonly reminders = new Map<number, HTMLDivElement>()
+
+  private corrKey = ''
+  private pendingCorrections: readonly CorrectionMark[] | null = null
+  private corrLeaveTimer: ReturnType<typeof setTimeout> | null = null
+
+  private loop: LoopRange | null = null
+  private loopShown: { r: LoopRange | null; show: boolean; scale: number } = { r: null, show: false, scale: NaN }
+  private readonly bandEls: HTMLDivElement[] = []
+  private snapSource: readonly Rational[] | null = null
+  private readonly cursorKnotCache = new Map<number, CursorKnots>()
+  private readonly loopKnotCache = new Map<number, LoopKnots>()
+  private globalLoopKnots: LoopKnots
+  private cursorDraggable = false
+  private loopEditable = true
+  private selectMode: LoopSelectMode = 'off'
+  private tapAnchor: number | null = null
+
+  private readonly pointers = new Map<number, { x: number; y: number }>()
+  private gesture: { startX: number; startY: number; moved: boolean } | null = null
+  private pinch: { dist: number; scale: number } | null = null
+  private handleDrag: {
+    which: 'start' | 'end'
+    range: LoopRange
+    system: number
+    knots: LoopKnots
+    knot: number
+    lo: number
+    hi: number
+    left: number
+  } | null = null
+  private cursorDrag: {
+    pointerId: number
+    startX: number
+    startY: number
+    left: number
+    moved: boolean
+    knot: number
+    system: number
+    knots: CursorKnots
+    restore: number
+  } | null = null
+  private zoomTimer: ReturnType<typeof setTimeout> | null = null
+
+  private frame = 0
+  private destroyed = false
+  private readonly resize: ResizeObserver | undefined
+  private readonly cleanup: (() => void)[] = []
+
+  constructor(host: HTMLElement, layout: PreparedLayout, opts: PageOptions = {}) {
+    this.layout = layout
+    this.opts = opts
+    this.geo = new PageGeometry(layout)
+    this.flags = new Uint8Array(layout.notes.length)
+    this.noteOpacity = new Float32Array(layout.notes.length)
+    this.scale = this.clampZoom(opts.initialZoom ?? 1)
+    this.cursorPos = layout.occurrences[0]?.start ?? 0
+    this.cursor = this.geo.cursorAt(this.cursorPos)
+    this.globalLoopKnots = buildLoopKnots(layout.occurrences, null)
+    const doc = host.ownerDocument
+    const div = (cls: string): HTMLDivElement => {
+      const d = doc.createElement('div')
+      d.className = cls
+      return d
+    }
+
+    this.root = div('pn-strip pn-page pn-instant')
+    this.root.setAttribute('role', 'group')
+    this.root.setAttribute('aria-label', 'Score')
+    this.scroller = div('pn-page-scroll pn-page-locked')
+    this.scroller.setAttribute('data-testid', 'page-scroll')
+    this.sheet = div('pn-page-sheet')
+    this.content = div('pn-page-content')
+    this.content.style.width = `${layout.width}px`
+    this.content.style.height = `${layout.height}px`
+    this.loopLayer = div('pn-page-loops')
+    this.segLayer = div('pn-segs')
+    this.corrLayer = div('pn-corrs')
+    this.corrLayer.setAttribute('aria-hidden', 'true')
+    this.content.append(this.loopLayer, this.segLayer, this.corrLayer)
+
+    // Screen-px overlay riding with the page: cursor, loop handles and ✕ keep their size at any zoom.
+    this.overlay = div('pn-page-over')
+    this.cursorEl = div('pn-cursor')
+    const bar = div('pn-cursor-bar')
+    const grip = div('pn-cursor-grip')
+    grip.setAttribute('data-testid', 'cursor-grip')
+    grip.setAttribute('role', 'slider')
+    grip.setAttribute('aria-label', opts.cursorLabel ?? 'Playhead: drag or use arrow keys')
+    grip.setAttribute('aria-orientation', 'horizontal')
+    grip.tabIndex = 0
+    grip.toggleAttribute('inert', true)
+    this.cursorGrip = grip
+    this.readoutEl = div('pn-cursor-readout')
+    this.readoutEl.setAttribute('aria-hidden', 'true')
+    this.cursorBtn = this.button('pn-cursor-action', icon.repeat, opts.cursorActionLabel ?? 'Repeat from here')
+    this.cursorBtn.toggleAttribute('inert', true)
+    this.cursorEl.append(bar, grip, this.readoutEl, this.cursorBtn)
+    this.startHandle = this.button(
+      'pn-loop-ctl pn-handle pn-handle-start',
+      icon.left,
+      'Passage start: drag or use arrow keys',
+    )
+    this.endHandle = this.button(
+      'pn-loop-ctl pn-handle pn-handle-end',
+      icon.right,
+      'Passage end: drag or use arrow keys',
+    )
+    this.clearBtn = this.button('pn-loop-ctl pn-loop-clear', icon.clear, 'Clear passage selection')
+    for (const el of [this.startHandle, this.endHandle, this.clearBtn]) el.style.display = 'none'
+    this.overlay.append(this.cursorEl, this.startHandle, this.endHandle, this.clearBtn)
+
+    this.sheet.append(this.content, this.overlay)
+    this.scroller.append(this.sheet)
+    this.root.append(this.scroller)
+    if (opts.returnButton !== false) {
+      const ret = this.button(
+        'pn-return',
+        `${icon.back}<span>${escapeText(opts.returnLabel ?? 'Return to current position')}</span>`,
+        '',
+      )
+      ret.addEventListener('click', () => this.returnToCurrent())
+      this.root.append(ret)
+    }
+    host.append(this.root)
+
+    this.store = new PageSegmentStore(
+      layout,
+      this.segLayer,
+      { attached: (seg) => this.onAttached(seg), detaching: (seg) => this.onDetaching(seg) },
+      opts.cacheSegments ?? 4,
+    )
+    let ease = ''
+    try {
+      ease = getComputedStyle(host).getPropertyValue('--ease-standard').trim()
+    } catch {
+      // No computed style (tests): the token's value.
+    }
+    this.ease = ease || EASE_STANDARD
+
+    this.bindEvents()
+    this.measureHost()
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resize = new ResizeObserver(() => {
+        this.measureHost()
+        this.instant = true
+        this.followRequest = 'instant'
+        this.schedule()
+      })
+      this.resize.observe(this.root)
+    }
+    this.root.style.setProperty('--pn-label-px', `${layout.params.labelFontPx}px`)
+    void loadLabelFont(doc, layout.params.labelFontPx)
+    this.root.style.setProperty('--pn-zoom', String(this.scale))
+    this.schedule()
+  }
+
+  // ---------------------------------------------------------------- public API (StripSink)
+
+  /** Moves the cursor (see the module doc); `smooth: false` steps that keep advancing follow. */
+  setCursor(position: number, opts: { smooth?: boolean } = {}): void {
+    const instant = opts.smooth === false
+    const prev = this.followPos
+    const follow = instant && prev !== null && position >= prev - 1e-9 && position - prev <= FOLLOW_MAX_STEP
+    this.followPos = instant ? position : null
+    if (this.cursorDrag?.moved) {
+      this.cursorDrag.restore = position
+      return
+    }
+    if (follow !== this.following) {
+      this.following = follow
+      this.root.classList.toggle('pn-follow', follow)
+    }
+    if (position === this.cursorPos) return
+    this.cursorPos = position
+    this.cursor = this.geo.cursorAt(position)
+    if (instant) this.instant = true
+    // A seek (anything but continuous following) brings its system to the resting place.
+    if (!follow) this.followRequest = 'smooth'
+    this.schedule()
+  }
+
+  /** A loop wrap: a seek to the loop start; the page scrolls there with the same ease. */
+  wrapTo(position: number): void {
+    this.followPos = position
+    if (this.cursorDrag?.moved) {
+      this.cursorDrag.restore = position
+      return
+    }
+    this.cursorPos = position
+    this.cursor = this.geo.cursorAt(position)
+    this.instant = true
+    this.followRequest = 'smooth'
+    this.schedule()
+  }
+
+  setCursorAction(visible: boolean): void {
+    if (visible === this.cursorAction) return
+    this.cursorAction = visible
+    this.cursorEl.classList.toggle('pn-action-on', visible)
+    this.cursorBtn.toggleAttribute('inert', !visible)
+  }
+
+  setTargets(notes: readonly number[]): void {
+    this.setFlag(TARGET, notes)
+  }
+
+  setAccepted(notes: readonly number[]): void {
+    this.setFlag(ACCEPTED, notes)
+  }
+
+  setAutomatic(notes: readonly number[]): void {
+    this.setFlag(AUTO, notes)
+  }
+
+  setPlaybackHighlights(notes: readonly number[]): void {
+    this.setFlag(PLAY, notes)
+  }
+
+  setSubduedHand(hand: Hand | null): void {
+    if (hand === this.subdued) return
+    this.subdued = hand
+    this.root.classList.toggle('pn-sub-L', hand === 'L')
+    this.root.classList.toggle('pn-sub-R', hand === 'R')
+  }
+
+  setWrongMarker(on: boolean): void {
+    if (on === this.wrongOn) return
+    this.wrongOn = on
+    this.schedule()
+  }
+
+  setEarlyMarker(on: boolean): void {
+    if (on === this.earlyOn) return
+    this.earlyOn = on
+    this.schedule()
+  }
+
+  setCorrections(marks: readonly CorrectionMark[]): void {
+    const key = correctionsKey(marks)
+    if (key === this.corrKey) return
+    this.corrKey = key
+    this.pendingCorrections = marks
+    this.schedule()
+  }
+
+  pulseWrong(): void {
+    this.wrongOn = true
+    this.schedule()
+  }
+
+  setOttavaEmphasis(spans: readonly number[]): void {
+    const next = [...new Set(spans)].filter((s) => this.layout.ottavas[s]).sort((a, b) => a - b)
+    if (next.length === this.ottavaSpans.length && next.every((s, i) => s === this.ottavaSpans[i])) return
+    const prev = this.ottavaSpans
+    this.ottavaSpans = next
+    for (const seg of this.store.mounted.values()) {
+      for (const s of prev) if (!next.includes(s)) seg.ottava.get(s)?.forEach((el) => el.classList.remove('pn-ott-on'))
+      for (const s of next) seg.ottava.get(s)?.forEach((el) => el.classList.add('pn-ott-on'))
+    }
+    this.schedule()
+  }
+
+  setLabels(texts: ReadonlyMap<number, string>): void {
+    for (const n of this.noteText.keys()) if (!texts.has(n)) this.touchNoteLabel(n)
+    for (const [n, t] of texts) if (this.noteText.get(n) !== t) this.touchNoteLabel(n)
+    this.noteText.clear()
+    for (const [n, t] of texts) if (t) this.noteText.set(n, t)
+    this.schedule()
+  }
+
+  setLabelOpacity(opacity: ReadonlyMap<number, number>): void {
+    for (const n of this.visibleOpacityNotes) {
+      if (!opacity.has(n)) {
+        this.noteOpacity[n] = 0
+        this.touchNoteLabel(n)
+      }
+    }
+    this.visibleOpacityNotes.clear()
+    for (const [n, v] of opacity) {
+      if (n < 0 || n >= this.noteOpacity.length) continue
+      const o = v > 0 ? Math.min(1, v) : 0
+      if (this.noteOpacity[n] !== Math.fround(o)) {
+        this.noteOpacity[n] = o
+        this.touchNoteLabel(n)
+      }
+      if (o > 0) this.visibleOpacityNotes.add(n)
+    }
+    if (this.dirtyLabels.size) this.schedule()
+  }
+
+  setLoop(range: LoopRange | null): void {
+    const r = range ? clampRange(range, this.layout.occurrences.length) : null
+    if (sameRange(r, this.loop)) return
+    this.loop = r
+    this.schedule()
+  }
+
+  setSnapPositions(onsets: readonly Rational[]): void {
+    if (onsets === this.snapSource) return
+    this.snapSource = onsets
+    this.cursorKnotCache.clear()
+    this.loopKnotCache.clear()
+    this.globalLoopKnots = buildLoopKnots(this.layout.occurrences, onsets)
+    if (this.cursorDrag?.moved) this.cancelCursorDrag()
+  }
+
+  setCursorDraggable(enabled: boolean): void {
+    if (enabled === this.cursorDraggable) return
+    this.cursorDraggable = enabled
+    this.cursorEl.classList.toggle('pn-cursor-draggable', enabled)
+    this.cursorGrip.toggleAttribute('inert', !enabled)
+    if (!enabled && this.cursorDrag) this.cancelCursorDrag()
+  }
+
+  setLoopEditable(editable: boolean): void {
+    this.loopEditable = editable
+    this.root.classList.toggle('pn-loop-locked', !editable)
+    this.schedule()
+  }
+
+  setLoopSelectMode(mode: LoopSelectMode): void {
+    if (mode === this.selectMode) return
+    this.selectMode = mode
+    this.tapAnchor = null
+    this.opts.onLoopSelectModeChange?.(mode)
+  }
+
+  /** Manual scrolling (browsing) is possible only while enabled (spec: while paused). */
+  setBrowseEnabled(enabled: boolean): void {
+    this.browseEnabled = enabled
+    this.root.classList.toggle('pn-browse-enabled', enabled)
+    this.scroller.classList.toggle('pn-page-locked', !enabled)
+    if (!enabled && this.browsing) this.returnToCurrent()
+  }
+
+  /**
+   * Previews `scale` at once (the prepared page scaled) and reports it after the debounce: the
+   * owner re-prepares the page at the new width (zoom in = fewer bars per system).
+   */
+  setZoom(scale: number): void {
+    this.applyZoom(this.clampZoom(scale), true)
+  }
+
+  zoom(): number {
+    return this.scale
+  }
+
+  isBrowsing(): boolean {
+    return this.browsing
+  }
+
+  returnToCurrent(): void {
+    if (!this.browsing) return
+    this.browsing = false
+    this.root.classList.remove('pn-browsing')
+    this.followRequest = 'smooth'
+    this.opts.onBrowse?.(false)
+    this.schedule()
+  }
+
+  /**
+   * Bar under a viewport point. With one argument (the strip's contract) the point is on the
+   * current system's line, or while browsing on the system at the resting line a quarter down
+   * the viewport.
+   */
+  occAt(clientX: number, clientY?: number): number {
+    const rect = this.sheet.getBoundingClientRect()
+    const gx = this.gutter()
+    const x = (clientX - rect.left - gx) / this.scale
+    let y: number
+    if (clientY !== undefined) y = (clientY - rect.top - PAGE_PAD_TOP) / this.scale + this.layout.top
+    else if (this.browsing) {
+      const sr = this.scroller.getBoundingClientRect()
+      y =
+        (sr.top + this.hostH * (this.opts.followOffset ?? 0.25) - rect.top - PAGE_PAD_TOP) / this.scale +
+        this.layout.top
+      y += 1
+    } else {
+      const span = this.geo.staffSpan(this.cursor.system)
+      y = (span.top + span.bottom) / 2
+    }
+    return this.geo.occAtPoint(x, y)
+  }
+
+  /** Viewport x of the cursor (the screen reveals the chrome near it). */
+  cursorClientX(): number {
+    const rect = this.sheet.getBoundingClientRect()
+    return rect.left + this.gutter() + this.cursor.x * this.scale
+  }
+
+  visibleLabels(): number[] {
+    const out: number[] = []
+    for (const id of this.visibleLabelIds) out.push(...this.layout.labels[id]!.notes)
+    return out.sort((a, b) => a - b)
+  }
+
+  stats(): PageStats {
+    return {
+      segments: this.layout.segments.length,
+      mountedSegments: this.store.mounted.size,
+      mountedNodes: this.store.mountedNodes(),
+      cachedSegments: this.store.cachedCount(),
+      cachedBytes: this.store.cachedBytes(),
+      labelNodes: this.labelNodes.size,
+      parsedSegments: this.store.parsed,
+      domNodes: this.root.getElementsByTagName('*').length,
+    }
+  }
+
+  /** The current system index (tests, diagnostics). */
+  currentSystem(): number {
+    return this.cursor.system
+  }
+
+  flushFrame(): void {
+    if (!this.frame || this.destroyed) return
+    cancelAnimationFrame(this.frame)
+    this.frame = 0
+    this.flush()
+  }
+
+  flushNow(): void {
+    if (this.frame) cancelAnimationFrame(this.frame)
+    this.frame = 0
+    const instant = this.instant
+    this.flush()
+    if (instant) void getComputedStyle(this.cursorEl).transform
+  }
+
+  destroy(): void {
+    this.destroyed = true
+    if (this.frame) cancelAnimationFrame(this.frame)
+    if (this.corrLeaveTimer) clearTimeout(this.corrLeaveTimer)
+    if (this.zoomTimer) clearTimeout(this.zoomTimer)
+    this.glideAnim?.cancel()
+    this.resize?.disconnect()
+    for (const off of this.cleanup) off()
+    this.store.destroy()
+    this.root.remove()
+  }
+
+  // ---------------------------------------------------------------- state helpers
+
+  private setFlag(flag: number, notes: readonly number[]): void {
+    const next = new Set(notes.filter((n) => n >= 0 && n < this.flags.length))
+    const prev = this.lists.get(flag) ?? new Set<number>()
+    for (const n of prev) {
+      if (!next.has(n)) {
+        this.flags[n]! &= ~flag
+        this.dirtyNotes.add(n)
+      }
+    }
+    for (const n of next) {
+      if (!prev.has(n)) {
+        this.flags[n]! |= flag
+        this.dirtyNotes.add(n)
+      }
+    }
+    this.lists.set(flag, next)
+    if (this.dirtyNotes.size) this.schedule()
+  }
+
+  private touchNoteLabel(n: number): void {
+    const label = this.layout.notes[n]?.label
+    if (label !== undefined && label >= 0) this.dirtyLabels.add(label)
+  }
+
+  private clampZoom(s: number): number {
+    const min = this.opts.minZoom ?? 0.5
+    const max = this.opts.maxZoom ?? 2.5
+    return Math.max(min, Math.min(max, Number.isFinite(s) && s > 0 ? s : 1))
+  }
+
+  private applyZoom(scale: number, notify: boolean): void {
+    if (scale === this.scale) return
+    this.scale = scale
+    this.instant = true
+    this.followRequest = this.browsing ? null : 'instant'
+    this.root.style.setProperty('--pn-zoom', String(scale))
+    if (notify && this.opts.onZoomChange) {
+      if (this.zoomTimer) clearTimeout(this.zoomTimer)
+      this.zoomTimer = setTimeout(() => {
+        this.zoomTimer = null
+        if (!this.destroyed) this.opts.onZoomChange?.(this.scale)
+      }, this.opts.zoomDebounceMs ?? 250)
+    }
+    this.schedule()
+  }
+
+  private measureHost(): void {
+    const r = this.root.getBoundingClientRect()
+    this.hostW = r.width || this.root.clientWidth || 0
+    this.hostH = r.height || this.root.clientHeight || 0
+  }
+
+  /** Left gutter (screen px): the page centered, at least `PAGE_GUTTER` when it fits. */
+  private gutter(): number {
+    const free = this.hostW - this.layout.width * this.scale
+    return Math.max(Math.min(PAGE_GUTTER, free / 2), free / 2, 0)
+  }
+
+  private sheetHeight(): number {
+    return Math.ceil(PAGE_PAD_TOP + this.layout.height * this.scale + Math.max(PAGE_PAD_TOP, this.hostH * 0.5))
+  }
+
+  private schedule(): void {
+    if (this.frame || this.destroyed) return
+    this.frame = requestAnimationFrame(() => {
+      this.frame = 0
+      this.flush()
+    })
+  }
+
+  // ---------------------------------------------------------------- frame
+
+  private flush(): void {
+    if (this.destroyed) return
+    const L = this.layout
+    const s = this.scale
+    const gx = this.gutter()
+    const sheetH = this.sheetHeight()
+    if (sheetH !== this.applied.sheetH) {
+      this.sheet.style.height = `${sheetH}px`
+      this.applied.sheetH = sheetH
+    }
+    const transform = `translate3d(${r2(gx)}px, ${PAGE_PAD_TOP}px, 0) scale(${s})`
+    if (transform !== this.applied.transform) {
+      this.content.style.transform = transform
+      this.applied.transform = transform
+    }
+    this.applied.gx = gx
+
+    // Follow: bring the current system to its resting place (never during a line).
+    const system = this.cursor.system
+    const changed = system !== this.lastSystem
+    const request = this.followRequest
+    this.followRequest = null
+    const instantCursor = this.instant || changed || this.following
+    this.root.classList.toggle('pn-instant', instantCursor)
+    this.instant = false
+    if ((changed || request) && !this.browsing && !this.handleDrag && !this.cursorDrag?.moved) {
+      const target = this.geo.followScroll(system, {
+        scale: s,
+        padTop: PAGE_PAD_TOP,
+        viewport: this.hostH,
+        max: sheetH - this.hostH,
+        offset: this.opts.followOffset ?? 0.25,
+      })
+      const animate = this.lastSystem >= 0 && request !== 'instant' && !this.reducedMotion
+      this.scrollTo(target, animate)
+    }
+    this.lastSystem = system
+
+    // Mounting: the visible range (and, while gliding, where the glide started) ± one viewport.
+    const toY = (sy: number): number => (sy - PAGE_PAD_TOP) / s + L.top
+    let vy0 = toY(this.scrollY)
+    let vy1 = toY(this.scrollY + this.hostH)
+    const glide = this.glide && performance.now() < this.glide.until ? this.glide : null
+    if (glide) {
+      vy0 = Math.min(vy0, toY(glide.from))
+      vy1 = Math.max(vy1, toY(glide.from + this.hostH))
+      this.schedule()
+    } else this.glide = null
+    const over = (this.opts.overscan ?? 1) * (this.hostH / s)
+    const focus = (vy0 + vy1) / 2
+    const required = new Set(this.store.wanted(vy0, vy1, focus))
+    const wanted = this.store.wanted(vy0 - over, vy1 + over, focus)
+    const done = this.store.sync(wanted, required, this.opts.mountBudget ?? 1)
+
+    this.applyNotes()
+    this.applyLabels()
+    this.applyCursor(gx)
+    this.cursorEl.classList.toggle('pn-cursor-wrong', this.wrongOn)
+    this.cursorEl.classList.toggle('pn-cursor-early', this.earlyOn)
+    this.applyLoop(gx)
+    if (this.pendingCorrections) this.applyCorrections()
+    const visY0 = toY(this.scrollY)
+    const visY1 = toY(this.scrollY + this.hostH)
+    this.applyOttava(gx, visY0, visY1)
+    this.reportVisibleLabels(visY0, visY1)
+    this.labelsChanged = false
+    if (!done) this.schedule()
+  }
+
+  /** Scrolls the page to `y`; animated as a FLIP glide of the sheet (compositor transform). */
+  private scrollTo(y: number, animate: boolean): void {
+    const from = this.scrollY
+    if (Math.abs(y - from) < 1) return
+    this.writtenY = y
+    this.scrollY = y
+    this.scroller.scrollTop = y
+    this.glideAnim?.cancel()
+    this.glideAnim = null
+    if (!animate || typeof this.sheet.animate !== 'function') {
+      this.glide = null
+      return
+    }
+    this.glide = { from, to: y, until: performance.now() + SCROLL_MS + 40 }
+    this.glideAnim = this.sheet.animate(
+      [{ transform: `translate3d(0, ${r2(y - from)}px, 0)` }, { transform: 'translate3d(0, 0, 0)' }],
+      { duration: SCROLL_MS, easing: this.ease },
+    )
+    // A canceled glide rejects `finished`; nothing waits for it.
+    this.glideAnim.finished?.catch(() => undefined)
+  }
+
+  /** Cursor bar on the current system: staves + `CURSOR_MARGIN` each end, at the position's x. */
+  private applyCursor(gx: number): void {
+    const L = this.layout
+    const s = this.scale
+    const span = this.geo.staffSpan(this.cursor.system)
+    const sx = r2(gx + this.cursor.x * s)
+    const sy = r2(PAGE_PAD_TOP + (span.top - L.top) * s - CURSOR_MARGIN)
+    const h = r2((span.bottom - span.top) * s + 2 * CURSOR_MARGIN)
+    const t = `translate3d(${sx}px, ${sy}px, 0)`
+    if (t !== this.applied.cursor) {
+      this.cursorEl.style.transform = t
+      this.applied.cursor = t
+    }
+    if (h !== this.applied.cursorH) {
+      this.cursorEl.style.height = `${h}px`
+      this.applied.cursorH = h
+    }
+  }
+
+  private applyNotes(): void {
+    if (!this.dirtyNotes.size) return
+    for (const n of this.dirtyNotes) {
+      const g = this.layout.notes[n]
+      const seg = g ? this.store.mounted.get(this.store.segmentOfOcc(g.occ)) : undefined
+      if (seg) this.paintNote(seg, n)
+    }
+    this.dirtyNotes.clear()
+  }
+
+  // COPIED from StripView.paintNote (same classes and halo geometry).
+  private paintNote(seg: MountedSegment, n: number): void {
+    const f = this.flags[n]!
+    const head = seg.heads.get(n)
+    if (head) for (const [bit, cls] of FLAG_CLASSES) head.classList.toggle(cls, (f & bit) !== 0)
+    const markCls = f & ACCEPTED ? 'pn-ring' : f & TARGET ? 'pn-halo' : f & PLAY ? 'pn-playmark' : ''
+    let mark = this.marks.get(n)
+    if (!markCls) {
+      if (mark) {
+        mark.remove()
+        this.marks.delete(n)
+      }
+      return
+    }
+    const g = this.layout.notes[n]!
+    if (!mark) {
+      mark = seg.marks.ownerDocument.createElementNS(SVG_NS, 'ellipse')
+      mark.setAttribute('cx', String(r2(g.head.x + g.head.w / 2)))
+      mark.setAttribute('cy', String(r2(g.head.y + g.head.h / 2)))
+      mark.setAttribute('rx', String(r2(g.head.w * 0.5 + 4)))
+      mark.setAttribute('ry', String(r2(g.head.h * 0.5 + 3.5)))
+      seg.marks.append(mark)
+      this.marks.set(n, mark)
+    }
+    if (mark.getAttribute('class') !== markCls) mark.setAttribute('class', markCls)
+  }
+
+  private onAttached(seg: MountedSegment): void {
+    for (const n of seg.heads.keys()) this.paintNote(seg, n)
+    for (const [s, els] of seg.ottava) {
+      const on = this.ottavaSpans.includes(s)
+      els.forEach((el) => el.classList.toggle('pn-ott-on', on))
+    }
+    for (let id = seg.data.labelStart; id < seg.data.labelEnd; id++) this.paintLabel(seg, id)
+    this.labelsChanged = true
+  }
+
+  private onDetaching(seg: MountedSegment): void {
+    for (const n of seg.heads.keys()) {
+      const m = this.marks.get(n)
+      if (m) {
+        m.remove()
+        this.marks.delete(n)
+      }
+    }
+    for (let id = seg.data.labelStart; id < seg.data.labelEnd; id++) {
+      const node = this.labelNodes.get(id)
+      if (!node) continue
+      node.text.remove()
+      node.leader?.remove()
+      this.labelNodes.delete(id)
+    }
+    this.labelsChanged = true
+  }
+
+  // ---------------------------------------------------------------- labels (COPIED from StripView)
+
+  private labelState(label: LabelBox): { text: string; opacity: number } {
+    let text = ''
+    let opacity = 0
+    for (const n of label.notes) {
+      const o = this.noteOpacity[n] ?? 0
+      if (o > opacity) opacity = o
+      if (!text) text = this.noteText.get(n) ?? ''
+    }
+    return { text, opacity }
+  }
+
+  private applyLabels(): void {
+    if (!this.dirtyLabels.size) return
+    for (const id of this.dirtyLabels) {
+      const label = this.layout.labels[id]
+      if (!label) continue
+      const seg = this.store.mounted.get(this.store.segmentOfOcc(label.occ))
+      if (seg) this.paintLabel(seg, id)
+    }
+    this.dirtyLabels.clear()
+    this.labelsChanged = true
+  }
+
+  private paintLabel(seg: MountedSegment, id: number): void {
+    const label = this.layout.labels[id]!
+    const { text, opacity } = this.labelState(label)
+    let node = this.labelNodes.get(id)
+    if (opacity <= 0 || !text) {
+      if (node) {
+        node.text.remove()
+        node.leader?.remove()
+        this.labelNodes.delete(id)
+      }
+      return
+    }
+    if (!node) {
+      const doc = seg.labels.ownerDocument
+      const t = doc.createElementNS(SVG_NS, 'text')
+      t.setAttribute('class', 'pn-label')
+      t.setAttribute('x', String(label.tx))
+      t.setAttribute('y', String(label.ty))
+      t.setAttribute('font-size', String(this.layout.params.labelFontPx))
+      if (label.anchor !== 'start') t.setAttribute('text-anchor', label.anchor)
+      t.setAttribute('data-h', label.hand)
+      let leader: SVGLineElement | null = null
+      if (label.leader) {
+        leader = doc.createElementNS(SVG_NS, 'line')
+        leader.setAttribute('class', 'pn-leader')
+        const [x1, y1, x2, y2] = label.leader
+        leader.setAttribute('x1', String(x1))
+        leader.setAttribute('y1', String(y1))
+        leader.setAttribute('x2', String(x2))
+        leader.setAttribute('y2', String(y2))
+        seg.labels.append(leader)
+      }
+      seg.labels.append(t)
+      node = { text: t, leader, str: '', opacity: -1 }
+      this.labelNodes.set(id, node)
+    }
+    if (node.str !== text) {
+      node.text.textContent = text
+      node.str = text
+    }
+    if (node.opacity !== opacity) {
+      const v = opacity >= 1 ? '' : String(Math.round(opacity * 1000) / 1000)
+      node.text.style.opacity = v
+      if (node.leader) node.leader.style.opacity = v
+      node.opacity = opacity
+    }
+  }
+
+  /** Labels in the visible page y range count as seen (assistance tracking). */
+  private reportVisibleLabels(y0: number, y1: number): void {
+    if (!this.labelsChanged && this.scrollY === this.reportedAt) return
+    this.reportedAt = this.scrollY
+    const next = new Set<number>()
+    for (const seg of this.store.mounted.values()) {
+      if ((seg.data.y1 ?? 0) < y0 || (seg.data.y0 ?? 0) > y1) continue
+      for (let id = seg.data.labelStart; id < seg.data.labelEnd; id++) {
+        const node = this.labelNodes.get(id)
+        if (!node || node.opacity <= 0) continue
+        const b = this.layout.labels[id]!.box
+        if (b.y + b.h > y0 && b.y < y1) next.add(id)
+      }
+    }
+    const added: number[] = []
+    for (const id of next) if (!this.visibleLabelIds.has(id)) added.push(...this.layout.labels[id]!.notes)
+    this.visibleLabelIds = next
+    if (added.length) this.opts.onVisibleLabels?.(added.sort((a, b) => a - b))
+  }
+  private reportedAt = NaN
+
+  // ---------------------------------------------------------------- overlays
+
+  /** Emphasized ottava brackets; a bracket label out of view gets a reminder at the cursor. */
+  private applyOttava(gx: number, y0: number, y1: number): void {
+    const L = this.layout
+    const doc = this.root.ownerDocument
+    const active = new Set(this.ottavaSpans)
+    for (const [s, el] of this.ottavaBoxes) if (!active.has(s)) el.classList.remove('pn-on')
+    let remind = ''
+    for (const s of this.ottavaSpans) {
+      const g = L.ottavas[s]!
+      let box = this.ottavaBoxes.get(s)
+      if (!box) {
+        box = doc.createElement('div')
+        box.className = 'pn-ott-box'
+        box.style.left = `${g.box.x - 5}px`
+        box.style.top = `${g.box.y - L.top - 4}px`
+        box.style.width = `${g.box.w + 10}px`
+        box.style.height = `${g.box.h + 8}px`
+        this.content.append(box)
+        this.ottavaBoxes.set(s, box)
+        void box.offsetWidth
+      }
+      box.classList.add('pn-on')
+      const lb = g.labelBox
+      if (!remind && (lb.y < y0 || lb.y + lb.h > y1)) remind = g.text
+    }
+    let el = this.reminders.get(0)
+    if (!remind) {
+      el?.classList.remove('pn-on')
+      return
+    }
+    if (!el) {
+      el = doc.createElement('div')
+      el.className = 'pn-ott-rem'
+      el.setAttribute('role', 'status')
+      const pill = doc.createElement('div')
+      pill.className = 'pn-ott-rem-pill'
+      el.append(pill)
+      this.overlay.append(el)
+      this.reminders.set(0, el)
+      void el.offsetWidth
+    }
+    const pill = el.firstElementChild as HTMLDivElement
+    if (pill.textContent !== remind) pill.textContent = remind
+    const span = this.geo.staffSpan(this.cursor.system)
+    const x = gx + this.cursor.x * this.scale + 18
+    const y = PAGE_PAD_TOP + (span.top - L.top) * this.scale - 22
+    el.style.transform = `translate(${r2(x)}px, ${r2(y)}px) translateY(-50%)`
+    el.classList.add('pn-on')
+  }
+
+  /** One band per system the passage crosses; handles at its two edges, ✕ on its first band. */
+  private applyLoop(gx: number): void {
+    const L = this.layout
+    const r = this.handleDrag?.range ?? this.loop
+    const show = !!r && this.loopEditable
+    const last = this.loopShown
+    if (last.r === r && last.show === show && last.scale === this.scale) return
+    const entering = !last.r && !!r
+    this.loopShown = { r, show, scale: this.scale }
+    const bands: Band[] = r ? this.geo.loopBands(r) : []
+    const doc = this.root.ownerDocument
+    while (this.bandEls.length < bands.length) {
+      const el = doc.createElement('div')
+      el.className = 'pn-loop'
+      this.loopLayer.append(el)
+      this.bandEls.push(el)
+    }
+    this.bandEls.forEach((el, i) => {
+      const b = bands[i]
+      el.classList.toggle('pn-on', !!b)
+      if (!b) return
+      const sys = this.geo.systems[b.system]!
+      el.style.left = `${r2(b.x0)}px`
+      el.style.width = `${r2(b.x1 - b.x0)}px`
+      el.style.top = `${r2(sys.y0 - L.top)}px`
+      el.style.height = `${r2(sys.y1 - sys.y0)}px`
+      el.dataset['system'] = String(b.system)
+      if (entering && !this.reducedMotion) {
+        el.classList.remove('pn-loop-enter')
+        void el.offsetWidth
+        el.classList.add('pn-loop-enter')
+      }
+    })
+    const ctls = [this.startHandle, this.endHandle, this.clearBtn]
+    const first = bands[0]
+    const lastBand = bands[bands.length - 1]
+    if (!show || !first || !lastBand) {
+      for (const el of ctls) el.style.display = 'none'
+      return
+    }
+    for (const el of ctls) el.style.display = ''
+    const s = this.scale
+    const midY = (k: number): number => {
+      const span = this.geo.staffSpan(k)
+      return PAGE_PAD_TOP + ((span.top + span.bottom) / 2 - L.top) * s
+    }
+    this.place(this.startHandle, gx + first.x0 * s, midY(first.system))
+    this.place(this.endHandle, gx + lastBand.x1 * s, midY(lastBand.system))
+    this.place(this.clearBtn, gx + ((first.x0 + first.x1) / 2) * s, midY(first.system))
+    this.clearBtn.classList.toggle('pn-loop-clear-small', (first.x1 - first.x0) * s < CLEAR_SMALL_PX)
+  }
+
+  private place(el: HTMLElement, x: number, y: number): void {
+    el.style.left = `${r2(x)}px`
+    el.style.top = `${r2(y)}px`
+  }
+
+  private applyCorrections(): void {
+    const marks = this.pendingCorrections ?? []
+    this.pendingCorrections = null
+    const leaving = [...this.corrLayer.children].filter((el) => !el.classList.contains('pn-corr-leave'))
+    for (const el of leaving) {
+      ;(el as SVGElement).style.animationDelay = ''
+      el.classList.add('pn-corr-leave')
+    }
+    if (leaving.length) {
+      if (this.corrLeaveTimer) clearTimeout(this.corrLeaveTimer)
+      this.corrLeaveTimer = setTimeout(() => {
+        this.corrLeaveTimer = null
+        for (const el of [...this.corrLayer.querySelectorAll('.pn-corr-leave')]) el.remove()
+      }, CORRECTION_LEAVE_MS)
+    }
+    const shapes = marks
+      .map((m) => correctionShape(this.layout, m))
+      .filter((s): s is CorrectionShape => s !== null)
+      .sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)
+    const doc = this.root.ownerDocument
+    shapes.forEach((shape, i) => {
+      const delay = !this.reducedMotion && i > 0 ? i * CORRECTION_STAGGER_MS : 0
+      this.corrLayer.append(buildCorrection(doc, shape, this.layout.top, delay))
+    })
+  }
+
+  // ---------------------------------------------------------------- input
+
+  private button(cls: string, html: string, label: string): HTMLButtonElement {
+    const b = this.root.ownerDocument.createElement('button')
+    b.type = 'button'
+    b.className = cls
+    b.innerHTML = html
+    if (label) b.setAttribute('aria-label', label)
+    return b
+  }
+
+  private on<K extends keyof HTMLElementEventMap>(
+    el: HTMLElement,
+    type: K,
+    fn: (e: HTMLElementEventMap[K]) => void,
+    opts?: AddEventListenerOptions,
+  ): void {
+    el.addEventListener(type, fn as EventListener, opts)
+    this.cleanup.push(() => el.removeEventListener(type, fn as EventListener, opts))
+  }
+
+  private bindEvents(): void {
+    this.on(this.scroller, 'scroll', () => this.onScroll(), { passive: true })
+    this.on(this.scroller, 'pointerdown', (e) => this.pointerDown(e))
+    this.on(this.scroller, 'pointermove', (e) => this.pointerMove(e))
+    this.on(this.scroller, 'pointerup', (e) => this.pointerUp(e))
+    this.on(this.scroller, 'pointercancel', (e) => this.pointerUp(e, true))
+    this.on(this.scroller, 'wheel', (e) => this.wheel(e), { passive: false })
+    for (const [el, which] of [
+      [this.startHandle, 'start'],
+      [this.endHandle, 'end'],
+    ] as const) {
+      this.on(el, 'pointerdown', (e) => this.handleDown(e, which))
+      this.on(el, 'pointermove', (e) => this.handleMove(e))
+      this.on(el, 'pointerup', (e) => this.handleUp(e))
+      this.on(el, 'pointercancel', (e) => this.handleUp(e))
+      this.on(el, 'keydown', (e) => this.handleKey(e, which))
+    }
+    this.on(this.cursorGrip, 'keydown', (e) => this.cursorKey(e))
+    this.on(this.cursorBtn, 'pointerdown', (e) => e.stopPropagation())
+    this.on(this.cursorBtn, 'click', (e) => {
+      e.stopPropagation()
+      if (this.cursorAction) this.opts.onCursorAction?.()
+    })
+    this.on(this.corrLayer, 'animationend', (e) => {
+      const el = e.target as Element | null
+      if (el?.parentNode === this.corrLayer && el.classList.contains('pn-corr-leave')) el.remove()
+    })
+    this.on(this.clearBtn, 'pointerdown', (e) => e.stopPropagation())
+    this.on(this.clearBtn, 'click', (e) => {
+      e.stopPropagation()
+      if (!this.loopEditable) return
+      this.loop = null
+      this.schedule()
+      this.opts.onLoopChange?.(null)
+    })
+  }
+
+  /** A scroll this view did not write is the learner browsing (when allowed). */
+  private onScroll(): void {
+    const y = this.scroller.scrollTop
+    this.scrollY = y
+    if (Math.abs(y - this.writtenY) > 2) {
+      this.writtenY = y
+      if (this.browseEnabled && !this.browsing) {
+        this.browsing = true
+        this.root.classList.add('pn-browsing')
+        this.opts.onBrowse?.(true)
+      }
+    }
+    this.schedule()
+  }
+
+  private pointerDown(e: PointerEvent): void {
+    if ((e.target as Element).closest?.('button')) return
+    if (this.cursorDrag) return
+    const onGrip =
+      this.cursorDraggable && this.pointers.size === 0 && !!(e.target as Element).closest?.('.pn-cursor-grip')
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (onGrip) {
+      try {
+        this.scroller.setPointerCapture(e.pointerId)
+      } catch {
+        // Synthetic events in tests have no active pointer.
+      }
+      const system = this.cursor.system
+      this.cursorDrag = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        left: this.sheet.getBoundingClientRect().left + this.gutter(),
+        moved: false,
+        knot: -1,
+        system,
+        knots: this.cursorKnotsOf(system),
+        restore: this.cursorPos,
+      }
+      return
+    }
+    if (this.pointers.size === 2) {
+      const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }]
+      this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, scale: this.scale }
+      this.gesture = null
+      return
+    }
+    if (this.pointers.size === 1) this.gesture = { startX: e.clientX, startY: e.clientY, moved: false }
+  }
+
+  private pointerMove(e: PointerEvent): void {
+    const p = this.pointers.get(e.pointerId)
+    if (!p) return
+    p.x = e.clientX
+    p.y = e.clientY
+    const d = this.cursorDrag
+    if (d && d.pointerId === e.pointerId) {
+      if (!d.moved) {
+        if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) <= TAP_SLOP) return
+        d.moved = true
+        this.root.classList.add('pn-cursor-dragging')
+      }
+      this.dragCursorTo(e.clientX)
+      return
+    }
+    if (this.pinch && this.pointers.size >= 2) {
+      const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }]
+      this.applyZoom(this.clampZoom((this.pinch.scale * Math.hypot(a.x - b.x, a.y - b.y)) / this.pinch.dist), true)
+      return
+    }
+    const g = this.gesture
+    if (g && !g.moved && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) > TAP_SLOP) g.moved = true
+  }
+
+  private pointerUp(e: PointerEvent, canceled = false): void {
+    const d = this.cursorDrag
+    if (d && d.pointerId === e.pointerId) {
+      this.pointers.delete(e.pointerId)
+      this.endCursorDrag(e.clientX, e.clientY, canceled)
+      return
+    }
+    if (!this.pointers.delete(e.pointerId)) return
+    if (this.pinch) {
+      if (this.pointers.size < 2) this.pinch = null
+      return
+    }
+    const g = this.gesture
+    this.gesture = null
+    if (!g || g.moved || canceled) return
+    this.tap(e.clientX, e.clientY)
+  }
+
+  private cursorKnotsOf(system: number): CursorKnots {
+    let k = this.cursorKnotCache.get(system)
+    if (!k) {
+      k = this.geo.cursorKnots(system, this.snapSource ?? [])
+      this.cursorKnotCache.set(system, k)
+    }
+    return k
+  }
+
+  private loopKnotsOf(system: number): LoopKnots {
+    let k = this.loopKnotCache.get(system)
+    if (!k) {
+      k = this.geo.loopKnots(system, this.snapSource)
+      this.loopKnotCache.set(system, k)
+    }
+    return k
+  }
+
+  /** Scrubs the playhead along its own system (crossing systems is not supported). */
+  private dragCursorTo(clientX: number): void {
+    const d = this.cursorDrag
+    if (!d || d.knots.pos.length === 0) return
+    const x = (clientX - d.left) / this.scale
+    const k = nearestKnot(d.knots.x, x)
+    if (k === d.knot) return
+    d.knot = k
+    this.cursor = { system: d.system, x: d.knots.x[k]! }
+    const text = this.opts.cursorDragLabel?.(d.knots.exact[k]!) ?? ''
+    if (this.readoutEl.textContent !== text) this.readoutEl.textContent = text
+    this.instant = true
+    this.schedule()
+  }
+
+  private endCursorDrag(clientX: number, clientY: number, canceled: boolean): void {
+    const d = this.cursorDrag
+    if (!d) return
+    this.cursorDrag = null
+    this.root.classList.remove('pn-cursor-dragging')
+    if (!d.moved) {
+      if (!canceled) this.tap(clientX, clientY)
+      return
+    }
+    const exact = d.knot >= 0 ? d.knots.exact[d.knot] : undefined
+    const seek = this.opts.onCursorSeek
+    if (canceled || !exact || !seek || seek(exact) === false) {
+      this.cursorPos = d.restore
+      this.cursor = this.geo.cursorAt(d.restore)
+    } else {
+      this.cursorPos = toNumber(exact)
+      this.cursor = this.geo.cursorAt(this.cursorPos)
+    }
+    this.schedule()
+  }
+
+  private cancelCursorDrag(): void {
+    const d = this.cursorDrag
+    if (!d) return
+    this.pointers.delete(d.pointerId)
+    this.endCursorDrag(d.startX, d.startY, true)
+  }
+
+  private tap(clientX: number, clientY: number): void {
+    const occ = this.occAt(clientX, clientY)
+    if (occ < 0) return
+    if (this.selectMode === 'tap') {
+      const res = tapSelect(this.tapAnchor, occ)
+      this.tapAnchor = res.anchor
+      this.loop = res.range
+      this.schedule()
+      this.opts.onLoopChange?.(res.range)
+      if (res.done) this.setLoopSelectMode('off')
+      return
+    }
+    // A tap is a seek the learner chose, often on a system found by scrolling: browsing ends
+    // and the page brings that system to its resting place.
+    if (this.browsing) {
+      this.browsing = false
+      this.root.classList.remove('pn-browsing')
+      this.followRequest = 'smooth'
+      this.opts.onBrowse?.(false)
+      this.schedule()
+    }
+    this.opts.onSeekRequest?.(occ)
+  }
+
+  private wheel(e: WheelEvent): void {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault()
+      this.applyZoom(this.clampZoom(this.scale * Math.exp(-e.deltaY * 0.004)), true)
+    }
+  }
+
+  // COPIED from StripView.withEdge.
+  private withEdge(loop: LoopRange, which: 'start' | 'end', K: LoopKnots, k: number): LoopRange {
+    if (which === 'start') {
+      const p = passageFromKnots(K, k, Math.min(k + 1, K.pos.length - 1))
+      return {
+        fromOcc: Math.min(p.fromOcc, loop.toOcc),
+        toOcc: loop.toOcc,
+        ...(p.start ? { start: p.start } : {}),
+        ...(loop.end ? { end: loop.end } : {}),
+      }
+    }
+    const exact = K.exact[k] ?? null
+    const toOcc = exact ? K.occ[k]! : K.occ[k]! - 1
+    return {
+      fromOcc: loop.fromOcc,
+      toOcc: Math.max(loop.fromOcc, toOcc),
+      ...(loop.start ? { start: loop.start } : {}),
+      ...(exact ? { end: exact } : {}),
+    }
+  }
+
+  /** A handle drags along the system it is on, snapping to that system's loop knots. */
+  private handleDown(e: PointerEvent, which: 'start' | 'end'): void {
+    e.stopPropagation()
+    if (!this.loop || !this.loopEditable) return
+    const { start, end } = passagePositions(this.layout.occurrences, this.loop)
+    const system = this.geo.systemOfOcc[which === 'start' ? this.loop.fromOcc : this.loop.toOcc] ?? 0
+    const knots = this.loopKnotsOf(system)
+    const limits = edgeLimits(knots, which, which === 'start' ? end : start)
+    if (!limits) return
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {
+      // Synthetic events in tests have no active pointer.
+    }
+    ;(e.currentTarget as HTMLElement).classList.add('pn-grab')
+    this.handleDrag = {
+      which,
+      range: this.loop,
+      system,
+      knots,
+      knot: knotAtPosition(knots.pos, which === 'start' ? start : end),
+      ...limits,
+      left: this.sheet.getBoundingClientRect().left + this.gutter(),
+    }
+  }
+
+  private handleMove(e: PointerEvent): void {
+    const d = this.handleDrag
+    if (!d || !this.loop) return
+    e.stopPropagation()
+    const x = (e.clientX - d.left) / this.scale
+    const k = nearestKnot(d.knots.x, x, d.lo, d.hi)
+    if (k === d.knot) return
+    d.knot = k
+    const next = this.withEdge(this.loop, d.which, d.knots, k)
+    if (!sameRange(next, d.range)) {
+      d.range = next
+      this.schedule()
+    }
+  }
+
+  private handleUp(e: PointerEvent): void {
+    const d = this.handleDrag
+    ;(e.currentTarget as HTMLElement).classList.remove('pn-grab')
+    if (!d) return
+    e.stopPropagation()
+    this.handleDrag = null
+    if (!sameRange(d.range, this.loop)) {
+      this.loop = d.range
+      this.opts.onLoopChange?.(d.range)
+    }
+    this.schedule()
+  }
+
+  /** Arrow keys move an edge to the next note (Shift: the next barline), across systems too. */
+  private handleKey(e: KeyboardEvent, which: 'start' | 'end'): void {
+    if (!this.loop || !this.loopEditable) return
+    const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0
+    if (!step) return
+    e.preventDefault()
+    const K = this.globalLoopKnots
+    const { start, end } = passagePositions(this.layout.occurrences, this.loop)
+    const limits = edgeLimits(K, which, which === 'start' ? end : start)
+    if (!limits) return
+    let k = knotAtPosition(K.pos, which === 'start' ? start : end) + step
+    if (e.shiftKey) while (k > limits.lo && k < limits.hi && K.exact[k] !== null) k += step
+    k = Math.min(limits.hi, Math.max(limits.lo, k))
+    const next = clampRange(this.withEdge(this.loop, which, K, k), this.layout.occurrences.length)
+    if (sameRange(next, this.loop)) return
+    this.loop = next
+    this.schedule()
+    this.opts.onLoopChange?.(next)
+  }
+
+  /** Keyboard playhead (U25): ← / → onsets, Shift bars, Home / End; across systems. */
+  private cursorKey(e: KeyboardEvent): void {
+    if (!this.cursorDraggable || this.cursorDrag) return
+    const exactAll = this.snapSource ?? []
+    const n = exactAll.length
+    if (n === 0) return
+    const pos = exactAll.map(toNumber)
+    const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0
+    const P = Float64Array.from(pos)
+    const at = knotAtPosition(P, this.cursorPos)
+    let k: number
+    if (e.key === 'Home') k = 0
+    else if (e.key === 'End') k = n - 1
+    else if (step !== 0) {
+      if (!e.shiftKey) k = at + step
+      else {
+        const occs = this.layout.occurrences
+        const i = occAtPosition(occs, P[at]!)
+        if (step > 0) k = firstKnotAtOrAfter(P, occs[i + 1]?.start ?? Infinity)
+        else {
+          k = firstKnotAtOrAfter(P, occs[i]?.start ?? 0)
+          if (k >= at) k = firstKnotAtOrAfter(P, occs[i - 1]?.start ?? 0)
+        }
+      }
+      k = Math.max(0, Math.min(n - 1, k))
+    } else return
+    e.preventDefault()
+    if (k === at) return
+    const exact = exactAll[k]!
+    const seek = this.opts.onCursorSeek
+    if (!seek || seek(exact) === false) return
+    this.cursorPos = P[k]!
+    this.cursor = this.geo.cursorAt(this.cursorPos)
+    this.followRequest = 'smooth'
+    const text = this.opts.cursorDragLabel?.(exact) ?? ''
+    if (text) this.cursorGrip.setAttribute('aria-valuetext', text)
+    if (this.readoutEl.textContent !== text) this.readoutEl.textContent = text
+    this.schedule()
+  }
+}
+
+function r2(v: number): number {
+  return Math.round(v * 100) / 100
+}
+
+function escapeText(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
+}

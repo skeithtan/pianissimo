@@ -1,0 +1,79 @@
+/* Portrait page mode (PageView). The root is `.pn-strip.pn-page`: every score token, note state,
+   label, cursor, loop and correction style comes from strip.css; this file only adds the page
+   structure (a vertically scrolling sheet of stacked systems on --score-paper) and the few
+   differences: the cursor moves (it rides on the sheet), the handles and ✕ are in screen px. */
+
+.pn-strip.pn-page {
+  touch-action: auto;
+  cursor: default;
+}
+
+.pn-strip.pn-page.pn-browse-enabled {
+  cursor: default;
+}
+
+.pn-page-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  background: var(--pn-paper);
+}
+
+/* While something plays the page belongs to the follow scroll (browse disabled). */
+.pn-page-scroll.pn-page-locked {
+  overflow-y: hidden;
+  touch-action: none;
+}
+
+.pn-page-sheet {
+  position: relative;
+  width: 100%;
+  will-change: transform;
+}
+
+.pn-page-content {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+.pn-page-loops {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* Screen-px layer riding with the sheet: the cursor, the loop handles and ✕, the ottava reminder. */
+.pn-page-over {
+  --pn-inv-zoom: 1;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* The cursor moves along the system (translate3d set per frame); a seek glides like the strip's
+   scroll, following and system jumps are instant (`pn-instant`). Its height is the system's
+   staves plus 96 px at each end, faded by the bar's mask (R13). */
+.pn-page .pn-cursor {
+  bottom: auto;
+  height: 0;
+  will-change: transform;
+  transition: transform var(--pn-scroll-ms) var(--pn-ease);
+}
+
+.pn-page .pn-cursor-readout {
+  top: 56px;
+}
+
+/* The ottava reminder is positioned in screen px next to the cursor. */
+.pn-page .pn-ott-rem {
+  top: 0;
+}

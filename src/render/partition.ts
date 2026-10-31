@@ -106,4 +106,48 @@ export function partitionSvg(
   })
 }
 
+/** One page-mode system to serialize (`partitionPage`). */
+export interface PageSegmentInput {
+  readonly occStart: number
+  readonly occEnd: number
+  /** The system's top-level engraved groups (stafflines, brace), tagged and sanitized. */
+  readonly elements: readonly Element[]
+  /** Page y extent of the segment (layout px). */
+  readonly y0: number
+  readonly y1: number
+  /** Engraved y → page y shift (the engraving is wrapped in a `translate(0 dy)` group). */
+  readonly dy: number
+  readonly labelStart: number
+  readonly labelEnd: number
+}
+
+/**
+ * Page mode: one segment per system, each a standalone SVG whose viewBox is the system's page
+ * extent (`-SEAM y0 (width + 2·SEAM) (y1 − y0)`), its engraving moved from engraved to page y by
+ * one translate group. Systems never share marks: OSMD draws every tie, slur and bracket piece in
+ * the staffline group of its own system.
+ */
+export function partitionPage(systems: readonly PageSegmentInput[], width: number): SegmentData[] {
+  return systems.map((s, index): SegmentData => {
+    const vw = width + 2 * SEAM
+    const h = s.y1 - s.y0
+    const body = s.elements.map((el) => el.outerHTML).join('')
+    return {
+      index,
+      occStart: s.occStart,
+      occEnd: s.occEnd,
+      x0: 0,
+      x1: width,
+      svg:
+        `<svg xmlns="http://www.w3.org/2000/svg" class="pn-music" viewBox="${r(-SEAM)} ${r(s.y0)} ${r(vw)} ${r(h)}" ` +
+        `width="${r(vw)}" height="${r(h)}"><g transform="translate(0 ${r(s.dy)})">${body}</g></svg>`,
+      labelStart: s.labelStart,
+      labelEnd: s.labelEnd,
+      y0: s.y0,
+      y1: s.y1,
+      system: index,
+    }
+  })
+}
+
 const r = (v: number): string => String(Math.round(v * 100) / 100)

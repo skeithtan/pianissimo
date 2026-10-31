@@ -13,14 +13,15 @@ redesign: no passage bar, receding chrome, Repeat panel + cursor repeat button, 
 | File | Role |
 | --- | --- |
 | `PracticeView.tsx` | Entry. Reads `practiceRequest`; loads piece + package (`getStorage()`); missing piece → explanation + Back to Library. No request → empty state with Back to Library and up to five recently opened pieces. `PracticeViewWith({env})` for tests. A new import’s `autoStart` request is consumed once after layout preparation, then starts practice or Listen. |
-| `PracticeScreen.tsx` | Builds the session (preset → else the piece's last hands / passage / speed; resume position when no passage), the piece saver, the settings subscription, `onBeforeApplyLabels`, `visibilitychange` → save progress without pausing, orientation → `viewChanged`; prepares the layout (`prepareLayout` + IndexedDB layout cache; re-prepared when `maxLabelWidthChars(naming)` changes) and mounts `StripView` (its cursor action → `session.repeatFrom(cursor bar)`); renders the layout. |
+| `PracticeScreen.tsx` | Builds the session (preset → else the piece's last hands / passage / speed; resume position when no passage), the piece saver, the settings subscription, `onBeforeApplyLabels`, `visibilitychange` → save progress without pausing, orientation → `viewChanged`; prepares the layout (`prepareLayout` + IndexedDB layout cache; re-prepared when `maxLabelWidthChars(naming)` changes, on a rotation, and in portrait when the page width `pageWidthFor(stage, view.pageZoom)` changes) and mounts `StripView` (landscape) or `PageView` (portrait; zoom persists as `view.pageZoom`, the strip's as `view.zoom`) (its cursor action → `session.repeatFrom(cursor bar)`); renders the layout. |
 | `Footer.tsx` | Speed (`TempoControl`, popover opens upward) \| `HandToggles` around Start / Pause / Listen / Play (both off and unavailable without a connected piano, a tap toasts "Piano not connected", U27) \| Note names (Off / Conditional / All via `applyLabelSettings`), icon-only Hint and Show keys (U18). |
 | `RepeatPanel.tsx` | Repeat mode only: a slim group floating at the top of the stage with `LoopSteppers` (Loop start / Loop end, one whole bar per press; steps act on the browsed bar while browsing, else the cursor's bar) and the Repeat-until target. Edges read "Bar 12" or "Bar 12, beat 3" (`edgeText`; note-level edges come from the strip's handles). It rises in with Repeat mode and sinks away (`leaving`, kept mounted by `useFadePresence`) when Repeat closes (U14). |
 | `recede.ts` | `useRecede(playing, timers)`: the chrome fades while playing (after 1.2 s) and returns on pause / interruption, for 3 s after a pointer on it, and while keyboard focus is inside it. The overview never fades (U13 revised). |
 | `live.tsx` | Per-frame subscribers: `OverviewBar` (`ScoreOverview` alone on its row), `OctaveFeedback` (up/down arrow only, in the stage margin), `GuidePanel` (`KeyboardGuide` in a `.guideSlot` whose grid row slides 0fr ↔ 1fr, `data-open`, so the stage follows smoothly; the guide fades with `useFadePresence` and stays mounted while the slot closes). |
 | `Banners.tsx` | Over the preserved score, under the Repeat panel: piano disconnected ("Piano disconnected. Reconnect it to continue." + Connection; while it shows, the attempt's `disconnect` interruption is held back, then shows with its actions once the piano is back), sound status, "Continuing from bar N", interruption (Resume / Restart), waiting for released keys, Ready, and the attempt result card (status rail, title, streak, facts grid, Details → `openResults({pieceId, attemptId})` and Again; fades and rises in, fades and sinks out over `RESULT_FADE_MS`, showing the last result while it leaves). No end-of-piece banner: the footer's main button offers Start. |
 | `TempoSheet.tsx` | Practice tempo entry when the score has none (saved as `PieceRecord.userTempo`). |
-| `env.ts` | `PracticeEnv` seam (storage, MIDI, clock, timers, frames, prepare, createStrip, lazy loaders) and the production defaults. `PracticeStripOptions` = `StripOptions` (incl. `onCursorAction`, U14). |
+| `env.ts` | `PracticeEnv` seam (storage, MIDI, clock, timers, frames, prepare, createStrip, lazy loaders) and the production defaults. `PracticeStripOptions` = `StripOptions` (incl. `onCursorAction`, U14). `createStrip(host, layout, options, mode?)`: `'page'` mounts `PageView` (portrait), otherwise `StripView`; `StripHandle.cursorClientX?()` gives a moving cursor's x. |
+| `useOrientation.ts` | `useOrientation()` (`matchMedia('(orientation: portrait)')`, any device) picks the score view: portrait → page mode, landscape → strip. `useStageWidth(ref)` measures the stage for the page width. |
 | `browse.ts` | `useBrowsedBar`: the bar at the cursor's resting place (1/3 from the left) while the learner browses the strip; the loop steppers act on it (U6). Repeat mode opens from the cursor's repeat button (shown only outside Repeat mode; while playing it needs the chrome revealed) and closes with the strip's ✕ (U14, U17). |
 | `format.ts`, `useStore.ts`, `practice.module.css` | Text helpers, store hook, styles (tokens only; landscape first, narrow screens wrap the footer tools above the hand cluster). |
 
@@ -56,6 +57,17 @@ mode and playing (receded, guide open) at 1180×820, 820×1180 and 360×780, lig
   + octave arrows, scored completion, result card, dark theme, portrait, MIDI-only practice never fetches
   `/samples/`, hints, labels, the 88-key guide live before Start, Repeat readiness, Results,
   Listen on MIDI, Listen without a piano through browser sound (Auto).
+
+## Portrait page mode
+
+In portrait the stage shows the page view: systems wrapped to the width, the page still while a
+line is played, the cursor moving along it with the round repeat button, the page scrolling to
+put the next system a quarter down. A rotation is a layout change (`session.layoutChanging()`:
+a running scored attempt is interrupted, reading continues), then the other layout is prepared
+(cached) and the session re-attaches the new view at the same position with the loop and hands.
+Header, overview, banners, keyboard guide (at the bottom when on) and footer are unchanged.
+`tests/e2e/practice-page.spec.ts` (820×1180): several systems, playing moves the cursor in the
+first system without scrolling, a seek to a late bar scrolls the page.
 
 ## Known gaps
 

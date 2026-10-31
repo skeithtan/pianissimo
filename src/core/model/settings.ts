@@ -115,8 +115,13 @@ export interface MetronomeSettings {
 }
 
 export interface ViewSettings {
-  /** Notation scale factor (pinch zoom). */
+  /** Notation scale factor (pinch zoom) of the landscape strip. */
   readonly zoom: number
+  /**
+   * Notation scale of the portrait page (page mode): zoom in = fewer bars per system. Kept apart
+   * from `zoom` because the page re-engraves at `stage width / pageZoom`.
+   */
+  readonly pageZoom: number
   readonly theme: 'system' | 'light' | 'dark'
   /** Score paper: follow the theme (dark paper in dark mode) or always classic light paper. */
   readonly scorePaper: 'theme' | 'light'
@@ -183,6 +188,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   sound: { destination: 'auto', browserVolume: 0.8, monitorInput: false },
   metronome: { enabled: false, volume: 0.6 },
-  view: { zoom: 1, theme: 'system', scorePaper: 'theme' },
+  view: { zoom: 1, pageZoom: 1, theme: 'system', scorePaper: 'theme' },
   suggestions: { enabled: true },
 }
