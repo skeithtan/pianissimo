@@ -1,0 +1,68 @@
+.area {
+  position: fixed;
+  z-index: var(--z-toast);
+  top: calc(var(--header-h) + var(--space-2));
+  left: 50%;
+  translate: -50% 0;
+  width: min(520px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+.toast {
+  --tone: var(--fg-muted);
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
+  min-height: var(--touch);
+  border-radius: var(--radius-m);
+  border: 1px solid color-mix(in srgb, var(--tone) 40%, var(--border));
+  border-left-width: 4px;
+  border-left-color: var(--tone);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  animation: toast-in var(--dur-base) var(--ease-out) backwards;
+}
+.toast[data-kind='success'] {
+  --tone: var(--success);
+}
+.toast[data-kind='warning'] {
+  --tone: var(--warning);
+}
+.toast[data-kind='error'] {
+  --tone: var(--danger);
+}
+.toast > svg {
+  flex: none;
+  color: var(--tone);
+}
+.text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-s);
+}
+.dismiss {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--touch);
+  height: var(--touch);
+  border: 0;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.dismiss:hover {
+  background: var(--hover);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}

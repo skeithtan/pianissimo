@@ -1,0 +1,265 @@
+/* Design tokens and base styles. Components use these custom properties. `--paper` / `--ink`
+   stay light-paper colors in every theme (piano keys); the score uses `--score-*`, which
+   follow the theme unless the user pins light score paper (`data-score-paper='light'`).
+   The dark palette is written twice (system dark, forced dark) and must stay identical. */
+:root {
+  color-scheme: light dark;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Type scale (system fonts; rem so it follows the user's text size). */
+  --text-xs: 0.8125rem;
+  --text-s: 0.9375rem;
+  --text-m: 1rem;
+  --text-l: 1.1875rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --leading-tight: 1.2;
+  --leading-body: 1.45;
+
+  /* Spacing scale. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* Motion. Reduced motion shortens these (see the media query below); it never zeroes them,
+     because a short fade still tells the learner that something changed. */
+  --dur-fast: 140ms;
+  --dur-base: 200ms;
+  --dur-slow: 300ms;
+  --dur-hint-fade: 300ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.5, 0, 0.9, 0.55);
+
+  --z-bar: 10;
+  --z-flash: 50;
+  --z-toast: 60;
+
+  /* Palette (DECISIONS A9, A12, A15). Neutrals are warm grays, the accent is burgundy (wrong is
+     a brighter scarlet so a mistake never reads as the accent), and notation colors are chosen
+     to stay apart from each other, from the accent and from wrong/red, and to differ in
+     lightness as well as hue so they survive color-vision differences.
+
+     Surfaces, from the page up: `--bg` (page) < `--bg-elevated` (cards, bars, sheets) and
+     `--bg-sunken` (wells inside a surface: segmented tracks, example rows, tags, panels) <
+     `--bg-raised` (controls and the selected segment or tab). Light mode recesses a well
+     (sunken is darker than the page) and keeps raised white; dark mode steps every level
+     lighter (never toward black), so a well inside a card is a lighter fill and a control sits
+     above the surface it is on. */
+  --bg: #f4f1ea;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #ebe7de;
+  --bg-raised: #ffffff;
+  --fg: #1f1c17;
+  --fg-muted: #5c564c;
+  --border: #d8d2c5;
+  --paper: #fbfaf6;
+  --ink: #111111;
+  /* Notation strip: paper, ink and muted ink (dark values below). */
+  --score-paper: var(--paper);
+  --score-ink: var(--ink);
+  --score-ink-muted: #8a8478;
+  /* Staff and ledger lines relative to the ink: full in light mode, softer on dark paper so the
+     notes read above the lines (A17). */
+  --score-staff-opacity: 1;
+
+  --warning: #9a5b00;
+  --warning-bg: #fff0d1;
+  --hover: color-mix(in srgb, var(--fg) 7%, transparent);
+  --focus-ring: var(--accent);
+  --scrim: rgb(24 20 14 / 0.45);
+
+  /* Accent: burgundy (A12). `--accent` is the accent as text, icon, ring and tint; `--accent-fill`
+     is the accent as a solid surface (primary buttons, toggles, the play button) with
+     `--accent-fg` on it. They are the same color in light mode and differ in dark mode. */
+  --accent: #8a2346;
+  --accent-fill: #8a2346;
+  --accent-fg: #ffffff;
+  --success: #2f7d32;
+  --success-bg: #dff3e5;
+  --danger: #d4201a;
+  --danger-bg: #fbe4df;
+  /* Solid error surfaces (chip, toasts): white text stays legible in both themes. */
+  --wrong-solid: #d4201a;
+  --wrong-solid-fg: #ffffff;
+  --color-accepted: #2f7d32;
+
+  /* Notation and keyboard colors. Hands keep the same mid-tone in both themes (white letters on
+     them stay legible); target, auto part and accepted lighten in dark mode. */
+  --color-right-hand: #0b7a76;
+  --color-left-hand: #2563c9;
+  --color-auto-part: #8f6b00;
+  --color-target: #8b3a8f;
+  --color-wrong: var(--danger);
+  --color-ottava-alert: var(--danger);
+  --color-loop: var(--accent);
+
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 16px;
+  /* No blurred drop shadows (DECISIONS A11): elevation is a hairline and tone. The tokens stay
+     so existing `box-shadow: var(--shadow)` users get a 1px edge instead of a glow. */
+  --shadow: 0 0 0 1px var(--border);
+  --shadow-sheet: 0 0 0 1px var(--border);
+  --shadow-toast: 0 0 0 1px var(--border);
+  --touch: 48px;
+  --gap: 12px;
+  --header-h: 60px;
+  --footer-h: 76px;
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --score-paper: #171512;
+    --score-ink: #ebe7de;
+    --score-ink-muted: #878174;
+    --score-staff-opacity: 0.7;
+    --bg: #161410;
+    --bg-elevated: #201d19;
+    --bg-sunken: #2a2621;
+    --bg-raised: #35302a;
+    --fg: #f1ece3;
+    --fg-muted: #aaa295;
+    --border: #3b352e;
+    --scrim: rgb(0 0 0 / 0.62);
+    --warning: #ffc266;
+    --warning-bg: #3a2a0e;
+    --color-target: #d58ad9;
+    --color-auto-part: #d9b44a;
+    --accent: #e06d87;
+    --accent-fill: #b73a60;
+    --accent-fg: #ffffff;
+    --success: #7fd68a;
+    --success-bg: #163522;
+    --danger: #ff6b55;
+    --danger-bg: #3f1b14;
+    --color-accepted: #7fd68a;
+  }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --score-paper: #171512;
+  --score-ink: #ebe7de;
+  --score-ink-muted: #878174;
+  --score-staff-opacity: 0.7;
+  --bg: #161410;
+  --bg-elevated: #201d19;
+  --bg-sunken: #2a2621;
+  --bg-raised: #35302a;
+  --fg: #f1ece3;
+  --fg-muted: #aaa295;
+  --border: #3b352e;
+  --scrim: rgb(0 0 0 / 0.62);
+  --warning: #ffc266;
+  --warning-bg: #3a2a0e;
+  --color-target: #d58ad9;
+  --color-auto-part: #d9b44a;
+  --accent: #e06d87;
+  --accent-fill: #b73a60;
+  --accent-fg: #ffffff;
+  --success: #7fd68a;
+  --success-bg: #163522;
+  --danger: #ff6b55;
+  --danger-bg: #3f1b14;
+  --color-accepted: #7fd68a;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+#app {
+  height: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-s);
+}
+
+h1,
+h2,
+h3 {
+  line-height: var(--leading-tight);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Reduced motion: no keyframe movement, and fades shrink to a short crossfade. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 60ms;
+    --dur-base: 90ms;
+    --dur-slow: 90ms;
+    --dur-hint-fade: 90ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* The user pinned classic light score paper regardless of theme (Settings → General). Last in
+   the file so it wins over both dark-theme blocks, which have the same specificity. */
+:root[data-score-paper='light'] {
+  --score-paper: var(--paper);
+  --score-ink: var(--ink);
+  --score-ink-muted: #8a8478;
+  --score-staff-opacity: 1;
+}

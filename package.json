@@ -1,0 +1,45 @@
+{
+  "name": "pianissimo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Learn to read piano notation by playing a connected MIDI piano. Static web app for GitHub Pages.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "size": "node scripts/size-report.mjs",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.{mjs,ts}\" \"*.ts\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.{mjs,ts}\" \"*.ts\"",
+    "perf": "playwright test -c scripts/perf/playwright.config.ts",
+    "perf:table": "node scripts/perf/table.mjs"
+  },
+  "dependencies": {
+    "@preact/signals": "2.11.4",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "fast-xml-parser": "5.11.2",
+    "fflate": "0.8.3",
+    "idb": "8.0.4",
+    "opensheetmusicdisplay": "2.2.1",
+    "preact": "11.1.0"
+  },
+  "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@playwright/test": "1.64.1",
+    "@preact/preset-vite": "2.10.6",
+    "@types/node": "24.19.2",
+    "fake-indexeddb": "6.2.6",
+    "happy-dom": "21.0.4",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

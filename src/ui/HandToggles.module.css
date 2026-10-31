@@ -1,0 +1,94 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Hand toggle: neutral gray outline when off; filled tint, colored ring and colored icon when
+   the learner plays that hand. The L / R badge keeps color from being the only cue. */
+.hand {
+  --hand: var(--color-right-hand);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background var(--dur-base) var(--ease-standard),
+    border-color var(--dur-base) var(--ease-standard),
+    color var(--dur-base) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-out);
+}
+.left {
+  --hand: var(--color-left-hand);
+}
+.hand[aria-pressed='true'] {
+  border-color: var(--hand);
+  background: color-mix(in srgb, var(--hand) 14%, transparent);
+  color: var(--hand);
+}
+.hand:active:not(:disabled):not([aria-disabled='true']) {
+  transform: scale(0.93);
+}
+.hand:disabled,
+.play:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* Unavailable (no piano): dimmed and off, but a tap still explains why. */
+.hand[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.letter {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  min-width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 2px solid var(--bg);
+  background: var(--fg-muted);
+  color: var(--bg);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  line-height: 1;
+  transition: background var(--dur-base) var(--ease-standard);
+}
+.hand[aria-pressed='true'] .letter {
+  background: var(--hand);
+  color: #fff;
+}
+
+.play {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  color: var(--accent-fg);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background var(--dur-base) var(--ease-standard);
+}
+.play:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-fill) 88%, var(--fg));
+}
+.play:active:not(:disabled) {
+  transform: scale(0.94);
+}

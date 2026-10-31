@@ -1,0 +1,26 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+}
+
+/* Views with the app bar scroll inside <main>; a view with chrome "none" (Practice) owns the
+   whole viewport and manages its own overflow. */
+.main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+.main[data-chrome='bar'] {
+  overflow-y: auto;
+  padding-left: var(--safe-l);
+  padding-right: var(--safe-r);
+  padding-bottom: var(--safe-b);
+}
+.main[data-chrome='none'] {
+  overflow: hidden;
+}

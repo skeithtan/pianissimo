@@ -1,0 +1,32 @@
+/* Harness copy of the score-paper tokens the app defines in src/ui/global.css (orchestrator
+   decision: score follows the theme unless html[data-score-paper='light'] pins light paper).
+   Kept here so renderer specs can switch themes before the shell branch is merged; identical
+   values, so it is harmless afterwards. */
+:root {
+  --score-paper: #fbfaf6;
+  --score-ink: #111111;
+  --score-ink-muted: #8a8f99;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-score-paper='light']) {
+    --score-paper: #15181f;
+    --score-ink: #e3e6ee;
+    --score-ink-muted: #7d8596;
+  }
+}
+
+:root[data-theme='dark']:not([data-score-paper='light']) {
+  --score-paper: #15181f;
+  --score-ink: #e3e6ee;
+  --score-ink-muted: #7d8596;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+#strip-host {
+  position: relative;
+}

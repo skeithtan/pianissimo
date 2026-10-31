@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Content that cannot be interpreted reliably yet (DECISIONS M4): bar 2 grace note, bar 3 trill,
+     bar 4 tremolo shorthand, bar 5 a quarter-tone. Bars 1 and 6 are ordinary. Quarter = 60. -->
+<score-partwise version="4.0">
+  <work><work-title>Unsupported Content</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>2</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>60</per-minute></metronome></direction-type><staff>1</staff><sound tempo="60"/></direction>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+      <backup><duration>2</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration><voice>5</voice><type>half</type><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <note><grace slash="yes"/><pitch><step>B</step><octave>4</octave></pitch><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+      <backup><duration>2</duration></backup>
+      <note><pitch><step>E</step><octave>3</octave></pitch><duration>2</duration><voice>5</voice><type>half</type><staff>2</staff></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff><notations><ornaments><trill-mark/></ornaments></notations></note>
+      <backup><duration>2</duration></backup>
+      <note><pitch><step>G</step><octave>3</octave></pitch><duration>2</duration><voice>5</voice><type>half</type><staff>2</staff></note>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff><notations><ornaments><tremolo type="single">3</tremolo></ornaments></notations></note>
+      <backup><duration>2</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration><voice>5</voice><type>half</type><staff>2</staff></note>
+    </measure>
+    <measure number="5">
+      <note><pitch><step>F</step><alter>0.5</alter><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><accidental>quarter-sharp</accidental><staff>1</staff></note>
+      <backup><duration>2</duration></backup>
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>2</duration><voice>5</voice><type>half</type><staff>2</staff></note>
+    </measure>
+    <measure number="6">
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+      <backup><duration>2</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration><voice>5</voice><type>half</type><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>

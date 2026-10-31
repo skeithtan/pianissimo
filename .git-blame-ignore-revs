@@ -1,0 +1,2 @@
+# Bulk reformat without semicolons (Prettier, D11). Use: git config blame.ignoreRevsFile .git-blame-ignore-revs
+cc9a834f332a3620ee125170f7259e23cc49366b

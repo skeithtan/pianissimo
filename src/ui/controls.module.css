@@ -1,0 +1,323 @@
+/* Small purpose-built controls. Every control meets a 48 px touch target; state changes ease over
+   the shared motion tokens (global.css). */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--touch);
+  min-width: var(--touch);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-m);
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-out),
+    opacity var(--dur-base) var(--ease-standard);
+}
+.button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-raised) 90%, var(--fg));
+}
+.button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.button[aria-pressed='true'] {
+  background: var(--accent-fill);
+  color: var(--accent-fg);
+  border-color: var(--accent-fill);
+}
+.primary {
+  background: var(--accent-fill);
+  color: var(--accent-fg);
+  border-color: var(--accent-fill);
+}
+.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-fill) 88%, var(--fg));
+}
+.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.ghost:hover:not(:disabled) {
+  background: var(--hover);
+}
+.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+  background: var(--bg-sunken);
+  border-radius: var(--radius-m);
+  padding: 3px;
+  gap: 2px;
+}
+.segment {
+  min-height: calc(var(--touch) - 6px);
+  padding: 0 14px;
+  border: 0;
+  border-radius: calc(var(--radius-m) - 3px);
+  background: transparent;
+  font-weight: 600;
+  color: var(--fg-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
+  transition:
+    background var(--dur-base) var(--ease-standard),
+    color var(--dur-base) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-standard);
+}
+.segment:hover:not([aria-checked='true']) {
+  color: var(--fg);
+}
+.segment[aria-checked='true'] {
+  background: var(--bg-raised);
+  color: var(--fg);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.compact .segment {
+  padding: 0 10px;
+}
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: var(--touch);
+  cursor: pointer;
+}
+.toggleText {
+  display: flex;
+  flex-direction: column;
+}
+.toggleText small {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+.toggle {
+  appearance: none;
+  width: 52px;
+  height: 30px;
+  margin: 0;
+  border-radius: 15px;
+  background: var(--border);
+  position: relative;
+  flex: none;
+  cursor: pointer;
+  transition: background var(--dur-base) var(--ease-standard);
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.16);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.toggle:checked {
+  background: var(--accent-fill);
+}
+.toggle:checked::after {
+  transform: translateX(22px);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.field input,
+.field select {
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.field input:hover,
+.field select:hover {
+  border-color: color-mix(in srgb, var(--border) 60%, var(--fg));
+}
+.field small {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+.fieldLabel {
+  font-weight: 600;
+}
+.fieldError {
+  color: var(--danger);
+  font-size: var(--text-s);
+}
+
+.sheet {
+  padding: 0;
+  border-radius: var(--radius-l);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  /* No large blurred shadow (U12, A11): the backdrop gives focus, a hairline gives the edge. */
+  border: 1px solid var(--border);
+  width: min(640px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+.wide {
+  width: min(960px, calc(100vw - 24px));
+}
+.tall {
+  height: calc(100dvh - 32px);
+}
+.sheet::backdrop {
+  background: var(--scrim);
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+  animation: sheet-in var(--dur-base) var(--ease-out) backwards;
+}
+.sheet[open]::backdrop {
+  animation: backdrop-in var(--dur-base) var(--ease-standard) backwards;
+}
+.sheet[data-leaving],
+.sheet[data-leaving]::backdrop {
+  opacity: 0;
+}
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+.sheetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+.sheetHeader h2 {
+  font-size: var(--text-l);
+}
+.sheetBody {
+  /* `1 1 auto`, not `flex: 1`: WebKit resolves a 0% basis against the dialog's auto height as
+     zero and collapses the body to its header (seen on the iPad, 2026-10-31). */
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  overflow: auto;
+}
+.flush {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.notice {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-m);
+  border: 1px solid transparent;
+}
+.notice_info {
+  background: var(--bg-sunken);
+}
+.notice_warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-color: currentColor;
+}
+.notice_danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: currentColor;
+}
+.notice_success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.slider {
+  display: flex;
+  flex-direction: column;
+}
+.sliderHead {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-weight: 600;
+}
+.sliderHead output {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.slider input[type='range'] {
+  appearance: none;
+  width: 100%;
+  height: var(--touch);
+  margin: 0;
+  background: transparent;
+  touch-action: pan-y;
+}
+.slider input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+}
+.slider input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+}
+.slider input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -11px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent-fill);
+  box-shadow: 0 0 0 2px var(--bg-elevated);
+}
+.slider input[type='range']::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent-fill);
+  box-shadow: 0 0 0 2px var(--bg-elevated);
+}
+.slider input[type='range']:disabled {
+  opacity: 0.45;
+}

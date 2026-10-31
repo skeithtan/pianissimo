@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- C♯ major (7 sharps). Bar 1: B♯4 (sounds C5, MIDI 72), C♯5 from the key, F♮4 then F4 carrying
+     the natural, E♯4 from the key (MIDI 65). Bar 2: the carried natural is gone (F♯4 again).
+     Quarter = 72. -->
+<score-partwise version="4.0">
+  <work><work-title>C-sharp Major</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>7</fifths><mode>major</mode></key>
+        <time><beats>5</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>72</per-minute></metronome></direction-type><staff>1</staff><sound tempo="72"/></direction>
+      <note><pitch><step>B</step><alter>1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><accidental>natural</accidental><staff>1</staff></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>E</step><alter>1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <backup><duration>5</duration></backup>
+      <note><pitch><step>C</step><alter>1</alter><octave>3</octave></pitch><duration>5</duration><voice>5</voice><type>whole</type><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>F</step><alter>1</alter><octave>4</octave></pitch><duration>5</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
+      <backup><duration>5</duration></backup>
+      <note><pitch><step>G</step><alter>1</alter><octave>2</octave></pitch><duration>5</duration><voice>5</voice><type>whole</type><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>

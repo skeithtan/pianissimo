@@ -1,0 +1,80 @@
+.bar {
+  position: relative;
+  z-index: var(--z-bar);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--header-h);
+  padding: var(--space-2) calc(var(--space-4) + var(--safe-r)) var(--space-2) calc(var(--space-4) + var(--safe-l));
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: var(--touch);
+  min-height: var(--touch);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--text-l);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.brand:hover {
+  background: var(--hover);
+}
+.brand svg {
+  color: var(--accent);
+}
+.actions {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+/* The status chip gives way (its text ellipsizes); Settings always stays on screen. */
+.actions > :first-child {
+  min-width: 0;
+}
+.actions > :last-child {
+  flex: none;
+}
+/* Portrait phones: keep the icon, drop the word (still read by assistive technology). */
+@media (max-width: 520px) {
+  .settingsText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+/* Narrow phones: the brand keeps its icon so the connection status has room to be read. */
+@media (max-width: 419px) {
+  .bar {
+    gap: var(--space-2);
+    padding-left: calc(var(--space-3) + var(--safe-l));
+    padding-right: calc(var(--space-3) + var(--safe-r));
+  }
+  .brandText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}

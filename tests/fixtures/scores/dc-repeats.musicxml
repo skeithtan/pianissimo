@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- "D.C. al Fine" with repeats, written only as words (no <sound> navigation), as some
+     exporters do: |: 1 2 [Fine] :| |: 3 [1. 4 :| [2. 5 D.C. al Fine ]. Performance:
+     1 2 1 2 3 4 3 5 1 2 (10 bars): after the jump the repeat is not taken again and the
+     performance ends at Fine. Quarter = 72. -->
+<score-partwise version="4.0">
+  <work><work-title>Da Capo With Repeats</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <barline location="left"><repeat direction="forward"/></barline>
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>2</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>72</per-minute></metronome></direction-type><sound tempo="72"/></direction>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type></note>
+      <direction placement="above"><direction-type><words>Fine</words></direction-type></direction>
+      <barline location="right"><bar-style>light-heavy</bar-style><repeat direction="backward"/></barline>
+    </measure>
+    <measure number="3">
+      <barline location="left"><repeat direction="forward"/></barline>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type></note>
+    </measure>
+    <measure number="4">
+      <barline location="left"><ending number="1" type="start"/></barline>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type></note>
+      <barline location="right"><ending number="1" type="stop"/><repeat direction="backward"/></barline>
+    </measure>
+    <measure number="5">
+      <barline location="left"><ending number="2" type="start"/></barline>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type></note>
+      <direction placement="above"><direction-type><words>D.C. al Fine</words></direction-type></direction>
+      <barline location="right"><bar-style>light-heavy</bar-style><ending number="2" type="stop"/></barline>
+    </measure>
+  </part>
+</score-partwise>

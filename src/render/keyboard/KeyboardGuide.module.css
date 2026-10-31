@@ -1,0 +1,163 @@
+/* Colors come from the global tokens (src/ui/global.css). The keys stay "paper" and "ink" in
+   dark mode, like a real piano; the labels follow the theme. */
+.root {
+  --kb-white: var(--paper);
+  --kb-black: var(--ink);
+  --kb-line: color-mix(in srgb, var(--ink) 40%, var(--paper));
+  /* No hand, a unison between hands, or a held key the score does not have. */
+  --kb-neutral: color-mix(in srgb, var(--ink) 55%, var(--paper));
+
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The measured element: the SVG is sized in CSS pixels from its width, so it must never be
+   shrink-wrapped by it. */
+.measure {
+  width: 100%;
+}
+
+.board {
+  display: block;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.root [data-hand='R'] {
+  --kb-hand: var(--color-right-hand);
+}
+.root [data-hand='L'] {
+  --kb-hand: var(--color-left-hand);
+}
+.root [data-hand='N'] {
+  --kb-hand: var(--kb-neutral);
+}
+
+/* Keys */
+.white {
+  fill: var(--kb-white);
+  stroke: var(--kb-line);
+  stroke-width: 1;
+}
+.black {
+  fill: var(--kb-black);
+  stroke: var(--kb-black);
+  stroke-width: 1;
+}
+.landmark {
+  fill: color-mix(in srgb, var(--ink) 70%, var(--paper));
+  font-family: var(--font-ui);
+  font-weight: 600;
+  text-anchor: middle;
+}
+.middleC {
+  fill: var(--ink);
+  font-weight: 800;
+}
+
+/* Highlight bars: translucent in the part color; the outline says what the key is. */
+.bar {
+  fill: var(--kb-hand);
+  fill-opacity: 0.5;
+  stroke: none;
+  transition: fill-opacity var(--dur-fast) var(--ease-standard);
+}
+.bar[data-state='target'] {
+  fill-opacity: 0.32;
+  stroke: var(--kb-hand);
+  stroke-width: 2;
+}
+.bar[data-state='accepted'] {
+  fill-opacity: 0.18;
+  stroke: var(--color-accepted);
+  stroke-width: 2;
+  stroke-dasharray: 4 2.5;
+}
+.bar[data-state='held'] {
+  fill: var(--kb-neutral);
+  fill-opacity: 0.45;
+}
+.bar[data-state='wrong'] {
+  fill: var(--color-wrong);
+  fill-opacity: 0.6;
+}
+/* Over black keys the tint needs more weight to read as a color. */
+.bar[data-black='true'] {
+  fill-opacity: 0.85;
+}
+.bar[data-black='true'][data-state='target'] {
+  fill-opacity: 0.7;
+}
+.bar[data-black='true'][data-state='accepted'] {
+  fill-opacity: 0.45;
+}
+.heldDot {
+  fill: var(--ink);
+  stroke: var(--paper);
+  stroke-width: 1.2;
+}
+.onBlack {
+  fill: var(--paper);
+  stroke: var(--ink);
+}
+
+/* Note names above the keys */
+.leader {
+  fill: none;
+  stroke: var(--kb-hand);
+  stroke-width: 1.25;
+  stroke-opacity: 0.8;
+}
+.chip {
+  fill: var(--bg-elevated);
+  stroke: var(--kb-hand);
+  stroke-width: 1.5;
+}
+.label[data-state='accepted'] .chip {
+  stroke: var(--color-accepted);
+  stroke-dasharray: 3 2;
+}
+.label[data-state='wrong'] .chip {
+  stroke: var(--color-wrong);
+  fill: var(--danger-bg);
+}
+.label[data-state='wrong'] .leader {
+  stroke: var(--color-wrong);
+}
+.chipText {
+  fill: var(--fg);
+  font: 650 11px/1 var(--font-ui);
+  text-anchor: middle;
+}
+.tickMark,
+.crossMark {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tickMark {
+  stroke: var(--color-accepted);
+}
+.crossMark {
+  stroke: var(--color-wrong);
+}
+
+/* Roll arrow */
+.roll path {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    transition: none;
+  }
+}

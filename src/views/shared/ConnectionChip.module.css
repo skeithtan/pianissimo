@@ -1,0 +1,84 @@
+.chip {
+  --tone: var(--fg-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  position: relative;
+  /* A slimmer pill (user); the ::after strip keeps the full touch target. */
+  min-height: 34px;
+  max-width: 100%;
+  padding: 0 var(--space-4) 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--tone) 35%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 9%, transparent);
+  color: var(--fg);
+  font-size: var(--text-s);
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background var(--dur-base) var(--ease-standard),
+    border-color var(--dur-base) var(--ease-standard);
+}
+.chip::after {
+  content: '';
+  position: absolute;
+  inset: calc((34px - var(--touch)) / 2) 0;
+}
+.chip:hover {
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+}
+.chip[data-tone='good'] {
+  --tone: var(--success);
+}
+.chip[data-tone='warn'] {
+  --tone: var(--warning);
+}
+.chip[data-tone='busy'] {
+  --tone: var(--accent);
+}
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tone);
+  transition: background var(--dur-base) var(--ease-standard);
+}
+/* Shape as well as color: a hollow ring when there is no connection, a pulse while connecting. */
+.chip[data-state='disconnected'] .dot,
+.chip[data-state='unsupported'] .dot,
+.chip[data-state='denied'] .dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--tone);
+}
+.chip[data-state='connecting'] .dot {
+  animation: pulse 1s var(--ease-standard) infinite alternate;
+}
+@keyframes pulse {
+  from {
+    opacity: 0.35;
+  }
+}
+.text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* `compact="narrow"` (the Practice header): on narrow phones the piece title needs the width, so
+   the chip keeps its dot and drops the words, which assistive technology still reads. */
+@media (max-width: 419px) {
+  .narrow {
+    gap: 0;
+    padding: 0 calc((var(--touch) - 10px) / 2);
+  }
+  .narrow .text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}

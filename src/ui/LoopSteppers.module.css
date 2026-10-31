@@ -1,0 +1,86 @@
+.steppers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1);
+  border-radius: var(--radius-m);
+  background: var(--bg-sunken);
+}
+.step {
+  display: grid;
+  place-items: center;
+  width: var(--touch);
+  height: var(--touch);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-raised);
+  color: var(--fg);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-out),
+    opacity var(--dur-base) var(--ease-standard);
+}
+.step:hover:not(:disabled) {
+  background: var(--hover);
+}
+.step:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.step:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 92px;
+  line-height: var(--leading-tight);
+}
+.title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+/* Phones: both groups side by side in two equal columns (44 px targets); anything placed
+   between them (children) takes a full row. */
+@media (max-width: 600px) {
+  .steppers {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+  .steppers > :not(.group) {
+    grid-column: 1 / -1;
+  }
+  .group {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 2px;
+    padding: 2px;
+  }
+  .step {
+    width: 44px;
+    height: 44px;
+  }
+  .label {
+    min-width: 0;
+    text-align: center;
+  }
+  .title {
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+  }
+}

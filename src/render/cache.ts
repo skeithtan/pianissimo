@@ -1,0 +1,125 @@
+/**
+ * Prepared-layout caching (spec "Execution and rendering architecture": cache reusable geometry so
+ * reopening a piece avoids repeated engraving). A `PreparedLayout` is plain JSON keyed by score
+ * version + renderer version + every parameter that changes geometry (label sizing, segment
+ * width). Zoom is not part of the key: it is a CSS scale (R2).
+ */
+import { isSafeSvgMarkup } from './sanitize'
+import { PREPARED_LAYOUT_FORMAT, type PreparedLayout } from './types'
+
+export interface LayoutCache {
+  get(key: string): Promise<PreparedLayout | undefined>
+  put(layout: PreparedLayout): Promise<void>
+}
+
+export interface LayoutKeyParts {
+  readonly scoreVersionId: string
+  readonly renderer: { readonly name: string; readonly version: string }
+  readonly labelChars: number
+  readonly labelFontPx: number
+  readonly segmentWidth: number
+}
+
+export function layoutKey(p: LayoutKeyParts): string {
+  return [
+    `f${PREPARED_LAYOUT_FORMAT}`,
+    p.scoreVersionId,
+    `${p.renderer.name}@${p.renderer.version}`,
+    `l${p.labelChars}x${p.labelFontPx}`,
+    `s${p.segmentWidth}`,
+  ].join('|')
+}
+
+/** Approximate in-memory size: serialized segment text dominates. */
+export function approxLayoutBytes(layout: PreparedLayout): number {
+  let bytes = 0
+  for (const s of layout.segments) bytes += s.svg.length
+  for (const c of layout.contexts) for (const st of c.staves) bytes += st.glyph.svg.length
+  return bytes + 64 * (layout.notes.length + layout.labels.length + layout.occurrences.length * 8)
+}
+
+/**
+ * Structural check for layouts read back from storage; rejects other formats, other keys and any
+ * markup outside the sanitizer's allow-list (segments are mounted with innerHTML).
+ */
+export function isPreparedLayout(value: unknown, key?: string): value is PreparedLayout {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Partial<PreparedLayout>
+  return (
+    v.format === PREPARED_LAYOUT_FORMAT &&
+    typeof v.key === 'string' &&
+    (key === undefined || v.key === key) &&
+    Array.isArray(v.segments) &&
+    v.segments.every((s) => typeof s?.svg === 'string' && isSafeSvgMarkup(s.svg)) &&
+    Array.isArray(v.contexts) &&
+    v.contexts.every((c) => Array.isArray(c?.staves) && c.staves.every(safeGlyph)) &&
+    Array.isArray(v.notes) &&
+    Array.isArray(v.labels) &&
+    Array.isArray(v.occurrences) &&
+    Array.isArray(v.staves) &&
+    typeof v.width === 'number'
+  )
+}
+
+function safeGlyph(st: { glyph?: { svg?: unknown } } | undefined): boolean {
+  return typeof st?.glyph?.svg === 'string' && isSafeSvgMarkup(st.glyph.svg)
+}
+
+/** Bounded in-memory LRU of prepared layouts (by approximate bytes). */
+export class MemoryLayoutCache implements LayoutCache {
+  private readonly entries = new Map<string, { layout: PreparedLayout; bytes: number }>()
+  private total = 0
+
+  constructor(private readonly maxBytes = 64 * 1024 * 1024) {}
+
+  async get(key: string): Promise<PreparedLayout | undefined> {
+    const e = this.entries.get(key)
+    if (!e) return undefined
+    this.entries.delete(key)
+    this.entries.set(key, e)
+    return e.layout
+  }
+
+  async put(layout: PreparedLayout): Promise<void> {
+    const bytes = approxLayoutBytes(layout)
+    const old = this.entries.get(layout.key)
+    if (old) {
+      this.total -= old.bytes
+      this.entries.delete(layout.key)
+    }
+    this.entries.set(layout.key, { layout, bytes })
+    this.total += bytes
+    for (const [k, e] of this.entries) {
+      if (this.total <= this.maxBytes || this.entries.size <= 1) break
+      this.entries.delete(k)
+      this.total -= e.bytes
+    }
+  }
+
+  get bytes(): number {
+    return this.total
+  }
+
+  get size(): number {
+    return this.entries.size
+  }
+}
+
+/** The generic store the storage module provides (IndexedDB `layoutCache`, bounded there). */
+export interface LayoutStore {
+  getLayout(key: string): Promise<unknown>
+  putLayout(key: string, scoreVersionId: string, value: unknown, approxBytes: number): Promise<void>
+}
+
+/** Adapts a storage-backed store; values that fail validation read as a miss. */
+export function storeLayoutCache(store: LayoutStore): LayoutCache {
+  return {
+    async get(key) {
+      const v = await store.getLayout(key)
+      return isPreparedLayout(v, key) ? v : undefined
+    },
+    put(layout) {
+      return store.putLayout(layout.key, layout.scoreVersionId, layout, approxLayoutBytes(layout))
+    },
+  }
+}
