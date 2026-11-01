@@ -1059,6 +1059,15 @@ describe('PracticeSession: Repeat mode (U10)', () => {
     expect(h.session.ui.get()).toMatchObject({ repeat: true, range: { fromOcc: 0, toOcc: 0 } })
   })
 
+  it('repeatAtCursor takes the bar the view reports under its cursor line (the strip while browsing)', () => {
+    const h = harness(melody)
+    expect(h.session.progress.get().occ).toBe(0)
+    h.session.repeatAtCursor(1)
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ repeat: true, range: { fromOcc: 1, toOcc: 1 } })
+    expect(h.strip.loop).toEqual({ fromOcc: 1, toOcc: 1 })
+  })
+
   it('without a piano input the hands are held in Listen, unsaved, and come back with the piano (U27)', () => {
     const h = harness(melody, { hands: 'right' })
     expect(h.session.ui.get()).toMatchObject({ hands: 'right', handsAvailable: true })

@@ -26,8 +26,9 @@ practice", "Execution and rendering architecture", "Storage and recovery" (resum
 Controls: `togglePlay()`, `start()` (reading, a scored attempt, or Listen with hands 'none' —
 always both parts), `pause()`, `restart()`, `resume()`, `seek(occ)`, `seekPosition(pos)`,
 `requestHint()`, `setKeyboardVisible(v)`, `setRepeatMode(open, at?)`, `repeatFrom(occ)` (a fresh
-one-bar loop), `repeatAtCursor()` (the cursor's repeat button: pauses what plays, then opens
-Repeat at the cursor's bar), `setChromeRevealed(bool)` (the view's chrome is revealed, not in
+one-bar loop), `repeatAtCursor(occ?)` (the cursor's repeat button: pauses what plays, then opens
+Repeat at the bar the button was over: `occ` when the view reports one, the strip's bar under its
+fixed cursor line while browsing, else the cursor's bar), `setChromeRevealed(bool)` (the view's chrome is revealed, not in
 focus mode; default true), `setInputAvailable(bool)` (no piano input: the hands
 are held in Listen without saving `lastHands`, U27), `setRepeatTarget(n)`, `dismissResult()`,
 `setSelection({hands?, range?, multiplier?})`, `updateSettings(settings)`,

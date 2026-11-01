@@ -76,9 +76,12 @@ export interface StripOptions {
   readonly returnLabel?: string
   /**
    * The circular button on the cursor bar was pressed (shown with `setCursorAction(true)`).
-   * Accessible name `cursorActionLabel` (default "Repeat from here").
+   * Accessible name `cursorActionLabel` (default "Repeat from here"). The cursor line is fixed on
+   * screen, so while browsing the button sits over another bar than the position last set with
+   * `setCursor`: `occ` is then the bar under the line (browsing ends with the press); otherwise
+   * it is undefined and the action belongs to the cursor's own position.
    */
-  readonly onCursorAction?: () => void
+  readonly onCursorAction?: (occ?: number) => void
   readonly cursorActionLabel?: string
   /**
    * The playhead was dragged onto a note and released (U23; only while `setCursorDraggable(true)`).
@@ -694,6 +697,13 @@ export class StripView {
   occAt(clientX: number): number {
     const rect = this.root.getBoundingClientRect()
     return occAtX(this.layout.occurrences, (clientX - rect.left - this.tx) / this.scale)
+  }
+
+  /** The bar under the fixed cursor line as the music is currently placed on screen (-1 for an empty layout). */
+  private occUnderCursorLine(): number {
+    const tx = Number.isNaN(this.applied.tx) ? this.tx : this.applied.tx
+    const sx = this.hostW * (this.opts.cursorAnchor ?? 1 / 3)
+    return occAtX(this.layout.occurrences, (sx - tx) / this.scale)
   }
 
   /** Notes whose labels are currently visible in the viewport. */
@@ -1421,7 +1431,18 @@ export class StripView {
     this.on(this.cursorBtn, 'pointerdown', (e) => e.stopPropagation())
     this.on(this.cursorBtn, 'click', (e) => {
       e.stopPropagation()
-      if (this.cursorAction) this.opts.onCursorAction?.()
+      if (!this.cursorAction) return
+      if (!this.browsing) {
+        this.opts.onCursorAction?.()
+        return
+      }
+      // Browsing: the music under the fixed cursor line is not the cursor's bar, and the button
+      // sits over that music (U14). The bar under the line is the one acted on; browsing ends
+      // after the callback so the view settles on the position the action moves the cursor to
+      // (the callback schedules that frame first).
+      const occ = this.occUnderCursorLine()
+      this.opts.onCursorAction?.(occ < 0 ? undefined : occ)
+      this.returnToCurrent()
     })
     // Entering and leaving Repeat mode (U14): the band's grow / shrink class is dropped when its
     // animation ends; a control fading out is hidden when its animation ends.

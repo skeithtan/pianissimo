@@ -234,8 +234,9 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             onCursorSeek: (position) => session.seekPosition(position),
             cursorDragLabel: (position) => positionText(model, position),
             onLoopChange: (range) => session.setSelection({ range }),
-            // The repeat button on the cursor pauses and loops the cursor's bar (U14).
-            onCursorAction: () => session.repeatAtCursor(),
+            // The repeat button on the cursor pauses and loops the bar it is over: the bar under
+            // the strip's fixed cursor line while browsing, else the cursor's bar (U14).
+            onCursorAction: (occ) => session.repeatAtCursor(occ),
             onVisibleLabels: (added) => session.onVisibleLabels(added),
             // Strip: a CSS scale. Page: a new page width, so the layout is re-prepared (above).
             onZoomChange: (zoom) => {

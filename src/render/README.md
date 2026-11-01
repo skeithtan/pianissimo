@@ -36,8 +36,9 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   Callbacks: `onBrowse`, `onSeekRequest(occ)` (tap outside select mode, also a tap on the cursor),
   `onCursorSeek(position) → boolean|void` (dragged playhead released on a note; `false` puts it
   back), `cursorDragLabel(position)` (readout text), `onLoopChange(range|null)`,
-  `onLoopSelectModeChange`, `onVisibleLabels(addedNotes)`, `onZoomChange`, `onCursorAction()`
-  (`cursorActionLabel` overrides the accessible name).
+  `onLoopSelectModeChange`, `onVisibleLabels(addedNotes)`, `onZoomChange`, `onCursorAction(occ?)`
+  (`cursorActionLabel` overrides the accessible name; while browsing, `occ` is the bar under the
+  fixed cursor line, which the button sits over, and browsing ends with the press).
 - Pure helpers: `positionToX`, `occAtX`, `occAtPosition`.
 - **Page mode (portrait)**: `PrepareOptions.mode: 'page'` + `pageWidth` (layout px the systems
   wrap to; `pageWidthFor(stageWidth, zoom)` = (stage − 2 × 16 px) / zoom, rounded to 8) prepares

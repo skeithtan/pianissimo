@@ -630,6 +630,29 @@ describe('StripView continuous motion and cursor action', () => {
     expect(btn.hasAttribute('inert')).toBe(true)
     expect(host.querySelector('.pn-cursor')!.classList.contains('pn-action-on')).toBe(false)
   })
+
+  it('while browsing, the cursor action names the bar under the fixed cursor line and ends browsing', () => {
+    const presses: (number | undefined)[] = []
+    const browse: boolean[] = []
+    const { v } = view(40, { onCursorAction: (occ) => presses.push(occ), onBrowse: (b) => browse.push(b) })
+    const root = host.querySelector('.pn-strip')!
+    const btn = host.querySelector<HTMLButtonElement>('.pn-cursor-action')!
+    v.setCursorAction(true)
+    v.setBrowseEnabled(true)
+    // Not browsing: the action belongs to the cursor's own position.
+    btn.click()
+    expect(presses).toEqual([undefined])
+    // Browse 300 px to the left: the music under the line (screen x 300) is now layout x 390, bar 2.
+    root.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, clientX: 600, clientY: 150, bubbles: true }))
+    root.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, clientX: 300, clientY: 150, bubbles: true }))
+    root.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2, clientX: 300, clientY: 150, bubbles: true }))
+    v.flushNow()
+    expect(browse).toEqual([true])
+    btn.click()
+    expect(presses).toEqual([undefined, 1])
+    expect(browse).toEqual([true, false])
+    expect(root.classList.contains('pn-browsing')).toBe(false)
+  })
 })
 
 describe('StripView cursor bar, early tint and loop wrap', () => {

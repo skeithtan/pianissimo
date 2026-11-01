@@ -86,6 +86,35 @@ test.describe('note-level practice', () => {
     await expect(page.getByTestId('feedback-chip')).toHaveCount(0)
   })
 
+  test('after browsing, the cursor button loops the bar under the fixed cursor line (U14)', async ({ page }) => {
+    const strip = page.locator('.pn-strip')
+    const box = (await strip.boundingBox())!
+    // Bar 2's first notehead on screen; the cursor line rests one third across the strip.
+    const built = await importFixture('two-hands.musicxml')
+    const bar2 = built.package.model.notes.findIndex((n) => n.occ === 1)
+    expect(bar2).toBeGreaterThanOrEqual(0)
+    const x2 = await headX(page, bar2)
+    const lineX = box.x + box.width / 3
+    expect(x2).toBeGreaterThan(lineX)
+    // Browse: drag the music left until bar 2 sits under the cursor line (the cursor stays in bar 1).
+    const y = box.y + box.height / 2
+    const from = box.x + box.width * 0.85
+    await page.mouse.move(from, y)
+    await page.mouse.down()
+    await page.mouse.move(from - (x2 - lineX) - 20, y, { steps: 10 })
+    await page.mouse.up()
+    const back = page.getByRole('button', { name: 'Return to current position' })
+    await expect(back).toBeVisible()
+
+    await page.getByRole('button', { name: 'Repeat from here' }).click()
+    const panel = page.getByTestId('repeat-controls')
+    await expect(panel.getByRole('group', { name: 'Loop start' })).toContainText('Bar 2')
+    await expect(panel.getByRole('group', { name: 'Loop end' })).toContainText('Bar 2')
+    // Browsing ended with the press: the view follows the cursor, now in bar 2 (the return button
+    // only fades, so the strip's browsing class is the signal).
+    await expect(strip).not.toHaveClass(/pn-browsing/)
+  })
+
   test('a loop handle dragged into a bar makes a note-level loop that is scored and repeats', async ({
     page,
     browserName,

@@ -335,6 +335,21 @@ describe('PracticeView', () => {
     expect(strip.cursorAction).toBe(true)
   })
 
+  it('the cursor button loops the bar the strip reports under its cursor line while browsing (U14)', async () => {
+    const r = await rig()
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    const strip = r.strips.at(-1)!
+    // The strip, browsed one bar ahead of the cursor, passes that bar with the press.
+    act(() => strip.options.onCursorAction?.(1))
+    await settle(r)
+    const panel = $(view.container, '[data-testid="repeat-controls"]')!
+    expect(byLabel(panel, 'Loop start')?.textContent).toContain('Bar 2')
+    expect(byLabel(panel, 'Loop end')?.textContent).toContain('Bar 2')
+    expect(strip.loop).toEqual({ fromOcc: 1, toOcc: 1 })
+  })
+
   it('has no passage bar; Settings is in the header, Speed and Labels in the footer (U12)', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }

@@ -910,12 +910,14 @@ export class PracticeSession {
 
   /**
    * The cursor's repeat button, pressed (U14): pauses what plays, then opens Repeat mode with a
-   * one-bar loop at the cursor's bar. It is never shown in Repeat mode, so there is no toggle.
+   * one-bar loop at the bar the button was over: `occ` when the view reports one (the strip's
+   * cursor line is fixed on screen, so while browsing the music under it is another bar than
+   * the cursor's), else the cursor's bar. It is never shown in Repeat mode, so there is no toggle.
    */
-  repeatAtCursor(): void {
-    const occ = occAt(this.#model, this.#cursorPosition())
+  repeatAtCursor(occ?: number): void {
+    const at = occ ?? occAt(this.#model, this.#cursorPosition())
     if (this.#isPlaying()) this.pause()
-    this.repeatFrom(occ)
+    this.repeatFrom(at)
   }
 
   /**
