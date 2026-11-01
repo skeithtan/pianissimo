@@ -216,7 +216,7 @@ export class MidiService {
    * Connection setup. Unsupported browsers skip it; a denied permission shows in the chip. With
    * access, the remembered route is reselected; without one, the only input present (and the only
    * output, if any) is the piano: it is chosen and remembered, so a single piano just works. The
-   * output still needs its playback and echo tests before one-hand grading (S4). Returns true
+   * output still needs its test notes (sound + echo) before one-hand grading (S4). Returns true
    * when access was obtained.
    */
   async connectOnBoot(): Promise<boolean> {

@@ -105,8 +105,8 @@ Note On velocity 0 = release, real-time bytes skipped) → `PhysicalState` (held
 channel, separate from sustained sound) → subscribers, in order. `statechange` yields input /
 output disconnected / reconnected events; ports are remembered by id, then name
 (`applyRememberedRoute`). Setup tools: `HintPedalLearner` / `Confirmation` / `Trigger` (one hint
-per press, hysteresis, inversion), `runEchoTest` (three-note probe), `playTestNote`, and
-`gradedAccompanimentAllowed` (verified output + echo `none`).
+per press, hysteresis, inversion), `runEchoTest` (three-note probe, also the audible test
+notes) and `gradedAccompanimentAllowed` (verified output + echo `none`).
 core/playback: `buildPerformance(model, {hands, range, accompanimentLevel, sendPedals,
 listenFilter})` → the automatic part's note on/off and pedal (CC 64/66/67) events at written
 positions plus 1× roll offsets; tie chains are one attack, learner unisons suppressed,
@@ -207,8 +207,9 @@ it appears and coalesces disconnect notices. The practice session uses `onRoute(
 (synchronous) to interrupt on `*-disconnected` and waits for `adapter.physical.isClean()` after
 `input-reconnected`; it registers `registerSoundOwner(() => transport.stopSound())` so Stop
 sound (CC 123, app channel only) covers its notes.
-`views/connection`: step cards (access, input, output + "did it sound?", echo, hint pedal,
-accompaniment) and a frame-throttled live panel (`LiveMonitor`, O(1) per event).
+`views/connection`: three step cards (piano = access + input; playback = output + test notes
+that double as the echo probe + accompaniment options; hint pedal) and a frame-throttled live
+panel (`LiveMonitor`, O(1) per event).
 `views/library` (bundled, first screen; never imports OSMD, samples or the `core/import` index):
 `LibraryModel` (piece list from `listPieces`, open → `openPractice`, delete, clear history,
 export, restore + settings reload) and `ImportFlow` (read → `inspect` → score/part choice when

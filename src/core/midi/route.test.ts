@@ -3,7 +3,6 @@ import { DEFAULT_SETTINGS, type MidiRouteSettings } from '../model/settings'
 import { MidiAdapter, type MidiPortInfo } from './adapter'
 import { FakeAccess, FakeInput, FakeOutput, fakeNavigator } from './fakeWebMidi'
 import { applyRememberedRoute, findRememberedPort, gradedAccompanimentAllowed, rememberRoute } from './route'
-import { playTestNote } from './testNote'
 
 const port = (id: string, name: string, state: 'connected' | 'disconnected' = 'connected'): MidiPortInfo => ({
   id,
@@ -76,19 +75,6 @@ describe('route memory (spec: remember the route and its tested channel)', () =>
     expect(restored.output).toMatchObject({ by: 'id' })
     expect(adapter.selectedInput?.id).toBe('in-7')
     expect(adapter.selectedOutput?.id).toBe('out-7')
-  })
-})
-
-describe('playTestNote', () => {
-  it('sends one note on the tested channel with timestamps', () => {
-    const out = new FakeOutput('o', 'Piano')
-    expect(playTestNote(out, 500, { channel: 3 })).toBe(true)
-    expect(out.sent).toEqual([
-      { data: [0x93, 60, 80], time: 500 },
-      { data: [0x83, 60, 64], time: 1200 },
-    ])
-    out.state = 'disconnected'
-    expect(playTestNote(out, 600, { channel: 3 })).toBe(false)
   })
 })
 

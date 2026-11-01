@@ -2,15 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { MidiSnapshot } from '../../app/services'
 import { DEFAULT_SETTINGS, type MidiRouteSettings } from '../../core/model/settings'
-import {
-  accessStatus,
-  echoStatus,
-  inputStatus,
-  outputStatus,
-  pedalStatus,
-  playbackReadiness,
-  playbackStatus,
-} from './status'
+import { accessStatus, inputStatus, pedalStatus, pianoStatus, playbackStatus } from './status'
 import { eventRow, meterBehavior, pedalName } from './format'
 import { velocityOpacity } from './MiniKeyboard'
 
@@ -47,21 +39,28 @@ describe('step statuses', () => {
     })
   })
 
-  it('output needs the test note before it counts as done', () => {
-    expect(outputStatus(base, route()).text).toBe('No output chosen')
-    expect(outputStatus({ ...base, output: port() }, route())).toEqual({ tone: 'action', text: 'Play the test note' })
-    expect(outputStatus({ ...base, output: port() }, route({ outputVerified: true, outputChannel: 1 }))).toEqual({
+  it('piano is MIDI access until granted, then the input', () => {
+    expect(pianoStatus({ ...base, access: 'idle' })).toEqual({ tone: 'todo', text: 'Not allowed yet' })
+    expect(pianoStatus({ ...base, access: 'unsupported' }).tone).toBe('blocked')
+    expect(pianoStatus(base).text).toBe('No MIDI input found')
+    expect(pianoStatus({ ...base, input: port() })).toEqual({ tone: 'done', text: 'Digital Piano' })
+  })
+
+  it('playback needs the test notes heard and no echo before it counts as done', () => {
+    expect(playbackStatus({ ...base, access: 'idle' }, route()).tone).toBe('blocked')
+    expect(playbackStatus(base, route()).text).toBe('No output chosen')
+    expect(playbackStatus({ ...base, output: port(false) }, route()).tone).toBe('action')
+    const out = { ...base, output: port() }
+    expect(playbackStatus(out, route())).toEqual({ tone: 'action', text: 'Play the test notes' })
+    expect(playbackStatus(out, route({ outputVerified: true }))).toEqual({ tone: 'action', text: 'Echo not checked' })
+    expect(playbackStatus(out, route({ outputVerified: true, echo: 'echo-detected' }))).toEqual({
+      tone: 'action',
+      text: 'Echo detected',
+    })
+    expect(playbackStatus(out, route({ outputVerified: true, echo: 'none', outputChannel: 1 }))).toEqual({
       tone: 'done',
       text: 'Piano sounds on channel 2',
     })
-  })
-
-  it('echo needs both ports', () => {
-    expect(echoStatus({ ...base, input: port() }, route()).tone).toBe('blocked')
-    const both = { ...base, input: port(), output: port() }
-    expect(echoStatus(both, route()).text).toBe('Not tested')
-    expect(echoStatus(both, route({ echo: 'echo-detected' })).tone).toBe('action')
-    expect(echoStatus(both, route({ echo: 'none' })).tone).toBe('done')
   })
 
   it('hint pedal is optional', () => {
@@ -78,25 +77,6 @@ describe('step statuses', () => {
     expect(pedalStatus({ ...DEFAULT_SETTINGS, pedal: { ...DEFAULT_SETTINGS.pedal, hintPedal: mapping } }).text).toBe(
       'Sostenuto (middle pedal)',
     )
-  })
-})
-
-describe('playbackReadiness (spec: graded accompaniment needs a verified, echo-free route)', () => {
-  const snap = { ...base, input: port(), output: port() }
-  it('requires a connected, verified output and echo none', () => {
-    expect(playbackReadiness(snap, route()).graded).toBe(false)
-    expect(playbackReadiness(snap, route({ outputId: 'p', outputVerified: true })).pianoPlayback).toBe(true)
-    expect(playbackReadiness(snap, route({ outputId: 'p', outputVerified: true, echo: 'echo-detected' })).graded).toBe(
-      false,
-    )
-    const ready = playbackReadiness(snap, route({ outputId: 'p', outputVerified: true, echo: 'none' }))
-    expect(ready.graded).toBe(true)
-    expect(ready.items.every((i) => i.ok)).toBe(true)
-    expect(
-      playbackReadiness({ ...snap, output: port(false) }, route({ outputId: 'p', outputVerified: true, echo: 'none' }))
-        .graded,
-    ).toBe(false)
-    expect(playbackStatus(snap, route({ outputId: 'p', outputVerified: true })).text).toBe('Preview only')
   })
 })
 

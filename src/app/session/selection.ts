@@ -113,7 +113,7 @@ export function startPlan(timeline: Timeline, sel: Selection, ctx: StartContext)
         action,
         enabled: false,
         reason:
-          'Graded one-hand practice needs a verified output with no echo. Run the playback and echo tests in Connection, or practice both hands.',
+          'Graded one-hand practice needs a verified output with no echo. Play the test notes in Connection, or practice both hands.',
       }
     }
   }

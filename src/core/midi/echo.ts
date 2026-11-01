@@ -5,7 +5,8 @@
  *
  * The app plays a short, distinctive probe (three pitches with unusual velocities) on the
  * selected output channel while the user keeps their hands off the keys, and watches the
- * input for those notes coming back. The detector only observes: every input event still
+ * input for those notes coming back. The same probe is the Connection view's "Play test
+ * notes": one tap confirms that the piano sounds and checks the route for echo (DECISIONS C11). The detector only observes: every input event still
  * reaches its other subscribers (the live key test), so genuine human presses are never
  * discarded. It classifies the route and is never used to filter live input — standard MIDI
  * carries no application-origin tag. A single returned pitch with a different velocity could be
@@ -139,14 +140,24 @@ export interface EchoTestIo {
   setTimeout(fn: () => void, ms: number): unknown
 }
 
-/** Run the echo test end to end: send the probe, watch the input, resolve after the window. */
+/**
+ * Run the echo test end to end: send the probe, watch the input, resolve after the window. The
+ * probe doubles as the Connection view's audible test notes, so the promise rejects when the
+ * output refuses a message (it may have just disconnected) and nothing was played.
+ */
 export function runEchoTest(io: EchoTestIo, opts: EchoTestOptions): Promise<EchoTestResult> {
   const det = new EchoDetector(opts)
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const unsubscribe = io.subscribe((ev) => det.feed(ev))
     const now = io.now()
     det.begin(now)
-    for (const m of det.messages(now)) io.send(m.data, m.time)
+    try {
+      for (const m of det.messages(now)) io.send(m.data, m.time)
+    } catch (error) {
+      unsubscribe()
+      reject(error instanceof Error ? error : new Error(String(error)))
+      return
+    }
     io.setTimeout(() => {
       unsubscribe()
       resolve(det.result())

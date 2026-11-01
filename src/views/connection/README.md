@@ -10,24 +10,22 @@ chunk `ConnectionView` (`overlayScreens` in `app/views.ts`, ~14 kB gzip), fetche
 
 ## Layout
 
-A checklist header (remembered route + six step buttons with text status), then the steps
-as cards. ≥ 980 px: steps on the left, the sticky **Live input** panel on the right; narrower:
+A checklist header (remembered route + three step buttons with text status), then the steps
+as cards (DECISIONS C11: access and input are one step, playback / echo / accompaniment
+options are one step, the hint pedal is the third). ≥ 980 px: steps on the left, the sticky **Live input** panel on the right; narrower:
 one column with Live input right after the Input step. Every step works on its own; status is
 an icon/ring plus text (never color alone). Theme tokens only (test-checked), so light, dark
 and `data-theme` all follow; mini-keyboard keys stay `--paper`/`--ink`.
 
 | Step | File | What it does |
 | --- | --- | --- |
-| 1 MIDI access | `AccessStep.tsx` | Unsupported (MIDIWeb on iPad / Chrome on a computer), prompt (explicit Allow button), denied (how to re-allow, Try again), error. Pairing guide: USB, 5-pin wiring, BLE paired by OS/MIDIWeb, BT audio insufficient. |
-| 2 Piano input | `InputStep.tsx` | Input radio cards, remembered tag, "remembered piano not connected", disconnected warning, connection type USB / Bluetooth / Not sure → `route.connection`. |
+| 1 Your piano | `PianoStep.tsx` | Until granted: MIDI access — unsupported (MIDIWeb on iPad / Chrome on a computer), prompt (explicit Allow button), denied (how to re-allow, Try again), error. Then: input radio cards, remembered tag, "remembered piano not connected", disconnected warning. Always: connection type USB / Bluetooth / Not sure → `route.connection`, pairing guide (USB, 5-pin wiring, BLE paired by OS/MIDIWeb, BT audio insufficient). |
 | Live input | `LivePanel.tsx`, `MiniKeyboard.tsx`, `Meter.tsx`, `liveMonitor.ts` | 88-key strip (held = fill by velocity + dot, sustained = dashed), Note on/off/pedal counters with Reset (fidelity checks), a meter per controller seen (value, range, continuous vs on/off, threshold), last 12 events. Re-render ≤ once per frame; new pedal controllers → `pedal.observedControllers` from the frame. |
-| 3 Playback | `OutputStep.tsx` | Output radio cards + "No output", receive channel 1–16, Play test note → "Did the piano itself play a note?" Yes/No → `route.outputVerified`; No → channel / cable direction / port-is-not-proof guidance; browser sound is a separate explicit choice. |
-| 4 Echo test | `EchoStep.tsx` | `runEchoTest` on the app channel; verdict none / echo detected / inconclusive (kept previous) in plain language; `echoSetting` → `route.echo`. |
-| 5 Hint pedal | `HintPedalStep.tsx`, `hintPedalFlow.ts` | Listen → detect (middle pedal preferred, also when pressed after another) → test press (one trigger per press; counter shows holding never retriggers) → Save → `pedal.hintPedal`. Missing middle pedal and sustain-pedal cautions, sound caveat, action Note names / Show keys, advanced inversion + threshold (needs a new test). |
-| 6 Accompaniment | `PlaybackStep.tsx` | Graded-accompaniment checklist (`playbackReadiness`), accompaniment level, "Send score pedals in one-hand practice" (default off, explained), Stop sound (`service.stopSound()`). |
+| 2 Playback to the piano | `PlaybackStep.tsx` | Output radio cards + "No output", receive channel 1–16, **Play test notes** = the echo probe (`runEchoTest` on the app channel) → "Did the piano itself play three short notes?" Yes/No → `route.outputVerified`; the probe's verdict none / echo detected / inconclusive (kept previous) → `route.echo` (`echoSetting`), stored only when the piano input was connected during the test. No → channel / cable direction / port-is-not-proof guidance; echo detected → what it disables and how to fix it; echo unchecked → play again with the input connected. Browser sound is a separate explicit choice. Below: accompaniment level, "Send score pedals in one-hand practice" (default off, explained), Stop sound (`service.stopSound()`). |
+| 3 Hint pedal | `HintPedalStep.tsx`, `hintPedalFlow.ts` | Listen → detect (middle pedal preferred, also when pressed after another) → test press (one trigger per press; counter shows holding never retriggers) → Save → `pedal.hintPedal`. Missing middle pedal and sustain-pedal cautions, sound caveat, action Note names / Show keys, advanced inversion + threshold (needs a new test). |
 | Exit | `ConnectionView.tsx` | "Done" closes the modal (the title is the sheet's header). |
 
-Pure helpers: `status.ts` (step statuses, readiness), `format.ts` (event rows, pedal names).
+Pure helpers: `status.ts` (step statuses), `format.ts` (event rows, pedal names); `testkit.ts` (manual clock for the test notes' listening window).
 
 ## Behavior notes
 
@@ -38,7 +36,7 @@ Pure helpers: `status.ts` (step statuses, readiness), `format.ts` (event rows, p
 
 ## Status
 
-Done (happy-dom + unit tests: 48): every row above. Not done / left:
+Done (happy-dom + unit tests: 52): every row above. Not done / left:
 
 - Visual review: Playwright screenshots in light/dark at 1180×820, portrait and phone widths
   were **not** taken in this session (dark mode is token-only and render-tested only).
@@ -46,5 +44,5 @@ Done (happy-dom + unit tests: 48): every row above. Not done / left:
   audible test note, echo on real routes.
 - The pairing / denied texts are generic for MIDIWeb (its exact settings UI is unverified).
 
-Tests: `ConnectionView.test.tsx`, `EchoStep.test.tsx`, `liveMonitor.test.ts`,
+Tests: `ConnectionView.test.tsx`, `PlaybackStep.test.tsx`, `liveMonitor.test.ts`,
 `hintPedalFlow.test.ts`, `status.test.ts`. Run `npx vitest run src/views/connection`.

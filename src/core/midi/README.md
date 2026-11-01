@@ -14,8 +14,7 @@ Excluded from the worker tsconfig.
 | `MidiDecoder`, `noteOnBytes`/`noteOffBytes`/`ccBytes` | Byte decoding with a monotonically increasing `seq`; output byte builders. |
 | `PhysicalState` | Held keys per channel, keys sounding only through sustain, controller values, `isClean()`, release/change listeners. |
 | `HintPedalLearner`, `HintPedalConfirmation`, `HintPedalTrigger`, `withInversion`, `withThreshold` | "Set hint pedal": learn controller/channel/threshold/inversion, confirm with a test press, fire once per press. |
-| `EchoDetector`, `runEchoTest`, `echoSetting`, `DEFAULT_PROBE` | Output echo test. |
-| `playTestNote` | "Play test note" on the selected output/channel. |
+| `EchoDetector`, `runEchoTest`, `echoSetting`, `DEFAULT_PROBE` | Output echo test; its probe is also the Connection view's audible "Play test notes" (one tap verifies sound and echo). `runEchoTest` rejects when the output refuses a message. |
 | `findRememberedPort`, `applyRememberedRoute`, `rememberRoute`, `gradedAccompanimentAllowed` | Route memory and the graded-accompaniment rule. |
 | `fakeWebMidi.ts` (not exported) | Test fakes: ports, access with `statechange`, recording output. |
 

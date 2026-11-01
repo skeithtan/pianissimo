@@ -139,7 +139,7 @@
   }
   .live {
     grid-column: 2;
-    grid-row: 1 / span 6;
+    grid-row: 1 / span 3;
     position: sticky;
     top: 0;
     /* The modal body scrolls: stay in view beside the steps, within the sheet's height. */
@@ -592,46 +592,12 @@
 
 /* ---------------------------------------------------------------- accompaniment */
 
-.readiness {
+.options {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-m);
-  background: var(--bg-sunken);
-}
-.readinessTitle {
-  margin: 0;
-  font-weight: 600;
-}
-.checks {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--text-s);
-}
-.checks li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--fg-muted);
-}
-.checks li[data-ok] {
-  color: var(--fg);
-}
-.checkIcon {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  color: var(--fg-muted);
-}
-.checks li[data-ok] .checkIcon {
-  color: var(--success);
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
 }
 .stopRow {
   display: flex;

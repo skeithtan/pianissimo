@@ -1,8 +1,9 @@
 /**
  * Connection and Pedal Setup (spec "Main user journey" step 3; "MIDI input, output, and pedal
- * controls"; "Delivery and device compatibility"): a calm checklist of independent steps —
- * access, input with a live key/pedal test, output with a confirmed test note, echo test, hint
- * pedal, accompaniment options — with the remembered route and a clear exit.
+ * controls"; "Delivery and device compatibility"): a calm checklist of three independent steps
+ * (DECISIONS C11) — the piano (MIDI access, input with a live key/pedal test), playback to the
+ * piano (output, test notes that double as the echo probe, accompaniment options) and the hint
+ * pedal — with the remembered route and a clear exit.
  *
  * It is the content of the Connection modal (`ConnectionModal`, over whichever view is current;
  * the modal's header carries the title). Lazily loaded from `app/views.ts`. MIDI input only
@@ -16,14 +17,11 @@ import { settings } from '../../app/state'
 import type { MidiRouteSettings } from '../../core/model/settings'
 import { Button } from '../../ui/controls'
 import { Icon } from '../../ui/icons'
-import { AccessStep } from './AccessStep'
-import { EchoStep } from './EchoStep'
 import { HintPedalStep } from './HintPedalStep'
-import { InputStep } from './InputStep'
 import { LivePanel } from './LivePanel'
-import { OutputStep } from './OutputStep'
+import { PianoStep } from './PianoStep'
 import { StatusPill, stepAnchor, useMidiSnapshot } from './parts'
-import { PlaybackStep } from './PlaybackStep'
+import { PlaybackStep, type EchoClock } from './PlaybackStep'
 import { STEP_ORDER, STEP_TITLES, channelLabel, stepStatuses, type StepId, type StepStatus } from './status'
 import styles from './connection.module.css'
 
@@ -32,13 +30,15 @@ export function ConnectionView() {
   return <ConnectionSetup />
 }
 
-/** The setup page; tests inject the service and feature report. */
+/** The setup page; tests inject the service, feature report and the test-note clock. */
 export function ConnectionSetup({
   service = getMidiService(),
   features = getFeatures(),
+  clock,
 }: {
   service?: MidiService
   features?: FeatureReport
+  clock?: EchoClock
 }) {
   const snap = useMidiSnapshot(service)
   const current = settings.value
@@ -62,27 +62,24 @@ export function ConnectionSetup({
     <div class={styles.page}>
       <header class={styles.hero}>
         <p class={styles.intro}>
-          Connect your piano, check its keys and pedals, and make sure the app can play it. Each step works on its own;
-          everything is remembered on this device.
+          Connect your piano and make sure the app can play it. Each step works on its own; everything is remembered on
+          this device.
         </p>
         <RouteMemory snap={snap} route={current.route} />
         <Checklist statuses={statuses} />
       </header>
 
       <div class={styles.layout}>
-        <AccessStep
-          index={index('access')}
-          status={statuses.access}
+        <PianoStep index={index('piano')} status={statuses.piano} snap={snap} service={service} features={features} />
+        <LivePanel snap={snap} service={service} />
+        <PlaybackStep
+          index={index('playback')}
+          status={statuses.playback}
           snap={snap}
           service={service}
-          features={features}
+          {...(clock ? { clock } : {})}
         />
-        <InputStep index={index('input')} status={statuses.input} snap={snap} service={service} />
-        <LivePanel snap={snap} service={service} />
-        <OutputStep index={index('output')} status={statuses.output} snap={snap} service={service} />
-        <EchoStep index={index('echo')} status={statuses.echo} snap={snap} service={service} />
         <HintPedalStep index={index('pedal')} status={statuses.pedal} snap={snap} service={service} />
-        <PlaybackStep index={index('playback')} status={statuses.playback} snap={snap} service={service} />
       </div>
 
       <footer class={styles.done}>
@@ -98,10 +95,11 @@ export function ConnectionSetup({
 }
 
 function doneSummary(statuses: Readonly<Record<StepId, StepStatus>>): string {
-  const ready = STEP_ORDER.filter((id) => statuses[id].tone === 'done').length
-  if (statuses.input.tone !== 'done')
+  if (statuses.piano.tone !== 'done')
     return 'You can come back here any time from the connection status at the top of the screen.'
-  return `${ready} of ${STEP_ORDER.length} steps complete. Your piano is ready for both-hands practice.`
+  if (statuses.playback.tone === 'done')
+    return 'Your piano is ready for both-hands and one-hand practice, with the piano playing the other hand.'
+  return 'Your piano is ready for both-hands practice. One-hand practice needs playback to the piano, or browser sound in Settings → Sound.'
 }
 
 /** "Remembered: Piano → Piano, channel 1 · USB" and whether it is connected now. */

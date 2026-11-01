@@ -11,6 +11,7 @@ import { $, $$, byLabel, byText, click, flush, mount, type, type Mounted } from 
 import { ALL_FEATURES } from '../settings/testkit'
 import { detectFeatures } from '../../app/features'
 import { ConnectionSetup } from './ConnectionView'
+import { manualClock } from './testkit'
 
 const settle = (ms = 30) =>
   act(async () => {
@@ -39,6 +40,7 @@ interface Rig {
   readonly out: FakeOutput
   readonly nav: ReturnType<typeof fakeNavigator>
   readonly root: HTMLElement
+  readonly clock: ReturnType<typeof manualClock>
   /** Send raw MIDI bytes from the piano. */
   play(bytes: number[]): Promise<void>
 }
@@ -58,7 +60,8 @@ async function open(
   resetServicesForTests({
     navigator: opts.navigator ?? { ...nav, permissions: { query: () => Promise.resolve({ state: permission }) } },
   })
-  view = mount(<ConnectionSetup features={ALL_FEATURES} />)
+  const clock = manualClock()
+  view = mount(<ConnectionSetup features={ALL_FEATURES} clock={clock} />)
   await settle()
   const root = view.container
   return {
@@ -67,6 +70,7 @@ async function open(
     out,
     nav,
     root,
+    clock,
     async play(bytes) {
       flush(() => piano.emit(bytes, performance.now()))
       await settle()
@@ -90,12 +94,23 @@ function radioFor(root: ParentNode, label: string): HTMLInputElement {
 async function connectAll(rig: Rig): Promise<void> {
   click(byLabel(rig.root, 'Allow MIDI access'))
   await settle()
-  click(radioFor(section(rig.root, 'input'), 'Digital Piano'))
-  click(radioFor(section(rig.root, 'output'), 'Digital Piano'))
+  click(radioFor(section(rig.root, 'piano'), 'Digital Piano'))
+  click(radioFor(section(rig.root, 'playback'), 'Digital Piano'))
   await settle()
 }
 
-describe('Access step (spec "Delivery and device compatibility")', () => {
+/** Tap Play test notes, answer Yes, and let the listening window elapse. */
+async function hearTestNotes(rig: Rig): Promise<void> {
+  click(byLabel(rig.root, 'Play test notes'))
+  click(byLabel(rig.root, 'Yes, I heard them'))
+  await act(async () => {
+    rig.clock.fire()
+    await Promise.resolve()
+  })
+  await settle()
+}
+
+describe('Piano step: MIDI access (spec "Delivery and device compatibility")', () => {
   it('explains a browser without Web MIDI and never offers to request it', async () => {
     resetServicesForTests({ navigator: {} })
     const features = detectFeatures({ navigator: {} })
@@ -116,23 +131,25 @@ describe('Access step (spec "Delivery and device compatibility")', () => {
     click(byLabel(rig.root, 'Allow MIDI access'))
     await settle()
     expect(rig.nav.calls).toEqual([{ sysex: false }])
-    expect(section(rig.root, 'access').textContent).toContain('MIDI access is allowed')
-    expect($$(section(rig.root, 'input'), 'input[type="radio"]')).toHaveLength(1)
+    // Once granted, the same step is the piano input: no access text or button remains.
+    expect(byLabel(rig.root, 'Allow MIDI access')).toBeNull()
+    expect($$(section(rig.root, 'piano'), 'input[type="radio"]')).toHaveLength(1)
     // Outputs are a separate list, with an explicit "no output" choice.
-    expect($$(section(rig.root, 'output'), 'input[type="radio"]')).toHaveLength(2)
+    expect($$(section(rig.root, 'playback'), 'input[type="radio"]')).toHaveLength(2)
   })
 
   it('connects straight away when the permission is already granted (no prompt possible)', async () => {
     const rig = await open({ permission: 'granted' })
     expect(rig.nav.calls).toHaveLength(1)
-    expect(section(rig.root, 'access').textContent).toContain('Allowed')
+    expect(byLabel(rig.root, 'Allow MIDI access')).toBeNull()
+    expect(section(rig.root, 'piano').textContent).toContain('Choose your piano')
   })
 
   it('explains how to re-allow a blocked permission and lets the learner try again', async () => {
     const rig = await open({ outcome: 'deny' })
     click(byLabel(rig.root, 'Allow MIDI access'))
     await settle()
-    const access = section(rig.root, 'access')
+    const access = section(rig.root, 'piano')
     expect(access.textContent).toContain('MIDI access is blocked')
     expect(access.textContent).toContain('Site settings')
     expect(connectionStatus.value.state).toBe('denied')
@@ -143,19 +160,19 @@ describe('Access step (spec "Delivery and device compatibility")', () => {
 
   it('keeps Bluetooth pairing with the system and says Bluetooth audio is not enough', async () => {
     const rig = await open()
-    const guide = $(section(rig.root, 'access'), 'details')
+    const guide = $(section(rig.root, 'piano'), 'details')
     expect(guide?.textContent).toContain('this website never pairs devices')
     expect(guide?.textContent).toContain('Bluetooth audio alone is not enough')
     expect(guide?.textContent).toContain('interface’s MIDI Out goes to the piano’s MIDI In')
   })
 })
 
-describe('Input step and live test (spec "MIDI input, output, and pedal controls")', () => {
+describe('Piano step: input and live test (spec "MIDI input, output, and pedal controls")', () => {
   it('selects and remembers the piano input and drives the connection status', async () => {
     const rig = await open()
     click(byLabel(rig.root, 'Allow MIDI access'))
     await settle()
-    click(radioFor(section(rig.root, 'input'), 'Digital Piano'))
+    click(radioFor(section(rig.root, 'piano'), 'Digital Piano'))
     await settle()
     expect(settings.value.route).toMatchObject({ inputId: 'in-1', inputName: 'Digital Piano' })
     expect(connectionStatus.value).toMatchObject({ state: 'connected', inputName: 'Digital Piano' })
@@ -203,43 +220,57 @@ describe('Input step and live test (spec "MIDI input, output, and pedal controls
   })
 })
 
-describe('Output step: test note and confirmation', () => {
-  it('plays the test note on the chosen channel and records the answer', async () => {
+describe('Playback step: test notes, confirmation and echo (DECISIONS C11)', () => {
+  it('plays the probe on the chosen channel and records the answer and the echo verdict', async () => {
     const rig = await open()
     await connectAll(rig)
-    type($(section(rig.root, 'output'), 'select'), '2')
+    type($(section(rig.root, 'playback'), 'select'), '2')
     expect(settings.value.route.outputChannel).toBe(2)
-    click(byLabel(rig.root, 'Play test note'))
+    click(byLabel(rig.root, 'Play test notes'))
     expect(rig.out.sent.map((m) => m.data)).toEqual([
-      [0x92, 60, 80],
-      [0x82, 60, 64],
+      [0x92, 61, 37],
+      [0x82, 61, 0],
+      [0x92, 66, 83],
+      [0x82, 66, 0],
+      [0x92, 70, 59],
+      [0x82, 70, 0],
     ])
-    expect(rig.root.textContent).toContain('Did the piano itself play a note?')
-    click(byLabel(rig.root, 'Yes, I heard it'))
+    expect(rig.root.textContent).toContain('Did the piano itself play three short notes?')
+    click(byLabel(rig.root, 'Yes, I heard them'))
     expect(settings.value.route.outputVerified).toBe(true)
-    expect(section(rig.root, 'output').textContent).toContain('The piano sounds on channel 3')
-    expect(section(rig.root, 'output').getAttribute('data-tone')).toBe('done')
+    await settle()
+    expect(section(rig.root, 'playback').textContent).toContain('The piano sounds on channel 3')
+    expect(section(rig.root, 'playback').getAttribute('data-tone')).toBe('action') // echo still listening
+    await act(async () => {
+      rig.clock.fire()
+      await Promise.resolve()
+    })
+    await settle()
+    expect(settings.value.route.echo).toBe('none')
+    expect(section(rig.root, 'playback').getAttribute('data-tone')).toBe('done')
+    expect(rig.root.textContent).toContain('ready for both-hands and one-hand practice')
   })
 
   it('on "No sound" suggests channel, cable direction and that a port is not proof', async () => {
     const rig = await open()
     await connectAll(rig)
-    click(byLabel(rig.root, 'Play test note'))
+    click(byLabel(rig.root, 'Play test notes'))
     click(byLabel(rig.root, 'No sound'))
-    const text = section(rig.root, 'output').textContent ?? ''
+    const text = section(rig.root, 'playback').textContent ?? ''
     expect(settings.value.route.outputVerified).toBe(false)
     expect(text).toContain('Try another receive channel')
     expect(text).toContain('MIDI Out must go to the piano’s MIDI In')
     expect(text).toContain('not proof')
   })
 
-  it('a new channel clears the verification of the old one', async () => {
+  it('a new channel clears the verification and the echo verdict of the old one', async () => {
     const rig = await open()
     await connectAll(rig)
-    click(byLabel(rig.root, 'Play test note'))
-    click(byLabel(rig.root, 'Yes, I heard it'))
-    type($(section(rig.root, 'output'), 'select'), '5')
-    expect(settings.value.route).toMatchObject({ outputChannel: 5, outputVerified: false })
+    await hearTestNotes(rig)
+    expect(settings.value.route).toMatchObject({ outputVerified: true, echo: 'none' })
+    type($(section(rig.root, 'playback'), 'select'), '5')
+    expect(settings.value.route).toMatchObject({ outputChannel: 5, outputVerified: false, echo: 'untested' })
+    expect(section(rig.root, 'playback').textContent).toContain('Play the test notes')
   })
 })
 
@@ -322,16 +353,19 @@ describe('Hint pedal (spec acceptance "Pedal hints")', () => {
   })
 })
 
-describe('Accompaniment step', () => {
-  it('summarizes what graded accompaniment still needs', async () => {
+describe('Playback step: accompaniment options', () => {
+  it('says in its status what graded accompaniment still needs', async () => {
     const rig = await open()
     await connectAll(rig)
-    const step = section(rig.root, 'playback')
-    expect(step.textContent).toContain('Confirm that the test note sounds on the piano')
-    expect(step.textContent).toContain('Run the echo test')
-    updateSettings({ route: { outputVerified: true, echo: 'none' } })
+    expect(section(rig.root, 'playback').textContent).toContain('Play the test notes')
+    expect(rig.root.textContent).toContain('ready for both-hands practice. One-hand practice needs')
+    updateSettings({ route: { outputVerified: true, echo: 'echo-detected' } })
     await settle()
-    expect(section(rig.root, 'playback').textContent).toContain('the piano plays the other hand and you are graded')
+    expect(section(rig.root, 'playback').textContent).toContain('Echo detected')
+    updateSettings({ route: { echo: 'none' } })
+    await settle()
+    expect(section(rig.root, 'playback').textContent).toContain('Piano sounds on channel 1')
+    expect(section(rig.root, 'playback').getAttribute('data-tone')).toBe('done')
   })
 
   it('keeps score pedals in one-hand practice off by default and lets the learner opt in', async () => {
@@ -346,7 +380,7 @@ describe('Accompaniment step', () => {
   it('Stop sound sends All Notes Off on the app channel only', async () => {
     const rig = await open()
     await connectAll(rig)
-    type($(section(rig.root, 'output'), 'select'), '3')
+    type($(section(rig.root, 'playback'), 'select'), '3')
     let ownerCalls = 0
     getMidiService().registerSoundOwner(() => ownerCalls++)
     click(byLabel(rig.root, 'Stop sound'))
@@ -364,7 +398,7 @@ describe('Route memory and exit', () => {
     flush(() => rig.access.addInput(new FakeInput('in-9', 'Stage Piano')))
     await settle()
     expect(connectionStatus.value).toMatchObject({ state: 'connected', inputName: 'Stage Piano' })
-    expect(section(rig.root, 'input').textContent).toContain('Remembered')
+    expect(section(rig.root, 'piano').textContent).toContain('Remembered')
   })
 
   it('reports a disconnected piano in the input step', async () => {
@@ -372,8 +406,8 @@ describe('Route memory and exit', () => {
     await connectAll(rig)
     flush(() => rig.access.setState(rig.piano, 'disconnected'))
     await settle()
-    expect(section(rig.root, 'input').textContent).toContain('Digital Piano is disconnected')
-    expect(section(rig.root, 'input').getAttribute('data-tone')).toBe('action')
+    expect(section(rig.root, 'piano').textContent).toContain('Digital Piano is disconnected')
+    expect(section(rig.root, 'piano').getAttribute('data-tone')).toBe('action')
   })
 
   it('offers a clear exit: Done closes the modal and leaves the current view alone', async () => {
@@ -388,14 +422,9 @@ describe('Route memory and exit', () => {
     const rig = await open()
     const items = $$(rig.root, 'nav[aria-label="Setup steps"] li')
     expect(items.map((li) => li.textContent)).toEqual(
-      [
-        'MIDI accessNot allowed yet',
-        'Piano inputNeeds MIDI access',
-        'Playback to the pianoNeeds MIDI access',
-        'Echo testNeeds an input and an output',
-        'Hint pedalOptional',
-        'AccompanimentPiano playback not ready',
-      ].map((t, i) => `${i + 1}${t}`),
+      ['Your pianoNot allowed yet', 'Playback to the pianoNeeds MIDI access', 'Hint pedalOptional'].map(
+        (t, i) => `${i + 1}${t}`,
+      ),
     )
   })
 })
@@ -406,7 +435,7 @@ describe('Dark theme', () => {
     const rig = await open()
     await connectAll(rig)
     await rig.play([0x90, 64, 90])
-    expect($$(rig.root, 'section[data-step]')).toHaveLength(6)
+    expect($$(rig.root, 'section[data-step]')).toHaveLength(3)
     expect($(rig.root, 'aside')).not.toBeNull()
     expect($(rig.root, '[data-midi="64"]')?.hasAttribute('data-held')).toBe(true)
   })
