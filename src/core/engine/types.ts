@@ -97,12 +97,6 @@ export interface EngineConfig {
   readonly earlyGraceMs?: number
   /** Accompaniment: gate ETA from the transport. Without it, current-group presses are never "too early". */
   readonly transportEta?: TransportEta | null
-  /**
-   * Compare the sustain pedal with the score's sustain marks per group (`GroupOutcome.pedal`,
-   * DECISIONS E17). Default true; pass false while the app itself plays the score's pedals
-   * (automatic pedals in hand practice), when the learner's foot is not expected to pedal.
-   */
-  readonly checkPedal?: boolean
 }
 
 /** Options of a new scored attempt (`restart`, `reconfigure`). */
@@ -141,8 +135,6 @@ export interface EngineSettingsPatch {
   readonly passTimeTolerance?: number | null
   readonly wrongFeedbackMs?: number
   readonly transportEta?: TransportEta | null
-  /** See `EngineConfig.checkPedal`; applies from the next group completion. */
-  readonly checkPedal?: boolean
 }
 
 export interface HintView {

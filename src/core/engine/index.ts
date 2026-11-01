@@ -8,7 +8,6 @@ export {
   DEFAULT_PEDAL_DOWN_THRESHOLD,
   DEFAULT_WRONG_FEEDBACK_MS,
   EARLY_PRESS_GRACE_MS,
-  PEDAL_GRACE_MS,
 } from './engine'
 export {
   buildTimeline,

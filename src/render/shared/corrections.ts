@@ -3,9 +3,9 @@
  * and the page share this module, so both follow the same contract: a hand-drawn red ring (one
  * pen stroke, rotated −3°) per staff around each mark's noteheads, one text per mark in a band
  * beyond the staves of its system (never on notation or on another label), a 2.5 px link
- * between the rings of a `'spread'` mark and "Ped." before a `'pedal'` mark's text. Strip
- * layouts have one implicit system (`layout.staves`); page layouts key everything by system and
- * use that system's staves and marks only. Built once per `setCorrections`, nothing per frame.
+ * between the rings of a `'spread'` mark. Strip layouts have one implicit system
+ * (`layout.staves`); page layouts key everything by system and use that system's staves and
+ * marks only. Built once per `setCorrections`, nothing per frame.
  */
 import { LABEL_FONT_FAMILY, LABEL_FONT_WEIGHT, type TextMeasurer } from '../labels/metrics'
 import type { Box, PreparedLayout, StaffGeometry } from '../types'
@@ -13,13 +13,13 @@ import type { Box, PreparedLayout, StaffGeometry } from '../types'
 /**
  * A teacher's correction after an attempt: a red-pen ring around `notes` (performed-note indices,
  * the view's note ids) with a short text in a band beyond the staves ("Wrong note", "F♯, not F",
- * "Wrong octave ↑", "Together", "Tied, hold it", "Pedal", "Too soon", "Too late"). Every kind is
- * drawn in the same red pen and named by a class (`pn-corr-<kind>`); a `'spread'` mark across
- * staves also joins its rings, a `'pedal'` mark puts "Ped." before its text.
+ * "Wrong octave ↑", "Together", "Tied, hold it", "Too soon", "Too late"). Every kind is drawn in
+ * the same red pen and named by a class (`pn-corr-<kind>`); a `'spread'` mark across staves also
+ * joins its rings.
  */
 export interface CorrectionMark {
   readonly notes: readonly number[]
-  readonly kind: 'wrong' | 'early' | 'late' | 'accidental' | 'octave' | 'spread' | 'tie' | 'pedal'
+  readonly kind: 'wrong' | 'early' | 'late' | 'accidental' | 'octave' | 'spread' | 'tie'
   readonly text: string
 }
 
@@ -41,8 +41,6 @@ const CORRECTION_STEM_CLEAR = 36
 const CORRECTION_GAP = 4
 /** Horizontal space kept between two correction labels in one row (layout px). */
 const CORRECTION_LABEL_GAP = 6
-/** Drawn before a pedal mark's text. */
-const PEDAL_GLYPH = 'Ped.'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -76,7 +74,6 @@ interface CorrectionLabel {
   /** Text anchor (middle) and baseline. */
   readonly x: number
   readonly y: number
-  readonly pedal: boolean
   /** Vertical leader from the label box (y1) to the ring's edge (y2). */
   readonly leader: { readonly x: number; readonly y1: number; readonly y2: number }
 }
@@ -183,8 +180,7 @@ function placeLabels(
     const pos = staves.findIndex((s) => s.index === own[0]!.staff)
     const side = pos < staves.length / 2 ? 'above' : 'below'
     const ring = side === 'above' ? own[0]! : own[own.length - 1]!
-    const pedal = m.mark.kind === 'pedal'
-    const w = measurer.width(pedal ? `${PEDAL_GLYPH} ${m.mark.text}` : m.mark.text, CORRECTION_FONT)
+    const w = measurer.width(m.mark.text, CORRECTION_FONT)
     const lx0 = ring.cx - w / 2
     const lx1 = ring.cx + w / 2
     const edge = bandEdge(layout, staves, side, ring, lx0, lx1)
@@ -204,7 +200,6 @@ function placeLabels(
         box,
         x: ring.cx,
         y: y0 + 12,
-        pedal,
         leader: { x: ring.cx, y1: side === 'above' ? box.y1 : box.y0, y2: ringEdge },
       }
     }
@@ -320,12 +315,7 @@ export function buildCorrection(doc: Document, shape: CorrectionShape, top: numb
     text.setAttribute('y', String(r2(label.y)))
     text.setAttribute('text-anchor', 'middle')
     text.dataset.row = String(label.row)
-    if (label.pedal) {
-      const ped = doc.createElementNS(SVG_NS, 'tspan')
-      ped.setAttribute('class', 'pn-corr-ped')
-      ped.textContent = PEDAL_GLYPH
-      text.append(ped, ` ${shape.mark.text}`)
-    } else text.textContent = shape.mark.text
+    text.textContent = shape.mark.text
     svg.append(text)
   }
   return svg

@@ -108,28 +108,6 @@ describe('onset groups (spec: Score following)', () => {
     expect(right.groups.map((g) => g.tiedPitches)).toEqual([[], [C4], []])
   })
 
-  it('pedalDown follows the sustain marks at or before each onset; null without sustain marks', () => {
-    const notes = [0, 1, 2, 3, 4, 5].map((at) => ({ at, midi: C4 + at }))
-    const m = buildScore({
-      notes,
-      pedals: [
-        { at: 1, type: 'start' },
-        { at: 3, type: 'stop' },
-        { at: 3, type: 'start' }, // a change written as stop + start: down
-        { at: 4, type: 'continue' },
-        { at: 5, type: 'stop' },
-        { at: 0, type: 'start', kind: 'soft' }, // never decides the sustain state
-      ],
-    })
-    expect(buildTimeline(m, both).groups.map((g) => g.pedalDown)).toEqual([false, true, true, true, true, false])
-    // A loop inside a pedal span starts with the pedal down.
-    const loop = buildTimeline(m, { ...both, range: { fromOcc: 0, toOcc: 1, start: quarters(2), end: quarters(5) } })
-    expect(loop.groups.map((g) => g.pedalDown)).toEqual([true, true, true])
-    const soft = buildScore({ notes, pedals: [{ at: 0, type: 'start', kind: 'soft' }] })
-    expect(buildTimeline(soft, both).groups.every((g) => g.pedalDown === null)).toBe(true)
-    expect(buildTimeline(buildScore({ notes }), both).groups.every((g) => g.pedalDown === null)).toBe(true)
-  })
-
   it('rests produce no group: the cursor moves to the next playable onset', () => {
     const m = buildScore({
       notes: [

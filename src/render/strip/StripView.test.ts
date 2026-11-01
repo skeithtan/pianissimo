@@ -1067,18 +1067,14 @@ describe('StripView teacher corrections', () => {
 
   it('every kind is a red-pen mark with its own class and a paper-haloed label', () => {
     const { v } = view(40)
-    const kinds = ['wrong', 'early', 'late', 'accidental', 'octave', 'spread', 'tie', 'pedal'] as const
+    const kinds = ['wrong', 'early', 'late', 'accidental', 'octave', 'spread', 'tie'] as const
     v.setCorrections(kinds.map((kind, i) => ({ notes: [i * 4], kind, text: kind })))
     v.flushNow()
     const marks = [...host.querySelectorAll('.pn-corr')]
     expect(marks.map((m) => m.getAttribute('class'))).toEqual(kinds.map((k) => `pn-corr pn-corr-${k}`))
     expect(marks.every((m) => m.querySelectorAll('.pn-corr-ring').length === 1)).toBe(true)
     expect(marks.every((m) => labelOf(m)!.getAttribute('class') === 'pn-corr-label pn-corr-halo')).toBe(true)
-    // The pedal mark writes "Ped." before its text.
-    const pedal = marks[7]!
-    expect(pedal.querySelector('.pn-corr-ped')!.textContent).toBe('Ped.')
-    expect(labelOf(pedal)!.textContent).toBe('Ped. pedal')
-    expect(labelOf(marks[0]!)!.querySelector('.pn-corr-ped')).toBeNull()
+    expect(marks.map((m) => labelOf(m)!.textContent)).toEqual([...kinds])
   })
 
   it('labels sit in a band beyond the staves, never over notation, with a leader to the ring', () => {

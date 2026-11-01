@@ -12,13 +12,12 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 
 | Entry point | Purpose |
 | --- | --- |
-| `buildTimeline(model, {hands, range, multiplier, tempo?})` | Learner onset groups, measures, automatic positions, reference timing, blockers, comparison context. Built once per hands/range/tempo/speed. A note-level `range` (`start` / `end` inside its boundary bars, U21) covers `[start, end)`: groups, boundary reattacks at `start`, timing from `start`, notated duration to `end`, timing issues inside; a boundary bar that leaves out learner onsets is `partial` and its traversals are never complete (H7). Edges on barlines normalize to whole bars (unchanged comparison keys). Each group also carries `tiedPitches` (pitches tied into it: tie-end presses, E16) and `pedalDown` (sustain the score wants at its onset; null without sustain marks, E17). |
+| `buildTimeline(model, {hands, range, multiplier, tempo?})` | Learner onset groups, measures, automatic positions, reference timing, blockers, comparison context. Built once per hands/range/tempo/speed. A note-level `range` (`start` / `end` inside its boundary bars, U21) covers `[start, end)`: groups, boundary reattacks at `start`, timing from `start`, notated duration to `end`, timing issues inside; a boundary bar that leaves out learner onsets is `partial` and its traversals are never complete (H7). Edges on barlines normalize to whole bars (unchanged comparison keys). Each group also carries `tiedPitches` (pitches tied into it: tie-end presses, E16) |
 | `transportGates(timeline)` | Gate positions for the transport (gate `i` = group `i`). |
 | `groupAtOrAfter(timeline, position)`, `barLabel(model, occ)` | Resume positions; "12 (pass 2)" labels. |
 | `new PracticeEngine(timeline, config, now)` | The state machine (see below). |
 | `fadeOutOpacity(elapsedMs, durationMs)`, `easeInOut(p)` | Shared eased fade curve (smoothstep): exactly 1 before, exactly 0 at the end. Renderer labels and keyboard-guide hiding use it too. |
 | `EARLY_PRESS_GRACE_MS` (120), `matchingRulesFor(graceMs)` | Early-press grace window and the matching-rules id recorded with it. |
-| `PEDAL_GRACE_MS` (150) | A sustain change toward the score this soon after a group's completion still counts for it. |
 | `buildAttemptRecord`, `comparisonContextOf` | Record builders (used internally; exported for history tests). Scored records carry per-group outcomes (`groups: GroupOutcome[]`, type re-exported here). |
 | `testkit.ts` | Test-only: `buildScore` (compact note lists → valid `ScoreModel`), `MidiScript`, `EngineDriver`, `pedalDetector`. |
 
@@ -39,7 +38,7 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `seek(group, now)` | Scored: interrupts. Reading: new traversal at `group`. |
 | `transportArrived(group, now?)` | Transport reached gate `group` (accompaniment only). |
 | `reconfigure({reason, timeline?, mode?, transport?, startGroup?, runningStart?}, now)` | Hands/range/tempo/speed/mode change. Pass `runningStart: true` at a lead-in hand-over (the transport keeps playing into the loop). |
-| `updateSettings(patch, now)` | Hint settings, label snapshot (a changed mode/rule interrupts an active scored attempt), hint pedal, pass tolerance, `checkPedal`. |
+| `updateSettings(patch, now)` | Hint settings, label snapshot (a changed mode/rule interrupts an active scored attempt), hint pedal, pass tolerance. |
 | `state` | Readonly snapshot, reused until `version` changes. |
 | `drainEvents()` | Change events since the last drain (see `EngineEvent` in `types.ts`). |
 
@@ -93,7 +92,7 @@ repositioning the transport so arrivals belong to the new attempt. Schedule `tic
    an ordinary pause. A group completed by pending presses records its completion at the
    later of the press and the previous group's completion (monotonic onsets).
 
-## Per-group outcomes (teacher corrections, E15–E17)
+## Per-group outcomes (teacher corrections, E15–E16)
 
 Scored records carry `groups: GroupOutcome[]`, one per reached group, ascending (completed
 groups and, when the attempt ended early, the current one); reading records carry none.
@@ -105,16 +104,12 @@ groups and, when the attempt ended early, the current one); reading records carr
 | `wrongPitches` | MIDI pitches of the group's wrong attacks that were not too early, in order, repeats included. |
 | `spreadMs` | Whole ms between the first and last accepted attack (engine press times; replays ignored); 0 for a one-pitch group or an incomplete one. |
 | `tieEndPresses` | Presses of a pitch in the group's `tiedPitches` while it is current, or within the early grace before it (pending like a next-group press; expiring before the group comes it is a `'pitch'` error of the current group). A pending next-group press whose pitch is also tied into the current group expires as a tie-end press instead of `'ahead'`. A tie-end press emits `wrong` with reason `'tie-end'` (feedback end unchanged) and is **not** a wrong attack: no totals, first-pass, bar traversal, red wash, local marker, held-wrong marking, hint count or ottava warning, and `lastWrongReason` is kept. Give it gentle feedback only. |
-| `pedal` | Only when the group has `pedalDown !== null` and `checkPedal` is on (default; turn it off while the app plays the score's pedals): physical sustain (CC 64 ≥ the down threshold) at completion vs the score: `'ok'`, `'missing'` (score down, pedal up) or `'extra'` (score up, pedal down). A mismatch becomes `'ok'` when the pedal reaches the score's state within `PEDAL_GRACE_MS` (150) after completion (each group keeps its own grace, even when the next group completes inside it); the final group's record is built at completion, so only the state then counts for it. `'none'` otherwise (incomplete groups included). |
 
 `tiedPitches` (timeline): learner tie continuations go to the first group at or after their
 onset, unless that group attacks the pitch itself; a tie end after the last group belongs to
 none. A tie chain attacked **before** a loop start is not required inside the loop (no boundary
 reattack, no group of its own): its pitch is a tied pitch of the first group (user, 31 October
 2026). Held, untied notes crossing the loop start keep the boundary reattack.
-`pedalDown` (timeline): the sustain state after every sustain mark at or before the onset, in
-score order (`start`/`change` down, `stop` up, `continue` keeps; marks before the passage shape
-its first groups); sostenuto and soft marks never decide it.
 
 ## State diagram
 
@@ -209,5 +204,5 @@ happened (`waitingForTransport` meanwhile).
 14. **Fade curve:** smoothstep; outgoing fades continue from the current opacity.
 15. **Held pedals never block Ready** (user, 31 October 2026): only held keys, preparation and
     label fades do. `ReadyBlocker` keeps `'pedals-held'` for compatibility; it is never emitted.
-16. **Per-group outcomes.** See "Per-group outcomes" above (E15 revised, E16 tie-end presses,
-    E17 pedal checking). Reading traversals carry no `groups`.
+16. **Per-group outcomes.** See "Per-group outcomes" above (E15 revised, E16 tie-end presses;
+    E17 pedal checking was removed). Reading traversals carry no `groups`.

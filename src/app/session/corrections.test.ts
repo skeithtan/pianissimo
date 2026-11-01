@@ -182,29 +182,14 @@ describe('correctionMarks', () => {
     ])
   })
 
-  it('the pedal: "Pedal" where it was missing, "No pedal" where it was extra, nothing when ok or undecided', () => {
-    expect(
-      marks([
-        outcome(0, 0, 0, 0, { pedal: 'missing' }),
-        outcome(1, 0, 0, 0, { pedal: 'ok' }),
-        outcome(2, 0, 0, 0, { pedal: 'extra' }),
-        outcome(3, 0, 0, 0, { pedal: 'none' }),
-      ]),
-    ).toEqual([
-      { notes: [0], kind: 'pedal', text: 'Pedal' },
-      { notes: [3], kind: 'pedal', text: 'No pedal' },
-    ])
-  })
-
-  it('priority: accidental > octave > wrong > tie > pedal > spread > early > late', () => {
-    const all = { spreadMs: 400, tieEndPresses: 1, pedal: 'missing' as const }
+  it('priority: accidental > octave > wrong > tie > spread > early > late', () => {
+    const all = { spreadMs: 400, tieEndPresses: 1 }
     const first = (o: GroupOutcome) => marks([o])[0]?.kind
     expect(first(outcome(1, 4, 1, 900, { ...all, wrongPitches: [59, 48, 62] }))).toBe('octave')
     expect(first(outcome(0, 4, 1, 900, { ...all, wrongPitches: [54, 65, 62] }))).toBe('accidental')
     expect(first(outcome(1, 2, 1, 900, { ...all, wrongPitches: [62] }))).toBe('wrong')
     expect(first(outcome(1, 1, 1, 900, { ...all, wrongPitches: [] }))).toBe('tie')
-    expect(first(outcome(1, 1, 1, 900, { ...all, tieEndPresses: 0 }))).toBe('pedal')
-    expect(first(outcome(1, 1, 1, 900, { spreadMs: 400, pedal: 'ok' }))).toBe('spread')
+    expect(first(outcome(1, 1, 1, 900, { ...all, tieEndPresses: 0 }))).toBe('spread')
     expect(first(outcome(1, 1, 1, 900, { spreadMs: 10 }))).toBe('early')
     expect(first(outcome(1, 0, 0, 900, { spreadMs: 10 }))).toBe('late')
   })

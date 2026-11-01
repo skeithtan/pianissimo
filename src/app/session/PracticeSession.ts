@@ -1822,8 +1822,6 @@ export class PracticeSession {
           accompanimentLevel: level(route.accompanimentLevel),
           sendPedals,
         })
-    // The pedal is checked against the score only when the learner is the one pedaling (E17).
-    this.#engine.updateSettings({ checkPedal: !sendPedals }, this.#deps.clock())
     const transport = createTransport({
       clock: this.#deps.clock,
       timers: this.#deps.timers,

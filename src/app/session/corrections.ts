@@ -1,7 +1,7 @@
 /**
  * The teacher's corrections after a scored attempt: one red-pen mark per onset group that went
- * wrong, came too soon or too late, was spread out, re-attacked a tie or missed the pedal, built
- * from the record's per-group outcomes (pure).
+ * wrong, came too soon or too late, was spread out or re-attacked a tie, built from the record's
+ * per-group outcomes (pure).
  */
 import type { Timeline } from '../../core/engine'
 import { passageBounds, type PassageBounds } from '../../core/model/passage'
@@ -27,10 +27,10 @@ type Group = Timeline['groups'][number]
 /**
  * One mark per group with a problem, in group order. A group with several gets the first of:
  * a wrong accidental ("F♯, not F"), a wrong octave ("Wrong octave ↑"), another wrong key ("Wrong
- * note(s)"), a re-attacked tie ("Tied, hold it"), the pedal ("Pedal" / "No pedal"), a spread
- * chord ("Together"), too soon, too late. A mark's notes are the group's performed-note indices
- * (the strip's note ids) whose onset lies inside the attempt's passage: a ring never goes around
- * notes outside it (a tie head before the loop start), and a mark with none left is dropped.
+ * note(s)"), a re-attacked tie ("Tied, hold it"), a spread chord ("Together"), too soon, too
+ * late. A mark's notes are the group's performed-note indices (the strip's note ids) whose onset
+ * lies inside the attempt's passage: a ring never goes around notes outside it (a tie head before
+ * the loop start), and a mark with none left is dropped.
  * `score` spells the target as the score does, with the `naming` settings. Records without
  * per-group outcomes (older ones) give none; outcomes without the newer optional fields give
  * only the older classes.
@@ -90,8 +90,6 @@ function classify(
     : Math.max(0, g.wrongAttacks - g.earlyAttacks - (g.tieEndPresses ?? 0))
   if (wrong > 0) return { kind: 'wrong', text: wrong > 1 ? 'Wrong notes' : 'Wrong note' }
   if ((g.tieEndPresses ?? 0) > 0) return { kind: 'tie', text: 'Tied, hold it' }
-  if (g.pedal === 'missing') return { kind: 'pedal', text: 'Pedal' }
-  if (g.pedal === 'extra') return { kind: 'pedal', text: 'No pedal' }
   if ((g.spreadMs ?? 0) >= SPREAD_MARK_MS && group.pitches.length >= 2) return { kind: 'spread', text: 'Together' }
   if (g.earlyAttacks > 0) return { kind: 'early', text: 'Too soon' }
   if (g.lateMs >= LATE_MARK_MS) return { kind: 'late', text: 'Too late' }

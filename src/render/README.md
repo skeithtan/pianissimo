@@ -134,9 +134,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   already placed in its band moves one row farther from the staff, up to three rows, else its text
   and leader are dropped and the ring stays. A chord on both staves shares one label (top band).
   A `'spread'` mark with rings on several staves joins them with a 2.5 px line (`pn-corr-link`)
-  along their centers' line, from ring edge to ring edge, drawn under the rings in the same SVG;
-  a `'pedal'` mark writes an italic "Ped." (`pn-corr-ped`) before its text. Each mark is one small
-  SVG on `.pn-corrs`
+  along their centers' line, from ring edge to ring edge, drawn under the rings in the same SVG.
+  Each mark is one small SVG on `.pn-corrs`
   inside the scaled content (layout px; `shared/corrections.ts`, used by the page too, per system), so it scrolls and zooms with the notation; DOM is built
   once in the next frame after a call (the same marks again are a no-op), nothing per frame, no
   pointer events. Fade in 300 ms staggered 40 ms left to right; replaced or cleared marks fade out

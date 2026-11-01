@@ -312,8 +312,7 @@ Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `prac
   the winning piece record per version; `getStorage()` wires `historyFailureNotices` (warning
   notices when the writer drops records).
 - Playback: attacks ordered by `(min(s, nextGate), gateCount, s)`; deferred releases kept while
-  the output is lost and never sent before a queued attack of the same pitch; the engine keeps one
-  pedal watch per completed group.
+  the output is lost and never sent before a queued attack of the same pitch.
 - Render: `render/shared/corrections.ts` holds the correction layout for both views (keyed by
   system); marks are owned by the note's segment; `requestedZoom` vs effective zoom;
   `ContextInput.xAt` places mid-bar clef changes; `ADAPTER_VERSION` pn-7.

@@ -494,12 +494,6 @@
   stroke-linejoin: round;
 }
 
-/* The pedal mark before a pedal correction's text, as engraved scores write it. */
-.pn-corr-ped {
-  font-family: Georgia, "Times New Roman", serif;
-  font-style: italic;
-}
-
 @keyframes pn-corr-in {
   from {
     opacity: 0;

@@ -321,7 +321,7 @@ describe('Per-group outcomes in the attempt record', () => {
     d.tap(F4)
     expect(d.state.phase).toBe('completed')
     const [r] = d.records()
-    const rest = { spreadMs: 0, tieEndPresses: 0, pedal: 'none' }
+    const rest = { spreadMs: 0, tieEndPresses: 0 }
     expect(r!.groups).toEqual([
       { group: 0, wrongAttacks: 0, earlyAttacks: 0, lateMs: 0, wrongPitches: [], ...rest },
       { group: 1, wrongAttacks: 1, earlyAttacks: 0, lateMs: 50, wrongPitches: [A3], ...rest },

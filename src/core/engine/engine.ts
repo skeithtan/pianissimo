@@ -14,7 +14,6 @@ import { MATCHING_RULES_VERSION } from '../model/score'
 import {
   USER_ABANDON_REASONS,
   type Completion,
-  type GroupOutcome,
   type InterruptReason,
   type LabelSettingsSnapshot,
 } from '../model/practice'
@@ -48,11 +47,6 @@ export const DEFAULT_PEDAL_DOWN_THRESHOLD = 64
  * rules (`MATCHING_RULES_VERSION`).
  */
 export const EARLY_PRESS_GRACE_MS = 120
-/**
- * A sustain pedal change reaching the score's state this many real milliseconds after a group
- * completed still counts as in place for it (people pedal just after the attack; E17).
- */
-export const PEDAL_GRACE_MS = 150
 const LABELS_OFF: LabelSettingsSnapshot = { mode: 'off', rulesJson: '{}' }
 
 /** Matching-rules id for a grace window (the default grace keeps `MATCHING_RULES_VERSION`). */
@@ -92,13 +86,6 @@ interface PendingPress {
   readonly tieEnd?: boolean
 }
 
-/** A completed group whose sustain pedal did not match the score, still within `PEDAL_GRACE_MS`. */
-interface PedalWatch {
-  readonly group: number
-  readonly down: boolean
-  readonly until: number
-}
-
 type PendingOutcome = 'keep' | 'done'
 
 export class PracticeEngine {
@@ -113,7 +100,6 @@ export class PracticeEngine {
   #wrongFeedbackMs: number
   #passTimeTolerance: number | null
   #transportEta: TransportEta | null
-  #checkPedal: boolean
   readonly #graceMs: number
   readonly #timeOrigin: number
   readonly #newId: (n: number, createdAt: number) => string
@@ -145,8 +131,6 @@ export class PracticeEngine {
   /** Earliest and latest accepted attack of the current group (chord spread). */
   #firstAcceptAt = Infinity
   #lastAcceptAt = -Infinity
-  /** One watch per recently completed mismatching group (fast groups overlap their graces). */
-  #pedalWatches: PedalWatch[] = []
   #pending: PendingPress[] = []
   #groupWrong = 0
   /** Wrong attacks counting toward the automatic hint threshold (re-armed on show and expiry). */
@@ -177,7 +161,6 @@ export class PracticeEngine {
     this.#wrongFeedbackMs = config.wrongFeedbackMs ?? DEFAULT_WRONG_FEEDBACK_MS
     this.#passTimeTolerance = config.passTimeTolerance ?? null
     this.#transportEta = config.transportEta ?? null
-    this.#checkPedal = config.checkPedal ?? true
     this.#graceMs = config.earlyGraceMs ?? EARLY_PRESS_GRACE_MS
     this.#timeOrigin = config.timeOrigin ?? 0
     const pieceId = config.pieceId
@@ -276,7 +259,6 @@ export class PracticeEngine {
     if (!this.#physical.pedal(ev.controller, ev.value)) return
     if (sustainBefore !== this.#physical.sustainDown) {
       this.#emit({ type: 'pedal', controller: CC_SUSTAIN, down: this.#physical.sustainDown })
-      this.#pedalChanged(ev.time)
     }
     if (sostenutoBefore !== this.#physical.sostenutoDown) {
       this.#emit({ type: 'pedal', controller: CC_SOSTENUTO, down: this.#physical.sostenutoDown })
@@ -380,7 +362,6 @@ export class PracticeEngine {
     this.#log.groupComplete(gi, g.occ, time, this.#groupWrong === 0, {
       lateMs: this.#lateMs(gi, time),
       spreadMs,
-      pedal: this.#pedalAt(gi, g, time),
     })
     if (gi === this.#timeline.groups.length - 1) this.#log.finalAttack = time
     this.#emit({ type: 'input-complete', group: gi, time })
@@ -401,31 +382,6 @@ export class PracticeEngine {
     if (this.#transport === 'free' || this.#transportGate < gi) return 0
     const at = this.#arrivedAt.get(gi)
     return at === undefined ? 0 : Math.max(0, Math.round(time - at))
-  }
-
-  /**
-   * The sustain pedal at a group's completion against the score (E17): 'none' without sustain
-   * marks or with checking off. A mismatch is watched for `PEDAL_GRACE_MS`: a change to the
-   * score's state in that time revises it to 'ok' (`#pedalChanged`).
-   */
-  #pedalAt(gi: number, g: OnsetGroup, time: number): NonNullable<GroupOutcome['pedal']> {
-    // Earlier groups keep their own grace (a fast next group must not cancel it); expired ones go.
-    if (this.#pedalWatches.length > 0) this.#pedalWatches = this.#pedalWatches.filter((w) => time <= w.until)
-    if (!this.#checkPedal || g.pedalDown === null) return 'none'
-    if (this.#physical.sustainDown === g.pedalDown) return 'ok'
-    this.#pedalWatches.push({ group: gi, down: g.pedalDown, until: time + PEDAL_GRACE_MS })
-    return g.pedalDown ? 'missing' : 'extra'
-  }
-
-  /** The sustain pedal crossed its threshold at `time`: revise every watched group it now matches. */
-  #pedalChanged(time: number): void {
-    if (this.#pedalWatches.length === 0) return
-    this.#pedalWatches = this.#pedalWatches.filter((w) => {
-      if (time > w.until) return false
-      if (this.#physical.sustainDown !== w.down) return true
-      this.#log.pedal(w.group, 'ok')
-      return false
-    })
   }
 
   #advance(now: number): void {
@@ -739,7 +695,6 @@ export class PracticeEngine {
     if (patch.passTimeTolerance !== undefined) this.#passTimeTolerance = patch.passTimeTolerance
     if (patch.wrongFeedbackMs !== undefined) this.#wrongFeedbackMs = patch.wrongFeedbackMs
     if (patch.transportEta !== undefined) this.#transportEta = patch.transportEta
-    if (patch.checkPedal !== undefined) this.#checkPedal = patch.checkPedal
     this.#touch()
   }
 
@@ -941,7 +896,6 @@ export class PracticeEngine {
     const createdAt = this.#timeOrigin + now
     this.#log = new AttemptLog(this.#newId(this.#attempts, createdAt), createdAt)
     this.#clockGroup = null
-    this.#pedalWatches = []
     this.#interruptReason = null
     this.#emit({ type: 'exposure-reset', attemptId: this.#log.id })
   }
@@ -1030,8 +984,6 @@ export class PracticeEngine {
   /** Finish the current log: close the open bar, report abandonment, emit the record. */
   #end(completion: Completion, reason: InterruptReason | null, now: number): void {
     const log = this.#log
-    // The record is built now: a pedal change after the final completion cannot revise it.
-    this.#pedalWatches = []
     const g = this.#currentGroup()
     const context = comparisonContextOf(this.#timeline, this.#transport, this.matchingRules)
     if (completion === 'abandoned' && reason !== null && log.started && g && log.measureWrong(g.occ) > 0) {

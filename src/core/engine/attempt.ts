@@ -28,8 +28,6 @@ interface MeasureAcc {
   keyboard: boolean
 }
 
-type PedalOutcome = NonNullable<GroupOutcome['pedal']>
-
 interface GroupAcc {
   wrong: number
   early: number
@@ -37,16 +35,14 @@ interface GroupAcc {
   readonly wrongPitches: number[]
   spreadMs: number
   tieEnd: number
-  pedal: PedalOutcome
 }
 
-/** How a group's completion went besides first-pass (all default to 0 / 'none'). */
+/** How a group's completion went besides first-pass (all default to 0). */
 export interface GroupCompletion {
   /** Whole ms after the gate's arrival (0 for the attempt's first group unless a running start). */
   readonly lateMs?: number
   /** Whole ms between the group's first and last accepted attack. */
   readonly spreadMs?: number
-  readonly pedal?: PedalOutcome
 }
 
 export const READING_UNTIMED = 'Ordinary reading is not timed.'
@@ -106,7 +102,7 @@ export class AttemptLog {
   #group(group: number): GroupAcc {
     let g = this.#groups.get(group)
     if (!g) {
-      g = { wrong: 0, early: 0, lateMs: 0, wrongPitches: [], spreadMs: 0, tieEnd: 0, pedal: 'none' }
+      g = { wrong: 0, early: 0, lateMs: 0, wrongPitches: [], spreadMs: 0, tieEnd: 0 }
       this.#groups.set(group, g)
     }
     return g
@@ -139,12 +135,6 @@ export class AttemptLog {
     this.#group(group).tieEnd++
   }
 
-  /** The sustain pedal outcome of a completed group (revised within the grace after completion). */
-  pedal(group: number, pedal: PedalOutcome): void {
-    const g = this.#groups.get(group)
-    if (g) g.pedal = pedal
-  }
-
   measureWrong(occ: number): number {
     return this.#acc.get(occ)?.wrong ?? 0
   }
@@ -160,7 +150,6 @@ export class AttemptLog {
     const g = this.#group(group)
     g.lateMs = detail.lateMs ?? 0
     g.spreadMs = detail.spreadMs ?? 0
-    g.pedal = detail.pedal ?? 'none'
     this.#measure(occ).completed++
     if (firstPass) this.groupsFirstPass++
     if (this.clockStart !== null) this.onsets.push({ group, t: (time - this.clockStart) / 1000 })
@@ -237,7 +226,6 @@ export class AttemptLog {
         wrongPitches: [...g.wrongPitches],
         spreadMs: g.spreadMs,
         tieEndPresses: g.tieEnd,
-        pedal: g.pedal,
       }))
   }
 

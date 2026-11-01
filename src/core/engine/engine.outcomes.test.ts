@@ -1,17 +1,14 @@
 /**
- * Per-group outcomes for the teacher corrections (DECISIONS E15–E17): wrong pitches, chord
- * spread, tie-end presses and the sustain pedal against the score's marks.
+ * Per-group outcomes for the teacher corrections (DECISIONS E15–E16): wrong pitches, chord
+ * spread and tie-end presses.
  */
 import { describe, expect, it } from 'vitest'
-import { CC_SUSTAIN } from '../midi/types'
-import { PEDAL_GRACE_MS } from './engine'
 import { EngineDriver, buildScore } from './testkit'
 import { buildTimeline } from './timeline'
 import type { EngineConfig } from './types'
 
 const B3 = 59
 const C4 = 60
-const D4 = 62
 const E4 = 64
 const F4 = 65
 const G4 = 67
@@ -109,68 +106,5 @@ describe('tie-end presses', () => {
     expect(d.of('wrong').map((e) => [e.group, e.reason])).toEqual([[1, 'tie-end']])
     d.tap(E4, C4)
     expect(d.records()[0]).toMatchObject({ completion: 'completed', wrongAttacks: 0 })
-  })
-})
-
-describe('sustain pedal', () => {
-  // Pedal down from beat 2 to beat 4 (stop at beat 4): up, down, down, up.
-  const pedaled = buildScore({
-    notes: [C4, D4, E4, F4].map((midi, at) => ({ at, midi })),
-    pedals: [
-      { at: 1, type: 'start' },
-      { at: 3, type: 'stop' },
-    ],
-  })
-
-  it('compares the pedal at completion; a change toward the score within the grace still counts', () => {
-    const d = scored(pedaled)
-    d.tap(C4) // up as written
-    d.now += 500
-    d.tap(D4) // pedal still up: missing…
-    d.now += PEDAL_GRACE_MS - 50
-    d.cc(CC_SUSTAIN, 127) // …but pressed just after the attack: ok
-    d.now += 500
-    d.cc(CC_SUSTAIN, 0)
-    d.tap(E4) // lifted: missing
-    d.now += PEDAL_GRACE_MS + 50
-    d.cc(CC_SUSTAIN, 127) // too late to count
-    d.now += 500
-    d.tap(F4) // still down where the score lifts: extra (the record is built at once)
-    d.now += 20
-    d.cc(CC_SUSTAIN, 0)
-    const r = d.records()[0]!
-    expect(r.groups!.map((g) => g.pedal)).toEqual(['ok', 'ok', 'missing', 'extra'])
-  })
-
-  it('a pedal lifted after the grace does not undo an ok; a wrong-way change keeps the mismatch', () => {
-    const d = scored(pedaled)
-    d.cc(CC_SUSTAIN, 127)
-    d.tap(C4) // down where the score wants it up: extra…
-    d.now += 40
-    d.cc(CC_SUSTAIN, 30) // …lifted (below the threshold) within the grace: ok
-    d.now += 400
-    d.tap(D4) // up where the score wants it down: missing
-    d.now += 40
-    d.cc(CC_SUSTAIN, 10) // still up: no change of state, still missing
-    d.engine.interrupt('user-stop', d.now)
-    expect(d.records()[0]!.groups!.map((g) => g.pedal)).toEqual(['ok', 'missing', 'none'])
-  })
-
-  it("'none' without sustain marks, with checking off, and for a group not completed", () => {
-    const plain = scored(buildScore({ notes: [0, 1].map((at) => ({ at, midi: C4 + at })) }))
-    plain.cc(CC_SUSTAIN, 127)
-    plain.tap(C4, C4 + 1)
-    expect(plain.records()[0]!.groups!.map((g) => g.pedal)).toEqual(['none', 'none'])
-
-    const off = scored(pedaled, { checkPedal: false })
-    off.tap(C4, D4, E4, F4)
-    expect(off.records()[0]!.groups!.every((g) => g.pedal === 'none')).toBe(true)
-
-    const patched = scored(pedaled)
-    patched.tap(C4)
-    patched.engine.updateSettings({ checkPedal: false }, patched.now)
-    patched.tap(D4)
-    patched.engine.interrupt('user-stop', patched.now)
-    expect(patched.records()[0]!.groups!.map((g) => g.pedal)).toEqual(['ok', 'none', 'none'])
   })
 })

@@ -80,8 +80,7 @@ with a problem, the first of: a wrong pitch one semitone from a required pitch o
 (`'accidental'`, "F♯, not F": the target spelled as the score does, accidental always shown, the
 naming settings honored), a wrong pitch 12 or 24 semitones from one (`'octave'`, "Wrong octave ↑"
 / "↓" toward the right one), another wrong key (`'wrong'`, "Wrong note" / "Wrong notes"), a
-re-attacked tie end (`'tie'`, "Tied, hold it"), the pedal (`'pedal'`, "Pedal" where it was
-missing, "No pedal" where it was extra), a chord of two or more pitches spread over
+re-attacked tie end (`'tie'`, "Tied, hold it"), a chord of two or more pitches spread over
 `SPREAD_MARK_MS` (90 ms) or more (`'spread'`, "Together"), a right pitch too early ("Too soon"),
 completed at least `LATE_MARK_MS` (350 ms) after the music reached the gate ("Too late"). Outcomes
 without the newer optional fields (older records) give only the older classes. A mark's notes are

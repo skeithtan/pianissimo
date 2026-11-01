@@ -442,11 +442,11 @@ describe('PageView fixes', () => {
     const { v, layout, root } = view()
     v.setCorrections([
       { notes: [0, 1], kind: 'spread', text: 'Together' },
-      { notes: [4], kind: 'pedal', text: 'Pedal' },
+      { notes: [4], kind: 'tie', text: 'Tied, hold it' },
     ])
     v.flushNow()
     expect(root.querySelector('.pn-corr-spread .pn-corr-link')).not.toBeNull()
-    expect(root.querySelector('.pn-corr-pedal .pn-corr-ped')?.textContent).toBe('Ped.')
+    expect(root.querySelector('.pn-corr-tie .pn-corr-label')?.textContent).toBe('Tied, hold it')
     // Above the top staff, clear of its noteheads (a band beyond the staves, not on notation).
     const top = Number(root.querySelector('.pn-corr-spread .pn-corr-label')!.getAttribute('y'))
     expect(top).toBeLessThan(layout.systems![0]!.staves[0]!.top)

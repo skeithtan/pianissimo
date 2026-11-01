@@ -73,11 +73,6 @@ export interface OnsetGroup {
    * a tie-end press, not a wrong attack (DECISIONS E16). Usually empty.
    */
   readonly tiedPitches: readonly number[]
-  /**
-   * Sustain pedal the score wants at this onset: true = down (a sustain span covers it), false =
-   * up; null when the score has no sustain pedal marks at all (DECISIONS E17).
-   */
-  readonly pedalDown: boolean | null
 }
 
 /** A position where the automatic (non-learner) part attacks. */
@@ -238,7 +233,7 @@ interface Bucket {
  *   start and is flagged as a practice-boundary reattack (spec: "Repeating passages"). A tie
  *   chain attacked before the start is not required anywhere in the loop: it sounds through and
  *   its pitch is in the first group's `tiedPitches` (user, 31 October 2026; DECISIONS E16).
- * - `tiedPitches` and `pedalDown` per group feed the tie-end and pedal outcomes (E16, E17).
+ * - `tiedPitches` per group feeds the tie-end outcomes (E16).
  * - Reference attack times include roll offsets scaled by 1/multiplier.
  */
 export function buildTimeline(model: ScoreModel, options: TimelineOptions): Timeline {
@@ -359,7 +354,6 @@ export function buildTimeline(model: ScoreModel, options: TimelineOptions): Time
           bothHands ? null : (s) => staves.has(s.staff) || learnerSpans.has(s.index),
         ),
         tiedPitches: [],
-        pedalDown: null,
       })
     }
     if (!bothHands && b.auto.length > 0) {
@@ -378,12 +372,7 @@ export function buildTimeline(model: ScoreModel, options: TimelineOptions): Time
   }
 
   const tied = tiedPitchesOf(groups, [...tiedAtStart, ...inRange], isLearner, start)
-  const pedals = pedalsOf(groups, model)
-  for (let i = 0; i < groups.length; i++) {
-    const tiedPitches = tied.get(i)
-    const pedalDown = pedals?.[i] ?? null
-    if (tiedPitches || pedalDown !== null) groups[i] = { ...groups[i]!, tiedPitches: tiedPitches ?? [], pedalDown }
-  }
+  for (const [i, tiedPitches] of tied) groups[i] = { ...groups[i]!, tiedPitches }
 
   const labelToGroup = new Map<number, number>(noteToGroup)
   const boundaryHeadGroup = new Map<number, number>()
@@ -562,31 +551,6 @@ function tiedPitchesOf(
       i,
       [...set].sort((a, b) => a - b),
     )
-  return out
-}
-
-/**
- * `pedalDown`: the sustain state after every sustain mark at or before the group's position, in
- * score order ('start' and 'change' press, 'stop' releases, 'continue' keeps), as playback
- * realizes them. Sostenuto and soft marks never decide it; staff scope is ignored (one foot).
- */
-function pedalsOf(groups: readonly OnsetGroup[], model: ScoreModel): boolean[] | null {
-  const marks = model.pedals
-    .map((m, i) => ({ m, i }))
-    .filter(({ m }) => m.kind === 'sustain')
-    .sort((a, b) => cmp(a.m.at, b.m.at) || a.i - b.i)
-  if (marks.length === 0) return null
-  const out: boolean[] = []
-  let down = false
-  let k = 0
-  for (const g of groups) {
-    for (; k < marks.length && le(marks[k]!.m.at, g.position); k++) {
-      const type = marks[k]!.m.type
-      if (type === 'start' || type === 'change') down = true
-      else if (type === 'stop') down = false
-    }
-    out.push(down)
-  }
   return out
 }
 

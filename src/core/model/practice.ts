@@ -205,12 +205,6 @@ export interface GroupOutcome {
    * which the learner should not have re-attacked.
    */
   readonly tieEndPresses?: number
-  /**
-   * The sustain pedal against the score's pedal marks at this onset: 'none' when the score has
-   * no pedal marks that decide this onset, otherwise 'ok', 'missing' (the score wants the pedal
-   * down here and it was up) or 'extra' (the score wants it up and it was down).
-   */
-  readonly pedal?: 'none' | 'ok' | 'missing' | 'extra'
 }
 
 export interface AttemptRecord {
