@@ -27,6 +27,7 @@ import {
   layoutCorrections,
   type CorrectionMark,
 } from '../shared/corrections'
+import { ACTION_RADIUS, staffGap } from '../shared/cursorAction'
 import type { LabelBox, PreparedLayout } from '../types'
 import { clampRange, sameRange, tapSelect, type LoopRange } from './loop'
 import { CursorPath } from './cursorPath'
@@ -238,7 +239,7 @@ export class StripView {
   private requestedZoom: number
   private tx = 0
   private ty = 0
-  private applied = { tx: NaN, ty: NaN, scale: NaN, cursorSx: NaN, barTop: NaN, barH: NaN }
+  private applied = { tx: NaN, ty: NaN, scale: NaN, cursorSx: NaN, barTop: NaN, barH: NaN, actionTop: NaN }
   private hostW = 0
   private hostH = 0
   private instant = true
@@ -501,6 +502,7 @@ export class StripView {
     this.cursorAction = visible
     this.cursorEl.classList.toggle('pn-action-on', visible)
     this.cursorBtn.toggleAttribute('inert', !visible)
+    if (visible) this.schedule()
   }
 
   /** Currently required notes: colored noteheads with a soft halo. */
@@ -951,6 +953,7 @@ export class StripView {
       this.applied.cursorSx = sx
     }
     this.applyCursorBar()
+    this.placeActionButton()
     this.applyWrong()
     this.applyLoop()
     if (this.pendingCorrections) this.applyCorrections()
@@ -970,6 +973,22 @@ export class StripView {
    * and translated like the content) plus a margin at each end that its CSS mask fades out.
    * Written only when the vertical translate or zoom changed it.
    */
+  /**
+   * The cursor's button sits dead center in the gap between the staves (U14 addendum, user);
+   * without a gap (one staff), at the stage's middle. Only while it shows; a hidden button keeps
+   * its place so its fade-out does not jump.
+   */
+  private placeActionButton(): void {
+    if (!this.cursorAction || !(this.hostH > 0)) return
+    const L = this.layout
+    const gap = staffGap(L.staves)
+    const c = gap ? this.ty + ((gap.top + gap.bottom) / 2 - L.top) * this.scale : this.hostH / 2
+    const top = r2(c - ACTION_RADIUS)
+    if (top === this.applied.actionTop) return
+    this.cursorBtn.style.top = `${top}px`
+    this.applied.actionTop = top
+  }
+
   private applyCursorBar(): void {
     const L = this.layout
     const first = L.staves[0]

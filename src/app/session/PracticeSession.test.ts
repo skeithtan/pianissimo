@@ -57,6 +57,21 @@ const twoHands = buildScore({
 })
 
 describe('PracticeSession: reading (both hands)', () => {
+  it('browsing while reading pauses at the same note and records nothing of that pass (U41)', async () => {
+    const h = harness(melody)
+    await h.session.start()
+    h.play(60, 62)
+    h.step(500)
+    expect(h.session.engine.state.phase).toBe('running')
+    const group = h.session.engine.state.groupIndex
+    h.session.browseStarted()
+    h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('paused')
+    expect(h.session.engine.state.groupIndex).toBe(group)
+    expect(h.session.ui.get().playing).toBe(false)
+    expect(h.attempts).toHaveLength(0)
+  })
+
   it('starts paused, reads from the first group on Start and follows correct presses', async () => {
     const h = harness(melody)
     expect(h.session.ui.get().activity).toBe('idle')
@@ -517,7 +532,8 @@ describe('PracticeSession: scored attempts', () => {
     h.tap(60)
     expect(h.session.engine.state.phase).toBe('running')
     expect(h.strip.loopEditable).toBe(false)
-    expect(h.strip.browse).toBe(false)
+    // The score can be browsed even now; browsing would drop this attempt (U41).
+    expect(h.strip.browse).toBe(true)
     h.step(1000)
     h.tap(62)
     h.step(1000)
@@ -534,6 +550,47 @@ describe('PracticeSession: scored attempts', () => {
     expect(record.completionTimeSec).toBeCloseTo(3)
     expect(record.passed).toBe(true)
     expect(h.session.ui.get().lastResult).toMatchObject({ passed: true, wrongAttacks: 0, streak: 1 })
+  })
+
+  it('browsing while an attempt runs stops it and records nothing of it (U41)', async () => {
+    const h = harness(melody, { range: { fromOcc: 0, toOcc: 0 } })
+    await h.session.start()
+    h.frames.flush()
+    h.step(500)
+    h.tap(60)
+    h.step(1000)
+    h.tap(62)
+    expect(h.session.engine.state.phase).toBe('running')
+    h.session.browseStarted()
+    h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('interrupted')
+    expect(h.session.ui.get().playing).toBe(false)
+    expect(h.attempts).toHaveLength(0)
+    // The next attempt starts at the loop start and is recorded as usual.
+    await h.session.start()
+    h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('ready')
+    h.step(500)
+    h.tap(60)
+    h.step(1000)
+    h.tap(62)
+    h.step(1000)
+    h.tap(64)
+    h.step(1000)
+    h.tap(65)
+    h.step(1000)
+    expect(h.attempts).toHaveLength(1)
+    expect(h.attempts[0]!.completion).toBe('completed')
+  })
+
+  it('browsing at Ready changes nothing (U41)', async () => {
+    const h = harness(melody, { range: { fromOcc: 0, toOcc: 0 } })
+    await h.session.start()
+    h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('ready')
+    h.session.browseStarted()
+    h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('ready')
   })
 
   it('Repeat resets to Ready only after the keys are released', async () => {

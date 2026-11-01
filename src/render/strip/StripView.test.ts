@@ -631,6 +631,32 @@ describe('StripView continuous motion and cursor action', () => {
     expect(host.querySelector('.pn-cursor')!.classList.contains('pn-action-on')).toBe(false)
   })
 
+  it('sits the cursor action button dead center in the gap between the staves', () => {
+    const btn = (): HTMLElement => host.querySelector<HTMLElement>('.pn-cursor-action')!
+    const mounted = (headY: number | null, zoom = 1): StripView => {
+      const layout = testLayout(40)
+      if (headY !== null) {
+        const n0 = layout.notes[0]!
+        ;(layout.notes as unknown as unknown[])[0] = { ...n0, head: { ...n0.head, y: headY } }
+      }
+      const v = new StripView(host, layout, { initialZoom: zoom })
+      views.push(v)
+      v.flushNow()
+      v.setCursorAction(true)
+      v.flushNow()
+      return v
+    }
+    // Staves 100–140 and 200–240 (layout top 60, ty 40): the gap is screen y 120–180, its
+    // center 150 (top 150 − 24).
+    const plain = mounted(null)
+    expect(btn().style.top).toBe('126px')
+    plain.destroy()
+    host.innerHTML = ''
+    // A note in the gap does not move it.
+    mounted(142)
+    expect(btn().style.top).toBe('126px')
+  })
+
   it('a tap while browsing seeks to the tapped bar and ends browsing', () => {
     const seeks: number[] = []
     const browse: boolean[] = []

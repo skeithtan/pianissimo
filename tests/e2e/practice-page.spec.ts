@@ -150,3 +150,45 @@ test.describe('practice page mode (portrait)', () => {
     await page.screenshot({ path: join(SHOT_DIR, `${browserName}-page-seek.png`) })
   })
 })
+
+test.describe('page mode cursor button (portrait)', () => {
+  test('the repeat button sits in the gap between the staves of the current system', async ({ page }) => {
+    await page.setViewportSize({ width: 820, height: 1180 })
+    await installFakeMidi(page)
+    await seedLongPiece(page)
+    await page.getByRole('button', { name: `Practice ${TITLE}` }).click()
+    await expect(page.getByTestId('strip-host')).toHaveAttribute('data-mode', 'page', { timeout: 60_000 })
+    await expect(page.locator('.pn-page')).toBeVisible({ timeout: 60_000 })
+    const button = page.getByRole('button', { name: 'Repeat from here' })
+    await expect(button).toBeVisible()
+    // Staff lines of the cursor's system under the button: its center lies between the upper
+    // staff's bottom line and the lower staff's top line.
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const b = document.querySelector('.pn-page .pn-cursor-action')!.getBoundingClientRect()
+          const bar = document.querySelector('.pn-page .pn-cursor-bar')!.getBoundingClientRect()
+          const cx = (b.left + b.right) / 2
+          const ys = [
+            ...new Set(
+              [...document.querySelectorAll('.pn-music .vf-measure > path')]
+                .map((p) => p.getBoundingClientRect())
+                .filter(
+                  (r) =>
+                    r.height < 3 &&
+                    r.width > 20 &&
+                    r.left <= cx &&
+                    r.right >= cx &&
+                    r.top >= bar.top &&
+                    r.bottom <= bar.bottom,
+                )
+                .map((r) => Math.round(r.top + r.height / 2)),
+            ),
+          ].sort((a, c) => a - c)
+          const cy = (b.top + b.bottom) / 2
+          return ys.length === 10 && cy > ys[4]! && cy < ys[5]!
+        }),
+      )
+      .toBe(true)
+  })
+})

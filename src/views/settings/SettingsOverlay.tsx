@@ -13,6 +13,7 @@ import { getFeatures, type FeatureReport } from '../../app/features'
 import { pushNotice } from '../../app/state'
 import { Sheet } from '../../ui/controls'
 import { AboutSection } from './AboutSection'
+import { BackupSection } from './BackupSection'
 import { GeneralSection } from './GeneralSection'
 import { HintsSection } from './HintsSection'
 import { discardLabelDraft, isLabelDraftDirty, labelDraft } from './labelDraft'
@@ -22,7 +23,7 @@ import { PedalSection } from './PedalSection'
 import { SoundSection } from './SoundSection'
 import styles from './settings.module.css'
 
-type TabId = 'names' | 'labels' | 'hints' | 'pedal' | 'sound' | 'general' | 'about'
+type TabId = 'names' | 'labels' | 'hints' | 'pedal' | 'sound' | 'general' | 'backup' | 'about'
 
 const TABS: readonly { id: TabId; label: string; intro: string }[] = [
   { id: 'names', label: 'Note names', intro: 'How notes are named in hints, labels and the keyboard guide.' },
@@ -31,6 +32,7 @@ const TABS: readonly { id: TabId; label: string; intro: string }[] = [
   { id: 'pedal', label: 'Pedal', intro: 'The pedal that reveals hints.' },
   { id: 'sound', label: 'Sound', intro: 'Where playback comes from, and how loud.' },
   { id: 'general', label: 'General', intro: 'Suggestions and appearance.' },
+  { id: 'backup', label: 'Backup', intro: 'Keep a copy of your library, or move it to another device.' },
   { id: 'about', label: 'About', intro: 'Version, credits and what this browser supports.' },
 ]
 
@@ -70,6 +72,8 @@ function Panel({ features }: { features: FeatureReport }) {
         return <SoundSection features={features} />
       case 'general':
         return <GeneralSection />
+      case 'backup':
+        return <BackupSection />
       case 'about':
         return <AboutSection features={features} />
     }

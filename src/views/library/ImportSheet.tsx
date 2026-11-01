@@ -30,7 +30,6 @@ export function ImportSheet({
 }) {
   const phase = flow?.phase.value ?? { kind: 'idle' as const }
   const open = flow !== null && phase.kind !== 'idle'
-  const title = flow?.mode.kind === 'replace' ? `Replace the score of “${flow.mode.piece.title}”` : 'Import MusicXML'
   // While "Saving…" the sheet stays open (X and Escape do nothing); it closes itself when saved.
   const closeUnlessSaving = () => {
     const current = flow?.phase.peek()
@@ -38,7 +37,7 @@ export function ImportSheet({
     onClose()
   }
   return (
-    <Sheet title={title} open={open} onClose={closeUnlessSaving} wide>
+    <Sheet title="Import MusicXML" open={open} onClose={closeUnlessSaving} wide>
       {flow ? <FlowBody flow={flow} phase={phase} pieces={pieces} onClose={onClose} /> : null}
     </Sheet>
   )
@@ -195,12 +194,7 @@ function Review({
   // A new build (other parts) starts a new draft.
   useEffect(() => setDraft(initialDraft(summary, pkg.model)), [phase.result])
   const gate = useMemo(() => reviewGate(summary, draft, triedSave), [summary, draft, triedSave])
-  const replacing = flow.mode.kind === 'replace'
-  const duplicate = pieces.find(
-    (p) =>
-      p.scoreVersionId === pkg.model.scoreVersionId &&
-      !(replacing && flow.mode.kind === 'replace' && flow.mode.piece.id === p.id),
-  )
+  const duplicate = pieces.find((p) => p.scoreVersionId === pkg.model.scoreVersionId)
   const save = () => {
     setTriedSave(true)
     if (!gate.canSave) return
@@ -210,7 +204,7 @@ function Review({
     const browserSound =
       appSettings.sound.destination === 'browser' ||
       (appSettings.sound.destination === 'auto' && !connectionStatus.peek().outputName)
-    if (!replacing && (browserSound || appSettings.metronome.enabled) && isWebAudioSupported()) {
+    if ((browserSound || appSettings.metronome.enabled) && isWebAudioSupported()) {
       try {
         sharedAudioContext()
       } catch {
@@ -224,17 +218,8 @@ function Review({
       <p class={styles.fileName}>{phase.fileName}</p>
       {duplicate ? (
         <Notice tone="info">
-          This score is already in your library as “{duplicate.title}”.{' '}
-          {replacing
-            ? 'The piece will share that score'
-            : 'Adding it again creates a second piece that shares that score'}
-          , including its hands and practice tempo; changes made here are not applied.
-        </Notice>
-      ) : null}
-      {replacing ? (
-        <Notice tone="info">
-          The piece keeps its place in the library. Results and practice history from the old score stay separate and
-          are never mixed with the new one; the resume position is reset.
+          This score is already in your library as “{duplicate.title}”. Adding it again creates a second piece that
+          shares that score, including its hands and practice tempo; changes made here are not applied.
         </Notice>
       ) : null}
       <ImportSummaryView summary={summary} draft={draft} gate={gate} onDraft={setDraft} />
@@ -261,7 +246,7 @@ function Review({
             </Button>
           )}
           <Button variant="primary" icon="check" disabled={!gate.canSave || phase.saving} onClick={save}>
-            {phase.saving ? 'Saving…' : replacing ? 'Replace score' : 'Add to library'}
+            {phase.saving ? 'Saving…' : 'Add to library'}
           </Button>
         </div>
       </div>

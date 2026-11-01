@@ -218,23 +218,8 @@
   gap: var(--space-2);
 }
 
-/* ---------------------------------------------------------------- backup + storage */
+/* ---------------------------------------------------------------- storage status (Settings → Backup) */
 
-.backup {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  border-radius: var(--radius-l);
-  background: var(--bg-sunken);
-}
-.backup h2 {
-  font-size: var(--text-l);
-}
-.backupActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
 .storageLine {
   display: flex;
   align-items: flex-start;
@@ -570,9 +555,6 @@
   .disclosureBody {
     padding-left: var(--space-4);
     padding-right: var(--space-4);
-  }
-  .backup {
-    padding: var(--space-4);
   }
   .heroActions,
   .heroActions > * {

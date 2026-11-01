@@ -32,8 +32,6 @@ import type { LibraryDeps } from './deps'
 import { finalizeImport, type ReviewDraft } from './review'
 import { needsChoice, selectionProblem, togglePart } from './selection'
 
-export type FlowMode = { readonly kind: 'new' } | { readonly kind: 'replace'; readonly piece: PieceRecord }
-
 export type WorkStep = 'reading' | 'inspecting' | 'building'
 
 export interface StorageStatus {
@@ -119,20 +117,18 @@ function isCanceled(error: unknown): boolean {
 }
 
 /** Called once a piece is saved; `storage` resolves when persistence and quota are known. */
-export type OnSaved = (piece: PieceRecord, info: { replaced: boolean; storage: Promise<StorageStatus> }) => void
+export type OnSaved = (piece: PieceRecord, info: { storage: Promise<StorageStatus> }) => void
 
 export class ImportFlow {
   readonly phase: Signal<FlowPhase> = signal({ kind: 'idle' })
-  readonly mode: FlowMode
   #deps: LibraryDeps
   #client: ImportClient | null = null
   #job = 0
   #abort: AbortController | null = null
   #onSaved: OnSaved
 
-  constructor(deps: LibraryDeps, mode: FlowMode, onSaved: OnSaved = () => undefined) {
+  constructor(deps: LibraryDeps, onSaved: OnSaved = () => undefined) {
     this.#deps = deps
-    this.mode = mode
     this.#onSaved = onSaved
   }
 
@@ -363,29 +359,13 @@ export class ImportFlow {
       return
     }
     this.phase.value = { kind: 'idle' }
-    this.#onSaved(piece, { replaced: this.mode.kind === 'replace', storage })
+    this.#onSaved(piece, { storage })
     await storage
   }
 
   #pieceFor(pkg: Parameters<typeof newPieceRecord>[0], userTempo: PieceRecord['userTempo']): PieceRecord {
-    const { meta, scoreVersionId } = pkg.model
-    if (this.mode.kind === 'new') {
-      const fresh = newPieceRecord(pkg, { now: this.#deps.now() })
-      return userTempo ? { ...fresh, userTempo } : fresh
-    }
-    // Replacing a source (ST1, DECISIONS L2): same piece id, new score version. Positions saved
-    // against the old version (resume and last passage) no longer apply.
-    const { composer: _oldComposer, userTempo: _oldTempo, ...old } = this.mode.piece
-    return {
-      ...old,
-      title: meta.title,
-      ...(meta.composer !== undefined ? { composer: meta.composer } : {}),
-      ...(userTempo ? { userTempo } : {}),
-      scoreVersionId,
-      lastOpenedAt: this.#deps.now(),
-      resume: null,
-      lastPassage: null,
-    }
+    const fresh = newPieceRecord(pkg, { now: this.#deps.now() })
+    return userTempo ? { ...fresh, userTempo } : fresh
   }
 
   async #storageStatus(): Promise<StorageStatus> {

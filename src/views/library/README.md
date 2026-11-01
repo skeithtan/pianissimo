@@ -14,19 +14,19 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 
 - **Header**: "Library", piece count, Import MusicXML (shown in the empty state instead when
   there are no pieces).
-- **Empty state**: what to import (.musicxml / .mxl / MusicXML .xml), where it comes from, and a
-  pointer to Restore.
+- **Empty state**: what to import (.musicxml / .mxl / MusicXML .xml), where it comes from, , and a
+  pointer to Settings → Backup.
 - **Piece cards** (`PieceCard.tsx`): title, composer, "Opened 2 days ago", "75% speed", the
   user-entered tempo if any, **Practice** (→ `openPractice({ pieceId })`, after marking the piece
   opened). A disclosure "Suggested practice and options" (the most recently opened piece starts
-  expanded) holds the suggestions and Review hands and tempo… / Replace score… / Clear practice
+  expanded) holds the suggestions and Review hands and tempo… / Clear practice
   history… / Delete…
-- **Backup and restore** (`BackupPanel.tsx`) with the storage status line (persistence +
-  usage of quota).
+- Backup and restore are not here: they live in Settings → Backup
+  (`views/settings/BackupSection.tsx`, DECISIONS L7). The list refreshes when Settings close.
 - **Import sheet** (`ImportSheet.tsx`, modal): progress + Cancel, score / part choice, summary,
   or a readable failure with "Choose another file". Add to library closes the sheet at once,
-  shows a notice, and opens Practice with a one-time automatic start request. Replace score
-  stays in the Library. The storage status line lives in the backup panel.
+  shows a notice, and opens Practice with a one-time automatic start request. The storage
+  status line (`StorageStatusLine`) is shown in Settings → Backup.
 
 ## Files
 
@@ -44,7 +44,6 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 | `PieceCard.tsx` | Card + delete and clear-history confirmation sheets. |
 | `PieceSuggestions.tsx` | **Local, minimal** suggestion presentation (to be replaced by the shared `SuggestionList`). |
 | `suggestionsData.ts` | `PieceSuggestionsModel`: load, dismiss for the session, per-piece disable, Practice this passage, refresh on history flushes. `sessionDismissals`. |
-| `BackupPanel.tsx` | Export (download) and Restore (confirm → merge report or validation errors). |
 | `FileButton.tsx` | `<label>` around a hidden file input (picker opens from the user's own tap, also inside sheets and on iPad). |
 | `format.ts` | Relative dates, speed, bytes. |
 | `testkit.ts` | Tests only: `FakeImportClient` (pure pipeline in-process, `hold` / `lateResults`), `FakeStorageManager`, `testDeps()`. |
@@ -68,11 +67,8 @@ returns to `choose` with the reason.
 - `save` refuses a draft that does not pass `reviewGate` (L1), commits source + package + piece
   with `storage.commitImport` (one transaction; a failure, incl. quota, leaves the library
   unchanged and is shown in the sheet), then calls `requestPersistentStorage()` once per session
-  and `estimateStorage()` for the Library's storage status. Navigation starts as soon as the
+  and `estimateStorage()`. Navigation starts as soon as the
   commit succeeds; it does not wait for those storage checks.
-- Replace mode keeps the piece id, creation time, last speed, hands and repeat target, takes the
-  new title/composer, and resets resume / last passage (L2). `commitImport`
-  releases the old version's source, package and layouts (ST1).
 
 ## Review hands and tempo (stored pieces, DECISIONS L5)
 
@@ -103,13 +99,13 @@ and point `sessionDismissals` at the shared singleton (one line, see `suggestion
   (ready score, cross-staff confirmation, missing tempo + validation, errors block), finalize.
 - `importFlow.test.ts` (node + fake-indexeddb): straight import + commit + one persistence
   request, part choice and validation, canceled inspect/build with late results, abort,
-  unrelated/malformed/oversized files, tempo and hands gating, replace, save failure.
+  unrelated/malformed/oversized files, tempo and hands gating, save failure.
 - `LibraryView.test.tsx` (happy-dom): empty state, iPad accept, list + open → Practice,
   storage unavailable, delete and clear-history confirmations (with/without results), the
   import UI for ready / cross-staff / no-tempo / two-part scores, cancel, rejection + re-pick,
-  replace, review hands and tempo (hand change keeps the version and clears layouts; practice
+  review hands and tempo (hand change keeps the version and clears layouts; practice
   tempo change validated), suggestions (evidence, context bars, preset, session dismissal,
-  per-piece and Settings off), export, restore (merge report, invalid file).
+  per-piece and Settings off), refresh when Settings close.
 - `tests/e2e/library.spec.ts` (Chromium + WebKit, production build): no OSMD / sample
   requests, real-worker import persisted across reload, tempo entry, unrelated XML, canceling
   a 3000-bar import. `LIBRARY_SHOTS=<dir>` also saves light/dark screenshots at 1180×820,

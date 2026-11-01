@@ -3,7 +3,7 @@
 `SettingsOverlay` is a full-height `Sheet` over the current view (the view stays mounted, so the
 selected score and passage are never lost). Mounted once by `app/App.tsx`; open it with
 `openSettings()`. Escape and the close button dismiss it, focus moves in and returns to the
-opener, and it fades in and out. Seven tabs; every panel stays mounted (hidden when inactive) so
+opener, and it fades in and out. Eight tabs; every panel stays mounted (hidden when inactive) so
 typed text and staged label edits survive switching tabs. Landscape: tab list on the left;
 portrait: a scrolling strip on top.
 
@@ -15,6 +15,7 @@ portrait: a scrolling strip on top.
 | Pedal | Hint pedal action (note names / Show keys); summary of the learned mapping; *Set up in Connection* closes Settings and navigates | immediately |
 | Sound | Destination: Connected piano (MIDI, default) / Browser sound (explicit); browser volume; accompaniment level; metronome on/off + volume; optional input monitoring | immediately |
 | General | Suggestions toggle; theme System / Light / Dark; score paper | immediately |
+| Backup | Export backup (download), Restore from backup (confirm, then the merge report or why the file is not a backup, in place), storage status line. Uses its own `LibraryModel` and `LibraryDeps` from `views/library` (DECISIONS L7) | on Restore |
 | About | Version, MusicXML-only import, data stays on this device, Salamander credit with CC-BY 3.0 link, this browser's capabilities | — |
 
 ## Staged label settings (spec "Persistent score labels")
@@ -66,4 +67,5 @@ are pending.
 `SettingsOverlay.test.tsx` (open/close/Escape/focus/tabs/discard notice), `LabelsSection.test.tsx`
 (validation, staged apply and hook order, summary, sample, strict wording, preset, other clefs),
 `Sections.test.tsx` (naming examples change with every switch, hints, pedal, sound, general,
-about), `helpers.test.ts`. Run: `npx vitest run src/views/settings`.
+about), `BackupSection.test.tsx` (export download, in-place restore with merge report, invalid file),
+`helpers.test.ts`. Run: `npx vitest run src/views/settings`.

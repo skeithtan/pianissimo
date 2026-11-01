@@ -28,7 +28,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   `setSnapPositions(onsets)` (the hands' exact onsets: loop edges and the dragged playhead snap to
   them), `setCursorDraggable(bool)`, `setLoopEditable(bool)`, `setLoopSelectMode('off'|'tap')`,
   `setCursorAction(visible)` (circular "Repeat from here" button on the cursor bar, fades; inert
-  while hidden; no pressed state), `setCorrections(marks: CorrectionMark[])` (teacher's red-pen
+  while hidden; no pressed state; it sits dead center in the gap between the staves,
+  `shared/cursorAction.ts`), `setCorrections(marks: CorrectionMark[])` (teacher's red-pen
   marks after an attempt, `{ notes, kind, text }` with kind `'wrong'|'early'|'late'|'accidental'|
   'octave'|'spread'|'tie'|'pedal'`; `[]` clears them),
   `setBrowseEnabled(bool)`, `returnToCurrent()`, `isBrowsing()`, `setZoom(s)`, `zoom()`,

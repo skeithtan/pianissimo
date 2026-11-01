@@ -2,18 +2,17 @@
  * Library and Import (spec "Main user journey" 1–2, "MusicXML score import", "Storage and
  * recovery", "Suggested practice" in the Library). The first screen, bundled with the shell:
  * it imports neither the notation engine nor the piano samples (spec "Deferred assets"); the
- * importer runs in its worker and the backup zip code is loaded on demand by storage.
+ * importer runs in its worker. Backup and restore live in Settings (`views/settings/BackupSection`).
  */
 import { useEffect, useMemo, useState } from 'preact/hooks'
-import { openPractice } from '../../app/navigation'
+import { openPractice, settingsOpen } from '../../app/navigation'
 import { pushNotice } from '../../app/state'
 import { Notice } from '../../ui/controls'
 import { Icon } from '../../ui/icons'
-import { BackupPanel } from './BackupPanel'
 import { LibraryDepsContext, defaultLibraryDeps, useLibraryDeps, type LibraryDeps } from './deps'
 import { FileButton, SCORE_ACCEPT } from './FileButton'
 import { plural } from './format'
-import { ImportFlow, type FlowMode } from './importFlow'
+import { ImportFlow } from './importFlow'
 import { ImportSheet } from './ImportSheet'
 import { LibraryModel } from './libraryModel'
 import { PieceCard } from './PieceCard'
@@ -39,10 +38,12 @@ function LibraryPage() {
   const [flow, setFlow] = useState<ImportFlow | null>(null)
   const [expanded, setExpanded] = useState<string | null | undefined>(undefined)
 
+  // A restore in Settings (Backup) can add pieces: the list refreshes whenever Settings close.
+  const settingsShown = settingsOpen.value
   useEffect(() => {
+    if (settingsShown) return
     void model.refresh()
-    void model.refreshStorageStatus()
-  }, [model])
+  }, [model, settingsShown])
 
   // Release the import worker if the view goes away mid-import.
   useEffect(() => () => flow?.close(), [flow])
@@ -52,16 +53,12 @@ function LibraryPage() {
   // The most recently opened piece starts expanded, so its suggestions are in view.
   const open = expanded === undefined ? (pieces[0]?.id ?? null) : expanded
 
-  const startImport = (file: File, mode: FlowMode = { kind: 'new' }) => {
+  const startImport = (file: File) => {
     flow?.close()
-    const next = new ImportFlow(deps, mode, (piece, { replaced, storage }) => {
+    const next = new ImportFlow(deps, (piece) => {
       void model.refresh()
-      void storage.then(() => model.refreshStorageStatus())
-      pushNotice({
-        kind: 'success',
-        text: replaced ? `“${piece.title}” now uses the new score.` : `“${piece.title}” is in your library.`,
-      })
-      if (!replaced) openPractice({ pieceId: piece.id, autoStart: true })
+      pushNotice({ kind: 'success', text: `“${piece.title}” is in your library.` })
+      openPractice({ pieceId: piece.id, autoStart: true })
     })
     setFlow(next)
     void next.openFile(file)
@@ -120,13 +117,10 @@ function LibraryPage() {
               model={model}
               expanded={open === piece.id}
               onToggle={() => setExpanded(open === piece.id ? null : piece.id)}
-              onReplace={(p, file) => startImport(file, { kind: 'replace', piece: p })}
             />
           ))}
         </ul>
       ) : null}
-
-      <BackupPanel model={model} disabled={unavailable} />
 
       <ImportSheet flow={flow} pieces={pieces} onClose={closeFlow} />
     </div>
@@ -157,7 +151,7 @@ function EmptyState({
           Import MusicXML
         </FileButton>
       </div>
-      <p>Moving from another device? Use “Restore from backup” below.</p>
+      <p>Moving from another device? Restore a backup from Settings → Backup.</p>
     </section>
   )
 }

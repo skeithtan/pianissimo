@@ -228,7 +228,11 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           {
             initialZoom: mode === 'page' ? settings.peek().view.pageZoom : settings.peek().view.zoom,
             returnLabel: 'Return to current position',
-            onBrowse: browsed.onBrowse,
+            // Browsing while something plays stops it and drops that attempt (U41).
+            onBrowse: (browsing) => {
+              if (browsing) session.browseStarted()
+              browsed.onBrowse(browsing)
+            },
             onSeekRequest: (occ) => session.seek(occ),
             // The dragged playhead lands on a note; practice continues from there (U23).
             onCursorSeek: (position) => session.seekPosition(position),

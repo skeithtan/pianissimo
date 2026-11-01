@@ -7,6 +7,12 @@ import { expect, test, type Page } from '@playwright/test'
 import { idbAll, sheet, storedSettings } from './app-helpers'
 import { installFakeMidi, loopWholePiece, openSeededPractice, play, playWhenDue, seedPiece } from './practice-helpers'
 
+/** Settings → Backup (export and restore are not on the Library page). */
+async function openBackup(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await sheet(page).getByRole('tab', { name: 'Backup' }).click()
+}
+
 async function completeWithOneWrongNote(page: Page): Promise<void> {
   await loopWholePiece(page)
   await page.getByRole('button', { name: 'Start', exact: true }).click()
@@ -28,10 +34,12 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   await page.getByRole('button', { name: 'Back to Library' }).click()
   await expect(page.getByRole('heading', { level: 2, name: 'Two Hands' })).toBeVisible()
 
-  // Export: a real download of the backup archive.
+  // Export from Settings → Backup: a real download of the backup archive.
+  await expect(page.getByRole('button', { name: 'Export backup' })).toHaveCount(0)
+  await openBackup(page)
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Export backup' }).click(),
+    sheet(page).getByRole('button', { name: 'Export backup' }).click(),
   ])
   expect(download.suggestedFilename()).toMatch(/\.pianissimo\.zip$/)
   const backupPath = info.outputPath('backup.pianissimo.zip')
@@ -39,6 +47,8 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   const bytes = readFileSync(backupPath)
   expect(bytes.subarray(0, 2).toString('latin1')).toBe('PK')
   await expect(page.getByText(/Backup saved as/)).toBeVisible()
+  await sheet(page).getByRole('button', { name: 'Close' }).click()
+  await expect(sheet(page)).toHaveCount(0)
 
   // Delete the piece (with its results).
   await page.getByRole('button', { name: 'Delete…' }).click()
@@ -47,8 +57,9 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   expect(await idbAll(page, 'pieces')).toHaveLength(0)
   expect(await idbAll(page, 'attempts')).toHaveLength(0)
 
-  // Restore it from the downloaded file through the real file input.
-  await page
+  // Restore it from the downloaded file through the real file input, in Settings → Backup.
+  await openBackup(page)
+  await sheet(page)
     .locator('label', { hasText: 'Restore from backup' })
     .locator('input[type="file"]')
     .setInputFiles(backupPath)
@@ -58,7 +69,9 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   await expect(sheet(page)).toContainText('Pieces: 1 added')
   await expect(sheet(page)).toContainText('Results: 1 added')
   await sheet(page).getByRole('button', { name: 'Done' }).click()
+  await sheet(page).getByRole('button', { name: 'Close' }).click()
 
+  // Closing Settings refreshes the Library list.
   await expect(page.getByRole('heading', { level: 2, name: 'Two Hands' })).toBeVisible()
   expect(await idbAll(page, 'pieces')).toHaveLength(1)
   expect(await idbAll(page, 'attempts')).toHaveLength(1)
@@ -86,7 +99,8 @@ test('export, delete the piece, restore the backup: the piece and its results ar
 test('restoring a file that is not a backup changes nothing and says why', async ({ page }, info) => {
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Your library is empty' })).toBeVisible()
-  await page
+  await openBackup(page)
+  await sheet(page)
     .locator('label', { hasText: 'Restore from backup' })
     .locator('input[type="file"]')
     .setInputFiles({ name: 'notes.zip', mimeType: 'application/zip', buffer: Buffer.from('this is not a zip archive') })
@@ -94,8 +108,8 @@ test('restoring a file that is not a backup changes nothing and says why', async
   await expect(sheet(page)).toContainText('could not be restored')
   await expect(sheet(page)).toContainText('Nothing was changed')
   info.annotations.push({ type: 'note', description: 'validation errors are shown' })
-  await sheet(page).locator('button', { hasText: 'Close' }).click()
-  await expect(sheet(page)).toHaveCount(0)
+  await sheet(page).locator('[data-testid="restore"]').getByRole('button', { name: 'Close' }).click()
+  await expect(sheet(page).getByText('could not be restored')).toHaveCount(0)
   expect(await idbAll(page, 'pieces')).toHaveLength(0)
 })
 

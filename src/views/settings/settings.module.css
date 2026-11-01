@@ -447,3 +447,24 @@
   color: var(--fg-muted);
   font-size: var(--text-s);
 }
+
+/* ---------------------------------------------------------------- backup */
+
+.backupActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.restore {
+  display: grid;
+  gap: var(--space-3);
+}
+.fileName {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.reportList {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}

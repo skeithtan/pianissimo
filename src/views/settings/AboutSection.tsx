@@ -20,7 +20,7 @@ export function AboutSection({ features }: { features: FeatureReport }) {
         </Help>
         <Help>
           Everything stays on this device: your scores, settings and practice history are stored in this browser and
-          never uploaded. Use export and restore in the Library to move them between devices.
+          never uploaded. Use Backup in Settings to keep a copy or move them between devices.
         </Help>
       </Group>
 

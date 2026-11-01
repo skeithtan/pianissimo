@@ -1,7 +1,7 @@
 /**
  * One library entry: title, composer, last opened, last speed; Practice; and a disclosure with
- * the piece's Suggested practice and its management actions (review hands and tempo, replace
- * score, clear practice history, delete), each destructive one behind a confirmation.
+ * the piece's Suggested practice and its management actions (review hands and tempo, clear
+ * practice history, delete), each destructive one behind a confirmation.
  */
 import { useState } from 'preact/hooks'
 import { pushNotice } from '../../app/state'
@@ -11,7 +11,6 @@ import { beatUnitName } from '../../core/music/tempo'
 import { Button, Notice, Sheet } from '../../ui/controls'
 import { Icon } from '../../ui/icons'
 import { useLibraryDeps } from './deps'
-import { FileButton, SCORE_ACCEPT } from './FileButton'
 import { formatLastSpeed, formatRelativeTime } from './format'
 import type { LibraryModel } from './libraryModel'
 import { PieceSuggestions } from './PieceSuggestions'
@@ -23,14 +22,12 @@ export function PieceCard({
   model,
   expanded,
   onToggle,
-  onReplace,
   index,
 }: {
   piece: PieceRecord
   model: LibraryModel
   expanded: boolean
   onToggle: () => void
-  onReplace: (piece: PieceRecord, file: File) => void
   index: number
 }) {
   const deps = useLibraryDeps()
@@ -94,14 +91,6 @@ export function PieceCard({
               <Button variant="ghost" icon="hand" onClick={() => setConfirm('review')}>
                 Review hands and tempo…
               </Button>
-              <FileButton
-                icon="upload"
-                variant="ghost"
-                accept={deps.isAppleMobile() ? undefined : SCORE_ACCEPT}
-                onFile={(file) => onReplace(piece, file)}
-              >
-                Replace score…
-              </FileButton>
               <Button variant="ghost" icon="restart" onClick={() => setConfirm('clear')}>
                 Clear practice history…
               </Button>

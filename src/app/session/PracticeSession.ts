@@ -235,6 +235,8 @@ export class PracticeSession {
   #highlightsDirty = false
   #lastResumeSave = -Infinity
   #processing = false
+  /** Records ending while this is set are dropped: the learner browsed away from them (U41). */
+  #discarding = false
   #again = false
   #disposed = false
   /** An overlay (Settings, Connection) is open: keys go to it, never to the engine. */
@@ -921,6 +923,33 @@ export class PracticeSession {
   }
 
   /**
+   * The learner started browsing the score (U41: "I should be able to scroll the stage sheet back
+   * even in play mode, just discard that attempt"). While something plays, it stops, and the
+   * attempt or reading pass in progress ends unrecorded: a scored attempt is interrupted (the
+   * next Start begins at the loop start); a reading pass pauses where it was and starts over
+   * from that note; Listen pauses. Nothing happens when nothing plays (also at Ready).
+   */
+  browseStarted(): void {
+    const playing = this.#listen ? this.#listen.playing : this.#engine.state.phase === 'running' || this.#leadInTail()
+    if (!playing) return
+    const now = this.#deps.clock()
+    this.#discarding = true
+    try {
+      this.pause()
+      const group = this.#engine.state.groupIndex
+      if (!this.#listen && this.#engine.mode === 'reading' && group !== null) {
+        // A paused reading pass would go on later as the same pass: end it here, unrecorded, and
+        // wait at the same note.
+        this.#engine.seek(group, now)
+      }
+      this.#drain(now)
+    } finally {
+      this.#discarding = false
+    }
+    this.#process(now)
+  }
+
+  /**
    * The view's chrome is revealed (true) or faded into focus mode (false, U13). While playing,
    * the cursor's repeat button shows only with the chrome revealed (U14).
    */
@@ -1488,7 +1517,7 @@ export class PracticeSession {
         this.#onPhase(ev.phase, now)
         break
       case 'attempt-ended':
-        this.#onRecord(ev.record)
+        if (!this.#discarding) this.#onRecord(ev.record)
         break
       case 'abandon':
         // Leaving during a lead-in (user stop) abandons nothing: it is not recorded.
@@ -2308,7 +2337,8 @@ export class PracticeSession {
     // Loop handles only in Repeat mode (U10), never while an attempt (or a lead-in into it) runs
     // or Listen plays.
     const editable = this.#repeat && !running && !this.#listen
-    const browse = !running && !(this.#listen?.playing ?? false)
+    // The score can always be browsed; browsing while something plays stops it (U41).
+    const browse = true
     // The repeat button on the cursor (U14) opens Repeat at the cursor's bar: never in Repeat
     // mode, and while playing only with the chrome revealed (it goes with focus mode). The
     // playhead can be dragged only while paused outside Repeat mode (U23): there every pass

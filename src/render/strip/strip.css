@@ -299,9 +299,11 @@
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   opacity: 0;
+  /* Its top is set to the center of the gap between the staves; it glides there on a zoom. */
   transition:
     opacity var(--pn-medium) var(--pn-ease),
-    background-color var(--pn-medium) var(--pn-ease);
+    background-color var(--pn-medium) var(--pn-ease),
+    top var(--pn-medium) var(--pn-ease);
 }
 
 .pn-action-on .pn-cursor-action {

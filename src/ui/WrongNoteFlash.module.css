@@ -1,7 +1,7 @@
 /* Damage vignette (DECISIONS U2): only a soft radial gradient, no rings or borders. The center is
    clear well past the notation and the red lives in the outer margins: transparent to 62% of the
-   way to each edge, an eased ramp to about 0.4 at the edge midpoints and 0.45 into the corners
-   (the last stops flatten out, so there is no crease anywhere). Every stop is the same red fading
+   way to each edge, an eased ramp to 0.25 at the edge midpoints and 0.3 into the corners (the
+   last stops flatten out, so there is no crease anywhere). Every stop is the same red fading
    from zero alpha, so the overlay has no hard edge at any intensity. Opacity is written by
    FlashDriver, never by a re-render. */
 .flash {
@@ -13,11 +13,11 @@
   background: radial-gradient(
     ellipse closest-side at 50% 50%,
     rgb(214 40 40 / 0) 62%,
-    rgb(212 38 38 / 0.05) 72%,
-    rgb(206 32 32 / 0.15) 82%,
-    rgb(198 26 26 / 0.29) 91%,
-    rgb(192 22 22 / 0.4) 100%,
-    rgb(190 20 20 / 0.45) 118%
+    rgb(212 38 38 / 0.03) 72%,
+    rgb(206 32 32 / 0.09) 82%,
+    rgb(198 26 26 / 0.18) 91%,
+    rgb(192 22 22 / 0.25) 100%,
+    rgb(190 20 20 / 0.3) 118%
   );
   will-change: opacity;
 }

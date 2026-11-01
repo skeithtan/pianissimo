@@ -273,3 +273,66 @@ test.describe('practice without a piano', () => {
     await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
   })
 })
+
+test.describe('browsing while playing (U41)', () => {
+  test('scrolling the score during an attempt stops it and records nothing', async ({ page }) => {
+    await installFakeMidi(page)
+    await seedPiece(page)
+    await openSeededPractice(page)
+    await startWholePiece(page)
+    await playWhenDue(page, ...FIRST)
+    await playWhenDue(page, ...REST[0]!)
+    const strip = page.locator('.pn-strip')
+    await expect(strip).not.toHaveClass(/pn-browsing/)
+    // Drag the music back while the attempt runs.
+    const box = (await strip.boundingBox())!
+    const y = box.y + box.height / 2
+    await page.mouse.move(box.x + box.width * 0.5, y)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.8, y, { steps: 8 })
+    await page.mouse.up()
+    await expect(strip).toHaveClass(/pn-browsing/)
+    // The attempt stopped: Start is offered again, and nothing of it reaches storage.
+    await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
+    await page.waitForTimeout(1500)
+    expect(await idbAll(page, 'attempts')).toHaveLength(0)
+  })
+})
+
+test.describe('cursor repeat button and note names', () => {
+  test('the repeat button sits in the gap between the staves ("Name every note")', async ({ page }) => {
+    await installFakeMidi(page)
+    await seedPiece(page, { labels: { ...DEFAULT_SETTINGS.labels, mode: 'all' } })
+    await openSeededPractice(page)
+    const button = page.getByRole('button', { name: 'Repeat from here' })
+    await expect(button).toBeVisible()
+    await expect(labels(page).filter({ hasText: /^C4$/ })).toHaveCount(1)
+    if (process.env['SHOT']) {
+      await page.waitForTimeout(500)
+      await page.screenshot({ path: process.env['SHOT'] })
+    }
+    // Staff lines under the button (VexFlow draws them as each measure's own paths): the button's
+    // center lies between the treble staff's bottom line and the bass staff's top line.
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const b = document.querySelector('.pn-cursor-action')!.getBoundingClientRect()
+          const cx = (b.left + b.right) / 2
+          const ys = [
+            ...new Set(
+              [...document.querySelectorAll('.pn-music .vf-measure > path')]
+                .map((p) => p.getBoundingClientRect())
+                .filter((r) => r.height < 3 && r.width > 20 && r.left <= cx && r.right >= cx)
+                .map((r) => Math.round(r.top + r.height / 2)),
+            ),
+          ].sort((a, c) => a - c)
+          const cy = (b.top + b.bottom) / 2
+          return ys.length === 10 && cy > ys[4]! && cy < ys[5]!
+        }),
+      )
+      .toBe(true)
+    // The button still works there.
+    await button.click()
+    await expect(page.getByTestId('repeat-controls')).toBeVisible()
+  })
+})

@@ -3,13 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { fixtureBytes } from '../../../tests/unit/import/fixtures'
 import { hasTempo } from '../../core/music/tempo'
 import type { PieceRecord } from '../../core/storage/records'
-import {
-  ImportFlow,
-  resetPersistenceRequestForTests,
-  type FlowMode,
-  type FlowPhase,
-  type StorageStatus,
-} from './importFlow'
+import { ImportFlow, resetPersistenceRequestForTests, type FlowPhase, type StorageStatus } from './importFlow'
 import { initialDraft } from './review'
 import { bytesFile, testDeps, tick, type TestDeps } from './testkit'
 
@@ -30,12 +24,11 @@ function review(flow: ImportFlow): Extract<FlowPhase, { kind: 'review' }> {
 /** The saves a flow reported through `onSaved`. */
 interface Saved {
   piece: PieceRecord
-  replaced: boolean
   storage: Promise<StorageStatus>
 }
-function savingFlow(mode: FlowMode = { kind: 'new' }): { flow: ImportFlow; saved: Saved[] } {
+function savingFlow(): { flow: ImportFlow; saved: Saved[] } {
   const saved: Saved[] = []
-  const flow = new ImportFlow(deps, mode, (piece, info) => saved.push({ piece, ...info }))
+  const flow = new ImportFlow(deps, (piece, info) => saved.push({ piece, ...info }))
   return { flow, saved }
 }
 
@@ -63,7 +56,6 @@ describe('ImportFlow', () => {
     expect(phases.at(-1)).toBe('idle')
     expect(saved).toHaveLength(1)
     const done = saved[0]!
-    expect(done.replaced).toBe(false)
     expect(done.piece.title).toBe(r.result.summary.title)
     expect(done.piece.lastOpenedAt).toBe(deps.clock)
     // Persistence is requested once, after the first import, and the quota is reported.
@@ -92,7 +84,7 @@ describe('ImportFlow', () => {
   })
 
   it('offers the part choice when there is one, and validates it before building', async () => {
-    const flow = new ImportFlow(deps, { kind: 'new' })
+    const flow = new ImportFlow(deps)
     await flow.openFile(file('two-parts.musicxml'))
     let p = flow.phase.value
     expect(p.kind).toBe('choose')
@@ -119,7 +111,7 @@ describe('ImportFlow', () => {
   it('a canceled inspect never updates the flow again, even if the client answers late', async () => {
     deps.client.hold = true
     deps.client.lateResults = true
-    const flow = new ImportFlow(deps, { kind: 'new' })
+    const flow = new ImportFlow(deps)
     const phases = trace(flow)
     const running = flow.openFile(file('two-hands.musicxml'))
     await tick()
@@ -136,7 +128,7 @@ describe('ImportFlow', () => {
   })
 
   it('a canceled build never shows its summary', async () => {
-    const flow = new ImportFlow(deps, { kind: 'new' })
+    const flow = new ImportFlow(deps)
     await flow.openFile(file('two-parts.musicxml'))
     deps.client.hold = true
     deps.client.lateResults = true
@@ -155,7 +147,7 @@ describe('ImportFlow', () => {
 
   it('a well-behaved client rejects on abort and the flow stays idle', async () => {
     deps.client.hold = true
-    const flow = new ImportFlow(deps, { kind: 'new' })
+    const flow = new ImportFlow(deps)
     const running = flow.openFile(file('two-hands.musicxml'))
     await tick()
     flow.cancel()
@@ -164,7 +156,7 @@ describe('ImportFlow', () => {
   })
 
   it('reports unrelated XML and malformed files readably', async () => {
-    const flow = new ImportFlow(deps, { kind: 'new' })
+    const flow = new ImportFlow(deps)
     await flow.openFile(file('unrelated.xml'))
     let p = flow.phase.value
     expect(p.kind).toBe('failed')
@@ -177,7 +169,7 @@ describe('ImportFlow', () => {
   })
 
   it('refuses files over the size limit before reading them', async () => {
-    const flow = new ImportFlow(deps, { kind: 'new' })
+    const flow = new ImportFlow(deps)
     let read = false
     await flow.openFile({
       name: 'huge.musicxml',
@@ -223,40 +215,8 @@ describe('ImportFlow', () => {
     expect(pkg?.model.hands.byVoice[v.key]).toBe('R')
   })
 
-  it('replaces a piece’s score: same piece, new version, positions reset, old version released', async () => {
-    const first = savingFlow()
-    await first.flow.openFile(file('two-hands.musicxml'))
-    await first.flow.save(initialDraft(review(first.flow).result.summary, review(first.flow).result.package.model))
-    const saved = first.saved[0]!
-    const old = await deps.storage.updatePiece(saved.piece.id, {
-      lastMultiplier: 0.75,
-      lastPassage: { fromOcc: 0, toOcc: 1 },
-    })
-
-    deps.clock += 1000
-    const replacing = savingFlow({ kind: 'replace', piece: old! })
-    const flow = replacing.flow
-    await flow.openFile(file('ties.musicxml'))
-    await flow.save(initialDraft(review(flow).result.summary, review(flow).result.package.model))
-    const done = replacing.saved[0]!
-    expect(done.replaced).toBe(true)
-    expect(done.piece.id).toBe(saved.piece.id)
-    expect(done.piece.scoreVersionId).not.toBe(saved.piece.scoreVersionId)
-    expect(done.piece).toMatchObject({
-      lastMultiplier: 0.75,
-      lastPassage: null,
-      resume: null,
-      createdAt: saved.piece.createdAt,
-    })
-
-    const pieces = await deps.storage.listPieces()
-    expect(pieces).toHaveLength(1)
-    expect(await deps.storage.getPackage(saved.piece.scoreVersionId)).toBeUndefined() // ST1
-    expect(await deps.storage.getPackage(done.piece.scoreVersionId)).toBeDefined()
-  })
-
   it('cancel releases the client and the retained file; a later file still imports', async () => {
-    const flow = new ImportFlow(deps, { kind: 'new' })
+    const flow = new ImportFlow(deps)
     await flow.openFile(file('two-parts.musicxml'))
     expect(flow.phase.value.kind).toBe('choose')
     flow.cancel()
@@ -269,10 +229,8 @@ describe('ImportFlow', () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => (release = resolve))
     const saved: Saved[] = []
-    const flow = new ImportFlow(
-      { ...deps, getStorage: () => gate.then(() => deps.storage) },
-      { kind: 'new' },
-      (piece, info) => saved.push({ piece, ...info }),
+    const flow = new ImportFlow({ ...deps, getStorage: () => gate.then(() => deps.storage) }, (piece, info) =>
+      saved.push({ piece, ...info }),
     )
     await flow.openFile(file('two-hands.musicxml'))
     const r = review(flow)
@@ -287,10 +245,7 @@ describe('ImportFlow', () => {
   })
 
   it('shows a save failure without touching the library', async () => {
-    const flow = new ImportFlow(
-      { ...deps, getStorage: () => Promise.reject(new Error('disk on fire')) },
-      { kind: 'new' },
-    )
+    const flow = new ImportFlow({ ...deps, getStorage: () => Promise.reject(new Error('disk on fire')) })
     await flow.openFile(file('two-hands.musicxml'))
     await flow.save(initialDraft(review(flow).result.summary, review(flow).result.package.model))
     const r = review(flow)

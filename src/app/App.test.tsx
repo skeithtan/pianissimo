@@ -107,7 +107,7 @@ describe('<App> shell', () => {
     click(byLabel(root, 'Settings'))
     await settle()
     expect(settingsOpen.value).toBe(true)
-    expect($(root, 'dialog[open]')?.querySelectorAll('[role="tab"]').length).toBe(7)
+    expect($(root, 'dialog[open]')?.querySelectorAll('[role="tab"]').length).toBe(8)
     expect(byText(root, 'Library')).toBe(heading) // same node: view stayed mounted
     click(byLabel($(root, 'dialog[open]')!, 'Close'))
     expect(currentView.value).toBe('library')

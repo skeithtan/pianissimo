@@ -45,6 +45,7 @@ import {
   type LoopKnots,
 } from '../strip/snap'
 import type { StripOptions, StripStats, LoopSelectMode } from '../strip/StripView'
+import { ACTION_RADIUS, staffGap } from '../shared/cursorAction'
 import type { LabelBox, PreparedLayout } from '../types'
 import { PAGE_GUTTER, PageGeometry, type Band } from './geometry'
 import { PageSegmentStore, type MountedSegment } from './segments'
@@ -168,6 +169,7 @@ export class PageView {
     sheetH: NaN,
     transform: '',
     gx: NaN,
+    actionTop: NaN,
   }
   private browsing = false
   private browseEnabled = false
@@ -377,6 +379,7 @@ export class PageView {
     if (visible === this.cursorAction) return
     this.cursorAction = visible
     this.cursorEl.classList.toggle('pn-action-on', visible)
+    if (visible) this.schedule()
     this.cursorBtn.toggleAttribute('inert', !visible)
   }
 
@@ -804,6 +807,24 @@ export class PageView {
       this.cursorEl.style.height = `${h}px`
       this.applied.cursorH = h
     }
+    this.placeActionButton(span.top, h)
+  }
+
+  /**
+   * The cursor's button sits dead center in the gap between the current system's staves (U14
+   * addendum, user); without a gap (one staff), at the cursor bar's middle. Only while it shows.
+   * `spanTop`: the system's top staff (layout px); `h`: the cursor element's height (px).
+   */
+  private placeActionButton(spanTop: number, h: number): void {
+    if (!this.cursorAction) return
+    const sys = this.geo.systems[this.cursor.system]
+    if (!sys) return
+    const gap = staffGap(sys.staves)
+    const c = gap ? ((gap.top + gap.bottom) / 2 - spanTop) * this.scale + CURSOR_MARGIN : h / 2
+    const top = r2(c - ACTION_RADIUS)
+    if (top === this.applied.actionTop) return
+    this.cursorBtn.style.top = `${top}px`
+    this.applied.actionTop = top
   }
 
   private applyNotes(): void {

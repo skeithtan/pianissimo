@@ -216,13 +216,13 @@ export, restore + settings reload) and `ImportFlow` (read → `inspect` → scor
 needed → `build` → summary review → `commitImport` → `requestPersistentStorage` once). Each async
 step carries a job token; cancel/close bump it and dispose the client, so a canceled job never
 updates the UI. `review.ts` applies `applyHandAssignment` / `withUserTempo` and re-checks
-`summarizeImport(...).readiness`; only ready packages are stored (L1). Replace score =
-`commitImport` with the same piece id (L2). Per-piece suggestions: `PieceSuggestionsModel`
+`summarizeImport(...).readiness`; only ready packages are stored (L1). Per-piece suggestions: `PieceSuggestionsModel`
 (`loadSuggestions` + `sessionDismissals`, per-piece disable, Practice this passage →
 `openPractice` preset, refresh on `history.subscribe`) rendered by the shared `SuggestionList`.
-New imports navigate to Practice and start after layout preparation; replacement stays in the
-Library. Add unlocks the shared browser AudioContext during the click without loading samples.
-Dependencies are injectable via `LibraryDeps` (tests: `views/library/testkit.ts`).
+New imports navigate to Practice and start after layout preparation. Add unlocks the shared browser AudioContext during the click without loading samples.
+Dependencies are injectable via `LibraryDeps` (tests: `views/library/testkit.ts`). Export and
+restore are in Settings → Backup (`views/settings/BackupSection`, its own `LibraryModel`); the
+Library refreshes its list when Settings close (L7).
 `app/session/` (framework-free, all dependencies injected): `PracticeSession` owns one piece's
 practice. Each human MIDI event → `MidiOutputBackend.humanInput` → `engine.input` → engine events
 drained (`input-complete` → `transport.releaseGate`, records → `storage.history.queue*`). Visual

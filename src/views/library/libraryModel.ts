@@ -111,7 +111,8 @@ export class LibraryModel {
   async loadReview(piece: PieceRecord): Promise<StoredReview> {
     const storage = await this.#deps.getStorage()
     const pkg = await storage.getPackage(piece.scoreVersionId)
-    if (!pkg) throw new Error('The score of this piece is missing from this device. Replace the score to restore it.')
+    if (!pkg)
+      throw new Error('The score of this piece is missing from this device. Delete it and import its score again.')
     return { pkg, summary: summarizeImport(pkg.model) }
   }
 
@@ -128,7 +129,9 @@ export class LibraryModel {
     const version = piece.scoreVersionId
     const [source, current] = await Promise.all([storage.getSource(version), storage.getPiece(piece.id)])
     if (!source)
-      throw new Error('The original file of this score is missing from this device. Replace the score instead.')
+      throw new Error(
+        'The original file of this score is missing from this device. Delete the piece and import its score again.',
+      )
     if (!current || current.scoreVersionId !== version)
       throw new Error('This piece changed in the meantime. Close and try again.')
     const { userTempo: _previous, ...rest } = current

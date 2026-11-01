@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
 import { fixtureBytes } from '../../../tests/unit/import/fixtures'
 import { existingAudioContext, resetSharedAudioContext } from '../../core/playback/webaudio/context'
-import { currentView, practiceRequest } from '../../app/navigation'
+import { currentView, practiceRequest, settingsOpen } from '../../app/navigation'
 import { notices, resetAppStateForTests, updateSettings } from '../../app/state'
-import { attemptFor, importPiece, openFresh } from '../../core/storage/testkit'
+import { attemptFor, importPiece } from '../../core/storage/testkit'
 import { $, $$, byLabel, byText, click, mount, type, type Mounted } from '../shared/testing'
 import { Library } from './LibraryView'
 import { resetPersistenceRequestForTests } from './importFlow'
@@ -36,6 +36,7 @@ beforeEach(async () => {
   sessionDismissals.clear()
   practiceRequest.value = null
   currentView.value = 'library'
+  settingsOpen.value = false
   deps = await testDeps()
 })
 afterEach(() => {
@@ -75,15 +76,25 @@ const button = (root: ParentNode, text: string) =>
   $$(root as HTMLElement, 'button').find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined
 
 describe('Library list', () => {
-  it('shows a clear empty state with the import call to action and backup tools', async () => {
+  it('shows a clear empty state with the import call to action, and no backup tools', async () => {
     const root = await open()
     expect(byText(root, 'Your library is empty')).not.toBeNull()
     expect(fileButton(root, 'Import MusicXML')).not.toBeNull()
     const input = fileButton(root, 'Import MusicXML')!.querySelector('input')!
     expect(input.getAttribute('accept')).toContain('.musicxml')
     expect(input.getAttribute('accept')).toContain('.mxl')
-    expect(button(root, 'Export backup')).toBeDefined()
-    expect(fileButton(root, 'Restore from backup…')).not.toBeNull()
+    // Backup and restore live in Settings → Backup.
+    expect(button(root, 'Export backup')).toBeUndefined()
+    expect(fileButton(root, 'Restore from backup…')).toBeNull()
+    expect(root.textContent).toContain('Settings → Backup')
+  })
+
+  it('refreshes the list when Settings close (a restore there may have added pieces)', async () => {
+    settingsOpen.value = true
+    const root = await open()
+    await importPiece(deps.storage, 'v2', { title: 'Restored' })
+    settingsOpen.value = false
+    await until(() => titles(root).includes('Restored'), 'refreshed')
   })
 
   it('accepts any file on iPad (content is sniffed)', async () => {
@@ -185,7 +196,7 @@ describe('Import flow (UI)', () => {
     await until(() => notices.value.some((n) => /“Two Hands” is in your library\./.test(n.text)), 'saved')
     await until(() => dialog(root) === null, 'sheet closed')
     await until(() => titles(root).length === 1, 'list')
-    await until(() => /keeps your library even when space runs low/.test(root.textContent ?? ''), 'storage line')
+    expect(deps.manager.persistCalls).toBe(1) // persistent storage still requested after the first import
     const pieces = await deps.storage.listPieces()
     expect(pieces).toHaveLength(1)
     expect(currentView.value).toBe('practice')
@@ -317,25 +328,6 @@ describe('Import flow (UI)', () => {
     pick(fileButton(d, 'Choose another file'), fixture('two-hands.musicxml'))
     await until(() => button(root, 'Add to library') !== undefined, 'summary')
   })
-
-  it('replaces the score of a piece from its options', async () => {
-    await importPiece(deps.storage, 'v1', { title: 'Old score' })
-    const root = await open()
-    pick(fileButton(root, 'Replace score…'), fixture('two-hands.musicxml'))
-    await until(() => button(root, 'Replace score') !== undefined, 'summary')
-    const d = dialog(root)!
-    expect(d.getAttribute('aria-label')).toBe('Replace the score of “Old score”')
-    expect(d.textContent).toMatch(/stay separate/)
-    click(button(d, 'Replace score'))
-    await until(() => notices.value.some((n) => /“Two Hands” now uses the new score\./.test(n.text)), 'saved')
-    await until(() => dialog(root) === null, 'sheet closed')
-    const pieces = await deps.storage.listPieces()
-    expect(pieces).toHaveLength(1)
-    expect(pieces[0]!.id).toBe('piece-v1')
-    expect(pieces[0]!.scoreVersionId).not.toBe('v1')
-    expect(currentView.value).toBe('library')
-    expect(practiceRequest.value).toBeNull()
-  })
 })
 
 describe('Review hands and tempo of a stored piece (L5)', () => {
@@ -465,45 +457,5 @@ describe('Suggested practice (Library)', () => {
     updateSettings({ suggestions: { enabled: false } } as never)
     const root = await open()
     await until(() => /turned off in Settings/.test(root.textContent ?? ''), 'global off')
-  })
-})
-
-describe('Backup and restore', () => {
-  it('exports a .pianissimo.zip download', async () => {
-    await importPiece(deps.storage, 'v1')
-    const root = await open()
-    click(button(root, 'Export backup'))
-    await until(() => deps.downloads.length === 1, 'download')
-    expect(deps.downloads[0]!.fileName).toMatch(/^pianissimo-2026-10-29\.pianissimo\.zip$/)
-    expect(deps.downloads[0]!.bytes.byteLength).toBeGreaterThan(100)
-    expect(notices.value.some((n) => /Backup saved/.test(n.text))).toBe(true)
-  })
-
-  it('restores a backup after confirmation and reports what was merged', async () => {
-    const other = await openFresh()
-    await importPiece(other, 'v9', { title: 'From the iPad' })
-    const backup = await other.exportAll()
-    const root = await open()
-    pick(fileButton(root, 'Restore from backup…'), bytesFile('library.pianissimo.zip', backup))
-    await settle()
-    const d = dialog(root)!
-    expect(d.textContent).toMatch(/nothing here is deleted/)
-    click(button(d, 'Restore'))
-    await until(() => /Backup restored/.test(dialog(root)?.textContent ?? ''), 'restored')
-    expect(dialog(root)!.textContent).toContain('Pieces: 1 added')
-    expect(deps.flushes).toBe(1)
-    expect(deps.reloads).toBe(1)
-    click(button(dialog(root)!, 'Done'))
-    await until(() => byText(root, 'From the iPad') !== null, 'restored piece listed')
-  })
-
-  it('shows why a file is not a backup, and changes nothing', async () => {
-    const root = await open()
-    pick(fileButton(root, 'Restore from backup…'), bytesFile('notes.zip', new TextEncoder().encode('hello')))
-    await settle()
-    click(button(dialog(root)!, 'Restore'))
-    await until(() => /could not be restored/.test(dialog(root)?.textContent ?? ''), 'error')
-    expect(await deps.storage.listPieces()).toEqual([])
-    expect(deps.reloads).toBe(0)
   })
 })

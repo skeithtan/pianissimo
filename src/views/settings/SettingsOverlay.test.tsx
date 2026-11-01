@@ -25,7 +25,7 @@ function open() {
 }
 
 describe('Settings overlay shell', () => {
-  it('opens a titled dialog with seven sections', () => {
+  it('opens a titled dialog with eight sections', () => {
     const root = open()
     expect($(root, 'dialog')?.getAttribute('aria-label')).toBe('Settings')
     expect($$(root, '[role="tab"]').map((t) => t.textContent?.trim())).toEqual([
@@ -35,6 +35,7 @@ describe('Settings overlay shell', () => {
       'Pedal',
       'Sound',
       'General',
+      'Backup',
       'About',
     ])
   })
@@ -47,7 +48,7 @@ describe('Settings overlay shell', () => {
   it('shows one panel at a time and keeps the others mounted', () => {
     const root = open()
     const panels = $$(root, '[role="tabpanel"]')
-    expect(panels).toHaveLength(7)
+    expect(panels).toHaveLength(8)
     expect(panels.filter((p) => !p.hidden)).toHaveLength(1)
     expect(tab(root, 'Note names').getAttribute('aria-selected')).toBe('true')
     const hints = openTab(root, 'Hints')
