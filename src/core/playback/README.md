@@ -59,8 +59,9 @@ Test helpers (not exported): `testkit.ts` (`makeModel`, `ManualClock`, `Recordin
 - **Performance builder.** Automatic hands: right → L, left → R, Preview → both (or the
   listen filter), both hands → nothing. Tie chains are one attack. A note already sounding at
   the range start is attacked at the start; releases are clipped to the range end. Automatic
-  attacks in unison with a learner attack at the same onset are suppressed; simultaneous
-  automatic unisons merge (loudest velocity, latest release). Overlapping same-pitch notes
+  attacks in unison with a learner attack at the same onset are suppressed (a learner tie
+  chain begun before the range start is not attacked there, E16, so it suppresses nothing);
+  simultaneous automatic unisons merge (loudest velocity, latest release). Overlapping same-pitch notes
   keep separate on/off pairs (`voice` ids); backends count ownership. Velocity × accompaniment
   level (0 mutes notes). Pedals: CC 64/66/67; start/stop; change = up at P, down at P + 30 ms
   (scaled with tempo); stop+start at one position is a change; start while down is a re-pedal;
@@ -76,9 +77,11 @@ Test helpers (not exported): `testkit.ts` (`makeModel`, `ManualClock`, `Recordin
 - **Gates.** No attack/pedal/click at or beyond the written position of the first unreleased
   gate is ever handed out, even inside the lookahead: what the automatic part plays at the
   learner's onset (chords, roll members, pedals, clicks) sounds with the learner's press, never
-  before it. Events strictly before the gate play on time. At the gate: `onGateReached(i)`, then
-  hold unless released. While holding, the musical clock keeps running "virtually" only so
-  sounding notes receive their releases on schedule; the cursor stays at the gate.
+  before it. Events strictly before the gate play on time, even when their offset makes them
+  sound after the gate position (they are ordered no later than that gate). At the gate:
+  `onGateReached(i)`, then hold unless released. While holding, the musical clock keeps
+  running "virtually" only so sounding notes receive their releases on schedule; the cursor
+  stays at the gate.
   `releaseGate` while holding re-anchors musical time at now at the gate position, so the
   events written there are due at once and go out inside that same call (roll members keep
   their offsets from the release; no timer wait, no burst of later music, no replay).
@@ -100,10 +103,12 @@ Test helpers (not exported): `testkit.ts` (`makeModel`, `ManualClock`, `Recordin
   instead of bursting overdue notes.
 - **MIDI backend.** Per (channel, note) ownership counts; deferred releases while the human
   holds the pitch on the same channel; cleanup = `clear()` when present, note-offs for owned
-  notes (after already queued attacks when there is no `clear()`), release of app-pressed pedals
-  — app channel only, never All Sound Off, Local Control, program changes or other channels.
-  `stopSound` also sends CC 123 on the app channel. Sends after a failure throw
-  `OutputLostError`; `reconnect` releases what was owned when the link dropped.
+  notes (after already queued attacks when there is no `clear()`, deferred releases included),
+  release of app-pressed pedals — app channel only, never All Sound Off, Local Control,
+  program changes or other channels. `stopSound` also sends CC 123 on the app channel. Sends
+  after a failure throw `OutputLostError`; `reconnect` releases what was owned when the link
+  dropped, including releases still deferred for a human-held key (kept while the output is
+  lost).
 - **Browser audio** (dynamic import only): one shared `AudioContext` created on first use
   after a gesture; Salamander bank from `${BASE_URL}samples/salamander/` per `manifest.json`;
   each sample decoded, downmixed to mono and cut to ≤ 5 s (less at high sample rates) with an

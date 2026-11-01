@@ -125,7 +125,15 @@ const RELEASED = 2
 
 interface Attack {
   readonly ev: NoteOnEvent | ControlEvent | ClickEvent
+  /** Musical seconds at 1× when it sounds (position + offset). */
   readonly s: number
+  /**
+   * Hand-out order: `s`, but never after the first gate beyond the written position, so an
+   * offset attack written before a gate is never queued behind the attacks that gate blocks.
+   */
+  readonly k: number
+  /** Number of gates at or before the written position (orders equal `k` before the gate). */
+  readonly seg: number
   readonly rank: number
 }
 
@@ -208,7 +216,28 @@ class MusicalTransport implements Transport {
     this.sEnd = this.index.sec(o.range.end)
     this.pausedSec = this.sStart
 
+    const gates = o.gates ?? []
+    for (let i = 0; i < gates.length; i++) {
+      if (i > 0 && cmp(gates[i]!, gates[i - 1]!) <= 0) throw new RangeError('Gates must be strictly ascending')
+      if (!lt(gates[i]!, o.range.end)) throw new RangeError('Gate at or beyond the range end')
+    }
+    this.gatePos = gates
+    this.gateSec = Float64Array.from(gates, (g) => this.index.sec(g))
+    this.gateFlags = new Uint8Array(gates.length)
+
     const sOf = (ev: PerformanceEvent | ClickEvent): number => this.index.sec(ev.position) + ev.offsetSec
+    const attackOf = (ev: NoteOnEvent | ControlEvent | ClickEvent): Attack => {
+      const s = sOf(ev)
+      let lo = 0
+      let hi = gates.length
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (cmp(gates[mid]!, ev.position) <= 0) lo = mid + 1
+        else hi = mid
+      }
+      const k = lo < gates.length ? Math.min(s, this.gateSec[lo]!) : s
+      return { ev, s, k, seg: lo, rank: eventRank(ev) }
+    }
     const ons = new Set<number>()
     const attacks: Attack[] = []
     for (const ev of o.events) {
@@ -224,24 +253,17 @@ class MusicalTransport implements Transport {
         if (ons.has(ev.voice)) throw new Error(`Duplicate note-on for voice ${ev.voice}`)
         ons.add(ev.voice)
       }
-      attacks.push({ ev, s: sOf(ev), rank: eventRank(ev) })
+      attacks.push(attackOf(ev))
     }
     for (const v of ons) if (!this.offByVoice.has(v)) throw new Error(`Note-on without note-off for voice ${v}`)
     for (const ev of o.metronome?.clicks ?? []) {
       if (lt(ev.position, o.range.start) || !lt(ev.position, o.range.end)) continue
-      attacks.push({ ev, s: sOf(ev), rank: eventRank(ev) })
+      attacks.push(attackOf(ev))
     }
-    this.att = attacks.sort((a, b) => a.s - b.s || a.rank - b.rank)
+    // In this order every attack after a blocked one is blocked too, so the scheduler can stop
+    // at the first blocked attack while everything written before the gate still plays on time.
+    this.att = attacks.sort((a, b) => a.k - b.k || a.seg - b.seg || a.s - b.s || a.rank - b.rank)
     this.attTime = new Float64Array(this.att.length)
-
-    const gates = o.gates ?? []
-    for (let i = 0; i < gates.length; i++) {
-      if (i > 0 && cmp(gates[i]!, gates[i - 1]!) <= 0) throw new RangeError('Gates must be strictly ascending')
-      if (!lt(gates[i]!, o.range.end)) throw new RangeError('Gate at or beyond the range end')
-    }
-    this.gatePos = gates
-    this.gateSec = Float64Array.from(gates, (g) => this.index.sec(g))
-    this.gateFlags = new Uint8Array(gates.length)
     this.resetGates(o.range.start)
   }
 
@@ -468,7 +490,7 @@ class MusicalTransport implements Transport {
     let hi = this.att.length
     while (lo < hi) {
       const mid = (lo + hi) >> 1
-      if (this.att[mid]!.s < s - EPS) lo = mid + 1
+      if (this.att[mid]!.k < s - EPS) lo = mid + 1
       else hi = mid
     }
     this.ptr = lo
@@ -562,7 +584,8 @@ class MusicalTransport implements Transport {
       while (this.ptr < this.att.length) {
         const c = this.att[this.ptr]!
         if (lt(c.ev.position, this.floor)) {
-          this.attTime[this.ptr] = Number.NEGATIVE_INFINITY
+          // Skipped, never sent: keep the times monotonic so `unemit` can walk back past it.
+          this.attTime[this.ptr] = this.ptr > 0 ? this.attTime[this.ptr - 1]! : Number.NEGATIVE_INFINITY
           this.ptr++
           continue
         }

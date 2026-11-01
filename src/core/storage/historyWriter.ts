@@ -48,7 +48,11 @@ export interface HistoryWriterOptions {
    */
   readonly keepReadingAttempts?: boolean
   readonly onFlush?: (report: FlushReport) => void
-  /** Called with the failure of a background flush; the batch is retried until `MAX_FLUSH_FAILURES`. */
+  /**
+   * Called with the failure of a background flush; the batch is retried until `MAX_FLUSH_FAILURES`.
+   * `droppedItems` is 0 while the batch is kept for a retry, and the number of records lost when
+   * the batch (or one malformed record) is dropped, so the app can tell the player.
+   */
   readonly onError?: (error: unknown, droppedItems: number) => void
 }
 

@@ -165,3 +165,36 @@ describe('HintPedalConfirmation and manual adjustment', () => {
     expect(withThreshold(mapping(), -5).threshold).toBe(1)
   })
 })
+
+describe('hysteresis vs a manual threshold near either end', () => {
+  it('threshold 4: a full press fires and a release re-arms', () => {
+    const m = withThreshold(mapping(), 4)
+    const t = new HintPedalTrigger(m)
+    expect(t.feed(cc(66, 127))).toBe(true)
+    t.feed(cc(66, 0))
+    expect(t.down).toBe(false)
+    expect(fires(t, [127, 0, 127])).toBe(2)
+    const c = new HintPedalConfirmation(m)
+    c.feed(cc(66, 127))
+    expect(c.feed(cc(66, 0))).toBe('confirmed')
+  })
+
+  it('threshold 124: a full press fires and a release re-arms', () => {
+    const t = new HintPedalTrigger(withThreshold(mapping(), 124))
+    expect(fires(t, [127, 0, 127])).toBe(2)
+  })
+
+  it('inverted mappings near either end fire and re-arm too', () => {
+    for (const threshold of [1, 4, 124, 127]) {
+      const t = new HintPedalTrigger(withThreshold(withInversion(mapping(), true), threshold))
+      expect(fires(t, [127, 0, 127, 0])).toBe(2)
+    }
+  })
+
+  it('the band shrinks to the room around the threshold and stays 8 in the middle', () => {
+    expect(hysteresisFor(mapping({ threshold: 4 }))).toBe(3)
+    expect(hysteresisFor(mapping({ threshold: 124 }))).toBe(3)
+    expect(hysteresisFor(mapping({ threshold: 64 }))).toBe(8)
+    expect(hysteresisFor(mapping({ threshold: 1 }))).toBe(0)
+  })
+})

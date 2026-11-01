@@ -255,6 +255,37 @@ describe('ImportFlow', () => {
     expect(await deps.storage.getPackage(done.piece.scoreVersionId)).toBeDefined()
   })
 
+  it('cancel releases the client and the retained file; a later file still imports', async () => {
+    const flow = new ImportFlow(deps, { kind: 'new' })
+    await flow.openFile(file('two-parts.musicxml'))
+    expect(flow.phase.value.kind).toBe('choose')
+    flow.cancel()
+    expect(deps.client.disposed).toBe(1)
+    await flow.openFile(file('two-hands.musicxml'))
+    expect(review(flow).result.summary.readiness.scoredPractice).toBe(true)
+  })
+
+  it('closing the sheet while saving still stores the piece but skips the Practice handoff', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const saved: Saved[] = []
+    const flow = new ImportFlow(
+      { ...deps, getStorage: () => gate.then(() => deps.storage) },
+      { kind: 'new' },
+      (piece, info) => saved.push({ piece, ...info }),
+    )
+    await flow.openFile(file('two-hands.musicxml'))
+    const r = review(flow)
+    const saving = flow.save(initialDraft(r.result.summary, r.result.package.model))
+    expect(flow.busy).toBe(true)
+    flow.close()
+    release()
+    await saving
+    expect(saved).toEqual([]) // no notice, no openPractice(autoStart)
+    expect(flow.phase.value).toEqual({ kind: 'idle' })
+    expect((await deps.storage.listPieces()).map((p) => p.title)).toEqual([r.result.summary.title]) // never lose a save
+  })
+
   it('shows a save failure without touching the library', async () => {
     const flow = new ImportFlow(
       { ...deps, getStorage: () => Promise.reject(new Error('disk on fire')) },

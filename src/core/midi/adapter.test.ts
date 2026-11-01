@@ -69,6 +69,32 @@ describe('MidiAdapter: access and permission (spec "Delivery and device compatib
 })
 
 describe('MidiAdapter: ports and input', () => {
+  it('an unknown input id changes nothing: the current input keeps listening', async () => {
+    const { piano, adapter } = await granted()
+    adapter.selectInput('in-1')
+    const got: number[] = []
+    adapter.subscribe((e) => got.push(e.seq))
+    expect(adapter.selectInput('zzz')).toBe(false)
+    expect(adapter.selectedInput?.id).toBe('in-1')
+    piano.emit([0x90, 60, 100], 5)
+    expect(got).toHaveLength(1)
+    expect(adapter.physical.isHeld(60)).toBe(true)
+  })
+
+  it('a subscriber unsubscribing inside its handler does not make the next one miss the event', async () => {
+    const { piano, adapter } = await granted()
+    adapter.selectInput('in-1')
+    const got: string[] = []
+    const stop = adapter.subscribe(() => {
+      got.push('first')
+      stop()
+    })
+    adapter.subscribe(() => got.push('second'))
+    piano.emit([0x90, 60, 100], 5)
+    piano.emit([0x80, 60, 0], 6)
+    expect(got).toEqual(['first', 'second', 'second'])
+  })
+
   it('lists inputs and outputs separately', async () => {
     const { adapter } = await granted()
     expect(adapter.inputs().map((p) => p.name)).toEqual(['Digital Piano', 'Pad'])

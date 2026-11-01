@@ -37,6 +37,20 @@ describe('mergePiece', () => {
     expect(mergePiece(bare, withTempo)).toMatchObject({ userTempo: { beatBpm: 80 }, composer: 'Someone' })
     expect(mergePiece({ ...withTempo, lastOpenedAt: 999 }, bare)).toMatchObject({ userTempo: { beatBpm: 80 } })
   })
+
+  it('does not resurrect userTempo or composer from another score version', () => {
+    const old = makePiece(makePackage('v-old'), {
+      id: 'p',
+      lastOpenedAt: 100,
+      userTempo: { beatBpm: 80, beatUnit: { n: 1, d: 4 } },
+      composer: 'Old composer',
+    })
+    const { composer: _c, ...replaced } = makePiece(makePackage('v-new'), { id: 'p', lastOpenedAt: 200 })
+    expect(mergePiece(replaced, old).userTempo).toBeUndefined()
+    expect(mergePiece(old, replaced).userTempo).toBeUndefined()
+    expect(mergePiece(replaced, old).composer).toBeUndefined()
+    expect(mergePiece(old, replaced)).toMatchObject({ scoreVersionId: 'v-new', lastOpenedAt: 200 })
+  })
 })
 
 describe('mergeSuggestionState', () => {
@@ -112,5 +126,14 @@ describe('preferPackage', () => {
     expect(preferPackage(confirmed, plain)).toBe(confirmed)
     expect(preferPackage(confirmed, both)).toBe(both)
     expect(preferPackage(plain, makePackage('v', 'other'))).toBe(plain)
+  })
+
+  it('with equal user input follows the side whose piece records win', () => {
+    const local = makePackage('v', 'local', { confirmed: true, tempo: true })
+    const incoming = makePackage('v', 'incoming', { confirmed: true, tempo: true })
+    expect(preferPackage(local, incoming, true)).toBe(incoming)
+    expect(preferPackage(local, incoming, false)).toBe(local)
+    // Never trade a reviewed package for an unreviewed one, whichever piece wins.
+    expect(preferPackage(local, makePackage('v'), true)).toBe(local)
   })
 })

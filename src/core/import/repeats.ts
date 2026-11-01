@@ -135,6 +135,7 @@ export function unfoldRepeats(
   let pass = 1
   let explicitOpen = false
   let jumpTarget = -1
+  let jumpFrom = -1
   let i = 0
   // Navigation state: jumps taken, the active jump (after it, completed repeats are passed).
   const taken = new Set<number>()
@@ -154,7 +155,38 @@ export function unfoldRepeats(
   }
   while (i < n) {
     const b = barlines[i]!
-    if (b.forwardRepeat && i !== jumpTarget) {
+    // The ending is chosen with the enclosing section's pass, before a forward repeat on the same
+    // bar opens a new section (a second ending may start the next repeated section). Re-entering
+    // a section that begins on an ending bar, for a repeat outside that ending group, plays it.
+    const rejump = i === jumpTarget
+    jumpTarget = -1
+    const starting = endingStarting[i]
+    const reentering = rejump && starting !== undefined && endingAt[jumpFrom]?.group !== starting.group
+    if (
+      !reentering &&
+      starting &&
+      passThrough() &&
+      groupDone.has(starting.group) &&
+      groupHasRepeat.get(starting.group)
+    ) {
+      // After a jump an ending group already played goes straight to its last ending.
+      const last = groupLastStart.get(starting.group)!
+      if (last !== i) {
+        i = last
+        continue
+      }
+    } else if (!reentering && starting && groupHasRepeat.get(starting.group) && !starting.numbers.includes(pass)) {
+      const isLast = groupLast.get(starting.group) === starting.end
+      i = starting.end + 1
+      if (isLast) {
+        groupDone.add(starting.group)
+        pass = 1
+        sectionStart = i
+        explicitOpen = false
+      }
+      continue
+    }
+    if (b.forwardRepeat && !rejump) {
       if (explicitOpen && sectionStart !== i) {
         diag.warn(
           'repeat-nested',
@@ -167,26 +199,6 @@ export function unfoldRepeats(
       sectionStart = i
       pass = 1
       explicitOpen = true
-    }
-    jumpTarget = -1
-    const starting = endingStarting[i]
-    if (starting && passThrough() && groupDone.has(starting.group) && groupHasRepeat.get(starting.group)) {
-      // After a jump an ending group already played goes straight to its last ending.
-      const last = groupLastStart.get(starting.group)!
-      if (last !== i) {
-        i = last
-        continue
-      }
-    } else if (starting && groupHasRepeat.get(starting.group) && !starting.numbers.includes(pass)) {
-      const isLast = groupLast.get(starting.group) === starting.end
-      i = starting.end + 1
-      if (isLast) {
-        groupDone.add(starting.group)
-        pass = 1
-        sectionStart = i
-        explicitOpen = false
-      }
-      continue
     }
     visits[i] = (visits[i] ?? 0) + 1
     const ending = endingAt[i]
@@ -206,6 +218,7 @@ export function unfoldRepeats(
       if (pass < passes) {
         pass++
         jumpTarget = sectionStart
+        jumpFrom = i
         i = sectionStart
         continue
       }
@@ -213,7 +226,10 @@ export function unfoldRepeats(
       pass = 1
       sectionStart = i + 1
       explicitOpen = false
-    } else if (b.backwardRepeat || (ending && groupLast.get(ending.group) === i && groupHasRepeat.get(ending.group))) {
+    } else if (
+      b.backwardRepeat ||
+      (ending && groupLast.get(ending.group) === i && groupHasRepeat.get(ending.group) && sectionStart !== i)
+    ) {
       pass = 1
       sectionStart = i + 1
       explicitOpen = false

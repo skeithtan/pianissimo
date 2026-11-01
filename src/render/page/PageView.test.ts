@@ -436,3 +436,63 @@ describe('PageView', () => {
     expect(pressed).toBe(1)
   })
 })
+
+describe('PageView fixes', () => {
+  it('page corrections follow U39', () => {
+    const { v, layout, root } = view()
+    v.setCorrections([
+      { notes: [0, 1], kind: 'spread', text: 'Together' },
+      { notes: [4], kind: 'pedal', text: 'Pedal' },
+    ])
+    v.flushNow()
+    expect(root.querySelector('.pn-corr-spread .pn-corr-link')).not.toBeNull()
+    expect(root.querySelector('.pn-corr-pedal .pn-corr-ped')?.textContent).toBe('Ped.')
+    // Above the top staff, clear of its noteheads (a band beyond the staves, not on notation).
+    const top = Number(root.querySelector('.pn-corr-spread .pn-corr-label')!.getAttribute('y'))
+    expect(top).toBeLessThan(layout.systems![0]!.staves[0]!.top)
+    v.setCorrections([{ notes: [1], kind: 'wrong', text: 'Wrong note' }])
+    v.flushNow()
+    const y = Number(root.querySelector('.pn-corr:not(.pn-corr-leave) .pn-corr-label')!.getAttribute('y'))
+    expect(y).toBeGreaterThan(layout.systems![0]!.staves[1]!.bottom)
+  })
+
+  it("places a later system's label against that system only", () => {
+    const { v, layout, root } = view()
+    v.setCorrections([{ notes: [9], kind: 'wrong', text: 'Wrong note' }])
+    v.flushNow()
+    const y = Number(root.querySelector('.pn-corr-label')!.getAttribute('y'))
+    const sys = layout.systems![1]!
+    expect(y).toBeGreaterThan(sys.staves[1]!.bottom)
+    expect(y).toBeLessThan(sys.y1 + 40)
+  })
+
+  it('does not resurrect a loop cleared while a handle is held', () => {
+    const changes: unknown[] = []
+    const { v, root } = view(24, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 1, toOcc: 1 })
+    v.flushNow()
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const p = (t: string, x: number) =>
+      end.dispatchEvent(new PointerEvent(t, { pointerId: 7, clientX: x, clientY: 150, bubbles: true }))
+    p('pointerdown', GX + 370)
+    p('pointermove', GX + 550)
+    v.setLoop(null)
+    p('pointerup', GX + 550)
+    v.flushNow()
+    expect(changes).toEqual([])
+  })
+
+  it('commits a handle drag when nothing interfered', () => {
+    const changes: unknown[] = []
+    const { v, root } = view(24, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 1, toOcc: 1 })
+    v.flushNow()
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const p = (t: string, x: number) =>
+      end.dispatchEvent(new PointerEvent(t, { pointerId: 7, clientX: x, clientY: 150, bubbles: true }))
+    p('pointerdown', GX + 370)
+    p('pointermove', GX + 550)
+    p('pointerup', GX + 550)
+    expect(changes).toEqual([{ fromOcc: 1, toOcc: 2 }])
+  })
+})

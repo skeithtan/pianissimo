@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
-import { roundNumbers, sanitizeSvgTree } from './sanitize'
+import { isSafeSvgMarkup, roundNumbers, sanitizeSvgTree } from './sanitize'
 
 function parse(svg: string): Element {
   const xml = svg.includes('xmlns=') ? svg : svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"')
@@ -60,5 +60,27 @@ describe('roundNumbers', () => {
   it('rounds long decimals and leaves short ones', () => {
     expect(roundNumbers('M1.5 2.25 3.14159 -0.0001')).toBe('M1.5 2.25 3.14 0')
     expect(roundNumbers('M1.25 3.14159', 1)).toBe('M1.3 3.1')
+  })
+})
+
+describe('isSafeSvgMarkup', () => {
+  it('accepts sanitized markup', () => {
+    expect(
+      isSafeSvgMarkup(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g class="vf-notehead" data-n="3 4"><path d="M1 1h2"></path></g><text>A &amp; B&nbsp;&lt;1&gt;</text></svg>',
+      ),
+    ).toBe(true)
+  })
+
+  it('finds attributes after a quoted value or a slash, not only after whitespace', () => {
+    expect(isSafeSvgMarkup('<svg><g class="pn-corr"onanimationstart="alert(1)"></g></svg>')).toBe(false)
+    expect(isSafeSvgMarkup("<svg><g class='pn-corr'onanimationstart='alert(1)'></g></svg>")).toBe(false)
+    expect(isSafeSvgMarkup('<svg/onload="alert(1)"></svg>')).toBe(false)
+  })
+
+  it('rejects character references that could spell an unsafe value', () => {
+    expect(isSafeSvgMarkup('<svg><path fill="&#117;rl(https://e.com/x)"></path></svg>')).toBe(false)
+    expect(isSafeSvgMarkup('<svg><path fill="&#x75;rl(https://e.com/x)"></path></svg>')).toBe(false)
+    expect(isSafeSvgMarkup('<svg><path fill="javascript&colon;x"></path></svg>')).toBe(false)
   })
 })

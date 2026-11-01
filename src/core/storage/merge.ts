@@ -24,16 +24,24 @@ export function deepEqual(a: unknown, b: unknown): boolean {
   return ka.every((k) => k in rb && deepEqual((a as Record<string, unknown>)[k], rb[k]))
 }
 
+/** True when restore takes the backup's copy of a piece present on both sides (ties keep local). */
+export function incomingPieceWins(local: PieceRecord, incoming: PieceRecord): boolean {
+  return incoming.lastOpenedAt > local.lastOpenedAt
+}
+
 /**
  * The more recently opened record supplies the state (resume position, last speed, hands,
- * passage); a tempo the user entered on either side is kept.
+ * passage, score version); a tempo or composer missing there is filled from the other side
+ * only when both records are on the same score version (another version's tempo would
+ * override the score's own one).
  */
 export function mergePiece(local: PieceRecord, incoming: PieceRecord): PieceRecord {
-  const incomingNewer = incoming.lastOpenedAt > local.lastOpenedAt
+  const incomingNewer = incomingPieceWins(local, incoming)
   const base = incomingNewer ? incoming : local
   const other = incomingNewer ? local : incoming
-  const tempo = base.userTempo ?? other.userTempo
-  const composer = base.composer ?? other.composer
+  const sameVersion = base.scoreVersionId === other.scoreVersionId
+  const tempo = base.userTempo ?? (sameVersion ? other.userTempo : undefined)
+  const composer = base.composer ?? (sameVersion ? other.composer : undefined)
   return {
     ...base,
     createdAt: Math.min(local.createdAt, incoming.createdAt),
@@ -91,7 +99,16 @@ function packageRank(pkg: ScorePackage): number {
   return (pkg.model.hands.confirmed ? 1 : 0) + (pkg.model.tempo.segments.length > 0 ? 1 : 0)
 }
 
-/** Keep the local package unless the backup's one carries more user input (confirmed hands, tempo). */
-export function preferPackage(local: ScorePackage, incoming: ScorePackage): ScorePackage {
-  return packageRank(incoming) > packageRank(local) ? incoming : local
+/**
+ * Which copy of a score version's package restore keeps. One that carries more user input
+ * (confirmed hands, a tempo) always wins, so a reviewed package is never lost to an unreviewed
+ * one (ST3). Otherwise the package follows the piece records: it comes from the side whose
+ * piece records of this version win the merge (`incomingWins`), so a piece's practice tempo
+ * and hands match the package practice uses.
+ */
+export function preferPackage(local: ScorePackage, incoming: ScorePackage, incomingWins = false): ScorePackage {
+  const rankLocal = packageRank(local)
+  const rankIncoming = packageRank(incoming)
+  if (rankIncoming !== rankLocal) return rankIncoming > rankLocal ? incoming : local
+  return incomingWins ? incoming : local
 }

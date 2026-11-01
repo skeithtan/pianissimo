@@ -298,3 +298,25 @@ Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `prac
   opacity mask for passing notation (U29).
 - `FlashDriver` only writes the damage overlay opacity. `OctaveFeedback` subscribes to
   `FeedbackState.octaveDirection` and renders an arrow in the stage margin (U30).
+
+### Bug-hunt fixes (1 November 2026)
+- Session: one `start()` at a time (`#starting`), the plan re-checked after sound loads;
+  `#ensureTransport(then)` loads browser sound for a one-hand attempt or reading; the hands hold
+  (U27) leaves an interrupted engine untouched; cues and the paused key check use
+  `engine.timeline`; volume changes reach the loaded backend and metronome.
+- Import: `noteVoice()` / `noteStaff()` in `read/part.ts` default a missing voice per staff;
+  `keyEvents` and `partContext` synthesize the implicit opening key and clefs; endings are chosen
+  before a forward repeat on the same bar. `IMPORTER_VERSION` 0.4.0.
+- Storage: `commitImport` keeps a package shared with another piece (`replaceSharedPackage` for
+  Review) and clears a version's layouts when its package changes; restore picks the package of
+  the winning piece record per version; `getStorage()` wires `historyFailureNotices` (warning
+  notices when the writer drops records).
+- Playback: attacks ordered by `(min(s, nextGate), gateCount, s)`; deferred releases kept while
+  the output is lost and never sent before a queued attack of the same pitch; the engine keeps one
+  pedal watch per completed group.
+- Render: `render/shared/corrections.ts` holds the correction layout for both views (keyed by
+  system); marks are owned by the note's segment; `requestedZoom` vs effective zoom;
+  `ContextInput.xAt` places mid-bar clef changes; `ADAPTER_VERSION` pn-7.
+- MIDI/app: `rememberRoute` resets the echo result when the input changes; `selectedInfo` falls
+  back to a lost port only while it is lost; the hint-pedal learner takes a baseline snapshot at
+  start; `startShell` sets `settingsLoading` before the theme sync.

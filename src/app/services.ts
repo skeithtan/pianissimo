@@ -15,10 +15,23 @@
 import { MidiAdapter } from '../core/midi/adapter'
 import type { MidiNavigatorLike } from '../core/midi/webmidi'
 import type { MidiRouteSettings } from '../core/model/settings'
-import { openStorage, type PianissimoStorage } from '../core/storage'
+import {
+  isQuotaError,
+  openStorage,
+  type HistoryWriterOptions,
+  type PianissimoStorage,
+  type StorageOptions,
+} from '../core/storage'
 import { getFeatures } from './features'
 import { MidiService } from './services/midiService'
-import { pushNotice, setConnectionStatus, setSettingsPersistence, settings, updateSettings } from './state'
+import {
+  pushNotice,
+  type NoticeInput,
+  setConnectionStatus,
+  setSettingsPersistence,
+  settings,
+  updateSettings,
+} from './state'
 import { APP_VERSION } from './version'
 
 export { MidiService, ROUTE_NOTICE_COALESCE_MS, connectionStatusFor, hasRememberedRoute } from './services/midiService'
@@ -27,7 +40,7 @@ export type { MidiSnapshot, SelectedPort, SoundOwner, StopSoundResult } from './
 /** Injectable environment (tests). */
 export interface ServicesEnv {
   readonly navigator?: MidiNavigatorLike | undefined
-  readonly openStorage?: () => Promise<PianissimoStorage>
+  readonly openStorage?: (options: StorageOptions) => Promise<PianissimoStorage>
   readonly now?: () => number
 }
 
@@ -39,14 +52,48 @@ export const STORAGE_UNAVAILABLE_NOTICE =
   'Saving is unavailable in this browser window (a private window often blocks it). ' +
   'Settings work until the page is closed; open Pianissimo in a normal window to keep them.'
 
+export const HISTORY_QUOTA_NOTICE =
+  'Practice results could not be saved because this browser’s storage is full. ' +
+  'Export a backup and delete pieces you no longer need.'
+export const HISTORY_SAVE_FAILED_NOTICE =
+  'Practice results could not be saved. Recent attempts may be missing from results and suggestions.'
+
+/**
+ * History-writer hooks that tell the player when practice records are lost: the writer drops a
+ * batch after `MAX_FLUSH_FAILURES` failed flushes (and a malformed record alone) and reports it
+ * through `onError` with the number of dropped items. One warning per failure streak; the next
+ * successful write ends the streak. Retries that lose nothing stay silent.
+ */
+export function historyFailureNotices(
+  push: (notice: NoticeInput) => unknown = pushNotice,
+): Required<Pick<HistoryWriterOptions, 'onError' | 'onFlush'>> {
+  let notified = false
+  return {
+    onError: (error, dropped) => {
+      if (dropped <= 0 || notified) return
+      notified = true
+      push({
+        kind: 'warning',
+        text: isQuotaError(error) ? HISTORY_QUOTA_NOTICE : HISTORY_SAVE_FAILED_NOTICE,
+        timeoutMs: null,
+      })
+    },
+    onFlush: () => {
+      notified = false
+    },
+  }
+}
+
 /**
  * The app's storage, opened once. The practice-history writer flushes on `pagehide` and when
- * the page is hidden. A failed open is not cached, so a later call retries.
+ * the page is hidden, and lost practice records raise a warning notice. A failed open is not
+ * cached, so a later call retries.
  */
 export function getStorage(): Promise<PianissimoStorage> {
   if (!storagePromise) {
-    const open = env.openStorage ?? (() => openStorage(undefined, { appVersion: APP_VERSION }))
-    const pending = open().then((storage) => {
+    const options: StorageOptions = { appVersion: APP_VERSION, history: historyFailureNotices() }
+    const open = env.openStorage ?? ((o: StorageOptions) => openStorage(undefined, o))
+    const pending = open(options).then((storage) => {
       storage.history.attachLifecycle()
       return storage
     })

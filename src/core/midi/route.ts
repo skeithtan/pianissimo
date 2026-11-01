@@ -35,7 +35,9 @@ export function findRememberedPort(
 
 /**
  * Record a selected route. Choosing a different output or channel clears the output
- * verification and echo result: they belong to the tested route only.
+ * verification and echo result; choosing a different input clears the echo result too. The
+ * echo result belongs to the whole tested route (input + output + channel), while the test note
+ * only proves the output and channel.
  */
 export function rememberRoute(
   route: MidiRouteSettings,
@@ -47,6 +49,10 @@ export function rememberRoute(
     output !== null &&
     (output.id === route.outputId || output.name === route.outputName) &&
     outputChannel === route.outputChannel
+  const sameInput =
+    input === null
+      ? route.inputId === null && route.inputName === null
+      : input.id === route.inputId || input.name === route.inputName
   return {
     ...route,
     inputId: input?.id ?? null,
@@ -55,7 +61,7 @@ export function rememberRoute(
     outputName: output?.name ?? null,
     outputChannel,
     outputVerified: sameOutput ? route.outputVerified : false,
-    echo: sameOutput ? route.echo : 'untested',
+    echo: sameOutput && sameInput ? route.echo : 'untested',
   }
 }
 

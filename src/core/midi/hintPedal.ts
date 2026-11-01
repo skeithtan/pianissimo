@@ -22,10 +22,18 @@ const MAX_HISTORY = 512
 
 export type PedalThresholds = Pick<HintPedalMapping, 'threshold' | 'inverted' | 'observedMin' | 'observedMax'>
 
-/** Hysteresis band derived from the observed range (0 when the range is unknown). */
-export function hysteresisFor(m: Pick<HintPedalMapping, 'observedMin' | 'observedMax'>): number {
+/**
+ * Hysteresis band derived from the observed range (0 when the range is unknown), clamped to the
+ * room around the threshold so the observed extremes still count as pressed and released (a
+ * manual threshold near either end would otherwise never fire or never re-arm).
+ */
+export function hysteresisFor(m: Pick<HintPedalMapping, 'threshold' | 'observedMin' | 'observedMax'>): number {
   const swing = m.observedMax - m.observedMin
-  return swing > 0 ? Math.min(8, Math.floor(swing / 8)) : 0
+  if (swing <= 0) return 0
+  const band = Math.min(8, Math.floor(swing / 8))
+  // Released/pressed-low needs `value < threshold - h` for observedMin; pressed/released-high
+  // needs `value >= threshold + h` for observedMax (the same bounds hold when inverted).
+  return Math.max(0, Math.min(band, m.threshold - m.observedMin - 1, m.observedMax - m.threshold))
 }
 
 /** True when `value` is clearly pressed under the mapping (beyond the hysteresis band). */

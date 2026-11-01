@@ -119,7 +119,9 @@ export class LibraryModel {
    * Save a reviewed hand assignment and/or practice tempo (DECISIONS L5): the same score version,
    * source and bars, so resume, passages and results stay; the new `handsId` / `tempoMapId`
    * start a separate history. One transaction through `commitImport` (same version: nothing is
-   * released). A new assignment also drops the cached layouts, which carry each note's hand.
+   * released). The package is shared by every piece of this score version, so it is written
+   * even when another piece uses it (`replaceSharedPackage`); `commitImport` drops the cached
+   * layouts, which carry each note's hand, when the assignment changed.
    */
   async saveReview(piece: PieceRecord, pkg: ScorePackage, fin: FinalizedReview): Promise<PieceRecord> {
     const storage = await this.#deps.getStorage()
@@ -131,11 +133,12 @@ export class LibraryModel {
       throw new Error('This piece changed in the meantime. Close and try again.')
     const { userTempo: _previous, ...rest } = current
     const next: PieceRecord = { ...rest, ...(fin.userTempo ? { userTempo: fin.userTempo } : {}) }
-    await storage.commitImport({ source, pkg: { model: fin.model, renderXml: pkg.renderXml }, piece: next })
-    if (fin.changes.hands) {
-      // Derived data: a failure only costs a re-engraving with stale hand colors until cleared.
-      await storage.clearLayouts(version).catch(() => undefined)
-    }
+    await storage.commitImport({
+      source,
+      pkg: { model: fin.model, renderXml: pkg.renderXml },
+      piece: next,
+      replaceSharedPackage: true,
+    })
     await this.refresh()
     return next
   }
@@ -148,6 +151,8 @@ export class LibraryModel {
 
   /** Build the backup and hand it to the browser as a download. Returns the file name. */
   async exportBackup(): Promise<string> {
+    // Settings still waiting on the save debounce belong in the backup too.
+    await this.#deps.flushSettings()
     const storage = await this.#deps.getStorage()
     const bytes = await storage.exportAll()
     const name = backupFileName(this.#deps.now())

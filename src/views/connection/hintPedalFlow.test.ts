@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { MidiAdapter } from '../../core/midi/adapter'
+import { FakeAccess, FakeInput, fakeNavigator } from '../../core/midi/fakeWebMidi'
 import type { MidiInputEvent } from '../../core/midi/types'
 import type { HintPedalMapping } from '../../core/model/settings'
 import { HintPedalSetup } from './hintPedalFlow'
@@ -117,5 +119,45 @@ describe('HintPedalSetup (spec "Set hint pedal")', () => {
     setup.start()
     setup.cancel()
     expect(setup.phase).toBe('idle')
+  })
+})
+
+describe('HintPedalSetup over a live adapter (baseline = values before learning began)', () => {
+  async function rig() {
+    const access = new FakeAccess()
+    const input = access.addInput(new FakeInput('in', 'Piano'))
+    const adapter = new MidiAdapter({ navigator: fakeNavigator(access), now: () => 1000 })
+    await adapter.request()
+    adapter.selectInput('in')
+    // As HintPedalStep wires it: the live lookup, fed after the adapter updated physical state.
+    const setup = new HintPedalSetup((c, ch) => adapter.physical.observedValue(c, ch))
+    adapter.subscribe((ev) => setup.feed(ev))
+    let t = 1
+    const send = (controller: number, value: number) => input.emit([0xb0, controller, value], t++)
+    return { setup, send }
+  }
+
+  it('a continuous pedal still being pressed is not complete', async () => {
+    const { setup, send } = await rig()
+    send(67, 0) // at rest before learning
+    setup.start()
+    for (const v of [0, 10, 25, 40, 60]) send(67, v)
+    expect(setup.phase).toBe('listening')
+  })
+
+  it('a full press and release learns a non-inverted mapping with the full range', async () => {
+    const { setup, send } = await rig()
+    setup.start()
+    for (const v of [0, 10, 25, 40, 60, 90, 127, 90, 40, 10, 0]) send(67, v)
+    expect(setup.phase).toBe('confirming')
+    expect(setup.mapping).toMatchObject({ controller: 67, inverted: false, observedMin: 0, observedMax: 127 })
+  })
+
+  it('a pedal resting high before learning began is learned as inverted', async () => {
+    const { setup, send } = await rig()
+    send(67, 127)
+    setup.start()
+    for (const v of [127, 90, 40, 0, 40, 90, 127]) send(67, v)
+    expect(setup.mapping).toMatchObject({ controller: 67, inverted: true })
   })
 })

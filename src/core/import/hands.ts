@@ -16,8 +16,9 @@
  * a third or more of its notes (`SPLIT_SHARE`). The convention — voices 1–4 belong to a part's
  * first staff and 5–8 to its second (MuseScore, Sibelius, Finale, LilyPond exports) — settles a
  * cross-staff voice when every numbered voice of that part has its home staff where the
- * convention puts it; a part numbered otherwise (sequential voices, as Dorico writes) falls back
- * to the share rule. The convention never makes a single-staff voice ambiguous.
+ * convention puts it and the numbering uses both staves; a part numbered otherwise (sequential
+ * voices, as Dorico writes, or one voice 1 on both staves) falls back to the share rule. A note
+ * without `<voice>` takes its staff's conventional voice (staff 1 → "1", staff 2 → "5"). The convention never makes a single-staff voice ambiguous.
  */
 import type {
   Hand,
@@ -88,8 +89,8 @@ export function conventionStaff(
 }
 
 /**
- * Parts whose numbered voices all sit where the convention puts them (by home staff), so the
- * convention can be trusted to settle that part's cross-staff voices.
+ * Parts whose numbered voices all sit where the convention puts them (by home staff) and cover
+ * both staves, so the convention can be trusted to settle that part's cross-staff voices.
  */
 export function conventionalParts(
   voices: readonly VoiceDef[],
@@ -104,7 +105,9 @@ export function conventionalParts(
       const expected = conventionStaff(v, parts, staves)
       return expected === undefined ? undefined : expected === homeStaff(v)
     })
-    if (verdicts.every((x) => x === true)) ok.add(p.id)
+    // A numbering that puts every voice on one staff (voice 1 on both staves) says nothing.
+    const numbered = new Set(own.map((v) => conventionStaff(v, parts, staves)))
+    if (verdicts.every((x) => x === true) && numbered.size > 1) ok.add(p.id)
   }
   return ok
 }

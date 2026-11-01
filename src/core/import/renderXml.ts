@@ -23,9 +23,11 @@ import type { MeasureOccurrence, SourceMeasure } from '../model/score'
 import type { NavAction } from './navigation'
 import type { PerformedOttava } from './ottava'
 import { PosIndex } from './positions'
+import { noteStaff, noteVoice } from './read/part'
 import type { RawClef, RawDivisions, RawKey, RawTime } from './read/types'
 import { decimalRat, divisionsToWhole, wholeToDivisions } from './read/values'
 import type { SelectedPart } from './skeleton'
+import { defaultClef } from './sourceNotes'
 import {
   attr,
   child,
@@ -110,11 +112,31 @@ interface PartContext {
   readonly clefs: ReadonlyMap<number, PosIndex<RawClef>>
 }
 
+const atStart = (x: { readonly m: number; readonly at: Rational } | undefined) =>
+  x !== undefined && x.m === 0 && isZero(x.at)
+
+/**
+ * Context per part for re-stating attributes at jumps. Where the score states no key or clef at
+ * its start, the importer's implicit one applies (C major; the first stated clef, else treble on
+ * the top staff and bass below, as `sourceNotes` assumes), so a jump back into that stretch
+ * re-states it.
+ */
 function partContext(part: SelectedPart): PartContext {
   const clefs = new Map<number, PosIndex<RawClef>>()
-  for (let s = 1; s <= part.staffCount; s++) clefs.set(s, new PosIndex(part.data.clefs.filter((c) => c.staff === s)))
+  for (let s = 1; s <= part.staffCount; s++) {
+    const list = new PosIndex(part.data.clefs.filter((c) => c.staff === s)).items
+    if (!atStart(list[0])) {
+      const clef = list[0]?.clef ?? defaultClef(s)
+      const children = [textEl('sign', clef.sign), textEl('line', clef.line)]
+      if (clef.octaveChange !== 0) children.push(textEl('clef-octave-change', clef.octaveChange))
+      clefs.set(s, new PosIndex([{ m: 0, at: ZERO, staff: s, clef, el: el('clef', {}, children) }, ...list]))
+    } else clefs.set(s, new PosIndex(list))
+  }
+  const keys = new PosIndex(part.data.keys).items
   return {
-    keys: new PosIndex(part.data.keys),
+    keys: new PosIndex(
+      atStart(keys[0]) ? keys : [{ m: 0, at: ZERO, fifths: 0, el: el('key', {}, [textEl('fifths', 0)]) }, ...keys],
+    ),
     times: new PosIndex(part.data.times),
     divisions: new PosIndex(part.data.divisions),
     clefs,
@@ -126,11 +148,15 @@ function jumpAttributes(ctx: PartContext, prev: number, m: number): XmlElement[]
   const out: XmlElement[] = []
   const before = <T extends { readonly m: number; readonly at: Rational }>(index: PosIndex<T>) =>
     [index.beforeMeasure(prev + 1), index.beforeMeasure(m)] as const
+  // Keys and clefs always have an item at the score's start (partContext), which governs a jump
+  // to the first bar when that bar does not state its own (its own attributes win in the merge).
+  const context = <T extends { readonly m: number; readonly at: Rational }>(index: PosIndex<T>) =>
+    [index.beforeMeasure(prev + 1), index.beforeMeasure(m) ?? index.at(m, ZERO)] as const
   const [dPrev, dNext] = before(ctx.divisions)
   if (dNext && (!dPrev || dPrev.value.n * dNext.value.d !== dNext.value.n * dPrev.value.d)) {
     out.push(textEl('divisions', decimal(dNext.value)))
   }
-  const [kPrev, kNext] = before(ctx.keys)
+  const [kPrev, kNext] = context(ctx.keys)
   if (kNext?.el && (!kPrev || kPrev.fifths !== kNext.fifths || kPrev.mode !== kNext.mode)) out.push(kNext.el)
   const [tPrev, tNext] = before(ctx.times)
   if (tNext?.el && (!tPrev || tPrev.el !== tNext.el)) {
@@ -143,7 +169,7 @@ function jumpAttributes(ctx: PartContext, prev: number, m: number): XmlElement[]
     if (!same) out.push(tNext.el)
   }
   for (const [staff, index] of ctx.clefs) {
-    const [cPrev, cNext] = before(index)
+    const [cPrev, cNext] = context(index)
     if (!cNext?.el) continue
     const c = cNext.clef
     const p = cPrev?.clef
@@ -325,6 +351,37 @@ function placeShifts(
   })
   if (bodyStart >= children.length) out.push(...(after.get(-1) ?? []))
   return out
+}
+
+/** Note children that follow `<voice>` (MusicXML note content order). */
+const AFTER_VOICE = new Set([
+  'type',
+  'dot',
+  'accidental',
+  'time-modification',
+  'stem',
+  'notehead',
+  'notehead-text',
+  'staff',
+  'beam',
+  'notations',
+  'lyric',
+  'play',
+  'listen',
+])
+
+/**
+ * A note without `<voice>` gets the voice the importer gave it (`noteVoice`: staff 2 → "5"), so
+ * OSMD's voices match the model's. Voice 1, OSMD's own default, is left implicit.
+ */
+function withImplicitVoice(note: XmlElement): XmlElement {
+  if (child(note, 'voice')) return note
+  const voice = noteVoice(note, noteStaff(note))
+  if (voice === '1') return note
+  const at = note.children.findIndex((c) => isElement(c) && AFTER_VOICE.has(c.name))
+  const children = [...note.children]
+  children.splice(at < 0 ? children.length : at, 0, textEl('voice', voice))
+  return { ...note, children }
 }
 
 /** Without a repeat or ending a barline is kept; with one it is dropped entirely. */
@@ -531,6 +588,7 @@ export function buildRenderXml(input: RenderXmlInput): string {
         const nav = input.navigation?.elements.get(c)
         if (nav) d = displayNavigation(c, hideNavigation(nav, o), nav.length > 0)
         else if (c.name === 'sound') d = stripNavSound(c)
+        else if (c.name === 'note') d = withImplicitVoice(c)
         if (
           d &&
           d.name === 'direction' &&

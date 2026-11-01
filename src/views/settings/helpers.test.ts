@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
-import { parsePositive } from './numbers'
+import { MIN_HINT_LIFETIME_SECONDS, parsePositive } from './numbers'
 import { controllerName, describeHintPedal, describeObservedPedals } from './pedalSummary'
 
 describe('parsePositive', () => {
@@ -22,6 +22,12 @@ describe('parsePositive', () => {
     expect(parsePositive('abc', opts)).toMatchObject({ ok: false, error: expect.stringMatching(/not a number/u) })
     expect(parsePositive('1e3', opts)).toMatchObject({ ok: false })
     expect(parsePositive('Infinity', opts)).toMatchObject({ ok: false })
+  })
+
+  it('rejects values under the minimum the stored settings keep (hint lifetime)', () => {
+    const lifetime = { max: 3600, min: MIN_HINT_LIFETIME_SECONDS, what: 'a number of seconds' }
+    expect(parsePositive('0.05', lifetime)).toEqual({ ok: false, error: 'A number of seconds must be at least 0.1.' })
+    expect(parsePositive('0.1', lifetime)).toEqual({ ok: true, value: 0.1 })
   })
 })
 

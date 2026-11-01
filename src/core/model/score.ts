@@ -22,9 +22,11 @@ import type { TempoMapData } from '../music/tempo'
 export const SCORE_PACKAGE_FORMAT = 1
 /**
  * Part of `scoreVersionId`. 0.2.0: D.C. / D.S. / Coda / Fine followed (performance order changed
- * for scores with jumps), `SourceNote.attack` kept.
+ * for scores with jumps), `SourceNote.attack` kept. 0.4.0: a second ending that opens a repeat is
+ * played, notes without `<voice>` take their staff's conventional voice (1 / 5), implicit C major
+ * and clefs are restated after a jump.
  */
-export const IMPORTER_VERSION = '0.3.0'
+export const IMPORTER_VERSION = '0.4.0'
 /** Bump when the reference roll realization changes; part of the comparison context. */
 export const ROLL_POLICY_VERSION = 'roll-v1-120ms-half-interval'
 /**

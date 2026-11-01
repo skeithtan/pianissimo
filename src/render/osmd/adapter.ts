@@ -62,8 +62,9 @@ export const OSMD_VERSION = '2.2.1'
  * pn-4: label boxes measured in the self-hosted label font (R14).
  * pn-5: default label size 13.5 px (was 12): wider and taller reserved label boxes.
  * pn-6: measure-sized segments without the neighboring measures copied in (PF6).
+ * pn-7: a mid-bar clef change switches the sticky clef where its change clef is drawn.
  */
-export const ADAPTER_VERSION = 'pn-6'
+export const ADAPTER_VERSION = 'pn-7'
 export const RENDERER_NAME = 'osmd'
 export const RENDERER_VERSION = `${OSMD_VERSION}+${ADAPTER_VERSION}`
 
@@ -249,6 +250,8 @@ export class OsmdRenderer implements RendererAdapter {
           staves: ex.staves,
           glyphs: ex.glyphs,
           occX: occurrences.map((o) => o.x0),
+          occStart: occurrences.map((o) => o.start),
+          xAt: (occ, offset) => positionX(occurrences, occ, offset),
           clefs: input.clefs,
           keys: input.keys,
           meters: input.meters,

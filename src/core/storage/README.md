@@ -23,7 +23,7 @@ default 50 MB / 256 entries), `history` (`HistoryWriterOptions`), `now`.
 | Area | Methods |
 | --- | --- |
 | Library | `listPieces()` (latest opened first), `getPiece(id)`, `putPiece(piece)`, `updatePiece(id, patch)` (atomic read-modify-write; `undefined` removes `userTempo`/`composer`), `deletePiece(id)` |
-| Import | `commitImport({ source, pkg, piece })` (one transaction), `getPackage(scoreVersionId)`, `putPackage(pkg)` (after hands are confirmed or a tempo is supplied), `getSource(scoreVersionId)` |
+| Import | `commitImport({ source, pkg, piece, replaceSharedPackage? })` (one transaction; see Shared versions), `getPackage(scoreVersionId)`, `putPackage(pkg)` (after hands are confirmed or a tempo is supplied), `getSource(scoreVersionId)` |
 | Settings | `loadSettings()` (validated and merged over `DEFAULT_SETTINGS`), `saveSettings(settings)` (returns the normalized value) |
 | Results | `addAttempts(records)`, `listAttempts({ pieceId } \| { contextKey } \| both, scoreVersionId? })`, `getAttempt(id)`, `loadResults(pieceId)` → `ContextResults[]` for the piece's current version |
 | Suggested practice | `history` (a `HistoryWriter`, below), `loadSuggestions(pieceId, dismissed?)` → up to three plus Improved, `loadPieceHistory(pieceId)`, `setSuggestionsDisabled(pieceId, bool)`, `clearPracticeHistory(pieceId, { attempts? })` |
@@ -55,7 +55,8 @@ storage.history.subscribe((report) => { /* report.suggestionsChanged lists piece
 `loadResults()`, `exportAll()` and before deleting or restoring. A flush ingests the queued
 records through `core/history` (suggestion detection and recovery), then writes attempts and
 only the changed history records in one transaction. A failed flush keeps its items and
-retries; a batch failing three times is dropped and reported through `onError`; one malformed
+retries; a batch failing three times is dropped and reported through `onError` (with the number of lost records; the app shows one warning
+notice per failure streak); one malformed
 record is dropped alone. Scheduling is injectable for tests. Ordinary-reading attempts feed
 the measure histories but their records are not stored unless `keepReadingAttempts` is set;
 Preview records nothing.
@@ -87,8 +88,14 @@ user stores. A connection told to upgrade by another tab closes itself.
   source removes the old version's source, package and layouts once no piece uses them; its
   attempts and histories stay under the old `scoreVersionId` and are never mixed with the
   new one (every context key and suggestion carries the version).
-- **Shared versions.** Two pieces may share a `scoreVersionId`; deleting one keeps the
-  package until the last piece goes.
+- **Shared versions.** Two pieces may share a `scoreVersionId` (importing the same file twice,
+  or replacing a score with a file another piece uses); deleting one keeps the package until the
+  last piece goes. The package (reviewed hands, practice tempo) is shared: `commitImport` keeps
+  the stored package, source and layouts when another piece uses the version, and the new piece
+  takes that piece's `userTempo`, so piece records and package never disagree. Review
+  (`replaceSharedPackage: true`) writes the shared package and gives the other pieces the same
+  `userTempo`. Overwriting a stored package with different hands or notation drops the
+  version's cached layouts in the same transaction.
 - **Delete cascade.** `deletePiece` removes the piece, attempts, measure histories,
   suggestion state, abandon events, and (when unshared) source, package and layouts, in one
   transaction, and discards queued history records for it.
@@ -123,10 +130,13 @@ opening the library does not load it. Restore:
    total, 50 000 entries).
 2. **Merges by id in one transaction**, deleting nothing local. Attempts and sources are
    immutable (an existing id is kept). Pieces: the more recently opened record supplies the
-   state; a tempo or composer present on either side is kept. Bar histories: the more recently updated record wins. Suggestions: union by id, newer
+   state; a tempo or composer missing there is taken from the other side only when both are on
+   the same score version. Bar histories: the more recently updated record wins. Suggestions: union by id, newer
    `updatedAt` wins, the local per-piece disable switch is kept, improved entries trimmed to
-   ten. Abandon events: union, newest five. A package is replaced only when the backup's one
-   has more user input (confirmed hands, a tempo). Pieces whose package is in neither the
+   ten. Abandon events: union, newest five. A package is replaced when the backup's one has more user
+   input (confirmed hands, a tempo) and never by one with less; with equal input it follows the
+   piece records (the backup's package when the version's most recently opened piece after the
+   merge is the backup's record), and a replaced package drops the version's cached layouts. Pieces whose package is in neither the
    backup nor this browser are skipped with a warning, with their records.
 3. **Settings** are replaced by the backup's (`settings: 'keep'` leaves local ones alone).
    The MIDI **route** (port ids, output verification, echo result) is device- and

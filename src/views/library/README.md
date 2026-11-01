@@ -59,8 +59,12 @@ returns to `choose` with the reason.
 - Every async step carries a job token; `cancel()` / `close()` abort the job and bump the token,
   so a canceled or superseded job never changes `phase` again, even if a client answered late
   (tested with a misbehaving fake client and with the real worker in Playwright).
-- `close()` disposes the client (terminates the worker, drops the retained file). The client
-  itself terminates its worker after each build; `save` disposes it too.
+- `cancel()` and `close()` dispose the client (terminate the worker, drop the retained file); a
+  later `openFile` creates a new one. The client itself terminates its worker after each build;
+  `save` disposes it too.
+- Closing the sheet while "Saving…" is ignored (X and Escape); if the flow is closed anyway
+  (the view unmounts), the commit still completes but `onSaved` is not called: no notice and no
+  Practice handoff; the library lists the piece on its next refresh.
 - `save` refuses a draft that does not pass `reviewGate` (L1), commits source + package + piece
   with `storage.commitImport` (one transaction; a failure, incl. quota, leaves the library
   unchanged and is shown in the sheet), then calls `requestPersistentStorage()` once per session
@@ -77,9 +81,10 @@ import (`PieceRecord.userTempo`); a tempo printed in the score stays read-only (
 version, source, bars, resume position and passages stay. `finalizeStoredReview` applies the
 hands, then re-applies the user tempo (same order as at import) and re-checks readiness;
 `saveReview` re-reads the piece and source and writes package + piece with `commitImport` (one
-transaction; same version, so nothing is released). A new assignment gets a new `handsId`, a
+transaction; same version, so nothing is released; `replaceSharedPackage`, so a score shared
+with another piece is updated for both). A new assignment gets a new `handsId`, a
 new tempo a new `tempoMapId`, so either starts a separate comparison context (Q3) and earlier
-results stay untouched. A new assignment also clears the version's cached layouts, which carry
+results stay untouched. A new assignment also clears the version's cached layouts (inside `commitImport`), which carry
 each note's hand (`data-h`, used to subdue a hand).
 
 ## Suggestions (swap to the shared component)

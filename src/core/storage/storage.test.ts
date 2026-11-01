@@ -196,6 +196,107 @@ describe('import commit', () => {
   })
 })
 
+describe('shared score versions', () => {
+  const unit = { n: 1, d: 4 }
+  function tempoPackage(version: string, bpm: number, hands: Record<string, 'L' | 'R'> = {}): ScorePackage {
+    const pkg = makePackage(version, 'Etude', { confirmed: true, tempo: true })
+    const [segment] = pkg.model.tempo.segments
+    return {
+      ...pkg,
+      model: {
+        ...pkg.model,
+        hands: { ...pkg.model.hands, byVoice: hands },
+        tempo: { segments: [{ ...segment!, beatBpm: bpm, quarterBpm: bpm }] },
+      },
+    }
+  }
+
+  it('commitImport does not overwrite a package shared with another piece', async () => {
+    const s = await storage()
+    const pkg1 = makePackage('vSame', 'Etude', { confirmed: true, tempo: true })
+    await s.commitImport({ source: makeSource('vSame'), pkg: pkg1, piece: newPieceRecord(pkg1, { id: 'p1', now: 1 }) })
+    await s.putLayout('layout-key', 'vSame', { hands: 'as in pkg1' }, 100)
+    const pkg2 = makePackage('vSame', 'Etude', { confirmed: true, tempo: false })
+    await s.commitImport({ source: makeSource('vSame'), pkg: pkg2, piece: newPieceRecord(pkg2, { id: 'p2', now: 2 }) })
+    expect((await s.getPackage('vSame'))?.model.tempo.segments.length).toBe(1)
+    expect(await s.getLayout('layout-key')).toEqual({ hands: 'as in pkg1' })
+    expect((await s.listPieces()).map((p) => p.id).sort()).toEqual(['p1', 'p2'])
+  })
+
+  it('a second copy takes the practice tempo of the score it shares', async () => {
+    const s = await storage()
+    const p80 = tempoPackage('vT', 80)
+    await s.commitImport({
+      source: makeSource('vT'),
+      pkg: p80,
+      piece: makePiece(p80, { id: 'a', userTempo: { beatBpm: 80, beatUnit: unit } }),
+    })
+    const p100 = tempoPackage('vT', 100)
+    await s.commitImport({
+      source: makeSource('vT'),
+      pkg: p100,
+      piece: makePiece(p100, { id: 'b', userTempo: { beatBpm: 100, beatUnit: unit } }),
+    })
+    expect((await s.getPackage('vT'))?.model.tempo.segments[0]?.beatBpm).toBe(80)
+    expect((await s.getPiece('b'))?.userTempo?.beatBpm).toBe(80)
+  })
+
+  it('replacing a score with a file another piece uses keeps that piece’s package', async () => {
+    const s = await storage()
+    const shared = tempoPackage('vShared', 80, { 'P1/1': 'R' })
+    await s.commitImport({
+      source: makeSource('vShared'),
+      pkg: shared,
+      piece: makePiece(shared, { id: 'owner', userTempo: { beatBpm: 80, beatUnit: unit } }),
+    })
+    await importPiece(s, 'vOld', { id: 'moving' })
+    const incoming = tempoPackage('vShared', 120, { 'P1/1': 'L' })
+    const moving = (await s.getPiece('moving'))!
+    await s.commitImport({
+      source: makeSource('vShared'),
+      pkg: incoming,
+      piece: { ...moving, scoreVersionId: 'vShared', userTempo: { beatBpm: 120, beatUnit: unit } },
+    })
+    expect(await s.getPackage('vShared')).toEqual(shared)
+    expect((await s.getPiece('moving'))?.userTempo?.beatBpm).toBe(80)
+    expect(await s.getPackage('vOld')).toBeUndefined()
+  })
+
+  it('a same-version write of the piece’s own score replaces the package and drops stale layouts', async () => {
+    const s = await storage()
+    const before = tempoPackage('vOwn', 80, { 'P1/1': 'R' })
+    const piece = makePiece(before, { id: 'own' })
+    await s.commitImport({ source: makeSource('vOwn'), pkg: before, piece })
+    await s.putLayout('own-layout', 'vOwn', { hands: 'R' }, 100)
+    const tempoOnly = tempoPackage('vOwn', 90, { 'P1/1': 'R' })
+    await s.commitImport({ source: makeSource('vOwn'), pkg: tempoOnly, piece })
+    expect((await s.getPackage('vOwn'))?.model.tempo.segments[0]?.beatBpm).toBe(90)
+    expect(await s.getLayout('own-layout')).toEqual({ hands: 'R' }) // same hands: layouts still valid
+    const rehanded = tempoPackage('vOwn', 90, { 'P1/1': 'L' })
+    await s.commitImport({ source: makeSource('vOwn'), pkg: rehanded, piece })
+    expect((await s.getPackage('vOwn'))?.model.hands.byVoice).toEqual({ 'P1/1': 'L' })
+    expect(await s.getLayout('own-layout')).toBeUndefined()
+  })
+
+  it('replaceSharedPackage (Review) writes the shared package and aligns the other pieces’ tempo', async () => {
+    const s = await storage()
+    const p80 = tempoPackage('vR', 80)
+    const a = makePiece(p80, { id: 'a', userTempo: { beatBpm: 80, beatUnit: unit } })
+    await s.commitImport({ source: makeSource('vR'), pkg: p80, piece: a })
+    await s.commitImport({ source: makeSource('vR'), pkg: p80, piece: { ...a, id: 'b' } })
+    const p96 = tempoPackage('vR', 96)
+    await s.commitImport({
+      source: makeSource('vR'),
+      pkg: p96,
+      piece: { ...a, userTempo: { beatBpm: 96, beatUnit: unit } },
+      replaceSharedPackage: true,
+    })
+    expect((await s.getPackage('vR'))?.model.tempo.segments[0]?.beatBpm).toBe(96)
+    expect((await s.getPiece('a'))?.userTempo?.beatBpm).toBe(96)
+    expect((await s.getPiece('b'))?.userTempo?.beatBpm).toBe(96)
+  })
+})
+
 describe('deleting a piece', () => {
   it('cascades to attempts, histories, suggestion state, abandon events, source, package and layouts', async () => {
     const s = await storage()

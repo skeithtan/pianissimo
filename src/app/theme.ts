@@ -4,7 +4,7 @@
  * "system" removes `data-theme` so `prefers-color-scheme` decides.
  */
 import { effect } from '@preact/signals'
-import type { ViewSettings } from '../core/model/settings'
+import { DEFAULT_SETTINGS, type ViewSettings } from '../core/model/settings'
 import { settings, settingsLoading } from './state'
 
 const CACHE_KEY = 'pianissimo.theme'
@@ -44,10 +44,17 @@ function cacheTheme(theme: ViewSettings['theme']): void {
 export function startThemeSync(root: HTMLElement = document.documentElement): () => void {
   const cached = readCachedTheme()
   if (cached) applyTheme(cached, root)
+  // Started before the settings load began (boot order): the untouched defaults are not the
+  // user's choice, so the first run keeps the cached theme instead of overwriting it.
+  let skipDefaults = cached !== null && settings.peek() === DEFAULT_SETTINGS
   return effect(() => {
-    const { theme, scorePaper } = settings.value.view
+    const current = settings.value
+    const { theme, scorePaper } = current.view
     // Until stored settings arrive these are only defaults; keep the cached theme on screen.
     if (settingsLoading.value) return
+    const skip = skipDefaults && current === DEFAULT_SETTINGS
+    skipDefaults = false
+    if (skip) return
     applyTheme(theme, root)
     applyScorePaper(scorePaper, root)
     cacheTheme(theme)

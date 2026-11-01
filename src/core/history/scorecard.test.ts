@@ -134,4 +134,13 @@ describe('formatSeconds', () => {
     expect(formatSeconds(600)).toBe('10:00.0')
     expect(formatSeconds(-90)).toBe('-1:30.0')
   })
+
+  it('rounds to tenths before splitting minutes and drops the sign of a zero', () => {
+    expect(formatSeconds(119.97)).toBe('2:00.0')
+    expect(formatSeconds(59.96)).toBe('1:00.0')
+    expect(formatSeconds(-59.96)).toBe('-1:00.0')
+    expect(formatSeconds(-0.04)).toBe('0.0 s')
+    expect(formatSeconds(0)).toBe('0.0 s')
+    expect(formatSeconds(3599.96)).toBe('60:00.0')
+  })
 })

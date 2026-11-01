@@ -64,9 +64,20 @@ export class HintPedalSetup {
     return this.middleSeen
   }
 
-  /** Start listening for the pedal the user presses. */
+  /**
+   * Start listening for the pedal the user presses. The learner's baseline is a snapshot of the
+   * controller values right now: the live lookup already holds each new value by the time an
+   * event is fed, so it would make the latest value look like the resting one.
+   */
   start(): void {
-    this.learner = new HintPedalLearner({ baseline: this.lookup })
+    const snapshot = new Map<number, number>()
+    for (let channel = 0; channel < 16; channel++) {
+      for (let controller = 0; controller < 128; controller++) {
+        const value = this.lookup(controller, channel)
+        if (value !== undefined) snapshot.set(channel * 128 + controller, value)
+      }
+    }
+    this.learner = new HintPedalLearner({ baseline: (controller, channel) => snapshot.get(channel * 128 + controller) })
     this.learned = null
     this.mappingValue = null
     this.confirmation = null

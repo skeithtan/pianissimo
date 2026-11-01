@@ -10,7 +10,8 @@
  *  - A note already sounding at the range start is attacked at the start (the automatic
  *    counterpart of the engine's loop-boundary reattack); releases are clipped to the range end.
  *  - If a pitch starts simultaneously in the learner and automatic parts, the learner's attack
- *    is required and the redundant automatic attack is suppressed.
+ *    is required and the redundant automatic attack is suppressed. A learner tie chain begun
+ *    before the range start is not attacked at the start (E16), so it suppresses nothing there.
  *  - Simultaneous unisons inside the automatic part (Preview: across both hands) merge into one
  *    attack with the loudest velocity and the latest release.
  *  - Overlapping same-pitch notes keep their own on/off pair; backends count ownership so an
@@ -126,6 +127,8 @@ function buildNotes(
   for (const n of model.notes) {
     if (n.grace || n.cue || n.tieHead !== n.index || !learner.includes(n.hand)) continue
     const c = clip(n.onset, n.soundingDuration, range)
+    // A learner tie chain begun before the range start is not attacked there (E16): no suppression.
+    if (c && lt(n.onset, range.start) && gt(n.soundingDuration, n.duration)) continue
     if (c) learnerAttacks.add(`${key(c.at)}|${n.midi}`)
   }
 

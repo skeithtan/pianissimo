@@ -55,6 +55,20 @@ const MARK_VELOCITY: Readonly<Record<string, number>> = {
 const DEFAULT_CLEF_LINE: Readonly<Record<string, number>> = { G: 2, F: 4, C: 3, percussion: 3, TAB: 5, none: 3 }
 
 /** `<sound>` attributes that are navigation marks (dacapo is yes/no, the others are tokens). */
+/** A note's staff number within its part (`<staff>`, default 1). */
+export function noteStaff(note: XmlElement): number {
+  return toInt(childText(note, 'staff')) ?? 1
+}
+
+/**
+ * A note's voice. `<voice>` is optional; without it each staff gets its own voice following the
+ * 1–4 / 5–8 convention (staff 1 → "1", staff 2 → "5"), so an unvoiced piano part does not become
+ * one voice spanning both staves (M2). `renderXml` writes the same voice into such notes.
+ */
+export function noteVoice(note: XmlElement, staff = noteStaff(note)): string {
+  return childText(note, 'voice') || String(4 * (Math.max(1, staff) - 1) + 1)
+}
+
 const SOUND_NAV: readonly NavKind[] = ['segno', 'coda', 'tocoda', 'fine', 'dacapo', 'dalsegno']
 
 export interface ReadPartOptions {
@@ -228,7 +242,8 @@ class PartReader {
       this.lastNoteAt = at
       if (!grace) this.moveCursor(add(at, duration))
     }
-    const voice = childText(c, 'voice') || '1'
+    const staff = noteStaff(c)
+    const voice = noteVoice(c, staff)
     if (!grace) {
       const end = add(at, duration)
       const prev = this.voiceEnds.get(voice)
@@ -315,7 +330,7 @@ class PartReader {
       at,
       duration,
       voice,
-      staff: toInt(childText(c, 'staff')) ?? 1,
+      staff,
       rest,
       unpitched,
       chord,

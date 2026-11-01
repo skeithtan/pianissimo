@@ -156,6 +156,9 @@ describe('Hints', () => {
     type(input, '0')
     expect($(panel, '[role="alert"]')).not.toBeNull()
     expect(settings.value.hints.lifetime).toBe(45)
+    type(input, '0.05') // under the 0.1 s the stored settings keep: rejected, not replaced by 30
+    expect($(panel, '[role="alert"]')?.textContent).toMatch(/at least 0\.1/u)
+    expect(settings.value.hints.lifetime).toBe(45)
     type(input, '12.5')
     expect(settings.value.hints.lifetime).toBe(12.5)
   })

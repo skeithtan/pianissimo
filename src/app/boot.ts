@@ -10,10 +10,13 @@ import { preloadView } from './LazyView'
 import { currentView } from './navigation'
 import { startRouter } from './router'
 import { startServices } from './services'
-import { flushSettings, setConnectionStatus } from './state'
+import { flushSettings, setConnectionStatus, settingsLoading } from './state'
 import { startThemeSync } from './theme'
 
 export function startShell(): void {
+  // Stored settings load in startServices(); until then settings are only defaults, so nothing
+  // that waits for them (the theme sync) acts on them. setSettingsPersistence clears it.
+  settingsLoading.value = true
   startRouter()
   startThemeSync()
 

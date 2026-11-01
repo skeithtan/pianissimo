@@ -135,7 +135,16 @@ export function sanitizeSvgTree(root: Element, round = true): number {
 }
 
 const TAG = /<\/?([A-Za-z][\w:.-]*)/g
-const ATTR = /\s([A-Za-z_:][\w:.-]*)\s*=/g
+/**
+ * An attribute name: the HTML parser also starts one right after a quoted value or a `/` inside
+ * a tag (`<g class="a"onload=…>`, `<svg/onload=…>`), not only after whitespace.
+ */
+const ATTR = /[\s/"']([A-Za-z_:][\w:.-]*)\s*=/g
+/**
+ * Character references other than the ones `outerHTML` writes: numeric or named references could
+ * spell a value `UNSAFE_VALUE` would catch (`&#117;rl(`, `javascript&colon;`).
+ */
+const ENTITY = /&(?!(?:amp|lt|gt|quot|nbsp);)/
 
 /**
  * Strict allow-list check of serialized markup (no DOM): every tag and attribute name must be one
@@ -143,7 +152,7 @@ const ATTR = /\s([A-Za-z_:][\w:.-]*)\s*=/g
  * cached layouts that did not come from this sanitizer (e.g. a tampered backup).
  */
 export function isSafeSvgMarkup(markup: string): boolean {
-  if (UNSAFE_VALUE.test(markup)) return false
+  if (UNSAFE_VALUE.test(markup) || ENTITY.test(markup)) return false
   for (const m of markup.matchAll(TAG)) if (!ELEMENTS.has(m[1]!)) return false
   for (const m of markup.matchAll(ATTR)) if (!ATTRIBUTES.has(m[1]!)) return false
   return true

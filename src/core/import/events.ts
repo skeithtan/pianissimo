@@ -26,7 +26,12 @@ function eachChange<T extends { readonly m: number; readonly at: Rational }>(
 
 export function keyEvents(skeleton: Skeleton, occurrences: readonly MeasureOccurrence[]): KeyEvent[] {
   const first = skeleton.parts[0]
-  const index = new PosIndex<RawKey>(first ? first.data.keys : [])
+  const keys = new PosIndex<RawKey>(first ? first.data.keys : []).items
+  // Before the first stated key the score is in C major: a repeat back into that stretch
+  // returns to it.
+  const opening = keys[0]
+  const implicit = !opening || opening.m > 0 || !isZero(opening.at)
+  const index = new PosIndex<RawKey>(implicit ? [{ m: 0, at: ZERO, fifths: 0 }, ...keys] : keys)
   const out: KeyEvent[] = []
   eachChange(index, occurrences, (k, at, occ) => {
     const last = out[out.length - 1]

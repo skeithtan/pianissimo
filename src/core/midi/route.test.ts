@@ -31,6 +31,8 @@ describe('route memory (spec: remember the route and its tested channel)', () =>
   it('keeps verification and echo results only for the same output and channel', () => {
     const tested: MidiRouteSettings = {
       ...DEFAULT_SETTINGS.route,
+      inputId: 'i',
+      inputName: 'Piano',
       outputId: 'a',
       outputName: 'Piano',
       outputChannel: 1,
@@ -87,5 +89,27 @@ describe('playTestNote', () => {
     ])
     out.state = 'disconnected'
     expect(playTestNote(out, 600, { channel: 3 })).toBe(false)
+  })
+})
+
+describe('echo result belongs to the whole route (input + output + channel)', () => {
+  it('another input clears the echo result but keeps the output verification', () => {
+    const route: MidiRouteSettings = {
+      ...DEFAULT_SETTINGS.route,
+      inputId: 'in-1',
+      inputName: 'Piano',
+      outputId: 'out-1',
+      outputName: 'Piano',
+      outputVerified: true,
+      echo: 'none',
+    }
+    const input = { ...port('in-1', 'Piano'), type: 'input' as const }
+    const other = { ...port('in-2', 'Piano MIDI Thru'), type: 'input' as const }
+    const out = port('out-1', 'Piano')
+    expect(rememberRoute(route, input, out)).toMatchObject({ echo: 'none', outputVerified: true })
+    expect(rememberRoute(route, other, out)).toMatchObject({ echo: 'untested', outputVerified: true })
+    expect(rememberRoute(route, null, out).echo).toBe('untested')
+    // The same input under a new id (Bluetooth) is still the same input.
+    expect(rememberRoute(route, { ...input, id: 'in-9' }, out).echo).toBe('none')
   })
 })

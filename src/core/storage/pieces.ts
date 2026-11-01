@@ -3,6 +3,7 @@ import type { ScorePackage, SourceFileRecord } from '../model/score'
 import { SCORE_PACKAGE_FORMAT } from '../model/score'
 import type { PiecePatch, PieceRecord } from './records'
 import type { Db, PianissimoDB, StoreName } from './schema'
+import { deepEqual } from './merge'
 import { observed, runTx } from './tx'
 import { pieceProblem } from './validate'
 
@@ -73,6 +74,12 @@ export interface ImportCommit {
   readonly source: SourceFileRecord
   readonly pkg: ScorePackage
   readonly piece: PieceRecord
+  /**
+   * Overwrite the stored package even when another piece shares the score version (Review hands
+   * and tempo edits the shared score on purpose). Off for imports: a second copy of a score, or a
+   * replacement whose file another piece already uses, keeps the stored package.
+   */
+  readonly replaceSharedPackage?: boolean
 }
 
 /**
@@ -81,9 +88,17 @@ export interface ImportCommit {
  * existing piece untouched and never a piece without its package. Replacing the source of an
  * existing piece drops the old version's heavy data once nothing else uses it; its practice
  * history stays under the old version id and is never mixed with the new one.
+ *
+ * A score version is a content hash, so a version can already be stored for another piece.
+ * Its package (reviewed hands, practice tempo) is then shared: the stored package, source and
+ * layouts are kept and the new piece takes the user tempo of the pieces it shares with, so the
+ * piece records and the package never disagree. With `replaceSharedPackage` the package is
+ * written and the other pieces take this piece's user tempo. Whenever a stored package is
+ * overwritten with different hands or notation, the version's cached layouts are dropped.
  */
 export async function commitImport(db: Db, input: ImportCommit): Promise<void> {
-  const { source, pkg, piece } = input
+  const { source, pkg } = input
+  let piece = input.piece
   assertPiece(piece)
   assertPackage(pkg)
   const version = pkg.model.scoreVersionId
@@ -96,16 +111,44 @@ export async function commitImport(db: Db, input: ImportCommit): Promise<void> {
 
   const tx = db.transaction(['pieces', 'sources', 'packages', 'layoutCache', 'layoutMeta'], 'readwrite')
   await runTx(tx, async () => {
-    const previous = await tx.objectStore('pieces').get(piece.id)
-    await Promise.all([
-      observed(tx.objectStore('sources').put(source, version)),
-      observed(tx.objectStore('packages').put(pkg, version)),
-      observed(tx.objectStore('pieces').put(piece)),
+    const pieces = tx.objectStore('pieces')
+    const [previous, stored, users, storedSource] = await Promise.all([
+      pieces.get(piece.id),
+      tx.objectStore('packages').get(version),
+      pieces.index('scoreVersionId').getAll(version),
+      tx.objectStore('sources').getKey(version),
     ])
+    const sharers = users.filter((p) => p.id !== piece.id)
+    const writes: Promise<unknown>[] = []
+    if (stored && sharers.length > 0 && input.replaceSharedPackage !== true) {
+      // Keep the shared package; this piece follows its practice tempo.
+      piece = withPieceTempo(piece, sharers[0]!.userTempo)
+      if (storedSource === undefined) writes.push(observed(tx.objectStore('sources').put(source, version)))
+    } else {
+      writes.push(
+        observed(tx.objectStore('sources').put(source, version)),
+        observed(tx.objectStore('packages').put(pkg, version)),
+      )
+      for (const other of sharers) {
+        if (!deepEqual(other.userTempo, piece.userTempo)) {
+          writes.push(observed(pieces.put(withPieceTempo(other, piece.userTempo))))
+        }
+      }
+      if (stored && (stored.renderXml !== pkg.renderXml || !deepEqual(stored.model.hands, pkg.model.hands))) {
+        writes.push(clearVersionLayouts(tx, version))
+      }
+    }
+    writes.push(observed(pieces.put(piece)))
+    await Promise.all(writes)
     if (previous && previous.scoreVersionId !== version) {
       await releaseVersionIfUnused(tx, previous.scoreVersionId)
     }
   })
+}
+
+function withPieceTempo(piece: PieceRecord, userTempo: PieceRecord['userTempo']): PieceRecord {
+  const { userTempo: _old, ...rest } = piece
+  return userTempo ? { ...rest, userTempo } : rest
 }
 
 /** A read-write transaction that includes the stores a score version spans. */
@@ -119,6 +162,11 @@ export async function releaseVersionIfUnused(tx: VersionTx, scoreVersionId: stri
     tx.objectStore('sources').delete(scoreVersionId),
     tx.objectStore('packages').delete(scoreVersionId),
   ])
+  await clearVersionLayouts(tx, scoreVersionId)
+}
+
+/** Delete a version's cached layouts (derived data: they carry each note's hand). */
+export async function clearVersionLayouts(tx: VersionTx, scoreVersionId: string): Promise<void> {
   const keys = await tx.objectStore('layoutMeta').index('scoreVersionId').getAllKeys(scoreVersionId)
   await Promise.all(
     keys.flatMap((key) => [tx.objectStore('layoutMeta').delete(key), tx.objectStore('layoutCache').delete(key)]),

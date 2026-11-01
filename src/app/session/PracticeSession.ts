@@ -48,7 +48,9 @@ import {
   passageRange,
   type ClickEvent,
   sharedAudioContext,
+  type BrowserAudioModule,
   type ControlEvent,
+  type MetronomeModule,
   type MetronomeSink,
   type NoteOffEvent,
   type NoteOnEvent,
@@ -168,13 +170,15 @@ export class PracticeSession {
   #output: OutputBackend | null = null
   #midiBackend: MidiBackendLike | null = null
   #monitor: ((ev: MidiInputEvent) => void) | null = null
+  /** `#output` when it is browser sound (its volume follows the settings). */
+  #browser: ReturnType<BrowserAudioModule['createBrowserAudio']> | null = null
   /** `outputKey` and kind of `#output` ('' / null while there is none). */
   #outputKey = ''
   #outputKind: PlaybackKind | null = null
   #outputLoading: Promise<OutputBackend | null> | null = null
   #accomp: Transport | null = null
   #accompKey = ''
-  #metronome: MetronomeSink | null = null
+  #metronome: InstanceType<MetronomeModule['WebAudioMetronome']> | null = null
   /** Click schedules exist from the start; sound can be enabled later without rebuilding time. */
   readonly #metronomeSink: MetronomeSink = {
     click: (time, accent) => this.#metronome?.click(time, accent),
@@ -235,6 +239,8 @@ export class PracticeSession {
   #disposed = false
   /** An overlay (Settings, Connection) is open: keys go to it, never to the engine. */
   #inputHeld = false
+  /** The Start in progress (`start`): sounds may be loading. */
+  #starting: Promise<void> | null = null
   /** Both hands' onset groups for the keyboard guide (U20); rebuilt on first use per selection. */
   #bothTimeline: Timeline | null = null
   /** Snap onsets of the current hands for the strip (U19), rebuilt when the hands change. */
@@ -380,12 +386,21 @@ export class PracticeSession {
     else void this.start()
   }
 
-  /** Start reading, a scored attempt or Preview, per the selection. */
-  async start(): Promise<void> {
-    const plan = this.#plan()
-    if (!plan.enabled) return
+  /**
+   * Start reading, a scored attempt or Preview, per the selection. One Start at a time: a second
+   * one while sounds load joins the first (it would otherwise stop the transport the first one
+   * started at Ready).
+   */
+  start(): Promise<void> {
+    this.#starting ??= this.#start().finally(() => (this.#starting = null))
+    return this.#starting
+  }
+
+  async #start(): Promise<void> {
+    const first = this.#plan()
+    if (!first.enabled) return
     this.#clearCorrections()
-    if (plan.action === 'listen') {
+    if (first.action === 'listen') {
       await this.#startListening()
       return
     }
@@ -396,6 +411,15 @@ export class PracticeSession {
     }
     await this.#ensureMetronome()
     if (this.#disposed) return
+    // The selection may have changed while sounds loaded (the loop cleared, the hands changed).
+    const plan = this.#plan()
+    if (!plan.enabled) return
+    if (plan.action === 'listen') {
+      await this.#startListening()
+      return
+    }
+    // One hand chosen meanwhile on browser sound not loaded yet: load it first.
+    if (this.#sel.hands !== 'both' && !this.#ensureOutputSync()) return this.#start()
     this.#ensureAccompaniment()
     const t = this.#deps.clock()
     const lead = this.#leadIn
@@ -475,8 +499,9 @@ export class PracticeSession {
           now,
         )
         this.#lastResult = null
+        this.#streak = 0
         // A lead-in set up by a seek has no transport until Start: Ready needs the loop's.
-        this.#ensureAccompaniment()
+        this.#ensureTransport((t) => this.#tryPrepared(t))
         this.#prepareAttempt(now)
       }
       this.#process(now)
@@ -485,10 +510,16 @@ export class PracticeSession {
     this.#accomp?.stop()
     this.#engine.restart(now)
     if (this.#engine.mode === 'scored') {
+      // Again / Restart is a new run of passes toward the target.
       this.#lastResult = null
+      this.#streak = 0
+      this.#ensureTransport((t) => this.#tryPrepared(t))
       this.#prepareAttempt(now)
     } else if (this.#readingStarted) {
       this.#playAccompanimentFromCurrent(now)
+    } else {
+      // Reading that was never started has no transport playing: back at the start, paused.
+      this.#engine.pause(now)
     }
     this.#process(now)
   }
@@ -561,10 +592,12 @@ export class PracticeSession {
       }
       return false
     }
-    const group = groupAtOrAfter(this.#timeline, position)
-    if (group >= this.#timeline.groups.length) return false
+    // The engine's own groups (the session's selection may be a hands hold, U27).
+    const timeline = this.#engine.timeline
+    const group = groupAtOrAfter(timeline, position)
+    if (group >= timeline.groups.length) return false
     this.#engine.seek(group, now)
-    const g = this.#timeline.groups[group]
+    const g = timeline.groups[group]
     if (this.#accomp && g) {
       this.#accomp.seek(g.position)
       this.#clearHighlights()
@@ -957,11 +990,14 @@ export class PracticeSession {
     const next: Selection = { ...base, range: repeat ? loop : null }
     const prev = this.#sel
     const modeChanged = repeat !== this.#repeat
-    if (
-      persist &&
-      (base.hands !== prev.hands || base.multiplier !== prev.multiplier || !samePassage(loop, this.#loop))
-    ) {
-      this.#deps.piece.save({ lastHands: base.hands, lastPassage: loop, lastMultiplier: base.multiplier })
+    // While the hands are held without a piano (U27) the learner's own hands are saved, never 'none'.
+    const handsChanged = this.#heldHands === null && base.hands !== prev.hands
+    if (persist && (handsChanged || base.multiplier !== prev.multiplier || !samePassage(loop, this.#loop))) {
+      this.#deps.piece.save({
+        lastHands: this.#heldHands ?? base.hands,
+        lastPassage: loop,
+        lastMultiplier: base.multiplier,
+      })
     }
     this.#loop = loop
     this.#repeat = repeat
@@ -970,6 +1006,8 @@ export class PracticeSession {
       if (modeChanged) this.#process(this.#deps.clock())
       return
     }
+    // The result card goes with its corrections (U39).
+    this.#lastResult = null
     this.#clearCorrections()
     const now = this.#deps.clock()
     const reason: InterruptReason =
@@ -1018,6 +1056,18 @@ export class PracticeSession {
     }
 
     const phase = this.#engine.state.phase
+    if (!persist && phase === 'interrupted' && this.#engine.state.interruptReason === 'disconnect') {
+      // The hands held while the piano is away (U27), or given back: the attempt's disconnect
+      // interruption stays for the piano's return (U32). The engine keeps the learner's timeline
+      // and transport; only the session's selection follows the hold.
+      this.#pauseTransports()
+      this.#sel = next
+      this.#timeline = selectionTimeline(this.#model, this.#tempo, next)
+      this.#bothTimeline = null
+      this.#applySelectionVisuals()
+      this.#process(now)
+      return
+    }
     const scoredActive = this.#engine.mode === 'scored' && ACTIVE.includes(phase)
     // Any other change ends a lead-in: the session stops where Repeat mode would (P4).
     const leadReading = lead !== null && this.#engine.mode === 'reading'
@@ -1043,9 +1093,8 @@ export class PracticeSession {
     if (this.#engine.mode === 'scored' || scoredActive) {
       if (scoredActive && plan.action === 'scored' && plan.enabled) {
         this.#engine.reconfigure({ reason, timeline: this.#timeline, mode: 'scored', transport: 'accompaniment' }, now)
-        this.#lastResult = null
         this.#streak = 0
-        this.#ensureAccompaniment()
+        this.#ensureTransport((t) => this.#tryPrepared(t))
         this.#prepareAttempt(now)
       } else {
         this.#engine.reconfigure(
@@ -1062,7 +1111,10 @@ export class PracticeSession {
         now,
       )
       if (readingRunning && plan.enabled && plan.action !== 'listen') {
-        this.#ensureAccompaniment()
+        this.#ensureTransport((t) => {
+          if (this.#engine.mode === 'reading' && this.#engine.state.phase === 'running')
+            this.#playAccompanimentFromCurrent(t)
+        })
         this.#playAccompanimentFromCurrent(now)
       } else if (this.#engine.state.phase === 'running') {
         this.#engine.pause(now)
@@ -1116,6 +1168,9 @@ export class PracticeSession {
     } else if (performanceKey(prev) !== performanceKey(next) && !this.#isPlaying()) {
       this.#disposeAccompaniment()
     }
+    // Volumes apply live to sound already loaded (Settings over Practice).
+    if (prev.sound.browserVolume !== next.sound.browserVolume) this.#browser?.setVolume(next.sound.browserVolume)
+    if (prev.metronome.volume !== next.metronome.volume) this.#metronome?.setVolume(next.metronome.volume)
     if (prev.metronome.enabled !== next.metronome.enabled) {
       if (next.metronome.enabled) void this.#ensureMetronome()
       this.#accomp?.setMetronomeEnabled(next.metronome.enabled)
@@ -1195,8 +1250,9 @@ export class PracticeSession {
   #onMidi(ev: MidiInputEvent): void {
     if (this.#disposed) return
     this.#midiBackend?.humanInput(ev)
-    if (this.#inputHeld) return
+    // The monitor hears releases under an overlay too, so no key or pedal stays down in it.
     this.#monitor?.(ev)
+    if (this.#inputHeld) return
     // Echoes of Preview output on an echoing route must never reach the engine (spec).
     if (this.#listen && this.#settings.route.echo === 'echo-detected' && this.#outputKind === 'midi') return
     // Judged before the input: a press never changes the group or phase while nothing plays.
@@ -1217,7 +1273,8 @@ export class PracticeSession {
   #previewInput(ev: MidiInputEvent, group: number): void {
     this.#syncPreview(group)
     if (ev.kind === 'noteon' && ev.velocity > 0) {
-      const required = this.#timeline.groups[group]?.pitches.includes(ev.note) ?? false
+      // The engine's timeline: a lead-in's groups during a lead-in.
+      const required = this.#engine.timeline.groups[group]?.pitches.includes(ev.note) ?? false
       ;(required ? this.#previewAccepted : this.#previewWrong).add(ev.note)
       this.#previewDirty = true
     } else if (ev.kind === 'cc') {
@@ -1229,9 +1286,10 @@ export class PracticeSession {
 
   /** The preview belongs to one group of one timeline: a seek or a new selection clears it. */
   #syncPreview(group: number | null): void {
-    if (this.#previewTimeline === this.#timeline && this.#previewGroup === group) return
+    const timeline = this.#engine.timeline
+    if (this.#previewTimeline === timeline && this.#previewGroup === group) return
     this.#clearPreview()
-    this.#previewTimeline = this.#timeline
+    this.#previewTimeline = timeline
     this.#previewGroup = group
   }
 
@@ -1268,7 +1326,7 @@ export class PracticeSession {
   /** The engine's accepted notes plus the notes of previewed required pitches. */
   #acceptedNotes(s: EngineState): readonly number[] {
     if (this.#previewAccepted.size === 0 || s.groupIndex === null) return s.acceptedNotes
-    const g = this.#timeline.groups[s.groupIndex]
+    const g = this.#engine.timeline.groups[s.groupIndex]
     if (!g) return s.acceptedNotes
     const notes = [...s.acceptedNotes]
     for (const pitch of this.#previewAccepted) {
@@ -1476,7 +1534,7 @@ export class PracticeSession {
    * with its accidental, which is emphasized; a natural target gets ♮ even where its label omits it.
    */
   #accidentalCorrection(group: number, pitch: number): { target: number; cue: StageCue } | null {
-    const g = this.#timeline.groups[group]
+    const g = this.#engine.timeline.groups[group]
     if (!g) return null
     const accepted = this.#acceptedIn(group)
     const naming = this.#settings.naming
@@ -1693,6 +1751,7 @@ export class PracticeSession {
         if (this.#disposed) return null
         const backend = m.createBrowserAudio({ clock: this.#deps.clock, volume: this.#settings.sound.browserVolume })
         this.#output = backend
+        this.#browser = backend
         this.#outputKey = key
         this.#outputKind = 'browser'
         this.#monitor = (ev) => {
@@ -1800,6 +1859,22 @@ export class PracticeSession {
     )
   }
 
+  /**
+   * `#ensureAccompaniment`, and when one hand needs browser sound that is not loaded yet (both
+   * hands never loads it), load it and build the transport afterwards, then `then(now)`.
+   */
+  #ensureTransport(then: (now: number) => void): void {
+    this.#ensureAccompaniment()
+    if (this.#accomp || this.#sel.hands === 'both' || this.#sel.hands === 'none') return
+    void this.#ensureOutput().then(() => {
+      if (this.#disposed) return
+      this.#ensureAccompaniment()
+      const t = this.#deps.clock()
+      then(t)
+      this.#process(t)
+    })
+  }
+
   /** Reading with accompaniment: the transport continues from the current learner group. */
   #playAccompanimentFromCurrent(now: number): void {
     const t = this.#accomp
@@ -1850,6 +1925,7 @@ export class PracticeSession {
     this.#outputKey = ''
     this.#outputKind = null
     this.#midiBackend = null
+    this.#browser = null
     this.#monitor = null
     if (!o) return
     try {

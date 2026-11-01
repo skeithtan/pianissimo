@@ -41,6 +41,9 @@ order-preserving parse, `timewise.ts`) → `candidates.ts` (selection rules) →
 - **Context after a jump** (key, meter, clef, tempo, dynamics, ottava) is what the *written* score
   states at the jump target, not the last performed value. `renderXml` re-states key/time/clef/
   divisions where they differ and closes/reopens octave-shift brackets so they stay balanced.
+  Before the first stated key the score is in C major, and before a staff's first stated clef that
+  clef applies (treble/bass when the staff states none): a jump back into that stretch re-states
+  them like written ones (key map event, restated `<key>`/`<clef>`).
 - **Repeats (M5).** Forward/backward barlines (`times`), endings with number lists, sequential
   sections; a backward repeat inside an ending repeats up to the group's highest ending number.
   Endings without a repeat sign play in written order (warning).
@@ -77,7 +80,13 @@ order-preserving parse, `timewise.ts`) → `candidates.ts` (selection rules) →
 - **Hands (M2).** Per voice; the home staff (most notes; top selected staff → R, below → L)
   decides, confirmed from the start. A cross-staff voice gets a `hand-cross-staff` info note. Only
   a genuinely split voice (notes on both staves, part not numbered 1–4 / 5–8 by home staff, minority
-  share ≥ ⅓) is in `ambiguousVoices` with a `hand-ambiguous` warning until confirmed.
+  share ≥ ⅓) is in `ambiguousVoices` with a `hand-ambiguous` warning until confirmed. The
+  convention counts only when the part's numbering covers both staves (one voice 1 on both
+  staves falls back to the share rule). A note without `<voice>` takes its staff's conventional
+  voice (staff 1 → "1", staff 2 → "5", `noteVoice`); `renderXml` writes it into such notes
+  (except voice 1, OSMD's default) so the engraver's voices match.
+- **Endings that open a repeat.** An ending is chosen with the enclosing section's pass before a
+  forward repeat on the same bar opens the next section (`|: 1 [1. 2 :| [2.|: 3 | 4 :| 5`).
 - **Rolls.** Group = same occurrence + onset + part + `number`; without a number each voice's chord
   is its own roll. Spread 120 ms at 1×, ≤ ½ interval to the next written attack (any part) and
   ≤ ½ the earliest member ending (tie chain included); distinct fresh pitches evenly spaced in the

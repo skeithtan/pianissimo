@@ -145,7 +145,8 @@ export class PracticeEngine {
   /** Earliest and latest accepted attack of the current group (chord spread). */
   #firstAcceptAt = Infinity
   #lastAcceptAt = -Infinity
-  #pedalWatch: PedalWatch | null = null
+  /** One watch per recently completed mismatching group (fast groups overlap their graces). */
+  #pedalWatches: PedalWatch[] = []
   #pending: PendingPress[] = []
   #groupWrong = 0
   /** Wrong attacks counting toward the automatic hint threshold (re-armed on show and expiry). */
@@ -408,20 +409,23 @@ export class PracticeEngine {
    * score's state in that time revises it to 'ok' (`#pedalChanged`).
    */
   #pedalAt(gi: number, g: OnsetGroup, time: number): NonNullable<GroupOutcome['pedal']> {
-    this.#pedalWatch = null
+    // Earlier groups keep their own grace (a fast next group must not cancel it); expired ones go.
+    if (this.#pedalWatches.length > 0) this.#pedalWatches = this.#pedalWatches.filter((w) => time <= w.until)
     if (!this.#checkPedal || g.pedalDown === null) return 'none'
     if (this.#physical.sustainDown === g.pedalDown) return 'ok'
-    this.#pedalWatch = { group: gi, down: g.pedalDown, until: time + PEDAL_GRACE_MS }
+    this.#pedalWatches.push({ group: gi, down: g.pedalDown, until: time + PEDAL_GRACE_MS })
     return g.pedalDown ? 'missing' : 'extra'
   }
 
-  /** The sustain pedal crossed its threshold at `time`. */
+  /** The sustain pedal crossed its threshold at `time`: revise every watched group it now matches. */
   #pedalChanged(time: number): void {
-    const w = this.#pedalWatch
-    if (w === null) return
-    if (time <= w.until && this.#physical.sustainDown === w.down) this.#log.pedal(w.group, 'ok')
-    else if (time <= w.until) return
-    this.#pedalWatch = null
+    if (this.#pedalWatches.length === 0) return
+    this.#pedalWatches = this.#pedalWatches.filter((w) => {
+      if (time > w.until) return false
+      if (this.#physical.sustainDown !== w.down) return true
+      this.#log.pedal(w.group, 'ok')
+      return false
+    })
   }
 
   #advance(now: number): void {
@@ -937,7 +941,7 @@ export class PracticeEngine {
     const createdAt = this.#timeOrigin + now
     this.#log = new AttemptLog(this.#newId(this.#attempts, createdAt), createdAt)
     this.#clockGroup = null
-    this.#pedalWatch = null
+    this.#pedalWatches = []
     this.#interruptReason = null
     this.#emit({ type: 'exposure-reset', attemptId: this.#log.id })
   }
@@ -1027,7 +1031,7 @@ export class PracticeEngine {
   #end(completion: Completion, reason: InterruptReason | null, now: number): void {
     const log = this.#log
     // The record is built now: a pedal change after the final completion cannot revise it.
-    this.#pedalWatch = null
+    this.#pedalWatches = []
     const g = this.#currentGroup()
     const context = comparisonContextOf(this.#timeline, this.#transport, this.matchingRules)
     if (completion === 'abandoned' && reason !== null && log.started && g && log.measureWrong(g.occ) > 0) {

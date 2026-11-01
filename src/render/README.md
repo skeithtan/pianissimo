@@ -93,6 +93,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   ottava parts `data-o`.
 - **Sanitization** (`sanitize.ts`): element/attribute allow-list, no `url(`/`javascript:`,
   geometry rounded (0.1 px paths), default attributes dropped, engraver black → `currentColor`.
+  `isSafeSvgMarkup` (cached layouts) also finds attributes right after a quote or `/` and rejects
+  character references other than `&amp; &lt; &gt; &quot; &nbsp;`.
 - **Cursor path** (`strip/cursorPath.ts`, pure): knots are every onset anchor in global position
   order; a bar's last onset glides straight to the next bar's first onset. Continuous following
   uses monotone cubic interpolation with continuous speed and exact onset alignment. A held
@@ -106,7 +108,13 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   Sticky clef/key/meter includes the five lines of each staff with matching theme opacity.
   A stationary viewport mask fades moving notation into the signatures without a divider.
   Zoom fits both the staff height and the widest context before the fixed cursor, keeping the
-  active notes unobscured on narrow screens.
+  active notes unobscured on narrow screens. The fit is applied to the requested zoom on every
+  mount and resize without `onZoomChange` (a short strip never lowers the saved preference; the
+  zoom comes back when there is room); pinch, ctrl-wheel and `setZoom` report. A notehead that
+  PF6 copied into a neighboring segment gets the note classes there too, but the halo / ring /
+  play mark lives only in the owning segment.
+  A mid-bar clef change switches the sticky clef at its engraved change clef (else at its onset),
+  not at the barline (`ADAPTER_VERSION` pn-7).
 - **Theme**: no colors in cached SVG; `--score-paper/--score-ink/--score-ink-muted`, `--danger`,
   `--color-loop`, `--color-target/accepted`, `--accent`, motion tokens with fallbacks; switching
   `data-theme` / `data-score-paper` recolors instantly without re-engraving.
@@ -129,7 +137,7 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   along their centers' line, from ring edge to ring edge, drawn under the rings in the same SVG;
   a `'pedal'` mark writes an italic "Ped." (`pn-corr-ped`) before its text. Each mark is one small
   SVG on `.pn-corrs`
-  inside the scaled content (layout px), so it scrolls and zooms with the notation; DOM is built
+  inside the scaled content (layout px; `shared/corrections.ts`, used by the page too, per system), so it scrolls and zooms with the notation; DOM is built
   once in the next frame after a call (the same marks again are a no-op), nothing per frame, no
   pointer events. Fade in 300 ms staggered 40 ms left to right; replaced or cleared marks fade out
   in 200 ms and are removed on `animationend` (fallback timer 260 ms). Reduced motion: opacity
@@ -139,7 +147,7 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   150 px on screen, never hidden while editable) centered; pointer capture, never inverts,
   `setLoopEditable(false)` hides controls. Handles snap to loop knots (`strip/snap.ts`:
   every barline plus every onset of the hands inside a bar; without `setSnapPositions` barlines
-  only): a note-level edge is drawn halfway between the edge note and the engraved entry before
+  only; a drag ends uncommitted when the loop is replaced, cleared or locked meanwhile): a note-level edge is drawn halfway between the edge note and the engraved entry before
   it, a loop keeps at least one note, arrow keys step one note (Shift: one barline), and a drag
   near the strip's edge scrolls the music (then stays there, browsing).
 - **Playhead drag**: while `setCursorDraggable(true)`, the ≥ 44 px cursor grip scrubs the music
@@ -193,7 +201,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   mapped, 36 callouts (2.7 %), 1.7 MB of segments. Real iPad numbers still needed.
 - **Copied from the strip** (to deduplicate later): note flags + `paintNote`, label painting and
   visible-label reporting, `withEdge`, loop-handle key stepping, cursor keyboard stepping, the
-  icons, `SegmentStore` (→ `page/segments.ts`), corrections drawing (→ `shared/corrections.ts`).
+  icons, `SegmentStore` (→ `page/segments.ts`). Corrections are shared, not copied
+  (`shared/corrections.ts`: page labels use their system's staves and marks).
   Imported unchanged: `CursorPath`, `snap.ts`, `loop.ts`, `scroll.ts` helpers.
 - Not done: dragging a loop handle or the playhead across systems (keyboard only); the ottava
   reminder is one pill at the cursor (the strip has one per staff); pinch is synthetic-tested only.

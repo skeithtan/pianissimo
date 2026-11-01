@@ -423,6 +423,21 @@ describe('failure handling', () => {
     expect(await real.count('attempts')).toBe(1)
   })
 
+  it('reports each retry, then the drop with the lost item count before the batch is gone', async () => {
+    const calls: Array<{ dropped: number; pending: number }> = []
+    let writer: HistoryWriter | null = null
+    const setupFlaky = await flaky(MAX_FLUSH_FAILURES, {
+      onError: (_error, dropped) => calls.push({ dropped, pending: writer?.pending ?? -1 }),
+    })
+    writer = setupFlaky.writer
+    writer.queueAttempt(attemptFor(PIECE, errorBar(12)))
+    writer.queueAbandon({ pieceId: PIECE, measureContextKey: 'k', occ: 1, at: 1, reason: 'user-restart' })
+    for (let i = 0; i < MAX_FLUSH_FAILURES; i += 1) await writer.flush().catch(() => undefined)
+    expect(calls.map((c) => c.dropped)).toEqual([...Array(MAX_FLUSH_FAILURES - 1).fill(0), 2])
+    expect(calls.slice(0, -1).every((c) => c.pending === 2)).toBe(true) // kept for the retry
+    expect(await setupFlaky.real.count('attempts')).toBe(0)
+  })
+
   it('drops one malformed record without losing the rest of the batch', async () => {
     const onError = vi.fn()
     const { writer, db } = await setup({ onError })

@@ -90,16 +90,23 @@ const REASON_TEXT: Readonly<Record<InterruptReason, string>> = {
 
 const ASSISTANCE_TEXT = { none: 'None', names: 'Note names', keyboard: 'Keyboard guide' } as const
 
+/**
+ * "59.9 s" below a minute, "1:05.3" beyond. Rounded to tenths before splitting, so 59.96 is
+ * "1:00.0" (not "60.0 s") and 119.97 is "2:00.0" (not "1:60.0"); a value that rounds to zero
+ * has no sign.
+ */
 export function formatSeconds(sec: number): string {
-  const abs = Math.abs(sec)
-  if (abs < 60) return `${sec.toFixed(1)} s`
-  const minutes = Math.floor(abs / 60)
-  const rest = (abs - minutes * 60).toFixed(1).padStart(4, '0')
-  return `${sec < 0 ? '-' : ''}${minutes}:${rest}`
+  const tenths = Math.round(Math.abs(sec) * 10)
+  const sign = sec < 0 && tenths > 0 ? '-' : ''
+  if (tenths < 600) return `${sign}${(tenths / 10).toFixed(1)} s`
+  const minutes = Math.floor(tenths / 600)
+  const rest = ((tenths - minutes * 600) / 10).toFixed(1).padStart(4, '0')
+  return `${sign}${minutes}:${rest}`
 }
 
 function signed(sec: number): string {
-  return `${sec >= 0 ? '+' : ''}${formatSeconds(sec)}`
+  const text = formatSeconds(sec)
+  return text.startsWith('-') ? text : `+${text}`
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {

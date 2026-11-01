@@ -106,7 +106,8 @@ export class MidiAdapter {
   private input: MidiInputLike | null = null
   private inSel: Selection | null = null
   private outSel: Selection | null = null
-  private readonly subscribers: Array<(ev: MidiInputEvent) => void> = []
+  /** Replaced, never mutated (copy on write), so dispatch can iterate it without copying per event. */
+  private subscribers: ReadonlyArray<(ev: MidiInputEvent) => void> = []
   private readonly portListeners: Array<() => void> = []
   private readonly routeListeners: Array<(ev: MidiRouteEvent) => void> = []
   private readonly statusListeners: Array<(s: MidiAccessStatus) => void> = []
@@ -201,16 +202,19 @@ export class MidiAdapter {
     return p && p.state === 'connected' ? p : null
   }
 
-  /** Select the piano input (null = none). Resets physical state. */
+  /**
+   * Select the piano input (null = none). Resets physical state. An unknown id returns false and
+   * changes nothing: the current input keeps listening.
+   */
   selectInput(id: string | null): boolean {
+    const port = id === null ? null : this.access?.inputs.get(id)
+    if (id !== null && !port) return false
     this.detachInput()
     this.physical.reset()
-    if (id === null) {
+    if (id === null || !port) {
       this.inSel = null
       return true
     }
-    const port = this.access?.inputs.get(id)
-    if (!port) return false
     this.inSel = { id, name: port.name ?? id, lost: port.state !== 'connected' }
     this.attachInput(port)
     return true
@@ -230,7 +234,11 @@ export class MidiAdapter {
 
   /** Decoded input events, pushed synchronously and in order. Each event is emitted once. */
   subscribe(fn: (ev: MidiInputEvent) => void): () => void {
-    return addListener(this.subscribers, fn)
+    this.subscribers = [...this.subscribers, fn]
+    return () => {
+      const i = this.subscribers.indexOf(fn)
+      if (i >= 0) this.subscribers = [...this.subscribers.slice(0, i), ...this.subscribers.slice(i + 1)]
+    }
   }
 
   onPortsChanged(fn: () => void): () => void {
@@ -254,7 +262,7 @@ export class MidiAdapter {
     this.detachInput()
     if (this.access) this.access.onstatechange = null
     this.access = null
-    this.subscribers.length = 0
+    this.subscribers = []
     this.portListeners.length = 0
     this.routeListeners.length = 0
     this.statusListeners.length = 0
@@ -271,6 +279,8 @@ export class MidiAdapter {
 
   private readonly dispatch = (ev: MidiInputEvent): void => {
     this.physical.apply(ev)
+    // Subscribers are copied on write, so one unsubscribing inside its handler never makes the
+    // next one miss this event.
     const subs = this.subscribers
     for (let i = 0; i < subs.length; i++) subs[i]!(ev)
   }

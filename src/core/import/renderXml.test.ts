@@ -111,3 +111,66 @@ describe('render XML (ScorePackage.renderXml; DECISIONS M5, R1)', async () => {
     )
   })
 })
+
+describe('implicit opening context at repeat jumps (key, clef)', () => {
+  const n = (s: string) =>
+    `<note><pitch><step>${s}</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>half</type></note>`
+  const head = (clef: string) =>
+    `<attributes><divisions>1</divisions><time><beats>2</beats><beat-type>4</beat-type></time>${clef}</attributes><sound tempo="60"/>`
+  const treble = '<clef><sign>G</sign><line>2</line></clef>'
+
+  it('a repeat back into the implicit C major restates C major', async () => {
+    const xml = scoreXml(`<part id="P1">
+<measure number="1">${head(treble)}${n('C')}</measure>
+<measure number="2"><barline location="left"><repeat direction="forward"/></barline>${n('F')}</measure>
+<measure number="3"><attributes><key><fifths>1</fifths></key></attributes>${n('F')}<barline location="right"><repeat direction="backward"/></barline></measure>
+<measure number="4">${n('G')}</measure></part>`)
+    const { package: pkg } = await importBytes('keys.musicxml', utf8(xml))
+    const m = pkg.model
+    const occ = m.occurrences.find((o) => o.number === '2' && o.pass === 2)!
+    expect(m.notes.find((x) => x.occ === occ.index)!.accidentalContext.keyFifths).toBe(0)
+    expect([...m.keys].filter((k) => k.occ <= occ.index).at(-1)!.fifths).toBe(0)
+    const restated = measuresOf(pkg.renderXml)[occ.index]!
+    expect(textOf(child(child(child(restated, 'attributes')!, 'key')!, 'fifths'))).toBe('0')
+    // The first pass keeps the written order: no key is stated before bar 3.
+    expect(child(measuresOf(pkg.renderXml)[1]!, 'attributes')).toBeUndefined()
+  })
+
+  it('a repeat back to an unkeyed first bar restates C major', async () => {
+    const xml = scoreXml(`<part id="P1">
+<measure number="1">${head(treble)}${n('C')}</measure>
+<measure number="2"><attributes><key><fifths>-2</fifths></key></attributes>${n('B')}<barline location="right"><repeat direction="backward"/></barline></measure>
+</part>`)
+    const { package: pkg } = await importBytes('keys1.musicxml', utf8(xml))
+    const m = pkg.model
+    expect(m.occurrences.map((o) => o.number)).toEqual(['1', '2', '1', '2'])
+    expect(m.keys.map((k) => [k.occ, k.fifths])).toEqual([
+      [0, 0],
+      [1, -2],
+      [2, 0],
+      [3, -2],
+    ])
+    const bars = measuresOf(pkg.renderXml)
+    const fifths = (b: XmlElement) => textOf(child(child(child(b, 'attributes')!, 'key')!, 'fifths'))
+    expect(fifths(bars[2]!)).toBe('0')
+    expect(fifths(bars[3]!)).toBe('-2')
+  })
+
+  it('a repeat back before the first stated clef restates the clef the model assumed', async () => {
+    const xml = scoreXml(`<part id="P1">
+<measure number="1">${head('')}${n('C')}</measure>
+<measure number="2"><barline location="left"><repeat direction="forward"/></barline>${n('F')}</measure>
+<measure number="3"><attributes><clef><sign>F</sign><line>4</line></clef></attributes>${n('F')}</measure>
+<measure number="4"><attributes><clef><sign>G</sign><line>2</line></clef></attributes>${n('F')}<barline location="right"><repeat direction="backward"/></barline></measure>
+<measure number="5">${n('G')}</measure></part>`)
+    const { package: pkg } = await importBytes('clefs.musicxml', utf8(xml))
+    const m = pkg.model
+    const occ = m.occurrences.find((o) => o.number === '2' && o.pass === 2)!
+    // The first stated clef (bass) governs the bars before it; the jump comes from treble.
+    const clefAt = [...m.clefs].filter((c) => c.occ <= occ.index).at(-1)!
+    expect(clefAt.clef.sign).toBe('F')
+    const restated = child(child(measuresOf(pkg.renderXml)[occ.index]!, 'attributes')!, 'clef')!
+    expect(textOf(child(restated, 'sign'))).toBe(clefAt.clef.sign)
+    expect(textOf(child(restated, 'line'))).toBe(String(clefAt.clef.line))
+  })
+})

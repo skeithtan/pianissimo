@@ -47,8 +47,9 @@ export function EchoStep({
     [],
   )
   const ready = snap.input?.connected === true && snap.output?.connected === true
-  const outputKey = `${snap.output?.id ?? ''}:${route.outputChannel}`
-  useEffect(() => setResult(null), [outputKey])
+  // The shown result belongs to the whole route: input, output and channel.
+  const routeKey = `${snap.input?.id ?? ''}:${snap.output?.id ?? ''}:${route.outputChannel}`
+  useEffect(() => setResult(null), [routeKey])
 
   const run = async () => {
     const adapter = service.adapter

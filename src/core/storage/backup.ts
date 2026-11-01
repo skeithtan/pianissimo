@@ -26,7 +26,16 @@ import type { AppSettings } from '../model/settings'
 import { BACKUP_FORMAT, BACKUP_FORMAT_VERSION } from './backupFormat'
 import type { BackupCounts, BackupManifest } from './backupFormat'
 import { BackupError, MAX_PROBLEMS } from './errors'
-import { deepEqual, mergeAbandon, mergeBar, mergePiece, mergeSuggestionState, preferPackage } from './merge'
+import {
+  deepEqual,
+  incomingPieceWins,
+  mergeAbandon,
+  mergeBar,
+  mergePiece,
+  mergeSuggestionState,
+  preferPackage,
+} from './merge'
+import { clearVersionLayouts } from './pieces'
 import type { AbandonRecord, PieceRecord, SuggestionStateRecord } from './records'
 import type { BarStoreKey, Db } from './schema'
 import { DB_VERSION, SETTINGS_KEY } from './schema'
@@ -396,11 +405,47 @@ async function mergeRecords<T>(
 }
 
 /**
+ * Score versions whose package restore takes from the backup when both sides carry one of equal
+ * user input: those whose most recently opened piece after the merge is the backup's record
+ * (`mergePiece` resolves each piece by recency, ties keeping the local one). The package then
+ * matches the piece records' practice tempo and hands (ST3).
+ */
+function versionsWonByBackup(
+  local: readonly PieceRecord[],
+  incoming: readonly PieceRecord[],
+  available: ReadonlySet<string>,
+): Set<string> {
+  const localById = new Map(local.map((p) => [p.id, p]))
+  const latest = new Map<string, { at: number; incoming: boolean }>()
+  const note = (piece: PieceRecord, fromBackup: boolean): void => {
+    const current = latest.get(piece.scoreVersionId)
+    if (!current || piece.lastOpenedAt > current.at || (!fromBackup && piece.lastOpenedAt === current.at)) {
+      latest.set(piece.scoreVersionId, { at: piece.lastOpenedAt, incoming: fromBackup })
+    }
+  }
+  const replaced = new Set<string>()
+  const winners: PieceRecord[] = []
+  for (const p of incoming) {
+    if (!available.has(p.scoreVersionId)) continue
+    const mine = localById.get(p.id)
+    if (mine && !incomingPieceWins(mine, p)) continue
+    replaced.add(p.id)
+    winners.push(p)
+  }
+  for (const p of local) if (!replaced.has(p.id)) note(p, false)
+  for (const p of winners) note(p, true)
+  const won = new Set<string>()
+  for (const [version, entry] of latest) if (entry.incoming) won.add(version)
+  return won
+}
+
+/**
  * Validate a backup completely, then merge it into the database in one transaction: either
  * everything is restored or nothing is. Records merge by id and nothing local is deleted:
  * attempts and sources are immutable (kept if present), pieces and bar histories resolve by
  * recency, suggestions and abandon events are unioned, and a package is
- * replaced only when the backup's one carries more user input (confirmed hands, tempo).
+ * replaced when the backup's one carries more user input (confirmed hands, tempo) or, with
+ * equal input, when the backup's piece records of that version win the merge.
  * Throws `BackupError` with a readable message and writes nothing when the file is not a
  * Pianissimo backup, is damaged, is newer than this app understands, or holds invalid records.
  */
@@ -419,12 +464,29 @@ export async function restoreBackup(db: Db, bytes: Uint8Array, options: RestoreO
   let settingsOutcome: RestoreReport['settings'] = 'not-in-backup'
 
   const tx = db.transaction(
-    ['pieces', 'packages', 'sources', 'settings', 'attempts', 'measureHistory', 'suggestionState', 'abandonEvents'],
+    [
+      'pieces',
+      'packages',
+      'sources',
+      'settings',
+      'attempts',
+      'measureHistory',
+      'suggestionState',
+      'abandonEvents',
+      'layoutCache',
+      'layoutMeta',
+    ],
     'readwrite',
   )
   await runTx(tx, async () => {
     const localPackages = new Set<string>(await tx.objectStore('packages').getAllKeys())
-    const localPieceIds = new Set<string>(await tx.objectStore('pieces').getAllKeys())
+    const localPieces = await tx.objectStore('pieces').getAll()
+    const localPieceIds = new Set<string>(localPieces.map((p) => p.id))
+    const incomingWins = versionsWonByBackup(
+      localPieces,
+      backup.pieces,
+      new Set([...localPackages, ...backup.packages.keys()]),
+    )
 
     // Packages first: a piece is only restorable when its package exists in the backup or locally.
     for (const [id, name] of backup.packages) {
@@ -436,12 +498,14 @@ export async function restoreBackup(db: Db, bytes: Uint8Array, options: RestoreO
         localPackages.add(id)
         continue
       }
-      const chosen = preferPackage(local, incoming)
-      if (chosen === local) {
+      const chosen = preferPackage(local, incoming, incomingWins.has(id))
+      if (chosen === local || deepEqual(chosen, local)) {
         stores.packages.unchanged += 1
       } else {
         stores.packages.updated += 1
         await tx.objectStore('packages').put(chosen, id)
+        // Cached layouts carry the old package's hands.
+        await clearVersionLayouts(tx, id)
       }
     }
 

@@ -356,6 +356,12 @@ export class ImportFlow {
     // Saved: the sheet closes at once (L6); the caller reports it and opens Practice. Persistent storage is
     // requested after the first import (L3) and the status reaches the library when known.
     const storage = this.#storageStatus()
+    if (!this.#live(token)) {
+      // Closed while saving: the piece is stored (a save is never lost) and the library lists it
+      // on its next refresh, but the player has moved on, so no notice and no Practice handoff.
+      await storage
+      return
+    }
     this.phase.value = { kind: 'idle' }
     this.#onSaved(piece, { replaced: this.mode.kind === 'replace', storage })
     await storage
@@ -395,18 +401,22 @@ export class ImportFlow {
     return { persistence, estimate: await estimateStorage(manager) }
   }
 
-  /** Stop the running job (if any) and return to the start. Nothing from that job shows later. */
+  /**
+   * Stop the running job (if any) and return to the start. Nothing from that job shows later.
+   * The client is disposed (worker terminated, retained file dropped: spec "Import memory
+   * lifecycle"); a later `openFile` creates a new one.
+   */
   cancel(): void {
     this.#abort?.abort()
     this.#abort = null
     this.#job += 1
+    this.#client?.dispose()
+    this.#client = null
     this.phase.value = { kind: 'idle' }
   }
 
   /** Close the flow: cancel anything running and release the worker and the file. */
   close(): void {
     this.cancel()
-    this.#client?.dispose()
-    this.#client = null
   }
 }

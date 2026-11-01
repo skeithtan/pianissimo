@@ -31,8 +31,14 @@ export function ImportSheet({
   const phase = flow?.phase.value ?? { kind: 'idle' as const }
   const open = flow !== null && phase.kind !== 'idle'
   const title = flow?.mode.kind === 'replace' ? `Replace the score of “${flow.mode.piece.title}”` : 'Import MusicXML'
+  // While "Saving…" the sheet stays open (X and Escape do nothing); it closes itself when saved.
+  const closeUnlessSaving = () => {
+    const current = flow?.phase.peek()
+    if (current?.kind === 'review' && current.saving) return
+    onClose()
+  }
   return (
-    <Sheet title={title} open={open} onClose={onClose} wide>
+    <Sheet title={title} open={open} onClose={closeUnlessSaving} wide>
       {flow ? <FlowBody flow={flow} phase={phase} pieces={pieces} onClose={onClose} /> : null}
     </Sheet>
   )
@@ -218,7 +224,11 @@ function Review({
       <p class={styles.fileName}>{phase.fileName}</p>
       {duplicate ? (
         <Notice tone="info">
-          This score is already in your library as “{duplicate.title}”. Adding it again creates a second copy.
+          This score is already in your library as “{duplicate.title}”.{' '}
+          {replacing
+            ? 'The piece will share that score'
+            : 'Adding it again creates a second piece that shares that score'}
+          , including its hands and practice tempo; changes made here are not applied.
         </Notice>
       ) : null}
       {replacing ? (

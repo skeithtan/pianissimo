@@ -381,6 +381,57 @@ describe('restore merges by id and never deletes local data', () => {
     expect((await target.getPackage('v1'))?.model.hands.confirmed).toBe(true)
   })
 
+  it('keeps the piece record and its package consistent', async () => {
+    const unit = { n: 1, d: 4 }
+    const withTempo = (bpm: number, hand: 'L' | 'R') => {
+      const pkg = makePackage('vT', 'Etude', { confirmed: true, tempo: true })
+      const [segment] = pkg.model.tempo.segments
+      return {
+        ...pkg,
+        model: {
+          ...pkg.model,
+          hands: { ...pkg.model.hands, byVoice: { 'P1/1': hand } },
+          tempo: { segments: [{ ...segment!, beatBpm: bpm, quarterBpm: bpm }] },
+        },
+      }
+    }
+    const laptop = await fresh()
+    const ipad = await fresh()
+    const p80 = withTempo(80, 'R')
+    await laptop.commitImport({
+      source: makeSource('vT'),
+      pkg: p80,
+      piece: makePiece(p80, { id: 'p', lastOpenedAt: 100, userTempo: { beatBpm: 80, beatUnit: unit } }),
+    })
+    await laptop.putLayout('laptop-layout', 'vT', { hands: 'R' }, 10)
+    const p100 = withTempo(100, 'L')
+    await ipad.commitImport({
+      source: makeSource('vT'),
+      pkg: p100,
+      piece: makePiece(p100, { id: 'p', lastOpenedAt: 200, userTempo: { beatBpm: 100, beatUnit: unit } }),
+    })
+
+    const report = await laptop.restore(await ipad.exportAll())
+    expect(report.stores.packages.updated).toBe(1)
+    const piece = (await laptop.getPiece('p'))!
+    const pkg = (await laptop.getPackage('vT'))!
+    expect(pkg.model.tempo.segments[0]!.beatBpm).toBe(piece.userTempo!.beatBpm)
+    expect(piece.userTempo?.beatBpm).toBe(100)
+    expect(pkg.model.hands.byVoice).toEqual({ 'P1/1': 'L' }) // the iPad's hand reassignment comes along
+    expect(await laptop.getLayout('laptop-layout')).toBeUndefined() // engraved with the old hands
+
+    // The other way round, the more recently opened local piece keeps its package.
+    const older = await fresh()
+    await older.commitImport({
+      source: makeSource('vT'),
+      pkg: p80,
+      piece: makePiece(p80, { id: 'p', lastOpenedAt: 50, userTempo: { beatBpm: 80, beatUnit: unit } }),
+    })
+    await laptop.restore(await older.exportAll())
+    expect((await laptop.getPackage('vT'))?.model.tempo.segments[0]?.beatBpm).toBe(100)
+    expect((await laptop.getPiece('p'))?.userTempo?.beatBpm).toBe(100)
+  })
+
   it('merges measure histories (newer wins), suggestions and abandon events', async () => {
     const remote = await fresh()
     const { piece } = await importPiece(remote, 'v1')

@@ -20,6 +20,10 @@ export interface ContextInput {
   readonly glyphs: readonly (readonly GlyphSource[])[]
   /** Left barline x by occurrence. */
   readonly occX: readonly number[]
+  /** Performance start of each occurrence (whole notes): a clef change after it is mid-bar. */
+  readonly occStart: readonly number[]
+  /** x of the onset `offset` whole notes into occurrence `occ` (adapter `positionX`). */
+  readonly xAt: (occ: number, offset: number) => number
   readonly clefs: RenderInput['clefs']
   readonly keys: RenderInput['keys']
   readonly meters: RenderInput['meters']
@@ -59,13 +63,18 @@ export function buildContexts(input: ContextInput): { contexts: ContextState[]; 
   })
 
   const fullClefs = new Map<string, { el: Element; staff: StaffGeometry }>()
-  const clefKeyAt = (staff: number, occ: number): string | undefined =>
+  const offsetOf = (c: ClefInput): number => c.at.n / c.at.d - (input.occStart[c.occ] ?? 0)
+  // A clef change after the bar's start applies from where it is drawn, not from the barline.
+  const isMid = (c: ClefInput): boolean => offsetOf(c) > 1e-9
+  const byAt = (a: ClefInput, b: ClefInput): number => a.at.n / a.at.d - b.at.n / b.at.d
+  /** The clef in force from the barline of `occ` on `staff` (changes after the bar start excluded). */
+  const clefAtBar = (staff: number, occ: number): ClefInput | undefined =>
     input.clefs
-      .filter((c) => c.staff === staff && c.occ === occ)
-      .sort((a, b) => a.at.n / a.at.d - b.at.n / b.at.d)
-      .at(-1)?.key
+      .filter((c) => c.staff === staff && c.occ === occ && !isMid(c))
+      .sort(byAt)
+      .at(-1)
   for (const s of staves) {
-    const k = clefKeyAt(s.index, 0)
+    const k = clefAtBar(s.index, 0)?.key
     const el = glyphs[s.index]?.[0]?.clef
     if (k && el && !fullClefs.has(k)) fullClefs.set(k, { el, staff: s })
   }
@@ -84,11 +93,24 @@ export function buildContexts(input: ContextInput): { contexts: ContextState[]; 
   )
 
   const changeOccs = new Set<number>([
-    ...input.clefs.map((c) => c.occ),
+    ...input.clefs.filter((c) => !isMid(c)).map((c) => c.occ),
     ...input.keys.map((k) => k.occ),
     ...input.meters.map((m) => m.occ),
   ])
   changeOccs.delete(0)
+  /** Mid-bar clef changes, grouped by bar and onset (both staves changing at once are one change). */
+  const mids = new Map<string, ClefInput[]>()
+  for (const c of [...input.clefs].filter(isMid).sort(byAt)) {
+    const k = `${c.occ}:${c.at.n / c.at.d}`
+    const group = mids.get(k)
+    if (group) group.push(c)
+    else mids.set(k, [c])
+  }
+  type Step = { readonly occ: number; readonly order: number; readonly mid?: readonly ClefInput[] }
+  const steps: Step[] = [
+    ...[...changeOccs].map((occ) => ({ occ, order: -1 })),
+    ...[...mids.values()].map((mid) => ({ occ: mid[0]!.occ, order: offsetOf(mid[0]!), mid })),
+  ].sort((a, b) => a.occ - b.occ || a.order - b.order)
 
   const contexts: ContextState[] = []
   const signatures = new Map<string, number>()
@@ -101,25 +123,46 @@ export function buildContexts(input: ContextInput): { contexts: ContextState[]; 
       signatures.set(sig, id)
       contexts.push(compose(id, staves, state))
     }
-    if (changes.at(-1)?.context !== id) changes.push({ x, occ, context: id, glyphEnd })
+    // Kept in x order for the strip's binary search.
+    const last = changes.at(-1)
+    if (last?.context !== id) changes.push({ x: Math.max(x, last?.x ?? x), occ, context: id, glyphEnd })
   }
   emit(0, 0, initialEnd)
 
-  for (const occ of [...changeOccs].sort((a, b) => a - b)) {
+  const setClef = (s: StaffGeometry, ev: ClefInput, small: Element | undefined): void => {
+    const st = state[s.index]!
+    const full = fullClefs.get(ev.key)
+    if (full) st.clef = { ...piece(full.el, full.staff), pivotY: full.staff.top }
+    else if (small) st.clef = piece(small, s, SMALL_CLEF_SCALE, clefLineY(s, ev.clef.line))
+  }
+
+  for (const step of steps) {
+    const occ = step.occ
+    if (step.mid) {
+      // Switches where the change clef is drawn (else at its onset): notes before it keep the old clef.
+      let x = Infinity
+      let end = -Infinity
+      for (const ev of step.mid) {
+        const s = staves.find((g) => g.index === ev.staff)
+        if (!s) continue
+        const onset = input.xAt(occ, offsetOf(ev))
+        const small = clefNear(glyphs[s.index]?.[occ]?.clefs, onset, bbox)
+        setClef(s, ev, small)
+        const b = small ? bbox(small) : null
+        x = Math.min(x, b ? b.x : onset)
+        end = Math.max(end, b ? bboxRight(b) : onset)
+      }
+      if (Number.isFinite(x)) emit(occ, x, end)
+      continue
+    }
     const x = input.occX[occ] ?? 0
     let end = x
     for (const s of staves) {
       const st = state[s.index]!
-      const clefKey = clefKeyAt(s.index, occ)
-      if (clefKey) {
-        const ev = input.clefs.find((c) => c.staff === s.index && c.occ === occ && c.key === clefKey)!
-        const full = fullClefs.get(clefKey)
+      const ev = clefAtBar(s.index, occ)
+      if (ev) {
         const small = nearestClef(glyphs[s.index], occ, x, bbox)
-        if (full) {
-          st.clef = { ...piece(full.el, full.staff), pivotY: full.staff.top }
-        } else if (small) {
-          st.clef = piece(small, s, SMALL_CLEF_SCALE, clefLineY(s, ev.clef.line))
-        }
+        setClef(s, ev, small)
         if (small) end = Math.max(end, bboxRight(bbox(small)))
       }
       const keyEv = input.keys.find((k) => k.occ === occ)
@@ -142,7 +185,24 @@ export function buildContexts(input: ContextInput): { contexts: ContextState[]; 
   return { contexts, changes }
 }
 
+type ClefInput = RenderInput['clefs'][number]
+
 const bboxRight = (b: Box): number => b.x + b.w
+
+/** The clef glyph of a bar drawn nearest an onset x (a mid-bar change clef sits just before its note). */
+function clefNear(clefs: readonly Element[] | undefined, x: number, bbox: (el: Element) => Box): Element | undefined {
+  let best: Element | undefined
+  let bestD = Infinity
+  for (const el of clefs ?? []) {
+    const b = bbox(el)
+    const d = x < b.x ? b.x - x : x > b.x + b.w ? x - (b.x + b.w) : 0
+    if (d < bestD) {
+      bestD = d
+      best = el
+    }
+  }
+  return bestD < 80 ? best : undefined
+}
 
 /** The change clef drawn nearest the barline before `occ` (end of the previous measure or start of this one). */
 function nearestClef(

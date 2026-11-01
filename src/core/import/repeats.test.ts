@@ -64,6 +64,35 @@ describe('repeat unfolding (spec: Unfold written repeats; DECISIONS M5)', () => 
     ).toBe('1 2[1] 3[1] 1p2 4[2] 5[2] 6')
   })
 
+  it('second ending that opens a new repeated section', () => {
+    expect(
+      order(
+        bars(
+          { fwd: true },
+          { start: [1], stop: true, back: true },
+          { fwd: true, start: [2], stop: true },
+          { back: true },
+          {},
+        ),
+      ),
+    ).toBe('1 2[1] 1p2 3[2] 4 3p2[2] 4p2 5')
+  })
+
+  it('second ending that opens a repeated section with its own endings', () => {
+    expect(
+      order(
+        bars(
+          { fwd: true },
+          { start: [1], stop: true, back: true },
+          { fwd: true, start: [2], stop: true },
+          { start: [1], stop: true, back: true },
+          { start: [2], stop: true },
+          {},
+        ),
+      ),
+    ).toBe('1 2[1] 1p2 3[2] 4[1] 3p2[2] 5[2] 6')
+  })
+
   it('starts a new section after a finished repeat', () => {
     expect(order(bars({ back: true }, { back: true }))).toBe('1 1p2 2 2p2')
   })

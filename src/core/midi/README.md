@@ -40,8 +40,10 @@ Excluded from the worker tsconfig.
   messages), proposes the one with the largest swing but prefers CC 66 when usable, sets the
   threshold at the midpoint of the observed range, and infers inversion from a baseline, the
   first message of an on/off switch, or the first movement of a continuous pedal. The trigger
-  uses a hysteresis band (≤ 8, from the observed range) so a held, wobbling pedal never
-  retriggers.
+  uses a hysteresis band (≤ 8, from the observed range, clamped to the room between the
+  threshold and the observed extremes) so a held, wobbling pedal never retriggers and a manual
+  threshold near either end still fires and re-arms. The learner's baseline is a snapshot of the
+  controller values taken when learning starts (the live value already holds the new message).
 - **Echo test.** Three probe notes (C♯4, F♯4, A♯4 at velocities 37/83/59) on the tested
   channel. Two returned probe pitches, or one exact echo (pitch + channel + velocity), mean
   `echo-detected`; one returned pitch at another velocity is `inconclusive` (could be a human

@@ -9,7 +9,7 @@ import { useState } from 'preact/hooks'
 import { settings, updateSettings } from '../../app/state'
 import { Segmented, Slider, Toggle } from '../../ui/controls'
 import { Group, Help, Setting } from './parts'
-import { parsePositive } from './numbers'
+import { MIN_HINT_LIFETIME_SECONDS, parsePositive } from './numbers'
 import styles from './settings.module.css'
 
 type ThresholdChoice = '1' | '2' | '3' | 'custom' | 'off'
@@ -36,6 +36,7 @@ function CustomNumber({
   unit,
   initial,
   integer,
+  min,
   max,
   what,
   onValid,
@@ -44,6 +45,7 @@ function CustomNumber({
   unit: string
   initial: number | null
   integer: boolean
+  min?: number
   max: number
   what: string
   onValid: (value: number) => void
@@ -64,7 +66,7 @@ function CustomNumber({
           onInput={(event) => {
             const next = (event.currentTarget as HTMLInputElement).value
             setText(next)
-            const result = parsePositive(next, { integer, max, what })
+            const result = parsePositive(next, { integer, ...(min !== undefined ? { min } : {}), max, what })
             if (result.ok) {
               setError(null)
               onValid(result.value)
@@ -158,6 +160,7 @@ export function HintsSection() {
               unit="seconds"
               initial={typeof hints.lifetime === 'number' ? hints.lifetime : null}
               integer={false}
+              min={MIN_HINT_LIFETIME_SECONDS}
               max={3600}
               what="a number of seconds"
               onValid={(seconds) => updateSettings({ hints: { lifetime: seconds } })}

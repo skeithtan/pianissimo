@@ -12,7 +12,8 @@
  *   note-offs for app-owned notes, release of app-owned pedals — on the app channel only.
  *   Never All Sound Off, never other channels, never Local Control or program changes.
  *   Without `clear()`, releases are timestamped after the last queued attack of that pitch so
- *   an already queued attack cannot outlive them.
+ *   an already queued attack cannot outlive them (deferred releases included). After `clear()`
+ *   nothing is queued any more, so those attack times are forgotten.
  * - `stopSound`: forced cleanup plus All Notes Off (CC 123) on the app channel only.
  * - Disconnect: sends throw `OutputLostError` (the transport interrupts); `reconnect` releases
  *   whatever the app still owned when the link dropped.
@@ -132,6 +133,7 @@ export class MidiOutputBackend implements OutputBackend {
   cleanup(now: number): void {
     if (this.lost) return
     const cleared = this.tryClear()
+    if (cleared) this.forgetQueuedAttacks(now)
     for (let n = 0; n < 128; n++) {
       const queuedOff = cleared && this.lastOff[n]! > now
       if (this.count[n] === 0 && !queuedOff) continue
@@ -148,6 +150,7 @@ export class MidiOutputBackend implements OutputBackend {
   stopSound(now: number): void {
     if (this.lost) return
     const cleared = this.tryClear()
+    if (cleared) this.forgetQueuedAttacks(now)
     for (let n = 0; n < 128; n++) {
       if (this.count[n] === 0 && this.deferred[n] === 0 && !(cleared && this.lastOff[n]! > now)) continue
       this.count[n] = 0
@@ -206,9 +209,16 @@ export class MidiOutputBackend implements OutputBackend {
 
   private flushDeferred(note: number): void {
     if (!this.deferred[note] || this.count[note]! > 0 || this.humanHolds(note)) return
-    this.deferred[note] = 0
+    // While the output is lost the flag stays: `reconnect()` sends this release.
     if (this.lost) return
-    this.sendOff(note, this.clock())
+    this.deferred[note] = 0
+    // Never before an attack of this pitch already queued with the lookahead (no `clear()`).
+    this.sendOff(note, Math.max(this.clock(), this.lastOn[note]! + 1))
+  }
+
+  /** `clear()` canceled every attack queued after `now`. */
+  private forgetQueuedAttacks(now: number): void {
+    for (let n = 0; n < 128; n++) if (this.lastOn[n]! > now) this.lastOn[n] = now
   }
 
   private sendOff(note: number, time: number): void {

@@ -1173,3 +1173,143 @@ describe('StripView teacher corrections', () => {
     expect(single!.querySelector('.pn-corr-link')).toBeNull()
   })
 })
+
+describe('a notehead copied into a neighboring segment', () => {
+  /** Note 8 (bar 5, segment 1) also drawn in segment 0, as PF6 copies a measure reaching into it. */
+  const withCopy = () => {
+    const layout = testLayout(40)
+    const s0 = layout.segments[0]!
+    const h = layout.notes[8]!.head
+    const copy = `<g class="vf-stavenote" data-h="R"><g class="vf-notehead" data-n="8"><path d="M${h.x} ${h.y}h12v10h-12z"></path></g></g>`
+    ;(s0 as { svg: string }).svg = s0.svg.replace('</svg>', `${copy}</svg>`)
+    return layout
+  }
+
+  it('keeps the owner halo when the neighbor holding a copy detaches', () => {
+    const v = new StripView(host, withCopy(), {})
+    views.push(v)
+    v.setCursor(4, { smooth: false })
+    v.flushNow()
+    v.setTargets([8])
+    v.flushNow()
+    v.setCursor(10.2, { smooth: false })
+    v.flushNow()
+    expect(host.querySelector('.pn-seg[data-segment="0"]')).toBeNull()
+    expect(host.querySelector('.pn-seg[data-segment="1"] .pn-halo')).not.toBeNull()
+  })
+
+  it('draws the halo in the owner segment when the neighbor attaches first', () => {
+    const v = new StripView(host, withCopy(), {})
+    views.push(v)
+    v.setTargets([8])
+    v.flushNow()
+    expect(host.querySelector('.pn-seg[data-segment="0"] .pn-halo')).toBeNull()
+    expect(host.querySelector('.pn-seg[data-segment="1"] .pn-halo')).not.toBeNull()
+    expect(host.querySelectorAll('.pn-halo')).toHaveLength(1)
+  })
+
+  it('colors the copied notehead too, and clears it', () => {
+    const v = new StripView(host, withCopy(), {})
+    views.push(v)
+    v.flushNow()
+    v.setTargets([8])
+    v.flushNow()
+    const heads = () => [...host.querySelectorAll('[data-n="8"]')]
+    expect(heads()).toHaveLength(2)
+    expect(heads().every((h) => h.classList.contains('pn-target'))).toBe(true)
+    v.setTargets([])
+    v.flushNow()
+    expect(heads().some((h) => h.classList.contains('pn-target'))).toBe(false)
+    expect(host.querySelector('.pn-halo')).toBeNull()
+  })
+
+  it('keeps the target halo after browsing ahead and returning', () => {
+    const v = new StripView(host, withCopy(), {})
+    views.push(v)
+    v.setBrowseEnabled(true)
+    v.setCursor(4, { smooth: false })
+    v.flushNow()
+    v.setTargets([8])
+    v.flushNow()
+    const root = host.querySelector('.pn-strip')!
+    const p = (t: string, x: number) =>
+      root.dispatchEvent(new PointerEvent(t, { pointerId: 3, clientX: x, clientY: 150, bubbles: true }))
+    p('pointerdown', 800)
+    p('pointermove', 600)
+    p('pointermove', -700)
+    p('pointerup', -700)
+    v.flushNow()
+    v.returnToCurrent()
+    v.flushNow()
+    expect(host.querySelector('.pn-seg[data-segment="1"] .pn-halo')).not.toBeNull()
+  })
+})
+
+describe('StripView zoom preference', () => {
+  it('counter-scales loop controls at the initial zoom', () => {
+    const { v } = view(40, { initialZoom: 1.5 })
+    expect(v.zoom()).toBe(1.5)
+    expect(host.querySelector<HTMLElement>('.pn-strip')!.style.getPropertyValue('--pn-inv-zoom')).toBe(String(1 / 1.5))
+  })
+
+  it('does not report a fit clamp as the user zoom, and restores it when there is room', () => {
+    const zooms: number[] = []
+    let observe: (() => void) | null = null
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          observe = cb
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    const { v } = view(40, { initialZoom: 2, onZoomChange: (z) => zooms.push(z) })
+    expect(zooms).toEqual([])
+    expect(v.zoom()).toBeCloseTo(300 / (240 - 100 + 56))
+    const rect = host.getBoundingClientRect()
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({ ...rect, height: 600, bottom: 600 })
+    observe!()
+    expect(v.zoom()).toBe(2)
+    expect(zooms).toEqual([])
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('StripView loop handle drag', () => {
+  it('does not resurrect a loop cleared while a handle is held', () => {
+    const changes: unknown[] = []
+    const { v, layout } = view(40, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 2, toOcc: 4 })
+    v.flushNow()
+    const [, end] = [...host.querySelectorAll('.pn-handle')] as HTMLElement[]
+    const p = (t: string, x: number) =>
+      end!.dispatchEvent(new PointerEvent(t, { pointerId: 7, clientX: x, clientY: 150, bubbles: true }))
+    p('pointerdown', layout.occurrences[4]!.x1 + 210)
+    p('pointermove', layout.occurrences[6]!.x1 + 210)
+    v.setLoop(null)
+    v.setLoopEditable(false)
+    p('pointerup', layout.occurrences[6]!.x1 + 210)
+    v.flushNow()
+    expect(changes).toEqual([])
+  })
+
+  it('does not commit a drag when the loop is locked mid-drag', () => {
+    const changes: unknown[] = []
+    const { v, layout } = view(40, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 2, toOcc: 4 })
+    v.flushNow()
+    const [, end] = [...host.querySelectorAll('.pn-handle')] as HTMLElement[]
+    const p = (t: string, x: number) =>
+      end!.dispatchEvent(new PointerEvent(t, { pointerId: 7, clientX: x, clientY: 150, bubbles: true }))
+    p('pointerdown', layout.occurrences[4]!.x1 + 210)
+    p('pointermove', layout.occurrences[6]!.x1 + 210)
+    v.setLoopEditable(false)
+    v.setLoopEditable(true)
+    p('pointerup', layout.occurrences[6]!.x1 + 210)
+    v.flushNow()
+    expect(changes).toEqual([])
+    expect(end!.classList.contains('pn-grab')).toBe(false)
+  })
+})

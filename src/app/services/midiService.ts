@@ -328,8 +328,12 @@ export class MidiService {
     if (!adapter) return null
     const live = kind === 'input' ? adapter.selectedInput : adapter.selectedOutput
     if (live) return live
+    // Keep naming the selection only while its port is really lost (unplugged): after an explicit
+    // "No output" (or "No input") the adapter has no selection and nothing is remembered (C7).
     const sel = this.state[kind]
-    return sel ? { id: sel.id, name: sel.name, manufacturer: '', type: kind, state: 'disconnected' } : null
+    return sel && this.lostFlags[kind]
+      ? { id: sel.id, name: sel.name, manufacturer: '', type: kind, state: 'disconnected' }
+      : null
   }
 
   /** Store the current selection in settings (verification cleared when the output changed). */

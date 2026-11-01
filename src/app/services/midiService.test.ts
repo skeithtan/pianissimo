@@ -109,6 +109,28 @@ describe('MidiService: lazy adapter and access (spec "Delivery and device compat
 })
 
 describe('MidiService: route memory', () => {
+  it('remembers "No output" and does not bring the old output back on the next port change (C7)', async () => {
+    const h = harness()
+    await h.service.connect()
+    h.service.selectInput('in-1')
+    h.service.selectOutput('out-1')
+    h.service.selectOutput(null)
+    expect(h.route).toMatchObject({ inputId: 'in-1', outputId: null, outputName: null })
+    expect(h.service.snapshot.output).toBeNull()
+    h.access.addOutput(new FakeOutput('out-2', 'Other'))
+    expect(h.service.snapshot.output).toBeNull()
+    expect(h.service.adapter.selectedOutput).toBeNull()
+  })
+
+  it('keeps naming a lost output when another setting changes while it is unplugged', async () => {
+    const h = harness({ route: { outputId: 'out-1', outputName: 'Digital Piano' } })
+    await h.service.connect()
+    h.access.setState(h.pianoOut, 'disconnected')
+    h.access.outputs.delete('out-1') // gone from the browser's list
+    h.service.selectInput('in-1')
+    expect(h.route).toMatchObject({ inputId: 'in-1', outputId: 'out-1', outputName: 'Digital Piano' })
+  })
+
   it('remembers chosen ports and channel; a new output or channel clears verification', async () => {
     const h = harness()
     await h.service.connect()

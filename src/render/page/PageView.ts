@@ -22,15 +22,14 @@
 import type { Hand } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import { toNumber } from '../../core/music/rational'
-import { loadLabelFont } from '../labels/metrics'
+import { canvasMeasurer, estimateMeasurer, loadLabelFont, type TextMeasurer } from '../labels/metrics'
 import {
   CORRECTION_LEAVE_MS,
   CORRECTION_STAGGER_MS,
   buildCorrection,
-  correctionShape,
   correctionsKey,
+  layoutCorrections,
   type CorrectionMark,
-  type CorrectionShape,
 } from '../shared/corrections'
 import { clampRange, sameRange, tapSelect, type LoopRange } from '../strip/loop'
 import { occAtPosition } from '../strip/scroll'
@@ -182,6 +181,7 @@ export class PageView {
   private corrKey = ''
   private pendingCorrections: readonly CorrectionMark[] | null = null
   private corrLeaveTimer: ReturnType<typeof setTimeout> | null = null
+  private corrMeasurer: TextMeasurer | null = null
 
   private loop: LoopRange | null = null
   private loopShown: { r: LoopRange | null; show: boolean; scale: number } = { r: null, show: false, scale: NaN }
@@ -471,6 +471,8 @@ export class PageView {
   setLoop(range: LoopRange | null): void {
     const r = range ? clampRange(range, this.layout.occurrences.length) : null
     if (sameRange(r, this.loop)) return
+    // A handle held meanwhile was editing the old loop: its drag ends without committing.
+    this.endHandleDrag()
     this.loop = r
     this.schedule()
   }
@@ -495,6 +497,7 @@ export class PageView {
   setLoopEditable(editable: boolean): void {
     this.loopEditable = editable
     this.root.classList.toggle('pn-loop-locked', !editable)
+    if (!editable) this.endHandleDrag()
     this.schedule()
   }
 
@@ -1086,12 +1089,10 @@ export class PageView {
         for (const el of [...this.corrLayer.querySelectorAll('.pn-corr-leave')]) el.remove()
       }, CORRECTION_LEAVE_MS)
     }
-    const shapes = marks
-      .map((m) => correctionShape(this.layout, m))
-      .filter((s): s is CorrectionShape => s !== null)
-      .sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)
     const doc = this.root.ownerDocument
-    shapes.forEach((shape, i) => {
+    const measurer = (this.corrMeasurer ??= canvasMeasurer(doc) ?? estimateMeasurer)
+    // Rings, labels in a band beyond each system's staves, links and "Ped.": the strip's U39 rules.
+    layoutCorrections(this.layout, marks, measurer).forEach((shape, i) => {
       const delay = !this.reducedMotion && i > 0 ? i * CORRECTION_STAGGER_MS : 0
       this.corrLayer.append(buildCorrection(doc, shape, this.layout.top, delay))
     })
@@ -1149,6 +1150,7 @@ export class PageView {
     this.on(this.clearBtn, 'click', (e) => {
       e.stopPropagation()
       if (!this.loopEditable) return
+      this.endHandleDrag()
       this.loop = null
       this.schedule()
       this.opts.onLoopChange?.(null)
@@ -1406,11 +1408,20 @@ export class PageView {
     ;(e.currentTarget as HTMLElement).classList.remove('pn-grab')
     if (!d) return
     e.stopPropagation()
-    this.handleDrag = null
-    if (!sameRange(d.range, this.loop)) {
+    this.endHandleDrag()
+    if (this.loop && this.loopEditable && !sameRange(d.range, this.loop)) {
       this.loop = d.range
       this.opts.onLoopChange?.(d.range)
     }
+    this.schedule()
+  }
+
+  /** Ends a handle drag without committing its range (the caller commits it on release). */
+  private endHandleDrag(): void {
+    if (!this.handleDrag) return
+    this.handleDrag = null
+    this.startHandle.classList.remove('pn-grab')
+    this.endHandle.classList.remove('pn-grab')
     this.schedule()
   }
 
