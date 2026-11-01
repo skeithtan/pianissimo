@@ -631,6 +631,25 @@ describe('StripView continuous motion and cursor action', () => {
     expect(host.querySelector('.pn-cursor')!.classList.contains('pn-action-on')).toBe(false)
   })
 
+  it('a tap while browsing seeks to the tapped bar and ends browsing', () => {
+    const seeks: number[] = []
+    const browse: boolean[] = []
+    const { v } = view(40, { onSeekRequest: (occ) => seeks.push(occ), onBrowse: (b) => browse.push(b) })
+    const root = host.querySelector('.pn-strip')!
+    v.setBrowseEnabled(true)
+    root.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, clientX: 600, clientY: 150, bubbles: true }))
+    root.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, clientX: 300, clientY: 150, bubbles: true }))
+    root.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2, clientX: 300, clientY: 150, bubbles: true }))
+    v.flushNow()
+    expect(browse).toEqual([true])
+    // Content at -90 px: screen x 700 is layout x 790, bar 3.
+    root.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 3, clientX: 700, clientY: 150, bubbles: true }))
+    root.dispatchEvent(new PointerEvent('pointerup', { pointerId: 3, clientX: 700, clientY: 150, bubbles: true }))
+    expect(seeks).toEqual([3])
+    expect(browse).toEqual([true, false])
+    expect(root.classList.contains('pn-browsing')).toBe(false)
+  })
+
   it('while browsing, the cursor action names the bar under the fixed cursor line and ends browsing', () => {
     const presses: (number | undefined)[] = []
     const browse: boolean[] = []

@@ -115,6 +115,63 @@ test.describe('note-level practice', () => {
     await expect(strip).not.toHaveClass(/pn-browsing/)
   })
 
+  for (const browsed of [false, true]) {
+    test(`a tap on the overview brings the tapped bar under the cursor line${browsed ? ' after browsing' : ''}`, async ({
+      page,
+    }) => {
+      const strip = page.locator('.pn-strip')
+      const box = (await strip.boundingBox())!
+      const lineX = box.x + box.width / 3
+      const built = await importFixture('two-hands.musicxml')
+      const bar2 = built.package.model.notes.findIndex((n) => n.occ === 1)
+      expect(bar2).toBeGreaterThanOrEqual(0)
+      if (browsed) {
+        // Browse past bar 2's first note, so the music under the line is not where the tap seeks.
+        const x2 = await headX(page, bar2)
+        const y = box.y + box.height / 2
+        const from = box.x + box.width * 0.85
+        await page.mouse.move(from, y)
+        await page.mouse.down()
+        await page.mouse.move(from - (x2 - lineX) - 150, y, { steps: 10 })
+        await page.mouse.up()
+        await expect(strip).toHaveClass(/pn-browsing/)
+        expect(Math.abs((await headX(page, bar2)) - lineX)).toBeGreaterThan(40)
+      }
+      // Tap near the end of the overview: bar 2 of the two-bar piece.
+      const overview = page.getByRole('slider', { name: 'Piece overview' })
+      const ob = (await overview.boundingBox())!
+      await page.mouse.click(ob.x + ob.width * 0.9, ob.y + ob.height / 2)
+      await expect(overview).toHaveAttribute('aria-valuetext', /^Bar 2 of 2/)
+      // The cursor line shows the new position: bar 2's first note sits under it.
+      await expect.poll(async () => Math.abs((await headX(page, bar2)) - lineX)).toBeLessThan(4)
+      await expect(strip).not.toHaveClass(/pn-browsing/)
+    })
+  }
+
+  test('after browsing, a tap on a bar in the strip brings it under the cursor line', async ({ page }) => {
+    const strip = page.locator('.pn-strip')
+    const box = (await strip.boundingBox())!
+    const lineX = box.x + box.width / 3
+    const built = await importFixture('two-hands.musicxml')
+    const bar2 = built.package.model.notes.findIndex((n) => n.occ === 1)
+    expect(bar2).toBeGreaterThanOrEqual(0)
+    // Browse past bar 2's first note: it now sits left of the cursor line.
+    const x2 = await headX(page, bar2)
+    const y = box.y + box.height / 2
+    const from = box.x + box.width * 0.85
+    await page.mouse.move(from, y)
+    await page.mouse.down()
+    await page.mouse.move(from - (x2 - lineX) - 150, y, { steps: 10 })
+    await page.mouse.up()
+    await expect(strip).toHaveClass(/pn-browsing/)
+    const browsedX = await headX(page, bar2)
+    expect(lineX - browsedX).toBeGreaterThan(40)
+    // Tap bar 2 just right of its first note (on the staff, not the cursor's grip).
+    await page.mouse.click(browsedX + 12, y)
+    await expect(strip).not.toHaveClass(/pn-browsing/)
+    await expect.poll(async () => Math.abs((await headX(page, bar2)) - lineX)).toBeLessThan(4)
+  })
+
   test('a loop handle dragged into a bar makes a note-level loop that is scored and repeats', async ({
     page,
     browserName,

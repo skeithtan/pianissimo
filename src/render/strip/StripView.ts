@@ -1675,7 +1675,11 @@ export class StripView {
       if (res.done) this.setLoopSelectMode('off')
       return
     }
+    // A tap is a seek the learner chose, often on a bar found by browsing: browsing ends so the
+    // fixed cursor line shows the new position (as in the page view, U40). Seek first: the
+    // session sets the new cursor in its frame, before this view's, so the music moves once.
     this.opts.onSeekRequest?.(occ)
+    this.returnToCurrent()
   }
 
   private wheel(e: WheelEvent): void {

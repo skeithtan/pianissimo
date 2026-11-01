@@ -331,7 +331,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         </div>
       </header>
 
-      <OverviewBar session={session} model={model} range={ui.range} />
+      <OverviewBar session={session} model={model} range={ui.range} view={stripRef} />
 
       <div
         class={styles.stage}

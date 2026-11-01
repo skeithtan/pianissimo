@@ -13,21 +13,25 @@ import { KeyboardGuide } from '../../render/keyboard'
 import { useFadePresence } from '../../ui/fade'
 import { overviewMeasures } from '../../ui/overviewMath'
 import { ScoreOverview, type OverviewPositionSource } from '../../ui/ScoreOverview'
+import type { StripHandle } from './env'
 import { useStore } from './useStore'
 import styles from './practice.module.css'
 
 /**
  * The whole-piece overview: its own full-width row with nothing else in it (U11); the loop shows
  * only in Repeat mode. It never recedes (U13): the learner keeps their place while playing.
+ * A position chosen on it ends browsing in the score `view`, so the cursor line shows it (U14).
  */
 export function OverviewBar({
   session,
   model,
   range,
+  view,
 }: {
   session: PracticeSession
   model: ScoreModel
   range: PassageRange | null
+  view: { readonly current: StripHandle | null }
 }) {
   const measures = useMemo(() => overviewMeasures(model), [model])
   // The session publishes progress every frame while playing: the overview follows it without
@@ -45,7 +49,12 @@ export function OverviewBar({
         measures={measures}
         follow={follow}
         loop={range}
-        onScrub={(occ) => session.seek(occ)}
+        onScrub={(occ) => {
+          // Seek first: the session sets the new cursor in its frame, which runs before the view's,
+          // so the view leaves the browsed place in one motion straight to the new position.
+          session.seek(occ)
+          view.current?.returnToCurrent()
+        }}
         onLoopChange={(next) => session.setSelection({ range: next })}
         describe={(occ, count) => `Bar ${barLabel(model, occ)} of ${count}`}
       />

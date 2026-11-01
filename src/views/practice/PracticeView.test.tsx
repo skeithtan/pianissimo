@@ -28,8 +28,12 @@ class TestStrip extends FakeStrip implements StripHandle {
   occAt(): number {
     return this.browsedOcc
   }
+  returned = 0
   setZoom(): void {}
-  returnToCurrent(): void {}
+  returnToCurrent(): void {
+    this.returned++
+    this.browsing = false
+  }
   destroy(): void {
     this.destroyed = true
   }
@@ -348,6 +352,24 @@ describe('PracticeView', () => {
     expect(byLabel(panel, 'Loop start')?.textContent).toContain('Bar 2')
     expect(byLabel(panel, 'Loop end')?.textContent).toContain('Bar 2')
     expect(strip.loop).toEqual({ fromOcc: 1, toOcc: 1 })
+  })
+
+  it('a position chosen on the overview ends browsing, so the cursor line shows it (U14)', async () => {
+    const r = await rig()
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    const strip = r.strips.at(-1)!
+    strip.browsing = true
+    const overview = $(view.container, '[role="slider"][aria-label="Piece overview"]')!
+    act(() => {
+      overview.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    await settle(r)
+    expect(strip.returned).toBe(1)
+    expect(strip.isBrowsing()).toBe(false)
+    expect(overview.getAttribute('aria-valuetext')).toMatch(/^Bar 2 of 2/)
+    expect(strip.cursor).toBeGreaterThanOrEqual(1)
   })
 
   it('has no passage bar; Settings is in the header, Speed and Labels in the footer (U12)', async () => {
