@@ -58,7 +58,7 @@ function scanEndings(barlines: readonly RawBarlines[], numbers: readonly string[
         nums = [1]
         diag.warn(
           'ending-number-missing',
-          `The ending in bar ${numbers[i] ?? ''} has no number; it is treated as ending 1.`,
+          `The ending in bar ${numbers[i] ?? ''} has no number. It is treated as ending 1.`,
           {
             measure: numbers[i] ?? '',
           },
@@ -124,7 +124,7 @@ export function unfoldRepeats(
     const first = endings.find((e) => e.group === g)
     diag.warn(
       'ending-without-repeat',
-      `The endings starting in bar ${numbers[first?.start ?? 0] ?? ''} have no repeat sign; they are played in written order.`,
+      `The endings starting in bar ${numbers[first?.start ?? 0] ?? ''} have no repeat sign. They are played in written order.`,
       { measure: numbers[first?.start ?? 0] ?? '' },
     )
   }
@@ -190,7 +190,7 @@ export function unfoldRepeats(
       if (explicitOpen && sectionStart !== i) {
         diag.warn(
           'repeat-nested',
-          `Bar ${numbers[i] ?? ''} starts a repeat inside another repeat; the inner repeat is unfolded first.`,
+          `Bar ${numbers[i] ?? ''} starts a repeat inside another repeat. The inner repeat is unfolded first.`,
           {
             measure: numbers[i] ?? '',
           },
@@ -208,7 +208,7 @@ export function unfoldRepeats(
     if (out.length > maxOccurrences) {
       throw new ImportError(
         'score-too-large',
-        `Unfolding the repeats produces more than ${maxOccurrences} bars; the repeat structure may be malformed.`,
+        `Unfolding the repeats produces more than ${maxOccurrences} bars. The repeat structure may be malformed.`,
       )
     }
     if (b.backwardRepeat && !(passThrough() && repeatDone.has(i))) {

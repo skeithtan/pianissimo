@@ -1,5 +1,5 @@
 /**
- * Status over the preserved score: a piano disconnect, sound loading, resume offer,
+ * Status over the preserved score: a piano disconnect, sound loading,
  * interruptions, Ready/waiting, and the compact result after each attempt (spec "Repeating
  * passages": "After each attempt, show a compact result while preserving the score"). Rendered
  * into the stage's top overlay column, under the Repeat panel; never recedes (U13).
@@ -11,8 +11,6 @@
  */
 import { useRef } from 'preact/hooks'
 import type { AttemptSummary, SessionUi } from '../../app/session'
-import { barLabel } from '../../core/engine'
-import type { ScoreModel } from '../../core/model/score'
 import { Button } from '../../ui/controls'
 import { useFadePresence, type FadePhase } from '../../ui/fade'
 import { Icon } from '../../ui/icons'
@@ -24,10 +22,6 @@ export const RESULT_FADE_MS = 220
 
 export interface BannersProps {
   readonly ui: SessionUi
-  readonly model: ScoreModel
-  readonly resumedFrom: number | null
-  readonly onResumeDismiss: () => void
-  readonly onFromStart: () => void
   readonly onRestart: () => void
   readonly onResume: () => void
   readonly onResults: (attemptId: string) => void
@@ -57,16 +51,6 @@ export function Banners(p: BannersProps) {
         <div class={styles.banner} role="status">
           <Icon name="sound" size={20} />
           <span>{ui.soundStatus}</span>
-        </div>
-      ) : null}
-      {p.resumedFrom !== null && ui.activity === 'idle' ? (
-        <div class={styles.banner} role="status">
-          <Icon name="locate" size={20} />
-          <span>Continuing from bar {barLabel(p.model, p.resumedFrom)}.</span>
-          <Button onClick={p.onFromStart}>Start from the beginning</Button>
-          <button type="button" class={styles.bannerClose} aria-label="Keep this position" onClick={p.onResumeDismiss}>
-            <Icon name="close" size={18} />
-          </button>
         </div>
       ) : null}
       {interruption ? (

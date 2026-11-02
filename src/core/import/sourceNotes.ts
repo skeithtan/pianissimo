@@ -91,7 +91,7 @@ export function buildSourceNotes(skeleton: Skeleton, ottavas: OttavaLookup, diag
         if (list.length === 0) {
           diag.warn(
             'clef-missing',
-            `Staff ${s} of “${part.name}” states no clef; ${s === 1 ? 'treble' : 'bass'} is assumed.`,
+            `Staff ${s} of “${part.name}” states no clef, so ${s === 1 ? 'treble' : 'bass'} is assumed.`,
           )
         }
         list.unshift({ m: 0, at: ZERO, staff: s, clef: list[0]?.clef ?? defaultClef(s) })

@@ -111,7 +111,7 @@ function Assistance({ attempt, card }: { attempt: AttemptRecord; card: Scorecard
         <strong>Temporary hints</strong>
         <span>
           {hintsUsed
-            ? `${plural(a.hintRequests, 'hint request')} (button or pedal), ${plural(a.autoHints, 'automatic hint')}; ${plural(a.hintGroups, 'group')} revealed.`
+            ? `${plural(a.hintRequests, 'hint request')} (manual), ${plural(a.autoHints, 'automatic hint')}. ${plural(a.hintGroups, 'group')} revealed.`
             : 'No hints were requested or shown automatically.'}
         </span>
       </li>

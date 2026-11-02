@@ -118,7 +118,7 @@ function ReviewForm({
       <Notice tone="info">
         Changing which hand plays a voice{tempoEntry ? ', or your practice tempo,' : ''} starts a separate practice
         history and separate results for the new setting. Earlier results stay as they are and are never mixed with the
-        new ones; your resume position is kept.
+        new ones. Your resume position is kept.
       </Notice>
       <ImportSummaryView
         summary={summary}

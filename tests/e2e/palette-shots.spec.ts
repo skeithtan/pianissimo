@@ -42,7 +42,9 @@ test.describe('palette screenshots', () => {
       await expect(page.locator('dialog[open]')).toHaveCount(0)
 
       await page.getByRole('button', { name: /^MIDI status/ }).click()
-      await expect(page.locator('dialog[open]').getByRole('navigation', { name: 'Setup steps' })).toBeVisible()
+      await expect(
+        page.locator('dialog[open]').getByRole('heading', { name: 'Step 1: Your piano', exact: true }),
+      ).toBeVisible()
       await shot('connection-modal')
       await page.keyboard.press('Escape')
       await expect(page.locator('dialog[open]')).toHaveCount(0)

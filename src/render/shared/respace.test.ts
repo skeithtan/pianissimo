@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from 'vitest'
 import type { OccurrenceGeometry, PreparedLayout } from '../types'
-import { columnSlices, sliceCorner, wider } from './respace'
+import { columnSlices, sliceCorner, startRespace, wider } from './respace'
 
 /** A strip of bars of `width` px, onsets at quarters (0.25 whole notes). */
 function strip(multiplier: number, barWidth: number, bars = 2): PreparedLayout {
@@ -72,4 +73,64 @@ describe('respacing columns', () => {
     const c = sliceCorner(s, frame, s.bx, s.by)
     expect(c.x - (10 + s.x0 * 2)).toBeCloseTo((s.bx - s.ax) * 2)
   })
+
+  it.each(['finish', 'cancel'])(
+    'carries the score with playback and viewport fitting until %s, while its clip stays fixed',
+    async (completion) => {
+      const original = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
+      const cancel = vi.fn()
+      let progress = 0
+      let finish!: () => void
+      const finished = new Promise<void>((resolve) => (finish = resolve))
+      Object.defineProperty(Element.prototype, 'animate', {
+        configurable: true,
+        value: () => ({ cancel, finished, effect: { getComputedTiming: () => ({ progress }) } }),
+      })
+      const parent = document.createElement('div')
+      document.body.append(parent)
+      const note = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      const onDone = vi.fn()
+      const run = startRespace({
+        prev: { layout: tight, frame: { scale: 1, dx: 10, dy: 20 }, pieces: null },
+        next: { layout: roomy, frame: { scale: 1, dx: 10, dy: 20 } },
+        nextPieces: () => new Map([[0, [{ el: note, chain: [], x0: 80, x1: 92 }]]]),
+        segmentOf: { prev: () => 0, next: () => 0 },
+        parent,
+        width: 800,
+        height: 400,
+        easing: 'linear',
+        onDone,
+      })
+      try {
+        expect(run).not.toBeNull()
+        expect(run!.progress()).toBe(0)
+        progress = 0.35
+        expect(run!.progress()).toBe(0.35)
+        const clip = parent.querySelector<HTMLElement>('.pn-respace')!
+        const motion = parent.querySelector<HTMLElement>('.pn-respace-motion')!
+        // Playback moves left during the tween. Its end must meet the real score's new position.
+        run!.follow({ scale: 1, dx: -50, dy: 20 })
+        expect(motion.style.transform).toBe('translate3d(-60px, 0px, 0) scale(1)')
+        expect(clip.style.transform).toBe('')
+        // A viewport refit changes scale and centering at once. Every destination point still
+        // lands on the live score, not on the stale frame captured when the tween started.
+        run!.follow({ scale: 2, dx: -20, dy: 70 })
+        expect(motion.style.transform).toBe('translate3d(-40px, 30px, 0) scale(2)')
+        if (completion === 'finish') finish()
+        else run!.cancel()
+        await run!.finished
+        expect(run!.progress()).toBe(1)
+        expect(parent.childElementCount).toBe(0)
+        expect(onDone).toHaveBeenCalledOnce()
+        expect(cancel).toHaveBeenCalled()
+        run!.cancel()
+        expect(onDone).toHaveBeenCalledOnce()
+      } finally {
+        run?.cancel()
+        parent.remove()
+        if (original) Object.defineProperty(Element.prototype, 'animate', original)
+        else Reflect.deleteProperty(Element.prototype, 'animate')
+      }
+    },
+  )
 })

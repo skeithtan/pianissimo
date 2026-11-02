@@ -141,6 +141,7 @@
   background: var(--accent-fill);
 }
 .toggle:checked::after {
+  background: var(--accent-fg);
   transform: translateX(22px);
 }
 

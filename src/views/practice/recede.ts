@@ -1,9 +1,10 @@
 /**
- * While practice or Listen plays, the chrome (header, overview, footer tools, Repeat panel)
- * recedes so the notes are the focus (DECISIONS U13). It returns at once when playing stops
+ * While practice or Listen plays, the header and footer tools collapse out of view, while
+ * hand toggles and the Repeat panel recede (DECISIONS U13/U60). The overview and playback
+ * button stay visible. Chrome returns when playing stops
  * (pause, interruption, end), and for a few seconds after a pointer moves over or touches it,
- * or while keyboard focus is inside it. The view fades it with CSS (`data-recede` on the screen;
- * motion tokens, so reduced motion shortens the fade); feedback over the score never recedes.
+ * or while keyboard focus or an open tool dialog is inside it. CSS uses `data-recede` and
+ * motion tokens, shortening transitions with reduced motion. Score feedback never recedes.
  *
  * Timers only: nothing here runs on MIDI input.
  */
@@ -23,10 +24,10 @@ export interface RecedeZone {
   readonly onFocusOut: () => void
 }
 
-/** Focus reached by keyboard (a pressed button keeps focus too; that must not hold the chrome). */
-function keyboardFocus(target: EventTarget | null): boolean {
+/** Keyboard focus or an open tool dialog keeps the controls available while they are in use. */
+function holdsChromeFocus(target: EventTarget | null): boolean {
   try {
-    return target instanceof Element && target.matches(':focus-visible')
+    return target instanceof Element && (target.matches(':focus-visible') || !!target.closest('[role="dialog"]'))
   } catch {
     return false
   }
@@ -72,13 +73,24 @@ export function useRecede(active: boolean, timers: TimerApi): Recede {
     later(REVEAL_MS)
   }
 
+  useEffect(() => {
+    if (!active) return
+    // Safari does not focus a button on a pointer click, so Tab can arrive on the document
+    // rather than inside the screen. Reveal before keyboard navigation reaches hidden rows.
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Tab') reveal()
+    }
+    document.addEventListener('keydown', keydown, true)
+    return () => document.removeEventListener('keydown', keydown, true)
+  }, [active])
+
   return {
     receded,
     zone: {
       onPointerDown: reveal,
       onPointerMove: reveal,
       onFocusIn: (event) => {
-        if (!keyboardFocus(event.target)) return
+        if (!holdsChromeFocus(event.target)) return
         focused.current = true
         clear()
         setReceded(false)

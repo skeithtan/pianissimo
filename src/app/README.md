@@ -22,6 +22,12 @@ The shell the four main views plug into. Spec: "Main user journey", "Practice sc
 | `AppBar`, `NoticeArea`, `CapabilityBanner` | Shell chrome. `ConnectionChip` lives in `views/shared` so Practice can reuse it. |
 | `version.ts` | `APP_VERSION` from `package.json` (tree-shaken). |
 
+The non-practice app bar uses the Olive page surface, a compact lowercase wordmark, and the
+existing MIDI/Settings actions (U49). On narrow phones the music icon replaces the visible wordmark.
+
+App-authored notices and practice explanations use periods, commas, or conjunctions instead of
+semicolons. User-supplied piece and device names are unchanged.
+
 ## Routing (`routes.ts`, `router.ts`)
 
 Hash routes (static Pages host, no rewrites). The signals in `navigation.ts` stay the source of

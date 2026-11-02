@@ -3,12 +3,12 @@
 
 .page {
   width: 100%;
-  max-width: 1080px;
+  max-width: 1160px;
   margin: 0 auto;
-  padding: var(--space-5) var(--space-4) var(--space-7);
+  padding: var(--space-6) 40px var(--space-7);
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-6);
 }
 
 /* ---------------------------------------------------------------- header */
@@ -21,10 +21,12 @@
   gap: var(--space-4);
 }
 .hero h1 {
-  font-size: var(--text-2xl);
+  font-size: 3rem;
+  font-weight: 500;
+  letter-spacing: -0.06em;
 }
 .lede {
-  margin: var(--space-1) 0 0;
+  margin: var(--space-3) 0 0;
   color: var(--fg-muted);
   max-width: 60ch;
 }
@@ -105,15 +107,24 @@
   margin: 0;
   padding: 0;
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-5);
+  align-items: start;
 }
 
 .card {
-  border: 1px solid var(--border);
+  min-width: 0;
+  padding: var(--space-5);
   border-radius: var(--radius-l);
   background: var(--bg-elevated);
   overflow: hidden;
   animation: rise var(--dur-base) var(--ease-out) backwards;
+}
+.card:first-child {
+  grid-column: 1 / -1;
+  background: var(--bg-sunken);
+}
+.card:first-child .cardTitle {
+  font-size: var(--text-2xl);
 }
 @keyframes rise {
   from {
@@ -122,38 +133,38 @@
   }
 }
 .cardMain {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-3) var(--space-4);
-  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
+  gap: var(--space-5);
+  min-height: 96px;
 }
 .cardText {
-  flex: 1 1 260px;
   min-width: 0;
 }
 .cardTitle {
-  font-size: var(--text-l);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  letter-spacing: -0.045em;
   overflow-wrap: anywhere;
 }
 .composer {
-  margin: 2px 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--fg-muted);
+  font-size: var(--text-s);
 }
 .meta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-3);
-  margin: var(--space-2) 0 0;
+  margin: var(--space-4) 0 0;
   padding: 0;
   list-style: none;
-  font-size: var(--text-s);
+  font-size: var(--text-xs);
   color: var(--fg-muted);
 }
 .meta li {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  overflow-wrap: anywhere;
 }
 .cardActions {
   display: flex;
@@ -161,9 +172,14 @@
   align-items: center;
   gap: var(--space-2);
 }
+.practiceButton {
+  background: transparent;
+  color: var(--accent);
+  font-weight: 500;
+}
 
 .disclosure {
-  border-top: 1px solid var(--border);
+  margin-top: var(--space-2);
 }
 .disclosureButton {
   width: 100%;
@@ -171,11 +187,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0 var(--space-5);
+  padding: var(--space-2) 0;
   border: 0;
   background: transparent;
   text-align: left;
-  font-weight: 600;
+  border-radius: var(--radius-s);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
   cursor: pointer;
   touch-action: manipulation;
   transition: background var(--dur-fast) var(--ease-standard);
@@ -191,7 +210,7 @@
   transform: rotate(90deg);
 }
 .disclosureBody {
-  padding: 0 var(--space-5) var(--space-4);
+  padding-top: var(--space-3);
   display: grid;
   gap: var(--space-4);
   animation: fade-in var(--dur-base) var(--ease-out) backwards;
@@ -206,7 +225,13 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   padding-top: var(--space-3);
-  border-top: 1px dashed var(--border);
+  border-top: 1px solid var(--border);
+}
+
+@media (min-width: 900px) {
+  .list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* ---------------------------------------------------------------- suggestions (global-off note) */
@@ -546,19 +571,25 @@
 
 @media (max-width: 480px) {
   .page {
-    padding: var(--space-4) var(--space-3) var(--space-6);
+    padding: var(--space-5) var(--space-4) var(--space-6);
+    gap: var(--space-5);
+  }
+  .hero h1 {
+    font-size: 2.5rem;
+  }
+  .card {
+    padding: var(--space-5) var(--space-4) var(--space-4);
   }
   .cardMain {
-    padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+    min-height: 0;
   }
-  .disclosureButton,
-  .disclosureBody {
-    padding-left: var(--space-4);
-    padding-right: var(--space-4);
+  .card:first-child .cardTitle {
+    font-size: var(--text-xl);
   }
-  .heroActions,
-  .heroActions > * {
-    width: 100%;
+  .heroActions {
+    margin-top: var(--space-2);
   }
 }
 

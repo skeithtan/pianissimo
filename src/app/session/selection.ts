@@ -121,7 +121,7 @@ export function startPlan(timeline: Timeline, sel: Selection, ctx: StartContext)
     return {
       action,
       enabled: false,
-      reason: `${HAND_TEXT[sel.hands]} has no notes to play here. Choose other hands or bars; Listen still works.`,
+      reason: `${HAND_TEXT[sel.hands]} has no notes to play here. Choose other hands or bars. Listen still works.`,
     }
   }
   if (action === 'scored' && !timeline.scoredAllowed) {

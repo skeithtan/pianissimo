@@ -228,7 +228,7 @@ function TempoSection({
           {changes > 0
             ? `${changes} tempo change${changes === 1 ? '' : 's'} (quarter note ${formatBpm(t.minQuarterBpm ?? 0)}–${formatBpm(t.maxQuarterBpm ?? 0)} per minute).`
             : 'One tempo throughout.'}{' '}
-          You can practice at any speed; this is the reference tempo.
+          You can practice at any speed. This is the reference tempo.
         </p>
         {t.conflicts > 0 ? (
           <p class={styles.muted}>
@@ -236,7 +236,7 @@ function TempoSection({
               Review
             </span>{' '}
             {t.conflicts === 1 ? 'One place states' : `${t.conflicts} places state`} a playback tempo that disagrees
-            with the printed metronome mark; the printed mark is used (see the warnings below).
+            with the printed metronome mark. The printed mark is used (see the warnings below).
           </p>
         ) : null}
       </section>
@@ -259,7 +259,7 @@ function TempoSection({
       </div>
       <p class={styles.muted}>
         The score has no numerical tempo (a word such as “Andante” is not enough to time your playing). Enter the tempo
-        to practice at; you can still change the speed in Practice.
+        to practice at. You can still change the speed in Practice.
       </p>
       <div class={styles.tempoEntry}>
         <Segmented<BeatUnitChoice>
@@ -371,7 +371,7 @@ function ScoreChecks({ summary }: { summary: Summary }) {
         {summary.timingIssues.length ? (
           <>
             <p class={styles.muted}>
-              Fermatas, rit. and similar marks have no exact duration; timing is not scored across them.
+              Fermatas, rit. and similar marks have no exact duration, so timing is not scored across them.
             </p>
             <ul>
               {summary.timingIssues.map((t, i) => (
@@ -418,7 +418,7 @@ function ScoreChecks({ summary }: { summary: Summary }) {
         {r.unfolded ? (
           <>
             <p class={styles.muted}>
-              Repeats are played out in order; a repeated bar shows as, for example, “12 (pass 2)”.
+              Repeats are played out in order. A repeated bar shows as, for example, “12 (pass 2)”.
             </p>
             <ul>
               {r.repeatedBars.slice(0, 12).map((b) => (

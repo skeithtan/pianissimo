@@ -71,13 +71,13 @@ export function buildSkeleton(
     if (p.data.measures.length !== count) {
       diag.warn(
         'part-measure-mismatch',
-        `Part “${p.name}” has ${p.data.measures.length} bars but the selection has ${count}; missing bars are treated as empty.`,
+        `Part “${p.name}” has ${p.data.measures.length} bars but the selection has ${count}. Missing bars are treated as empty.`,
       )
     }
   }
   const times = new PosIndex(first ? first.data.times : [])
   if (count > 0 && times.items.length === 0) {
-    diag.warn('meter-missing', 'The score has no time signature; 4/4 is assumed for bar lengths.')
+    diag.warn('meter-missing', 'The score has no time signature. 4/4 is assumed for bar lengths.')
   }
 
   const measures: SourceMeasure[] = []
@@ -101,7 +101,7 @@ export function buildSkeleton(
       }
     }
     if (raw.some((r) => r !== undefined && r.number !== number)) {
-      diag.info('measure-number-mismatch', `Parts number bar ${m + 1} differently; “${number}” is shown.`, {
+      diag.info('measure-number-mismatch', `Parts number bar ${m + 1} differently. “${number}” is shown.`, {
         measure: number,
       })
     }
@@ -124,7 +124,7 @@ export function buildSkeleton(
     const bars = [...new Set(shortVoices)]
     diag.info(
       'voice-underfull',
-      `In ${bars.length === 1 ? 'bar' : 'bars'} ${bars.slice(0, 8).join(', ')}${bars.length > 8 ? ', …' : ''}, ${shortVoices.length === 1 ? 'a voice ends' : `${shortVoices.length} voices end`} before the bar does; the rest of the bar is silent in ${shortVoices.length === 1 ? 'that voice' : 'those voices'}.`,
+      `In ${bars.length === 1 ? 'bar' : 'bars'} ${bars.slice(0, 8).join(', ')}${bars.length > 8 ? ', …' : ''}, ${shortVoices.length === 1 ? 'a voice ends' : `${shortVoices.length} voices end`} before the bar does. The rest of the bar is silent in ${shortVoices.length === 1 ? 'that voice' : 'those voices'}.`,
     )
   }
   return { parts: selected, staves, measures, barlines, times }

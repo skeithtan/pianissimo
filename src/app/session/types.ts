@@ -62,6 +62,10 @@ export interface StripSink {
   setCorrections?(marks: readonly CorrectionMark[]): void
   visibleLabels(): number[]
   isBrowsing(): boolean
+  /** Onset under a browsed fixed cursor, or null when browsing does not move the cursor. */
+  browsedPosition?(): Rational | null
+  /** End browsing and follow the current cursor again. */
+  returnToCurrent?(): void
   /**
    * Applies the changes made so far in this animation frame now (the session calls it at the end
    * of its frame), so they show in this frame instead of the strip's own next frame.

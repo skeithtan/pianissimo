@@ -414,6 +414,7 @@ describe('Suggested practice (Library)', () => {
     const piece = await withSuggestion()
     const root = await open()
     await until(() => button(root, 'Practice this passage') !== undefined, 'suggestion')
+    expect(byText(root, 'Suggested practice', 'h2, h3, h4')).toBeNull()
     expect(root.textContent).toMatch(/Mistakes in bar 2 on 3 of your last 3 comparable passes/)
     expect(root.textContent).toContain('Both hands')
     expect(root.textContent).toContain('1× speed')

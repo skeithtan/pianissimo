@@ -201,7 +201,7 @@ function describeIssue(model: ScoreModel, issue: TimingIssue): string {
         : issue.kind === 'rubato'
           ? 'Rubato'
           : `Timing instruction "${issue.text}"`
-  return `${what} in bar ${barLabel(model, issue.occ)} has no exact duration; completion time is not compared.`
+  return `${what} in bar ${barLabel(model, issue.occ)} has no exact duration. Completion time is not compared.`
 }
 
 /**
@@ -442,7 +442,7 @@ export function buildTimeline(model: ScoreModel, options: TimelineOptions): Time
   if (groups.length === 0) {
     blockers.push({
       kind: 'no-required-onsets',
-      message: `The ${HAND_NAMES[hands]} part has no notes to play in ${bars}. Choose another hand or passage; Listen is still available.`,
+      message: `The ${HAND_NAMES[hands]} part has no notes to play in ${bars}. Choose another hand or passage. Listen is still available.`,
     })
   }
   if (!hasTempo(tempo)) {

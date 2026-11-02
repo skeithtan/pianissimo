@@ -13,6 +13,7 @@
  */
 import { round, roundBox, unionAll } from '../geom'
 import { layoutLabels, type LabelLayoutResult, type LabelUnitInput } from '../labels/layout'
+import { labelSpacingDemand } from '../labels/spacing'
 import {
   NUMBER_BOX_H,
   canvasMeasurer,
@@ -85,7 +86,7 @@ const PAGE_MARGIN_RIGHT = 2.5
 /** Padding around each system's content extent (layout px), as the strip pads its content. */
 const PAD = 6
 
-/** The page width a layout is engraved at (and keyed by) for these options. */
+/** The preferred page width (and cache-key width) for these options. */
 export function pageWidthOf(options: Pick<PrepareOptions, 'pageWidth'>): number {
   return Math.max(MIN_PAGE_WIDTH, Math.round(options.pageWidth ?? DEFAULT_PAGE_WIDTH))
 }
@@ -116,13 +117,11 @@ export async function preparePage(
   const measure = options.textMeasurer ?? canvasMeasurer(document) ?? estimateMeasurer
   const label = labelMetrics(options.labels.maxChars, fontPx, measure, LABEL_FONT_FAMILY)
   const segmentWidth = options.segmentWidth ?? DEFAULT_SEGMENT_WIDTH
-  // One engraving by default: OSMD justifies every system to the page width, so widening the
-  // spacing only moves bars to new lines (the reference piece went to one bar per line) without freeing
-  // room beside the notes; the few remaining callouts are the spec's linked callouts.
   const room = options.labels.room ?? 'all'
-  const maxIterations = room === 'hints' ? 1 : Math.max(1, options.maxIterations ?? 1)
+  const maxIterations = room === 'hints' ? 1 : Math.max(1, options.maxIterations ?? 3)
   const measureLabel = options.measureLabel ?? defaultMeasureLabel
-  const pageWidth = pageWidthOf(options)
+  const requestedWidth = pageWidthOf(options)
+  let pageWidth = requestedWidth
 
   progress('loading', 0)
   const tl = now()
@@ -179,9 +178,40 @@ export async function preparePage(
       labelMs += now() - tlab
       failuresPerIteration.push(result.failures.length)
 
+      // A dense bar cannot wrap halfway through. Increasing voice spacing alone makes OSMD
+      // squeeze it back to the same page width, leaving labels in stacks with long leaders.
+      // Grow the canvas as well, preserving onset alignment and full-size notation. The view
+      // allows horizontal browsing/following only when this exceeds the available viewport.
+      const unitsBySystem: LabelUnitInput[][] = ex.systems.map(() => [])
+      for (const unit of units) unitsBySystem[ex.systemOfOcc[unit.occ] ?? 0]!.push(unit)
+      const demands =
+        room === 'all'
+          ? unitsBySystem.map((systemUnits) =>
+              labelSpacingDemand({
+                units: systemUnits,
+                labelW: label.w,
+                labelH: label.h,
+                width: pageWidth,
+              }),
+            )
+          : []
+      const spacingFactor = Math.max(1, ...demands.map((d) => d.factor))
+      // First let whole bars wrap to another line. Only a bar already alone on its system
+      // justifies making the page wider, otherwise ordinary passages would overflow too.
+      const requiredWidth = Math.max(
+        pageWidth,
+        ...demands.map((d, i) => (ex.systems[i]!.occEnd - ex.systems[i]!.occStart === 1 ? d.width : pageWidth)),
+      )
+      const crowded = spacingFactor > 1 + 1 / pageWidth
       const tooMany = result.failures.length > Math.max(0, units.length * CALLOUT_TOLERANCE)
-      if (tooMany && iteration < maxIterations) {
-        const factor = Math.min(2, Math.max(1.15, result.spacingDemand))
+      if ((crowded || tooMany) && iteration < maxIterations) {
+        const factor = crowded
+          ? Math.min(3, 1 + (spacingFactor - 1) * 1.25)
+          : Math.min(2, Math.max(1.15, result.spacingDemand))
+        if (requiredWidth > pageWidth + 1) {
+          pageWidth = Math.ceil(Math.min(pageWidth * 3, pageWidth + (requiredWidth - pageWidth) * 1.25))
+          container.style.width = `${pageWidth}px`
+        }
         spacing = {
           voiceSpacingMultiplier: round(spacing.voiceSpacingMultiplier * factor, 3),
           voiceSpacingAddend: spacing.voiceSpacingAddend,
@@ -283,7 +313,7 @@ export async function preparePage(
           labelRoom: room,
           segmentWidth,
           mode: 'page',
-          pageWidth,
+          pageWidth: requestedWidth,
         }),
         scoreVersionId: input.scoreVersionId,
         renderer: { name: renderer.name, version: renderer.version },

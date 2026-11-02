@@ -276,6 +276,141 @@ describe('PageView', () => {
     expect(root.classList.contains('pn-instant')).toBe(true)
   })
 
+  it('hands off a spacing change from the visible position during a system-follow glide', () => {
+    const { v, layout, root } = view()
+    const sheet = root.querySelector<HTMLElement>('.pn-page-sheet')!
+    Object.defineProperty(sheet, 'animate', {
+      configurable: true,
+      value: () => ({ cancel: vi.fn(), effect: { getComputedTiming: () => ({ progress: 0.25 }) } }),
+    })
+    v.setCursor(9)
+    v.flushNow()
+    const targetY = scroller(root).scrollTop
+    expect(targetY).toBeGreaterThan(0)
+    const next = {
+      ...layout,
+      params: { ...layout.params, spacing: { ...layout.params.spacing, voiceSpacingMultiplier: 1.8 } },
+    }
+    const snapshot = v.respaceSnapshot(next)
+    expect(snapshot).not.toBeNull()
+    // scrollTop already contains the target, but only one quarter of that scroll is visible.
+    expect(snapshot!.frame.dy).toBe(PAGE_PAD_TOP - targetY * 0.25)
+  })
+
+  it('cancels a new view’s follow glide before anchoring a spacing handoff at the same scroll', () => {
+    const { v, layout, root } = view()
+    const cancel = vi.fn()
+    const sheet = root.querySelector<HTMLElement>('.pn-page-sheet')!
+    Object.defineProperty(sheet, 'animate', {
+      configurable: true,
+      value: () => ({ cancel, effect: { getComputedTiming: () => ({ progress: 0.25 }) } }),
+    })
+    v.setCursor(9)
+    v.flushNow()
+    const targetY = scroller(root).scrollTop
+    v.respaceFrom({
+      layout,
+      frame: { scale: 1, dx: GX, dy: PAGE_PAD_TOP - targetY },
+      pieces: new Map(),
+    })
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(scroller(root).scrollTop).toBe(targetY)
+    expect(v.respaceSnapshot(layout)!.frame.dy).toBe(PAGE_PAD_TOP - targetY)
+  })
+
+  it('carries the live cursor through the same spacing progress as the notation', () => {
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
+    let progress = 0
+    Object.defineProperty(Element.prototype, 'animate', {
+      configurable: true,
+      value: () => ({ cancel: vi.fn(), effect: { getComputedTiming: () => ({ progress }) } }),
+    })
+    try {
+      const { v, layout, root } = view()
+      const prev: PreparedLayout = {
+        ...layout,
+        params: { ...layout.params, spacing: { ...layout.params.spacing, voiceSpacingMultiplier: 1.8 } },
+        occurrences: layout.occurrences.map((g) => ({
+          ...g,
+          x0: g.x0 + 100,
+          x1: g.x1 + 100,
+          anchors: g.anchors.map(([p, x]) => [p, x + 100] as const),
+        })),
+        systems: layout.systems!.map((sys) => ({
+          ...sys,
+          staves: sys.staves.map((staff, i) => ({
+            ...staff,
+            top: staff.top + (i + 1) * 20,
+            bottom: staff.bottom + (i + 1) * 20,
+          })),
+        })),
+      }
+      const mark = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      v.setCursor(0.5, { smooth: false })
+      v.flushNow()
+      v.respaceFrom({
+        layout: prev,
+        frame: { scale: 1, dx: GX, dy: PAGE_PAD_TOP },
+        pieces: new Map([[0, [{ el: mark, chain: [], x0: 210, x1: 230 }]]]),
+      })
+      expect(root.querySelector('.pn-respace')).not.toBeNull()
+      expect(cursorXY(root)).toEqual([GX + 220, 0])
+      expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe('352px')
+      // Playback advances during the glide, so use its new position in both layouts.
+      progress = 0.5
+      v.setCursor(0.75, { smooth: false })
+      v.flushNow()
+      const actual = new PageGeometry(layout).cursorAt(0.75).x
+      expect(cursorXY(root)[0]).toBeCloseTo(GX + actual + 50, 1)
+      expect(cursorXY(root)[1]).toBe(-10)
+      expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe('342px')
+      progress = 1
+      v.flushNow()
+      expect(cursorXY(root)[0]).toBeCloseTo(GX + actual, 1)
+      expect(cursorXY(root)[1]).toBe(-20)
+      expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe('332px')
+    } finally {
+      if (original) Object.defineProperty(Element.prototype, 'animate', original)
+      else Reflect.deleteProperty(Element.prototype, 'animate')
+    }
+  })
+
+  it('keeps a spacing handoff anchored through the initial equal-size observer notification', () => {
+    let notify!: () => void
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          notify = callback
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    try {
+      const { v, layout, root } = view()
+      v.setCursor(9, { smooth: false })
+      v.flushNow()
+      v.respaceFrom({
+        layout,
+        frame: { scale: 1, dx: GX, dy: PAGE_PAD_TOP - 320 },
+        pieces: new Map(),
+      })
+      expect(scroller(root).scrollTop).toBe(320)
+      notify()
+      v.flushNow()
+      expect(scroller(root).scrollTop).toBe(320)
+      // A real viewport resize still requests the new follow position.
+      const rect = root.getBoundingClientRect()
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({ ...rect, height: 800 })
+      notify()
+      v.flushNow()
+      expect(scroller(root).scrollTop).not.toBe(320)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('does not follow while the learner browses, and returns on request', () => {
     const browse: boolean[] = []
     const { v, root } = view(24, { onBrowse: (b) => browse.push(b) })
@@ -286,6 +421,8 @@ describe('PageView', () => {
     v.flushNow()
     expect(v.isBrowsing()).toBe(true)
     expect(root.classList.contains('pn-browsing')).toBe(true)
+    // Scrolling a page never moves its notation-anchored cursor to a different note.
+    expect(v.browsedPosition()).toBeNull()
     v.setCursor(4)
     v.flushNow()
     expect(sc.scrollTop).toBe(1200)
@@ -293,6 +430,58 @@ describe('PageView', () => {
     v.flushNow()
     expect(browse).toEqual([true, false])
     expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 300 - VIEW_H / 4)
+  })
+
+  it('a keyboard seek after browsing restores following to the chosen system', () => {
+    const seeks: unknown[] = []
+    const { v, root } = view(24, { onCursorSeek: (p) => void seeks.push(p) })
+    v.setSnapPositions(Array.from({ length: 48 }, (_, i) => rat(i, 2)))
+    v.setCursorDraggable(true)
+    v.setBrowseEnabled(true)
+    v.setCursor(4)
+    v.flushNow()
+    const sc = scroller(root)
+    sc.scrollTop = 1200
+    sc.dispatchEvent(new Event('scroll'))
+    root
+      .querySelector('.pn-cursor-grip')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    v.flushNow()
+    expect(seeks).toEqual([rat(9, 2)])
+    expect(v.isBrowsing()).toBe(false)
+    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 300 - VIEW_H / 4)
+    v.setCursor(8, { smooth: false })
+    v.flushNow()
+    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 600 - VIEW_H / 4)
+  })
+
+  it.each([true, false])('a dragged playhead ends browsing only when the seek is accepted (%s)', (accepted) => {
+    const seeks: unknown[] = []
+    const { v, root } = view(24, {
+      onCursorSeek: (p) => {
+        seeks.push(p)
+        return accepted
+      },
+    })
+    v.setSnapPositions(Array.from({ length: 48 }, (_, i) => rat(i, 2)))
+    v.setCursorDraggable(true)
+    v.setBrowseEnabled(true)
+    v.setCursor(4)
+    v.flushNow()
+    const sc = scroller(root)
+    sc.scrollTop = 1200
+    sc.dispatchEvent(new Event('scroll'))
+    const grip = root.querySelector('.pn-cursor-grip')!
+    const pointer = (el: Element, type: string, x: number): void => {
+      el.dispatchEvent(new PointerEvent(type, { pointerId: 1, clientX: x, clientY: 100, bubbles: true }))
+    }
+    pointer(grip, 'pointerdown', GX + 50)
+    pointer(sc, 'pointermove', GX + 120)
+    pointer(sc, 'pointerup', GX + 120)
+    v.flushNow()
+    expect(seeks).toEqual([rat(9, 2)])
+    expect(v.isBrowsing()).toBe(!accepted)
+    expect(sc.scrollTop).toBe(accepted ? PAGE_PAD_TOP + 300 - VIEW_H / 4 : 1200)
   })
 
   it('locks manual scrolling while browsing is disabled', () => {
@@ -494,5 +683,588 @@ describe('PageView fixes', () => {
     p('pointermove', GX + 550)
     p('pointerup', GX + 550)
     expect(changes).toEqual([{ fromOcc: 1, toOcc: 2 }])
+  })
+
+  it('drags either loop edge vertically across systems and keeps exact note boundaries', () => {
+    const changes: unknown[] = []
+    const { v, root } = view(24, { onLoopChange: (r) => changes.push(r) })
+    v.setSnapPositions(Array.from({ length: 48 }, (_, i) => rat(i, 2)))
+    v.setLoop({ fromOcc: 1, toOcc: 1 })
+    v.flushNow()
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const p = (el: HTMLElement, type: string, x: number, y: number) =>
+      el.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: GX + x, clientY: y, bubbles: true }))
+    p(end, 'pointerdown', 370, 146)
+    p(end, 'pointermove', 265, 446)
+    p(end, 'pointerup', 265, 446)
+    expect(changes).toEqual([{ fromOcc: 1, toOcc: 5, end: rat(11, 2) }])
+    v.flushNow()
+    expect(root.querySelectorAll('.pn-loop.pn-on')).toHaveLength(2)
+
+    v.setLoop({ fromOcc: 4, toOcc: 7, end: rat(15, 2) })
+    v.flushNow()
+    const start = root.querySelector<HTMLElement>('.pn-handle-start')!
+    p(start, 'pointerdown', 10, 446)
+    p(start, 'pointermove', 265, 146)
+    p(start, 'pointerup', 265, 146)
+    expect(changes.at(-1)).toEqual({ fromOcc: 1, toOcc: 7, start: rat(3, 2), end: rat(15, 2) })
+  })
+
+  it.each(['start', 'end'] as const)('clamps the %s edge against the other edge across systems', (which) => {
+    const changes: unknown[] = []
+    const { v, root } = view(24, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 4, toOcc: 5 })
+    v.flushNow()
+    const handle = root.querySelector<HTMLElement>(`.pn-handle-${which}`)!
+    const p = (type: string, y: number) =>
+      handle.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: GX + 370, clientY: y, bubbles: true }))
+    p('pointerdown', 446)
+    p('pointermove', which === 'start' ? 746 : 146)
+    p('pointerup', which === 'start' ? 746 : 146)
+    expect(changes).toEqual([which === 'start' ? { fromOcc: 5, toOcc: 5 } : { fromOcc: 4, toOcc: 4 }])
+  })
+
+  it('wraps the end handle at the right edge once per edge entry, then continues on the new system', () => {
+    const changes: unknown[] = []
+    const { v, root } = view(24, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 2, toOcc: 3 })
+    v.flushNow()
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const p = (type: string, x: number) =>
+      end.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: x, clientY: 146, bubbles: true }))
+    p('pointerdown', GX + 730)
+    for (const x of [VIEW_W - 1, VIEW_W, VIEW_W + 1]) p('pointermove', x)
+    v.flushNow()
+    expect(root.querySelectorAll('.pn-loop.pn-on')).toHaveLength(2)
+    expect(scroller(root).scrollTop).toBe(300)
+    expect(end.style.top).toBe(`${PAGE_PAD_TOP + 430}px`)
+    // Back inside the page: edit the next system, then another edge entry reaches system 3.
+    p('pointermove', GX + 370)
+    p('pointermove', VIEW_W - 1)
+    p('pointerup', VIEW_W - 1)
+    expect(changes).toEqual([{ fromOcc: 2, toOcc: 8 }])
+  })
+
+  it('wraps the start handle at the left edge without skipping more systems while held there', () => {
+    const changes: unknown[] = []
+    const { v, root } = view(24, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 4, toOcc: 7 })
+    v.flushNow()
+    const start = root.querySelector<HTMLElement>('.pn-handle-start')!
+    const p = (type: string, x: number) =>
+      start.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: x, clientY: 446, bubbles: true }))
+    p('pointerdown', GX + 10)
+    for (const x of [1, 0, -1]) p('pointermove', x)
+    p('pointerup', -1)
+    expect(changes).toEqual([{ fromOcc: 3, toOcc: 7 }])
+  })
+
+  it('a diagonal drag onto the next system does not also wrap past it', () => {
+    const changes: unknown[] = []
+    const { v, root } = view(24, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 2, toOcc: 3 })
+    v.flushNow()
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const p = (type: string, x: number, y: number) =>
+      end.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: x, clientY: y, bubbles: true }))
+    p('pointerdown', GX + 730, 146)
+    p('pointermove', VIEW_W - 1, 446)
+    p('pointermove', VIEW_W, 446)
+    p('pointerup', VIEW_W, 446)
+    expect(changes).toEqual([{ fromOcc: 2, toOcc: 7 }])
+    expect(scroller(root).scrollTop).toBe(0)
+  })
+
+  it('an outward drag at the last system clamps without pretending to wrap', () => {
+    const changes: unknown[] = []
+    const { v, root } = view(8, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 5, toOcc: 5 })
+    v.flushNow()
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const p = (type: string, x: number) =>
+      end.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: x, clientY: 446, bubbles: true }))
+    p('pointerdown', GX + 370)
+    p('pointermove', VIEW_W)
+    p('pointerup', VIEW_W)
+    expect(changes).toEqual([{ fromOcc: 5, toOcc: 7 }])
+    expect(scroller(root).scrollTop).toBe(0)
+  })
+
+  it('grabbing a handle freezes an in-flight follow glide at its visible scroll position', () => {
+    const changes: unknown[] = []
+    const { v, root } = view(24, { onLoopChange: (r) => changes.push(r) })
+    const sheet = root.querySelector<HTMLElement>('.pn-page-sheet')!
+    const cancel = vi.fn()
+    Object.defineProperty(sheet, 'animate', { configurable: true, value: () => ({ cancel }) })
+    v.setLoop({ fromOcc: 4, toOcc: 5 })
+    v.setCursor(8)
+    v.flushNow()
+    expect(scroller(root).scrollTop).toBe(466)
+    Object.defineProperty(sheet, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ ...root.getBoundingClientRect(), y: -80, top: -80, bottom: VIEW_H - 80 }),
+    })
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const p = (type: string, x: number) =>
+      end.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: GX + x, clientY: 366, bubbles: true }))
+    p('pointerdown', 370)
+    expect(scroller(root).scrollTop).toBe(80)
+    expect(cancel).toHaveBeenCalledOnce()
+    p('pointermove', 550)
+    p('pointerup', 550)
+    expect(changes).toEqual([{ fromOcc: 4, toOcc: 6 }])
+  })
+
+  it('scrolls to more systems while a handle is held near the bottom and stops on release', () => {
+    vi.useFakeTimers()
+    const changes: unknown[] = []
+    const { v, root } = view(24, { onLoopChange: (r) => changes.push(r) })
+    v.setBrowseEnabled(true)
+    v.setLoop({ fromOcc: 0, toOcc: 1 })
+    v.flushNow()
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const p = (type: string, y: number) =>
+      end.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: GX + 370, clientY: y, bubbles: true }))
+    p('pointerdown', 146)
+    p('pointermove', VIEW_H - 1)
+    vi.advanceTimersByTime(800)
+    expect(scroller(root).scrollTop).toBeGreaterThan(300)
+    p('pointerup', VIEW_H - 1)
+    const y = scroller(root).scrollTop
+    vi.advanceTimersByTime(500)
+    expect(scroller(root).scrollTop).toBe(y)
+    expect(root.classList.contains('pn-browsing')).toBe(true)
+    expect(changes).toHaveLength(1)
+    expect((changes[0] as { toOcc: number }).toOcc).toBeGreaterThan(9)
+  })
+
+  it.each(['pointercancel', 'lostpointercapture'])('does not commit a loop edit after %s', (cancel) => {
+    const changes: unknown[] = []
+    const { v, root } = view(24, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 1, toOcc: 1 })
+    v.flushNow()
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const p = (type: string, id = 7) =>
+      end.dispatchEvent(new PointerEvent(type, { pointerId: id, clientX: GX + 370, clientY: 446, bubbles: true }))
+    p('pointerdown')
+    p('pointermove')
+    p('pointerup', 8) // A second finger cannot commit or release this edit.
+    p(cancel)
+    p('pointerup')
+    v.flushNow()
+    expect(changes).toEqual([])
+    expect(root.querySelectorAll('.pn-loop.pn-on')).toHaveLength(1)
+  })
+})
+
+describe('PageView with a page wider than the viewport', () => {
+  const width = 400
+
+  function wideView(opts: PageOptions = {}) {
+    const rect = host.getBoundingClientRect()
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({ ...rect, width, right: width })
+    return view(24, opts)
+  }
+
+  it('keeps each played position visible, then returns to the left of the next system', () => {
+    const onBrowse = vi.fn()
+    const { v, root } = wideView({ onBrowse })
+    v.setBrowseEnabled(true)
+    const sc = scroller(root)
+    expect(root.querySelector<HTMLElement>('.pn-page-sheet')!.style.width).toBe('740px')
+    expect(sc.scrollLeft).toBe(0)
+    for (let p = 0; p < 4; p += 0.125) {
+      v.setCursor(p, { smooth: false })
+      v.flushNow()
+      sc.dispatchEvent(new Event('scroll'))
+      const x = cursorXY(root)[0] - sc.scrollLeft
+      expect(x).toBeGreaterThanOrEqual(0)
+      expect(x).toBeLessThan(width)
+    }
+    expect(sc.scrollLeft).toBeGreaterThan(200)
+    v.setCursor(4, { smooth: false })
+    v.flushNow()
+    expect(sc.scrollLeft).toBe(0)
+    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 300 - VIEW_H / 4)
+    expect(onBrowse).not.toHaveBeenCalled()
+  })
+
+  it('treats native horizontal scrolling as browsing and resumes following only on return', () => {
+    const onBrowse = vi.fn()
+    const { v, root } = wideView({ onBrowse })
+    const sc = scroller(root)
+    v.setBrowseEnabled(true)
+    sc.scrollLeft = 180
+    sc.dispatchEvent(new Event('scroll'))
+    expect(v.isBrowsing()).toBe(true)
+    expect(onBrowse).toHaveBeenCalledExactlyOnceWith(true)
+    v.setCursor(3)
+    v.flushNow()
+    expect(sc.scrollLeft).toBe(180)
+    v.returnToCurrent()
+    v.flushNow()
+    expect(v.isBrowsing()).toBe(false)
+    expect(sc.scrollLeft).toBe(340)
+    expect(onBrowse.mock.calls).toEqual([[true], [false]])
+  })
+
+  it('lets a mouse drag pan a wide page and invokes the playback-pause callback without seeking', () => {
+    let playing = true
+    const onSeekRequest = vi.fn()
+    const { v, root } = wideView({
+      onBrowse: (on) => {
+        if (on) playing = false
+      },
+      onSeekRequest,
+    })
+    v.setBrowseEnabled(true)
+    const sc = scroller(root)
+    const pointer = (type: string, x: number) =>
+      sc.dispatchEvent(
+        new PointerEvent(type, {
+          pointerId: 9,
+          pointerType: 'mouse',
+          clientX: x,
+          clientY: 240,
+          bubbles: true,
+        }),
+      )
+    pointer('pointerdown', 300)
+    pointer('pointermove', 180)
+    pointer('pointerup', 180)
+    v.flushNow()
+    expect(sc.scrollLeft).toBe(120)
+    expect(playing).toBe(false)
+    expect(v.isBrowsing()).toBe(true)
+    expect(onSeekRequest).not.toHaveBeenCalled()
+  })
+
+  it('leaves touch panning to the browser and never interprets its canceled gesture as a seek', () => {
+    const onBrowse = vi.fn()
+    const onSeekRequest = vi.fn()
+    const { v, root } = wideView({ onBrowse, onSeekRequest })
+    v.setBrowseEnabled(true)
+    const sc = scroller(root)
+    const pointer = (type: string, x: number) =>
+      sc.dispatchEvent(
+        new PointerEvent(type, {
+          pointerId: 10,
+          pointerType: 'touch',
+          clientX: x,
+          clientY: 240,
+          bubbles: true,
+        }),
+      )
+    pointer('pointerdown', 300)
+    pointer('pointermove', 200)
+    expect(sc.scrollLeft).toBe(0)
+    pointer('pointercancel', 200)
+    sc.scrollLeft = 100
+    sc.dispatchEvent(new Event('scroll'))
+    expect(onBrowse).toHaveBeenCalledExactlyOnceWith(true)
+    expect(onSeekRequest).not.toHaveBeenCalled()
+  })
+
+  it('resolves taps and cursor screen positions in the horizontally scrolled sheet', () => {
+    const { v, root } = wideView()
+    v.setBrowseEnabled(true)
+    const sc = scroller(root)
+    sc.scrollLeft = 180
+    sc.dispatchEvent(new Event('scroll'))
+    const sheet = root.querySelector<HTMLElement>('.pn-page-sheet')!
+    const rect = host.getBoundingClientRect()
+    vi.spyOn(sheet, 'getBoundingClientRect').mockImplementation(() => ({
+      ...rect,
+      left: -sc.scrollLeft,
+      top: -sc.scrollTop,
+    }))
+    expect(v.occAt(50, 120)).toBe(1)
+    v.setCursor(2)
+    v.flushNow()
+    expect(v.cursorClientX()).toBe(410 - 180)
+  })
+
+  it('counts only horizontally visible note names as assistance', () => {
+    const { v, layout, root } = wideView()
+    v.setBrowseEnabled(true)
+    v.setLabels(new Map(layout.notes.flatMap((n) => (n ? [[n.index, 'C4'] as const] : []))))
+    v.setLabelOpacity(new Map(layout.notes.flatMap((n) => (n ? [[n.index, 1] as const] : []))))
+    v.flushNow()
+    expect(v.visibleLabels()).toContain(0)
+    expect(v.visibleLabels()).not.toContain(6)
+    const sc = scroller(root)
+    sc.scrollLeft = 340
+    sc.dispatchEvent(new Event('scroll'))
+    v.flushNow()
+    expect(v.visibleLabels()).not.toContain(0)
+    expect(v.visibleLabels()).toContain(6)
+  })
+
+  it('clamps horizontal browsing when zoom makes the page fit again', () => {
+    const { v, root } = wideView()
+    v.setBrowseEnabled(true)
+    const sc = scroller(root)
+    sc.scrollLeft = 340
+    sc.dispatchEvent(new Event('scroll'))
+    v.setZoom(0.5)
+    v.flushNow()
+    expect(sc.scrollLeft).toBe(0)
+    expect(root.classList.contains('pn-page-wide')).toBe(false)
+    expect(root.querySelector<HTMLElement>('.pn-page-sheet')!.style.width).toBe('400px')
+  })
+
+  it('resets horizontal pan at a system boundary while capturing the visible vertical glide', () => {
+    const { v, layout, root } = wideView()
+    Object.defineProperty(root.querySelector('.pn-page-sheet'), 'animate', {
+      configurable: true,
+      value: () => ({ cancel: vi.fn(), effect: { getComputedTiming: () => ({ progress: 0.25 }) } }),
+    })
+    v.setCursor(6)
+    v.flushNow()
+    const sc = scroller(root)
+    expect(sc.scrollLeft).toBeGreaterThan(0)
+    expect(sc.scrollTop).toBeGreaterThan(0)
+    const snapshot = v.respaceSnapshot(layout)!
+    expect(snapshot.frame.dx).toBeCloseTo(-sc.scrollLeft)
+    expect(snapshot.frame.dx + cursorXY(root)[0]).toBeGreaterThanOrEqual(0)
+    expect(snapshot.frame.dx + cursorXY(root)[0]).toBeLessThan(width)
+    expect(snapshot.frame.dy).toBeCloseTo(PAGE_PAD_TOP - sc.scrollTop * 0.25)
+  })
+
+  it('anchors a spacing change horizontally and keeps the live cursor aligned throughout it', () => {
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
+    let progress = 0
+    Object.defineProperty(Element.prototype, 'animate', {
+      configurable: true,
+      value: () => ({ cancel: vi.fn(), effect: { getComputedTiming: () => ({ progress }) } }),
+    })
+    try {
+      const { v, layout, root } = wideView()
+      const prev: PreparedLayout = {
+        ...layout,
+        params: { ...layout.params, spacing: { ...layout.params.spacing, voiceSpacingMultiplier: 1.8 } },
+        occurrences: layout.occurrences.map((g) => ({
+          ...g,
+          x0: g.x0 * 0.75 + 80,
+          x1: g.x1 * 0.75 + 80,
+          anchors: g.anchors.map(([p, x]) => [p, x * 0.75 + 80] as const),
+        })),
+      }
+      const geo = new PageGeometry(layout)
+      const prevGeo = new PageGeometry(prev)
+      const mark = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      v.setCursor(2, { smooth: false })
+      v.flushNow()
+      v.respaceFrom({
+        layout: prev,
+        frame: { scale: 1, dx: -200, dy: PAGE_PAD_TOP },
+        pieces: new Map([[0, [{ el: mark, chain: [], x0: 380, x1: 400 }]]]),
+      })
+      const sc = scroller(root)
+      expect(sc.scrollLeft).toBeCloseTo(222.5)
+      expect(cursorXY(root)[0] - sc.scrollLeft).toBeCloseTo(187.5)
+      expect(root.querySelector('.pn-respace')).not.toBeNull()
+      progress = 0.5
+      v.setCursor(2.1, { smooth: false })
+      v.flushNow()
+      const from = -200 + prevGeo.cursorAt(2.1).x
+      const to = geo.cursorAt(2.1).x - sc.scrollLeft
+      expect(cursorXY(root)[0] - sc.scrollLeft).toBeCloseTo((from + to) / 2, 1)
+      progress = 1
+      v.flushNow()
+      expect(cursorXY(root)[0] - sc.scrollLeft).toBeCloseTo(to, 1)
+    } finally {
+      if (original) Object.defineProperty(Element.prototype, 'animate', original)
+      else Reflect.deleteProperty(Element.prototype, 'animate')
+    }
+  })
+
+  it.each(['fit to wide', 'wide to fit'])('keeps the cursor continuous while respacing %s', (direction) => {
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
+    let progress = 0
+    Object.defineProperty(Element.prototype, 'animate', {
+      configurable: true,
+      value: () => ({ cancel: vi.fn(), effect: { getComputedTiming: () => ({ progress }) } }),
+    })
+    try {
+      const rect = host.getBoundingClientRect()
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({ ...rect, width, right: width })
+      const wide = testPageLayout(24)
+      const fit: PreparedLayout = {
+        ...wide,
+        width: wide.width / 2,
+        occurrences: wide.occurrences.map((g) => ({
+          ...g,
+          x0: g.x0 / 2,
+          x1: g.x1 / 2,
+          anchors: g.anchors.map(([p, x]) => [p, x / 2] as const),
+        })),
+      }
+      const growing = direction === 'fit to wide'
+      const next = growing ? wide : fit
+      const prev = growing ? fit : wide
+      const prevFrame = { scale: 1, dx: growing ? 15 : -300, dy: PAGE_PAD_TOP }
+      const v = new PageView(host, next)
+      views.push(v)
+      v.setCursor(2, { smooth: false })
+      v.flushNow()
+      const root = host.querySelector<HTMLElement>('.pn-page')!
+      const sc = scroller(root)
+      const mark = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      v.respaceFrom({
+        layout: prev,
+        frame: prevFrame,
+        pieces: new Map([[0, [{ el: mark, chain: [], x0: 200, x1: 220 }]]]),
+      })
+      const from = prevFrame.dx + new PageGeometry(prev).cursorAt(2).x
+      const gx = growing ? 0 : 15
+      const to = gx + new PageGeometry(next).cursorAt(2).x - sc.scrollLeft
+      expect(sc.scrollLeft).toBeCloseTo(growing ? 190 : 0)
+      expect(cursorXY(root)[0] - sc.scrollLeft).toBeCloseTo(from)
+      progress = 0.5
+      v.flushNow()
+      expect(cursorXY(root)[0] - sc.scrollLeft).toBeCloseTo((from + to) / 2)
+      progress = 1
+      v.flushNow()
+      expect(cursorXY(root)[0] - sc.scrollLeft).toBeCloseTo(to)
+    } finally {
+      if (original) Object.defineProperty(Element.prototype, 'animate', original)
+      else Reflect.deleteProperty(Element.prototype, 'animate')
+    }
+  })
+
+  it('preserves horizontal following when focus mode changes only the viewport height', () => {
+    let notify!: () => void
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          notify = callback
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    try {
+      const { v, root } = wideView()
+      for (let p = 0; p <= 1.5; p += 0.125) {
+        v.setCursor(p, { smooth: false })
+        v.flushNow()
+      }
+      const sc = scroller(root)
+      const x = sc.scrollLeft
+      expect(x).toBeGreaterThan(0)
+      const rect = host.getBoundingClientRect()
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({ ...rect, height: 700, bottom: 700 })
+      notify()
+      v.flushNow()
+      expect(sc.scrollLeft).toBe(x)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it.each(['pointerup', 'pointercancel'])('edge-scrolls a held playhead and handles %s', (release) => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] })
+    const onCursorSeek = vi.fn()
+    const { v, root } = wideView({ onCursorSeek })
+    v.setBrowseEnabled(true)
+    v.setCursorDraggable(true)
+    v.setSnapPositions(Array.from({ length: 8 }, (_, i) => rat(i, 2)))
+    const sc = scroller(root)
+    const grip = root.querySelector<HTMLElement>('.pn-cursor-grip')!
+    const pointer = (target: Element, type: string, x: number) =>
+      target.dispatchEvent(
+        new PointerEvent(type, {
+          pointerId: 12,
+          clientX: x,
+          clientY: 140,
+          bubbles: true,
+        }),
+      )
+    pointer(grip, 'pointerdown', 50)
+    pointer(sc, 'pointermove', width - 1)
+    vi.advanceTimersByTime(800)
+    expect(sc.scrollLeft).toBe(340)
+    expect(cursorXY(root)[0]).toBe(660)
+    expect(onCursorSeek).not.toHaveBeenCalled()
+    pointer(sc, release, width - 1)
+    v.flushNow()
+    if (release === 'pointerup') {
+      expect(onCursorSeek).toHaveBeenCalledExactlyOnceWith(rat(7, 2))
+      expect(cursorXY(root)[0]).toBe(660)
+    } else {
+      expect(onCursorSeek).not.toHaveBeenCalled()
+      expect(sc.scrollLeft).toBe(0)
+      expect(cursorXY(root)[0]).toBe(50)
+    }
+    const x = sc.scrollLeft
+    vi.advanceTimersByTime(300)
+    expect(sc.scrollLeft).toBe(x)
+  })
+
+  it('clamps a browsed offset after the viewport expands to fit the page', () => {
+    let notify!: () => void
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          notify = callback
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    try {
+      const { v, root } = wideView()
+      const sc = scroller(root)
+      v.setBrowseEnabled(true)
+      sc.scrollLeft = 340
+      sc.dispatchEvent(new Event('scroll'))
+      const rect = host.getBoundingClientRect()
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({ ...rect, width: 740, right: 740 })
+      notify()
+      v.flushNow()
+      expect(sc.scrollLeft).toBe(0)
+      expect(root.classList.contains('pn-page-wide')).toBe(false)
+      expect(v.isBrowsing()).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('pans through the current system before wrapping a held loop edge to the next one', () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] })
+    const onLoopChange = vi.fn()
+    const { v, root } = wideView({ onLoopChange })
+    v.setBrowseEnabled(true)
+    v.setLoop({ fromOcc: 0, toOcc: 1 })
+    v.flushNow()
+    const sc = scroller(root)
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const pointer = (type: string, x: number) =>
+      end.dispatchEvent(
+        new PointerEvent(type, {
+          pointerId: 11,
+          clientX: x,
+          clientY: 146,
+          bubbles: true,
+        }),
+      )
+    pointer('pointerdown', 370)
+    pointer('pointermove', width - 1)
+    vi.advanceTimersByTime(240)
+    expect(sc.scrollLeft).toBeGreaterThan(100)
+    expect(sc.scrollTop).toBe(0)
+    expect(onLoopChange).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(800)
+    expect(sc.scrollTop).toBe(300)
+    expect(sc.scrollLeft).toBe(0)
+    const y = sc.scrollTop
+    vi.advanceTimersByTime(500)
+    expect(sc.scrollTop).toBe(y)
+    expect(sc.scrollLeft).toBe(0)
+    pointer('pointerup', width - 1)
+    expect(onLoopChange).toHaveBeenCalledExactlyOnceWith({ fromOcc: 0, toOcc: 4 })
   })
 })

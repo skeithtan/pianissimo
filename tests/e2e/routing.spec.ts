@@ -58,7 +58,7 @@ test('results have their own URL and survive a reload', async ({ page }) => {
 test('the connection chip opens a large modal over the Library; Back closes it', async ({ page }) => {
   await page.getByRole('button', { name: /^MIDI status/ }).click()
   await expect(openDialog(page)).toHaveAttribute('aria-label', 'Connection and Pedal Setup')
-  await expect(openDialog(page).getByRole('navigation', { name: 'Setup steps' })).toBeVisible()
+  await expect(openDialog(page).getByRole('heading', { name: 'Step 1: Your piano', exact: true })).toBeVisible()
   expect(await hash(page)).toBe('#/?connection')
   await expect(page.locator('main')).toHaveAttribute('data-view', 'library') // not another page
 

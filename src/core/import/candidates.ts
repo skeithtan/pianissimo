@@ -215,7 +215,7 @@ export function validateSelection(parts: readonly CandidatePart[], partIds: read
   if (chosen.length === 1 && chosen[0]!.staves > 2) {
     throw new ImportError(
       'selection-invalid',
-      `“${chosen[0]!.name}” has ${chosen[0]!.staves} staves; only one- or two-staff piano parts are supported.`,
+      `“${chosen[0]!.name}” has ${chosen[0]!.staves} staves. Only one- or two-staff piano parts are supported.`,
     )
   }
   if (chosen.every((p) => p.notes === 0))

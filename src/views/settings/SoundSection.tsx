@@ -23,9 +23,9 @@ const SAMPLES = 'The piano samples (about 2 MB) download the first time they are
 function destinationHelp(destination: SoundDestination): string {
   switch (destination) {
     case 'auto':
-      return `The connected piano plays when there is one; otherwise sound comes from this device's speakers. ${SAMPLES}`
+      return `The connected piano plays when there is one. Otherwise sound comes from this device's speakers. ${SAMPLES}`
     case 'midi':
-      return 'Only the piano plays. Without a connected piano that can receive notes from the app, playback is unavailable; it is never switched to browser sound.'
+      return 'Only the piano plays. Without a connected piano that can receive notes from the app, playback is unavailable. It is never switched to browser sound.'
     case 'browser':
       return `Sound always comes from this device's speakers, even with a piano connected. ${SAMPLES}`
   }

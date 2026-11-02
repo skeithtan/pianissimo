@@ -46,6 +46,7 @@ import { GuidePanel, OverviewBar, StageCue } from './live'
 import { Banners } from './Banners'
 import { Footer } from './Footer'
 import { RepeatPanel } from './RepeatPanel'
+import { ScoreSkeleton } from './ScoreSkeleton'
 import { TempoSheet } from './TempoSheet'
 import { useBrowsedBar } from './browse'
 import { useRecede } from './recede'
@@ -173,12 +174,10 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       },
     )
   })
-  const [resumedFrom] = useState(() => (!preset && piece.resume ? piece.resume.occ : null))
   const ui = useStore(session.ui)
   const appSettings = settings.value
   const [prep, setPrep] = useState<Prep>({ state: 'preparing', fraction: 0 })
   const [tempoOpen, setTempoOpen] = useState(false)
-  const [showResume, setShowResume] = useState(resumedFrom !== null)
   const host = useRef<HTMLDivElement>(null)
   const stripRef = useRef<StripHandle | null>(null)
   const autoStarted = useRef(false)
@@ -301,8 +300,11 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           }))
         ahead.done.add(paramsId(key))
         if (!live) return
-        // The names turned off fade during the glide, which starts now (no wait).
+        // A rapid reversal starts from the current glide's visible destination, never from
+        // hidden notation partway through it. A newer choice cancels this pending replacement.
         const old = stripRef.current
+        if (respace) await old?.whenRespaced?.()
+        if (!live) return
         const snapshot = respace ? (old?.respaceSnapshot?.(layout) ?? null) : null
         old?.destroy()
         const strip = env.createStrip(
@@ -419,38 +421,47 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       data-phase={ui.phase ?? ''}
       data-recede={recede.receded ? 'true' : undefined}
     >
-      <header class={styles.header} {...recede.zone}>
-        {/* The back button and the piece's title and composer never recede (U13 revised). */}
-        <div class={styles.titleBlock}>
-          <button
-            type="button"
-            class={styles.iconButton}
-            aria-label="Back to Library"
-            onClick={() => navigate('library')}
-          >
-            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-              <path
-                d="M15 5l-7 7 7 7"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </button>
-          <div class={styles.titleText}>
-            <h1 class={styles.title}>{piece.title}</h1>
-            {piece.composer ? <p class={styles.subtitle}>{piece.composer}</p> : null}
-          </div>
+      <div class={styles.headerSlot} data-testid="practice-header-slot">
+        <div class={styles.headerClip}>
+          <header class={styles.header} inert={recede.receded} {...recede.zone}>
+            <div class={styles.titleBlock}>
+              <button
+                type="button"
+                class={styles.iconButton}
+                aria-label="Back to Library"
+                onClick={() => navigate('library')}
+              >
+                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                  <path
+                    d="M15 5l-7 7 7 7"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div class={styles.titleText}>
+                <h1 class={styles.title}>{piece.title}</h1>
+                {piece.composer ? <p class={styles.subtitle}>{piece.composer}</p> : null}
+              </div>
+            </div>
+            <div class={styles.headerTools}>
+              <ConnectionChip compact="narrow" />
+              <button
+                type="button"
+                class={styles.iconButton}
+                aria-label="Settings"
+                title="Settings"
+                onClick={openSettings}
+              >
+                <Icon name="settings" size={22} />
+              </button>
+            </div>
+          </header>
         </div>
-        <div class={`${styles.headerTools} ${styles.recedes}`}>
-          <ConnectionChip compact="narrow" />
-          <button type="button" class={styles.iconButton} aria-label="Settings" title="Settings" onClick={openSettings}>
-            <Icon name="settings" size={22} />
-          </button>
-        </div>
-      </header>
+      </div>
 
       <OverviewBar session={session} model={model} range={ui.range} view={stripRef} />
 
@@ -467,12 +478,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         }}
       >
         <div ref={host} class={styles.stripHost} data-testid="strip-host" data-mode={mode} />
-        {prep.state === 'preparing' ? (
-          <div class={styles.preparing} role="status" aria-live="polite">
-            <span class={styles.spinner} aria-hidden="true" />
-            <span>Preparing the score… {prep.fraction > 0 ? `${Math.round(prep.fraction * 100)}%` : ''}</span>
-          </div>
-        ) : null}
+        {prep.state === 'preparing' ? <ScoreSkeleton mode={mode} fraction={prep.fraction} /> : null}
         {prep.state === 'error' ? (
           <div class={styles.preparing} role="alert">
             {prep.message}
@@ -494,13 +500,6 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           ) : null}
           <Banners
             ui={ui}
-            resumedFrom={showResume ? resumedFrom : null}
-            model={model}
-            onResumeDismiss={() => setShowResume(false)}
-            onFromStart={() => {
-              setShowResume(false)
-              session.seek(0)
-            }}
             onRestart={() => session.restart()}
             onResume={() => session.resume()}
             onResults={(attemptId) => openResults({ pieceId: piece.id, attemptId })}
@@ -516,6 +515,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         ui={ui}
         session={session}
         zone={recede.zone}
+        receded={recede.receded}
         playLabel={playLabel}
         tempo={source}
         labels={appSettings.labels.mode}

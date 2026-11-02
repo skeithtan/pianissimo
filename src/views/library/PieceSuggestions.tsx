@@ -39,6 +39,7 @@ export function PieceSuggestions({ pieceId, deps }: { pieceId: string; deps: Sug
     <SuggestionList
       compact
       headingLevel={3}
+      showHeading={false}
       suggestions={selection.active}
       improved={selection.improved}
       disabled={selection.disabled}

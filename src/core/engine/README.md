@@ -28,7 +28,7 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `input(ev)` | One human MIDI event (echoes already filtered). Consumed once by `seq`. Positive Note On = the only attack; Note Off / velocity-0 = release; CC = pedals (64/66 tracked, hint pedal consumed by `config.hintPedal`, 123 releases a channel). Pending presses past their grace are judged first. |
 | `tick(now)` / `nextDeadline()` | Pending-press deadlines, hint expiry (re-arms the auto threshold), finished fades, Ready checks. `nextDeadline` gives the real time of the next change (null when none). |
 | `temporaryLabelOpacity(now)` | `Map<PerformedNote.index, 0..1>` of temporary labels (eased; absent = none). Per animation frame; combine with persistent labels by `max`, one label per note. |
-| `requestHint(now)`, `dismissHint(now)` | Manual hint (button; pedal goes through `input`), explicit dismissal (fade). |
+| `requestHint(now)`, `dismissHint(now)` | Manual hint request (pedal goes through `input`), explicit dismissal (fade). |
 | `setKeyboardVisible(v, now)` | Keyboard guide; showing marks keyboard assistance. |
 | `recordPersistentLabelExposure(notes, now)` | Visible persistent labels. Call on every `exposure-reset` event and whenever newly placed labels become visible (read-ahead included). |
 | `markPrepared(now)` | Scored: preparation done (score ready, automatic tail finished, output released, transport at the passage start, persistent-label fades finished). |

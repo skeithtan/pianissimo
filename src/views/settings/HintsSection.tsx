@@ -98,7 +98,7 @@ export function HintsSection() {
       <Group>
         <Setting
           label="Show note names automatically"
-          description="After this many wrong attacks at the same notes. The Hint button and pedal always work."
+          description="After this many wrong attacks at the same notes. Your configured hint pedal remains available when automatic hints are off."
         >
           <Segmented
             label="Show note names automatically"
@@ -180,7 +180,7 @@ export function HintsSection() {
           onChange={(fadeMs) => updateSettings({ hints: { fadeMs } })}
         />
         <Help>
-          Names fade out smoothly instead of disappearing. The default is 300 ms; it is shortened if the hint lifetime
+          Names fade out smoothly instead of disappearing. The default is 300 ms. It is shortened if the hint lifetime
           is shorter.
         </Help>
       </Group>

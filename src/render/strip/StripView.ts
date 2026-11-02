@@ -699,6 +699,12 @@ export class StripView {
     return this.browsing
   }
 
+  /** Exact note under the fixed cursor after browsing, ready for the session to resume there. */
+  browsedPosition(): Rational | null {
+    if (!this.browsing) return null
+    return this.cursorKnots.exact[this.knotUnderCursorLine()] ?? null
+  }
+
   returnToCurrent(): void {
     if (!this.browsing) return
     this.browsing = false
@@ -719,6 +725,16 @@ export class StripView {
     const tx = Number.isNaN(this.applied.tx) ? this.tx : this.applied.tx
     const sx = this.hostW * (this.opts.cursorAnchor ?? 1 / 3)
     return occAtX(this.layout.occurrences, (sx - tx) / this.scale)
+  }
+
+  /** Use the applied transform: an unpainted drag or zoom must not choose a different note. */
+  private knotUnderCursorLine(): number {
+    const tx = Number.isNaN(this.applied.tx) ? this.tx : this.applied.tx
+    const scale = Number.isNaN(this.applied.scale) ? this.scale : this.applied.scale
+    const sx = Number.isNaN(this.applied.cursorSx)
+      ? this.hostW * (this.opts.cursorAnchor ?? 1 / 3)
+      : this.applied.cursorSx
+    return nearestKnot(this.cursorKnots.x, (sx - tx) / scale)
   }
 
   /** Notes whose labels are currently visible in the viewport. */
@@ -765,6 +781,11 @@ export class StripView {
   }
 
   // ---------------------------------------------------------------- respacing (R3 revised)
+
+  /** A replacement waits for an active glide instead of snapping its slices to their end. */
+  whenRespaced(): Promise<void> {
+    return this.respace?.finished ?? Promise.resolve()
+  }
 
   /**
    * Before this view gives way to `next` (the same score engraved with other spacing): where it
@@ -999,6 +1020,7 @@ export class StripView {
       this.applied.ty = this.ty
       this.applied.scale = this.scale
     }
+    this.respace?.follow(this.screenFrame())
 
     // Mount for both the old and the new view so a smooth scroll never reveals a gap; during a
     // wrap, for the whole range its pan sweeps (already while the lead lands).
@@ -1917,7 +1939,7 @@ export class StripView {
     const n = K.pos.length
     if (n === 0) return
     const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0
-    const at = nearestKnot(K.x, this.cursorX)
+    const at = this.browsing ? this.knotUnderCursorLine() : nearestKnot(K.x, this.cursorX)
     let k: number
     if (e.key === 'Home') k = 0
     else if (e.key === 'End') k = n - 1
@@ -1936,11 +1958,12 @@ export class StripView {
       k = Math.max(0, Math.min(n - 1, k))
     } else return
     e.preventDefault()
-    if (k === at) return
+    if (k === at && !this.browsing) return
     const exact = K.exact[k]
     const seek = this.opts.onCursorSeek
     if (!exact || !seek || seek(exact) === false) return
     this.cursorX = K.x[k]!
+    this.returnToCurrent()
     this.instant = false
     this.syncGripAria(k)
     this.schedule()

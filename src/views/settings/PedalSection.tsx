@@ -48,8 +48,8 @@ export function PedalSection() {
           </Button>
         </div>
         <Help>
-          If your piano does not send the middle pedal, keep using the Hint button. Using a pedal here may not stop it
-          from changing the piano's own sound.
+          If your piano does not send the middle pedal, try another pedal or enable automatic hints in Settings. Using a
+          pedal here may not stop it from changing the piano's own sound.
         </Help>
       </Group>
     </>

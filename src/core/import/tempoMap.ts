@@ -57,7 +57,7 @@ function resolveStatement(
       if (Math.abs(t.sound - mq) > AGREE_BPM) {
         diag.warn(
           'tempo-conflict',
-          `Bar ${measure}: the metronome mark ${markText(metro.beatUnit, metro.perMinute)} (${fmt(mq)} quarter notes per minute) disagrees with the playback tempo of ${fmt(t.sound)} quarter notes per minute. The metronome mark is used; check the tempo before practicing.`,
+          `Bar ${measure}: the metronome mark ${markText(metro.beatUnit, metro.perMinute)} (${fmt(mq)} quarter notes per minute) disagrees with the playback tempo of ${fmt(t.sound)} quarter notes per minute. The metronome mark is used. Check the tempo before practicing.`,
           { measure },
         )
       } else {
@@ -120,13 +120,13 @@ export function resolveTempos(
       if (printed(shown) && printed(winner)) {
         diag.warn(
           'tempo-conflict',
-          `Bar ${measure} has two different tempo marks at one point (${a} and ${b}); ${b} is used.`,
+          `Bar ${measure} has two different tempo marks at one point (${a} and ${b}). ${b} is used.`,
           { measure },
         )
       } else {
         diag.info(
           'tempo-realized',
-          `Bar ${measure}: the score shows ${a} but its playback tempo there is ${b}; ${b} is used.`,
+          `Bar ${measure}: the score shows ${a} but its playback tempo there is ${b}. ${b} is used.`,
           { measure },
         )
       }
@@ -162,7 +162,7 @@ export function buildTempoMap(
     const bar = measures[firstTempo.m]?.number ?? String(firstTempo.m + 1)
     diag.info(
       'tempo-late-start',
-      `The first numerical tempo appears in bar ${bar}; it is also used for the music before it (${markText(firstTempo.beatUnit, firstTempo.beatBpm)}).`,
+      `The first numerical tempo appears in bar ${bar}. It is also used for the music before it (${markText(firstTempo.beatUnit, firstTempo.beatBpm)}).`,
       { measure: bar },
     )
   }

@@ -236,7 +236,7 @@ describe('Sound', () => {
     const panel = openTab(open(), 'Sound')
     expect(radio(panel, 'Sound destination', 'Auto').getAttribute('aria-checked')).toBe('true')
     expect(panel.textContent).toMatch(
-      /connected piano plays when there is one; otherwise sound comes from this device/u,
+      /connected piano plays when there is one\. Otherwise sound comes from this device/u,
     )
   })
 

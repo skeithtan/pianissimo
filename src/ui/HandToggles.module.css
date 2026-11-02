@@ -8,6 +8,7 @@
    the learner plays that hand. The L / R badge keeps color from being the only cue. */
 .hand {
   --hand: var(--color-right-hand);
+  --hand-ink: var(--hand-control-right);
   position: relative;
   display: grid;
   place-items: center;
@@ -28,11 +29,12 @@
 }
 .left {
   --hand: var(--color-left-hand);
+  --hand-ink: var(--hand-control-left);
 }
 .hand[aria-pressed='true'] {
-  border-color: var(--hand);
-  background: color-mix(in srgb, var(--hand) 14%, transparent);
-  color: var(--hand);
+  border-color: var(--hand-ink);
+  background: color-mix(in srgb, var(--hand-ink) 14%, transparent);
+  color: var(--hand-ink);
 }
 .hand:active:not(:disabled):not([aria-disabled='true']) {
   transform: scale(0.93);

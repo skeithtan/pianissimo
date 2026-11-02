@@ -200,14 +200,14 @@ export function parseXmlDocument(text: string, limits: ImportLimits, what = 'The
   if (text.length > limits.maxXmlChars) {
     throw new ImportError(
       'xml-too-large',
-      `${what} is too large to import (${Math.round(text.length / 1e6)} million characters; the limit is ${Math.round(limits.maxXmlChars / 1e6)} million).`,
+      `${what} is too large to import (${Math.round(text.length / 1e6)} million characters, with a limit of ${Math.round(limits.maxXmlChars / 1e6)} million).`,
     )
   }
   const prolog = scanProlog(text)
   if (prolog.internalSubset !== null && /<!ENTITY/i.test(prolog.internalSubset)) {
     throw new ImportError(
       'xml-entity-declaration',
-      `${what} declares XML entities in its DOCTYPE. Entity declarations are refused for safety; re-export the score from your notation program.`,
+      `${what} declares XML entities in its DOCTYPE. Entity declarations are refused for safety. Re-export the score from your notation program.`,
     )
   }
   const valid = XMLValidator.validate(text)

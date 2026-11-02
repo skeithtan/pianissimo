@@ -146,7 +146,7 @@ class PartReader {
       this.divisionsSeen = true
       this.diag.warn(
         'divisions-missing',
-        `Part “${this.partId}” gives a ${what} before stating <divisions>; one division per quarter note is assumed.`,
+        `Part “${this.partId}” gives a ${what} before stating <divisions>. One division per quarter note is assumed.`,
         this.where(),
       )
     }
@@ -157,7 +157,7 @@ class PartReader {
     if (lt(to, ZERO)) {
       this.diag.warn(
         'backup-before-measure',
-        `A <backup> in bar ${this.number} moves before the start of the bar; it was clamped.`,
+        `A <backup> in bar ${this.number} moves before the start of the bar. It was clamped.`,
         this.where(),
       )
       this.cursor = ZERO
@@ -233,7 +233,7 @@ class PartReader {
       duration = typed ?? ZERO
       this.diag.warn(
         'note-duration-missing',
-        `A note in bar ${this.number} has no <duration>; ${typed ? 'its notated type was used' : 'it was given no length'}.`,
+        `A note in bar ${this.number} has no <duration>, so ${typed ? 'its notated type was used' : 'it was given no length'}.`,
         this.where(),
       )
     }
@@ -264,7 +264,7 @@ class PartReader {
       else
         this.diag.error(
           'note-pitch-invalid',
-          `A note in bar ${this.number} has an unreadable pitch; it was skipped.`,
+          `A note in bar ${this.number} has an unreadable pitch. It was skipped.`,
           this.where(),
         )
     }
@@ -401,7 +401,7 @@ class PartReader {
             this.transpose = { chromatic, diatonic, octaveChange }
             this.diag.warn(
               'transposing-part',
-              `Part “${this.partId}” is written for a transposing instrument; sounding pitches were derived from <transpose>.`,
+              `Part “${this.partId}” is written for a transposing instrument. Sounding pitches were derived from <transpose>.`,
               this.where(),
             )
           }
@@ -424,7 +424,7 @@ class PartReader {
     if (fifths === undefined) {
       this.diag.warn(
         'key-nontraditional',
-        `Bar ${this.number} uses a non-traditional key signature; it is treated as having no sharps or flats for note naming.`,
+        `Bar ${this.number} uses a non-traditional key signature. It is treated as having no sharps or flats for note naming.`,
         this.where(),
       )
       this.keys.push({ m: this.m, at, fifths: 0, el: x })
@@ -480,7 +480,7 @@ class PartReader {
     if (firstBeats === 0) {
       this.diag.warn(
         'time-invalid',
-        `Bar ${this.number} has an unreadable time signature; it was ignored.`,
+        `Bar ${this.number} has an unreadable time signature. It was ignored.`,
         this.where(),
       )
       return
@@ -488,7 +488,7 @@ class PartReader {
     if (beatsEls.length > 1) {
       this.diag.info(
         'time-composite',
-        `Bar ${this.number} uses a composite time signature; its total length is used.`,
+        `Bar ${this.number} uses a composite time signature. Its total length is used.`,
         this.where(),
       )
     }

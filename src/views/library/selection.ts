@@ -34,7 +34,7 @@ export function selectionProblem(candidate: ImportCandidate, partIds: readonly s
     return 'Two parts can be combined only when each has a single staff (right hand above, left hand below).'
   }
   if (chosen.length === 1 && chosen[0]!.staves > 2) {
-    return `“${chosen[0]!.name}” has ${chosen[0]!.staves} staves; only one- or two-staff piano parts are supported.`
+    return `“${chosen[0]!.name}” has ${chosen[0]!.staves} staves. Only one- or two-staff piano parts are supported.`
   }
   if (chosen.every((p) => p.notes === 0)) return 'The chosen part has no notes to practice.'
   return null

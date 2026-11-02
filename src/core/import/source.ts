@@ -89,7 +89,7 @@ function opusScores(
   if (depth > limits.maxOpusDepth) {
     diag.warn(
       'opus-depth',
-      `Opus “${entry}” nests deeper than ${limits.maxOpusDepth} levels; deeper scores were skipped.`,
+      `Opus “${entry}” nests deeper than ${limits.maxOpusDepth} levels. Deeper scores were skipped.`,
     )
     return []
   }
@@ -132,14 +132,14 @@ export function openSource(
   if (bytes.length > limits.maxInputBytes) {
     throw new ImportError(
       'file-too-large',
-      `“${fileName}” is ${Math.round(bytes.length / 1e6)} MB; the import limit is ${Math.round(limits.maxInputBytes / 1e6)} MB.`,
+      `“${fileName}” is ${Math.round(bytes.length / 1e6)} MB. The import limit is ${Math.round(limits.maxInputBytes / 1e6)} MB.`,
     )
   }
   const ext = extensionOf(fileName)
   const what = `“${fileName}”`
 
   if (isZip(bytes)) {
-    if (ext !== 'mxl') diag.info('packaging-by-content', `${what} is a compressed archive; reading it as .mxl.`)
+    if (ext !== 'mxl') diag.info('packaging-by-content', `${what} is a compressed archive, so it is read as .mxl.`)
     const zip = new ZipReader(bytes, limits)
     const rootfiles = mxlRootfiles(zip, limits, diag)
     const scoreEntries: string[] = []
@@ -164,7 +164,7 @@ export function openSource(
     if (unique.length > limits.maxCandidates) {
       diag.warn(
         'candidates-truncated',
-        `${what} contains ${unique.length} scores; only the first ${limits.maxCandidates} are offered.`,
+        `${what} contains ${unique.length} scores. Only the first ${limits.maxCandidates} are offered.`,
       )
     }
     const documents: SourceDocument[] = []
@@ -184,7 +184,7 @@ export function openSource(
         `${what} is not a valid compressed MusicXML archive (no zip signature). It may be damaged or incomplete.`,
       )
     }
-    diag.warn('packaging-by-content', `${what} is uncompressed XML despite its .mxl name; reading it as MusicXML.`)
+    diag.warn('packaging-by-content', `${what} is uncompressed XML despite its .mxl name, so it is read as MusicXML.`)
   }
   const text = decodeXmlBytes(bytes, what)
   const root = parseScoreText(text, what, limits)

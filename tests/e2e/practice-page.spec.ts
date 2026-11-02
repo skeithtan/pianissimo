@@ -104,6 +104,36 @@ test.describe('practice page mode (portrait)', () => {
     await installFakeMidi(page)
   })
 
+  test('Listen resumes following its moving cursor after scrolling pauses playback', async ({ page }) => {
+    await seedLongPiece(page)
+    await page.getByRole('button', { name: `Practice ${TITLE}` }).click()
+    await expect(page.locator('.pn-page')).toBeVisible({ timeout: 60_000 })
+    await page.getByRole('button', { name: 'Left hand', exact: true }).click()
+    await page.getByRole('button', { name: 'Right hand', exact: true }).click()
+    await page.getByRole('button', { name: 'Listen', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+    const scroller = page.getByTestId('page-scroll')
+    const stage = (await scroller.boundingBox())!
+    await page.mouse.move(stage.x + stage.width * 0.8, stage.y + stage.height / 2)
+    await page.mouse.wheel(0, 900)
+    await expect(page.locator('.pn-page')).toHaveClass(/pn-browsing/)
+    await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
+    await expect.poll(() => scrollTop(page)).toBeGreaterThan(200)
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
+    await expect(page.locator('.pn-page')).not.toHaveClass(/pn-browsing/)
+    await expect.poll(() => scrollTop(page)).toBeLessThan(10)
+    await expect
+      .poll(async () => {
+        const cursor = (await cursorBox(page))!
+        const center = cursor.y + cursor.height / 2
+        return center > stage.y && center < stage.y + stage.height
+      })
+      .toBe(true)
+    const before = (await cursorBox(page))!
+    await expect.poll(async () => (await cursorBox(page))!.x).toBeGreaterThan(before.x + 10)
+    await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  })
+
   test('the cursor moves along a fixed page of systems; a later bar scrolls the page', async ({
     page,
     browserName,
@@ -123,7 +153,18 @@ test.describe('practice page mode (portrait)', () => {
     expect(tops[1]! - tops[0]!).toBeGreaterThan(100)
     await page.screenshot({ path: join(SHOT_DIR, `${browserName}-page-idle.png`) })
 
+    const chromeHeights = () =>
+      page.evaluate(() =>
+        ['practice-header-slot', 'footer-tools-slot'].map((id) =>
+          Math.round(document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect().height),
+        ),
+      )
+    const expandedChrome = await chromeHeights()
     await page.getByRole('button', { name: 'Start', exact: true }).click()
+    // Focus mode deliberately grows the score viewport. Measure stationary-system behavior
+    // after that transition, so the check still catches unwanted scrolling during the line.
+    await expect(page.locator('[data-activity]')).toHaveAttribute('data-recede', 'true')
+    await expect.poll(chromeHeights).toEqual([0, 0])
     const before = (await cursorBox(page))!
     expect(await scrollTop(page)).toBe(0)
     await playDueTargets(page, pitches)
@@ -139,6 +180,7 @@ test.describe('practice page mode (portrait)', () => {
     // Pause, then seek to a late bar from the overview: the page scrolls to its system, which
     // rests about a quarter down the score, with the cursor on it.
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
+    await expect.poll(chromeHeights).toEqual(expandedChrome)
     const overview = (await page.getByRole('slider', { name: 'Piece overview' }).boundingBox())!
     await page.mouse.click(overview.x + overview.width * 0.85, overview.y + overview.height / 2)
     await expect.poll(() => scrollTop(page), { timeout: 5_000 }).toBeGreaterThan(100)

@@ -96,6 +96,29 @@ describe('PracticeSession: playhead drag (U23)', () => {
 })
 
 describe('PracticeSession: note-level Repeat loops (U21)', () => {
+  it.each(['pause', 'browse'] as const)('restores loop editing after Listen stops through %s', async (action) => {
+    const range = { fromOcc: 0, toOcc: 1 }
+    const h = harness(piece, { range, hands: 'none' })
+    await h.session.start()
+    h.step(500)
+    expect(h.strip.loopEditable).toBe(false)
+    if (action === 'browse') h.session.browseStarted()
+    else h.session.pause()
+    h.frames.flush()
+    expect(h.session.ui.get().playing).toBe(false)
+    expect(h.strip.loop).toEqual(range)
+    expect(h.strip.loopEditable).toBe(true)
+
+    await h.session.start()
+    h.frames.flush()
+    expect(h.strip.loopEditable).toBe(false)
+    h.session.pause()
+    h.session.setSelection({ range: null })
+    h.frames.flush()
+    expect(h.strip.loop).toBeNull()
+    expect(h.session.ui.get().repeat).toBe(false)
+  })
+
   it('scores a loop inside one bar and repeats it', async () => {
     const loop = { fromOcc: 0, toOcc: 0, start: quarters(1), end: quarters(3) }
     const h = harness(piece, { range: loop })

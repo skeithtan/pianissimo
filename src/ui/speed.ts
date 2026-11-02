@@ -97,7 +97,7 @@ export function parseSpeedInput(
 
   if (kind === 'bpm') {
     if (!Number.isFinite(sourceBeatBpm) || sourceBeatBpm <= 0) {
-      return fail('Set the original tempo first; BPM entry needs it as a reference.')
+      return fail('Set the original tempo first. BPM entry needs it as a reference.')
     }
     return checkRange(value / sourceBeatBpm, 'bpm')
   }

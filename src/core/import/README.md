@@ -33,6 +33,9 @@ order-preserving parse, `timewise.ts`) → `candidates.ts` (selection rules) →
 
 ## Design notes and interpretations
 
+User-facing diagnostics use periods, commas, or conjunctions instead of semicolons. XML entity
+syntax and imported score text retain their original punctuation.
+
 - **Pitch (M1).** `<pitch>` is sounding; written = sounding − ottava shift, applied once. Ottava
   scope is per staff and `number`, half-open [start, stop) in source positions. A span is split
   where a repeat jumps; `startOcc`/`endOcc` are the bars holding the first and last displaced

@@ -336,7 +336,7 @@ describe('<ScoreOverview>', () => {
     emit(0.75 + 1e-5)
     expect(played.style.transform).toBe(before)
 
-    // Into bar 3: one re-render for the spoken value and caption.
+    // Into bar 3: one re-render for the spoken value.
     emit(2.5)
     expect(root.getAttribute('aria-valuenow')).toBe('3')
     expect(root.getAttribute('aria-valuetext')).toBe('Bar 3 of 10')

@@ -14,12 +14,17 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 
 - **Header**: "Library", piece count, Import MusicXML (shown in the empty state instead when
   there are no pieces).
+- **Olive layout**: rounded, borderless piece cards use the shared theme tokens. The most
+  recently opened piece spans the list and has a subtle tint; remaining cards use two columns
+  on desktop and one column below 900 px. Titles and metadata wrap, and every existing action
+  remains available at phone widths. The Library has no eyebrow, decorative footer, or score
+  thumbnails; it still loads no engraving code.
 - **Empty state**: what to import (.musicxml / .mxl / MusicXML .xml), where it comes from, , and a
   pointer to Settings → Backup.
 - **Piece cards** (`PieceCard.tsx`): title, composer, "Opened 2 days ago", "75% speed", the
   user-entered tempo if any, **Practice** (→ `openPractice({ pieceId })`, after marking the piece
   opened). A disclosure "Suggested practice and options" (the most recently opened piece starts
-  expanded) holds the suggestions and Review hands and tempo… / Clear practice
+  expanded) holds the suggestions without a repeated "Suggested practice" heading (U56), and Review hands and tempo… / Clear practice
   history… / Delete…
 - Backup and restore are not here: they live in Settings → Backup
   (`views/settings/BackupSection.tsx`, DECISIONS L7). The list refreshes when Settings close.
@@ -42,7 +47,7 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 | `ImportSheet.tsx` | Phase rendering; `StorageStatusLine`. |
 | `ReviewSheet.tsx` | "Hands and tempo of “title”" for a stored piece (L5): loads the package, shows `ImportSummaryView` with every voice's hand editable and, when the user entered the tempo at import, that practice tempo; Save changes only when something changed and the L1 gate passes. |
 | `PieceCard.tsx` | Card + delete and clear-history confirmation sheets. |
-| `PieceSuggestions.tsx` | **Local, minimal** suggestion presentation (to be replaced by the shared `SuggestionList`). |
+| `PieceSuggestions.tsx` | Shared `SuggestionList` bound to the per-piece model, with its section heading omitted under the disclosure label. |
 | `suggestionsData.ts` | `PieceSuggestionsModel`: load, dismiss for the session, per-piece disable, Practice this passage, refresh on history flushes. `sessionDismissals`. |
 | `FileButton.tsx` | `<label>` around a hidden file input (picker opens from the user's own tap, also inside sheets and on iPad). |
 | `format.ts` | Relative dates, speed, bytes. |

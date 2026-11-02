@@ -77,7 +77,7 @@ export function BackupSection() {
         {pending === null ? (
           <>
             <Help>
-              Pieces, results and practice history from the backup are added to this device; nothing here is deleted,
+              Pieces, results and practice history from the backup are added to this device. Nothing here is deleted,
               and where both have the same piece the more recent one is kept. Settings are replaced by the backup's,
               except this device's piano connection.
             </Help>

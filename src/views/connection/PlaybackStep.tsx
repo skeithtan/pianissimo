@@ -271,10 +271,10 @@ function TestFeedback({
     return (
       <Callout tone="warning" title="The piano did not sound" live>
         <ul class={styles.list}>
-          <li>Try another receive channel — many pianos listen on channel 1; some use 2 or 3 for a second voice.</li>
+          <li>Try another receive channel — many pianos listen on channel 1. Some use 2 or 3 for a second voice.</li>
           <li>Check the cable direction: the interface’s MIDI Out must go to the piano’s MIDI In.</li>
           <li>Turn the piano’s volume up and check that it accepts MIDI on this channel.</li>
-          <li>A port in this list is not proof the piano can play what the app sends; only the sound is.</li>
+          <li>A port in this list is not proof the piano can play what the app sends. Only the sound confirms it.</li>
         </ul>
       </Callout>
     )

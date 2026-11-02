@@ -75,7 +75,7 @@ describe('Settings → Backup', () => {
     await importPiece(other, 'v9', { title: 'From the iPad' })
     const backup = await other.exportAll()
     const root = await open()
-    expect(root.textContent).toMatch(/nothing here is deleted/)
+    expect(root.textContent).toMatch(/Nothing here is deleted/)
     pick(fileButton(root, 'Restore from backup…'), bytesFile('library.pianissimo.zip', backup))
     await settle()
     expect(root.textContent).toContain('library.pianissimo.zip')

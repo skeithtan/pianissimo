@@ -38,7 +38,7 @@ export class ActiveClock {
   }
 }
 
-/** 'auto' = shown after the wrong-attack threshold; 'manual' = Hint button or hint pedal. */
+/** 'auto' = shown after the wrong-attack threshold; 'manual' = an explicit hint request. */
 export type HintSource = 'auto' | 'manual'
 
 export interface TemporaryHint {

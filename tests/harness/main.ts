@@ -8,10 +8,11 @@ import { buildScorePackage, inspectSource } from '../../src/core/import'
 import type { ScorePackage } from '../../src/core/model/score'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { labelForMidi, labelText } from '../../src/core/naming'
+import { PageView } from '../../src/render/page/PageView'
 import { OsmdRenderer } from '../../src/render/osmd/adapter'
 import { positionToX } from '../../src/render/strip/scroll'
 import { StripView, type StripOptions, type StripStats } from '../../src/render/strip/StripView'
-import type { PreparedLayout, RenderInput } from '../../src/render/types'
+import type { LabelRoom, LayoutMode, PreparedLayout, RenderInput } from '../../src/render/types'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { longScoreFixture } from '../fixtures/render/long-score'
 import { FIXTURES, fixture, type FixtureName } from '../fixtures/render/scores'
@@ -111,16 +112,22 @@ async function prepare(
   maxChars = 3,
   opts: {
     maxIterations?: number
+    mode?: LayoutMode
+    pageWidth?: number
+    room?: LabelRoom
     segmentWidth?: number
     spacing?: { voiceSpacingMultiplier: number; voiceSpacingAddend: number }
   } = {},
 ): Promise<PrepareSummary> {
   input = await inputFor(name)
-  layout = await new OsmdRenderer().prepare(input, { labels: { maxChars }, ...opts })
+  layout = await new OsmdRenderer().prepare(input, {
+    labels: { maxChars, ...(opts.room ? { room: opts.room } : {}) },
+    ...opts,
+  })
   return summarize(name, layout)
 }
 
-let strip: StripView | undefined
+let strip: StripView | PageView | undefined
 const events: { type: string; value: unknown }[] = []
 
 function mount(size: { width?: number; height?: number } = {}, options: StripOptions = {}): StripStats {
@@ -131,7 +138,8 @@ function mount(size: { width?: number; height?: number } = {}, options: StripOpt
   host.style.height = `${size.height ?? 360}px`
   events.length = 0
   const log = (type: string) => (value: unknown) => events.push({ type, value })
-  strip = new StripView(host, layout, {
+  const View = layout.mode === 'page' ? PageView : StripView
+  strip = new View(host, layout, {
     onBrowse: log('browse'),
     onSeekRequest: log('seek'),
     onLoopChange: log('loop'),

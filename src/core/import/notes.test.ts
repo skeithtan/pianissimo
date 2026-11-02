@@ -315,7 +315,7 @@ describe('cross-staff voices keep the hand of their home staff (DECISIONS M2)', 
     const note = model.diagnostics.find((d) => d.code === 'hand-cross-staff')
     expect(note).toMatchObject({ severity: 'info', measure: '2' })
     expect(note!.message).toMatch(
-      /Voice 5 of “Piano” is the left hand; 2 of its notes are written on the other staff \(bar 2\)/,
+      /Voice 5 of “Piano” is the left hand, and 2 of its notes are written on the other staff \(bar 2\)/,
     )
     expect(model.diagnostics.some((d) => d.code === 'hand-ambiguous')).toBe(false)
     const v5 = summary.voices.find((v) => v.key === 'P1:5')!

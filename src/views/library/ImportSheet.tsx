@@ -93,7 +93,7 @@ function Working({ phase, onCancel }: { phase: Extract<FlowPhase, { kind: 'worki
       >
         <div class={styles.progressFill} style={{ transform: `scaleX(${Math.max(0.04, fraction)})` }} />
       </div>
-      <p class={styles.muted}>Everything stays on this device; nothing is uploaded.</p>
+      <p class={styles.muted}>Everything stays on this device. Nothing is uploaded.</p>
       <div class={styles.flowActions}>
         <span />
         <Button onClick={onCancel}>Cancel import</Button>
@@ -219,7 +219,7 @@ function Review({
       {duplicate ? (
         <Notice tone="info">
           This score is already in your library as “{duplicate.title}”. Adding it again creates a second piece that
-          shares that score, including its hands and practice tempo; changes made here are not applied.
+          shares that score, including its hands and practice tempo. Changes made here are not applied.
         </Notice>
       ) : null}
       <ImportSummaryView summary={summary} draft={draft} gate={gate} onDraft={setDraft} />
@@ -267,7 +267,7 @@ export function StorageStatusLine({ status }: { status: StorageStatus | null }) 
     status.persistence === 'granted'
       ? 'This browser keeps your library even when space runs low.'
       : status.persistence === 'denied'
-        ? 'This browser may clear stored data when space runs low; export a backup now and then.'
+        ? 'This browser may clear stored data when space runs low. Export a backup now and then.'
         : 'Export a backup now and then: browser storage is not the only copy you should keep.'
   return (
     <p class={styles.storageLine}>

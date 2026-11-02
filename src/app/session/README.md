@@ -36,6 +36,14 @@ are held in Listen without saving `lastHands`, U27), `setRepeatTarget(n)`, `dism
 (re-prepare), `viewChanged()` (zoom / orientation; never interrupts, P5 revised), `suspend()` (save progress when hidden without pausing), `dispose()`.
 Strip: `attachStrip(strip)`, `detachStrip()`, `attachFlash(handle)`, `onVisibleLabels(added)`.
 
+Start adopts the notation's optional `browsedPosition()` before resuming playback, then calls
+`returnToCurrent()` to restore cursor following. The fixed strip returns the onset underneath
+its visible cursor, while the page layout returns null because its cursor already marks the
+session position. This is checked again after sound loading so a later browse or seek wins.
+Reading and scored lead-ins use the existing seek rules. Listen honors the selected onset
+inside its loop and keeps playback within that loop. A seek made while changing sound outputs
+also replaces the paused Listen position captured before the new output finished loading.
+
 Note-level loops and the draggable playhead (WP13, DECISIONS U19, U21–U23): `selection.range` /
 `setSelection({range})` accept `PassageRange` with exact `start` / `end` (normalized by
 `clampPassage` = `normalizePassage`: edges on a barline are dropped). `seekPosition(pos)` returns
@@ -175,6 +183,8 @@ playback, Listen,
 Auto sound destination, hints, persistent-label exposure and fades, keyboard guide and
 assistance, naming, no per-event UI publication), `guide.test.ts`, `labels.test.ts`,
 `selection.test.ts`, `persistence.test.ts`. `npx vitest run src/app/session`.
+`PracticeSession.cursor.test.ts` covers starting and resuming from browsed notation, restoring
+page following, Repeat/Listen bounds, and seeks while browser sounds load.
 
 ## Decisions
 

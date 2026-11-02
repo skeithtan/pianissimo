@@ -841,6 +841,34 @@ describe('PracticeSession: one-hand accompaniment', () => {
 })
 
 describe('PracticeSession: Preview', () => {
+  it.each([false, true])('Listen starts at a backward cursor seek with an existing transport: %s', async (started) => {
+    const h = harness(twoHands, { hands: 'none' })
+    h.session.seekPosition(rat(1, 2))
+    if (started) {
+      await h.session.start()
+      h.step(700)
+      h.session.pause()
+    }
+    h.session.seekPosition(rat(1, 4))
+    h.frames.flush()
+    expect(h.strip.cursor).toBe(0.25)
+    expect(h.session.progress.get().position).toBe(0.25)
+    const before = h.backend.ons().length
+
+    await h.session.start()
+    h.frames.flush()
+    expect(
+      h.backend
+        .ons()
+        .slice(before)
+        .map((c) => c.note),
+    ).toEqual([62])
+    expect(h.strip.cursor).toBe(0.25)
+    h.step(500)
+    expect(h.strip.cursor).toBeCloseTo(0.375)
+    expect(h.session.progress.get().position).toBeCloseTo(h.strip.cursor)
+  })
+
   it('Listen plays both parts without an engine attempt and moves the cursor with the transport', async () => {
     const h = harness(twoHands, { hands: 'none' })
     expect(h.session.ui.get().startAction).toBe('listen')

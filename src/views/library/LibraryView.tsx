@@ -81,7 +81,7 @@ function LibraryPage() {
           <h1>Library</h1>
           <p class={styles.lede}>
             {state.status === 'ready' && pieces.length > 0
-              ? `${plural(pieces.length, 'piece')}. Pick one to practice, or import another MusicXML score.`
+              ? `${plural(pieces.length, 'piece')}.`
               : 'Import a MusicXML score, confirm its hands and tempo, and start reading.'}
           </p>
         </div>

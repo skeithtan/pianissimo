@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
 import type { AttemptSummary, GuideState, PracticeSession, SessionUi } from '../../app/session'
 import { Store } from '../../app/session/store'
-import type { ScoreModel } from '../../core/model/score'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { $, byLabel, byText, click, mount, type Mounted } from '../shared/testing'
 import { Banners, RESULT_FADE_MS, type BannersProps } from './Banners'
@@ -67,10 +66,6 @@ function banners(ui: Partial<SessionUi>, extra: Partial<BannersProps> = {}) {
   return (
     <Banners
       ui={{ ...UI, ...ui }}
-      model={{} as ScoreModel}
-      resumedFrom={null}
-      onResumeDismiss={noop}
-      onFromStart={noop}
       onRestart={noop}
       onResume={noop}
       onResults={noop}

@@ -102,7 +102,7 @@ export function ResultsPage(props: ResultsPageProps) {
             <h2>No attempts yet</h2>
             <p>
               Scored attempts appear here after you finish or leave a passage. Choose a passage in Practice and play it
-              through; ordinary reading and Preview are not scored.
+              through. Ordinary reading and Preview are not scored.
             </p>
             <div class={styles.actions}>
               <Button variant="primary" icon="target" onClick={() => openPractice({ pieceId: piece.id })}>

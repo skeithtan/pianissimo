@@ -66,8 +66,9 @@ export const OSMD_VERSION = '2.2.1'
  * pn-7: a mid-bar clef change switches the sticky clef where its change clef is drawn.
  * pn-8: label rooms ('hints': tight spacing, hint callouts, R3 revised).
  * pn-9: labels in Inter Bold (wider boxes), SF Compact dropped (R14 revised).
+ * pn-10: portrait note-name spacing reserves room before stacking labels (U65).
  */
-export const ADAPTER_VERSION = 'pn-9'
+export const ADAPTER_VERSION = 'pn-10'
 export const RENDERER_NAME = 'osmd'
 export const RENDERER_VERSION = `${OSMD_VERSION}+${ADAPTER_VERSION}`
 

@@ -1,8 +1,8 @@
 /* Practice view. Theme tokens only (U8); touch targets ≥ 44 px; motion tokens. Landscape first:
    header / overview / stage (flex, full width, touches the footer) / keyboard guide / footer.
    The header sits on the page background; the keyboard guide and the footer continue the stage's
-   score paper below one thin line (no bar, no shadow, U12); narrow screens wrap the footer tools
-   above the hand cluster; the stage keeps the remaining height. */
+   theme's score surface below one thin line (no bar, no shadow, U12); narrow screens wrap the
+   footer tools above the hand cluster; the stage keeps the remaining height. */
 
 .screen {
   /* How far receded chrome fades while playing (U13). */
@@ -28,18 +28,39 @@
 }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
+.headerSlot {
+  flex: none;
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--dur-slow) var(--ease-standard);
+}
+.headerClip {
+  min-height: 0;
+  overflow: hidden;
+}
+.screen[data-recede='true'] .headerSlot {
+  grid-template-rows: 0fr;
+}
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2) var(--space-3);
   min-width: 0;
-  padding: var(--space-1) calc(var(--space-3) + var(--safe-r)) var(--space-1) calc(var(--space-3) + var(--safe-l));
+  min-height: 60px;
+  padding: 6px calc(20px + var(--safe-r)) 6px calc(20px + var(--safe-l));
+  transition:
+    transform var(--dur-slow) var(--ease-standard),
+    opacity var(--dur-base) var(--ease-standard);
+}
+.screen[data-recede='true'] .header {
+  transform: translateY(-100%);
+  opacity: 0;
 }
 .titleBlock {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 6px;
   min-width: 0;
   flex: 1 1 auto;
 }
@@ -48,16 +69,17 @@
 }
 .title {
   margin: 0;
-  font-size: var(--text-l);
+  font-size: 1.125rem;
   line-height: var(--leading-tight);
-  font-weight: 650;
+  font-weight: 500;
+  letter-spacing: -0.025em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .subtitle {
-  margin: 0;
-  font-size: var(--text-xs);
+  margin: 1px 0 0;
+  font-size: 0.75rem;
   color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -102,7 +124,7 @@
 /* ── Overview ───────────────────────────────────────────────────────────── */
 /* The whole-piece overview has its own full-width row and nothing else (U11). */
 .overview {
-  padding: 0 calc(var(--space-3) + var(--safe-r)) var(--space-2) calc(var(--space-3) + var(--safe-l));
+  padding: 0 calc(20px + var(--safe-r)) var(--space-3) calc(20px + var(--safe-l));
 }
 
 /* ── Stage ──────────────────────────────────────────────────────────────── */
@@ -133,19 +155,6 @@
   background: var(--score-paper);
   padding: var(--space-4);
   text-align: center;
-}
-.spinner {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--score-ink-muted) 35%, transparent);
-  border-top-color: var(--accent);
-  animation: spin 900ms linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 /*
  * The correction cue (U30 revised) sits where the eyes are: just left of the fixed cursor line
@@ -221,21 +230,6 @@
 }
 .bannerReady {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-}
-.bannerClose {
-  display: inline-grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  margin: -6px -6px -6px auto;
-  border: 0;
-  border-radius: var(--radius-s);
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-.bannerClose:hover {
-  background: var(--hover);
 }
 @keyframes rise {
   from {
@@ -384,7 +378,7 @@
   justify-content: center;
   gap: var(--space-2);
   padding: var(--space-1);
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-l);
   background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
   animation: rise var(--dur-base) var(--ease-out) both;
@@ -400,12 +394,32 @@
     transform: translateY(-6px);
   }
 }
+.repeatActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
 .selectWrap {
+  position: relative;
   display: inline-flex;
 }
+.selectWrap::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 14px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  color: var(--fg-muted);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
 .select {
+  appearance: none;
   min-height: 44px;
-  padding: 0 var(--space-3);
+  padding: 0 36px 0 var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-m);
   background: var(--bg-raised);
@@ -427,7 +441,7 @@
   flex: none;
   display: grid;
   grid-template-rows: 0fr;
-  background: var(--score-paper);
+  background: var(--practice-surface);
   transition: grid-template-rows var(--dur-slow) var(--ease-standard);
 }
 .guideSlot[data-open='true'] {
@@ -443,23 +457,49 @@
 
 /* ── Footer ─────────────────────────────────────────────────────────────── */
 .footer {
+  flex: none;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: var(--space-2) var(--space-3);
-  padding: var(--space-2) calc(var(--space-3) + var(--safe-r)) calc(var(--space-2) + var(--safe-b)) calc(var(--space-3) + var(--safe-l));
-  background: var(--score-paper);
+  min-height: 84px;
+  padding: var(--space-2) calc(20px + var(--safe-r)) calc(var(--space-2) + var(--safe-b)) calc(20px + var(--safe-l));
+  background: var(--practice-surface);
+}
+.footerToolsSlot,
+.footerToolsClip,
+.footerTools {
+  display: contents;
 }
 .footerSide {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-2);
+  transition:
+    transform var(--dur-slow) var(--ease-standard),
+    opacity var(--dur-base) var(--ease-standard);
+}
+.screen[data-recede='true'] .footerSide {
+  opacity: var(--practice-recede);
+  pointer-events: none;
+}
+/* Only portrait reclaims score space by moving footer tools out of the way. */
+@media (orientation: portrait) {
+  .screen[data-recede='true'] .footerSide {
+    transform: translateY(calc(100% + var(--space-2) + var(--safe-b)));
+    opacity: 0;
+  }
 }
 .footerEnd {
+  grid-column: 3;
   justify-content: flex-end;
 }
 .footerCenter {
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -491,7 +531,7 @@
 }
 .labels [role='radio'] {
   min-height: 30px;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
   border-radius: calc(var(--radius-m) - 2px);
 }
 .toolCaption {
@@ -592,18 +632,54 @@
 @media (max-width: 940px) {
   .footer {
     display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  .footerToolsSlot {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows var(--dur-slow) var(--ease-standard);
+  }
+  .footerToolsClip {
+    display: block;
+    min-height: 0;
+    /* Speed opens an upward popover. Only clip this row while it is hidden. */
+    overflow: visible;
+  }
+  .footerTools {
+    display: flex;
     flex-wrap: wrap;
     justify-content: center;
     column-gap: var(--space-3);
     row-gap: var(--space-1);
+    padding-bottom: var(--space-1);
+    transition:
+      transform var(--dur-slow) var(--ease-standard),
+      opacity var(--dur-base) var(--ease-standard);
   }
   .footerSide,
   .footerEnd {
     justify-content: center;
   }
   .footerCenter {
-    order: 2;
-    flex: 1 0 100%;
+    flex: none;
+  }
+}
+@media (max-width: 940px) and (orientation: portrait) {
+  .screen[data-recede='true'] .footerToolsSlot {
+    grid-template-rows: 0fr;
+  }
+  .screen[data-recede='true'] .footerToolsClip {
+    overflow: hidden;
+  }
+  .screen[data-recede='true'] .footerTools {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  .screen[data-recede='true'] .footerSide {
+    transform: none;
+    opacity: 1;
   }
 }
 @media (max-width: 420px) {
@@ -614,7 +690,7 @@
   .repeatPanel {
     padding: 2px;
   }
-  .footer {
+  .footerTools {
     column-gap: var(--space-1);
   }
   .footerSide {
@@ -626,9 +702,23 @@
   }
 }
 
+@media (max-width: 520px) {
+  .header {
+    padding-inline: calc(var(--space-3) + var(--safe-l)) calc(var(--space-3) + var(--safe-r));
+  }
+  .overview {
+    padding-inline: calc(var(--space-3) + var(--safe-l)) calc(var(--space-3) + var(--safe-r));
+  }
+  .footer {
+    padding-inline: calc(var(--space-3) + var(--safe-l)) calc(var(--space-3) + var(--safe-r));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation-duration: 2s;
+  .screen[data-recede='true'] .header,
+  .screen[data-recede='true'] .footerSide,
+  .screen[data-recede='true'] .footerTools {
+    transform: none;
   }
   .banner,
   .repeatPanel {

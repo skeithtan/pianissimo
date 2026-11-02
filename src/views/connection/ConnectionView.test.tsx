@@ -212,11 +212,15 @@ describe('Piano step: input and live test (spec "MIDI input, output, and pedal c
     expect(settings.value.pedal.observedControllers).toEqual([64, 67])
   })
 
-  it('remembers the connection type', async () => {
+  it('preserves legacy route metadata while selecting MIDI ports', async () => {
+    updateSettings({ route: { connection: 'bluetooth' } })
     const rig = await open()
-    const usb = $$(rig.root, '[role="radio"]').find((r) => r.textContent === 'USB')
-    click(usb)
-    expect(settings.value.route.connection).toBe('usb')
+    await connectAll(rig)
+    expect(settings.value.route).toMatchObject({
+      inputId: 'in-1',
+      outputId: 'out-1',
+      connection: 'bluetooth',
+    })
   })
 })
 
@@ -309,7 +313,7 @@ describe('Hint pedal (spec acceptance "Pedal hints")', () => {
     expect(pedal().getAttribute('data-tone')).toBe('done')
   })
 
-  it('says so when the middle pedal is not transmitted, and keeps the Hint button', async () => {
+  it('explains alternative hints when the middle pedal is not transmitted', async () => {
     const rig = await open()
     await connectAll(rig)
     click(byLabel(section(rig.root, 'pedal'), 'Set hint pedal'))
@@ -318,7 +322,7 @@ describe('Hint pedal (spec acceptance "Pedal hints")', () => {
     const text = section(rig.root, 'pedal').textContent ?? ''
     expect(text).toContain('Detected: Soft (left pedal)')
     expect(text).toContain(NO_MIDDLE_PEDAL_EXPLANATION)
-    expect(text).toContain('The on-screen Hint button always works')
+    expect(text).toContain('You can enable automatic hints in Settings without a pedal')
   })
 
   it('mirrors the hint pedal action from Settings → Pedal', async () => {
@@ -418,14 +422,19 @@ describe('Route memory and exit', () => {
     expect(currentView.value).toBe('practice')
   })
 
-  it('lists every step in the checklist with a text status', async () => {
+  it('shows each setup section with a text status without redundant navigation or connection type', async () => {
     const rig = await open()
-    const items = $$(rig.root, 'nav[aria-label="Setup steps"] li')
-    expect(items.map((li) => li.textContent)).toEqual(
-      ['Your pianoNot allowed yet', 'Playback to the pianoNeeds MIDI access', 'Hint pedalOptional'].map(
-        (t, i) => `${i + 1}${t}`,
-      ),
-    )
+    const sections = $$(rig.root, 'section[data-step]')
+    expect(sections.map((step) => $(step, 'h2')?.textContent)).toEqual([
+      'Step 1: Your piano',
+      'Step 2: Playback to the piano',
+      'Step 3: Hint pedal',
+    ])
+    for (const [index, status] of ['Not allowed yet', 'Needs MIDI access', 'Optional'].entries()) {
+      expect($(sections[index]!, 'header')?.textContent).toContain(status)
+    }
+    expect($(rig.root, 'nav[aria-label="Setup steps"]')).toBeNull()
+    expect($(rig.root, '[role="radiogroup"][aria-label="Connection type"]')).toBeNull()
   })
 })
 

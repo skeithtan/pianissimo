@@ -448,7 +448,7 @@ export class MidiService {
       const playback = p.output ? ' App playback stopped.' : ''
       const id = this.deps.notify({
         kind: 'warning',
-        text: `Piano disconnected (${list(p.lost)}).${playback} Reconnect it to continue; an attempt in progress is interrupted.`,
+        text: `Piano disconnected (${list(p.lost)}).${playback} Reconnect it to continue. An attempt in progress is interrupted.`,
       })
       if (typeof id === 'number') this.lostNotices.push(id)
     }

@@ -569,6 +569,29 @@ describe('StripView passage selection', () => {
     expect(browse).toEqual([true, false])
     expect(transformX(content)).toBe(210)
   })
+
+  it('resolves the exact onset under the rendered cursor while browsing at a zoom', () => {
+    const { v } = view(40)
+    const root = host.querySelector('.pn-strip')!
+    v.setSnapPositions(halfBarOnsets(40))
+    v.setBrowseEnabled(true)
+    v.setZoom(1.2)
+    v.flushNow()
+    expect(v.browsedPosition()).toBeNull()
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 280 * 1.2, bubbles: true }))
+    v.flushNow()
+    // The half-bar onset at x=370 is under the line, while the old cursor is still at x=90.
+    expect(v.browsedPosition()).toEqual(rat(3, 2))
+    // A pending gesture update does not change which note is actually visible yet.
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 120 * 1.2, bubbles: true }))
+    expect(v.browsedPosition()).toEqual(rat(3, 2))
+    v.flushNow()
+    expect(v.browsedPosition()).toEqual(rat(2))
+    v.returnToCurrent()
+    v.flushNow()
+    expect(v.browsedPosition()).toBeNull()
+    expect(transformX(host.querySelector('.pn-content')!) + 90 * 1.2).toBeCloseTo(300)
+  })
 })
 
 describe('StripView continuous motion and cursor action', () => {
@@ -1012,6 +1035,33 @@ describe('StripView playhead drag (U23)', () => {
     v.flushNow()
     expect(seeks).toEqual([])
     expect(transformX(cursor)).toBe(300)
+  })
+
+  it('a keyboard seek after browsing starts at the visible cursor and restores following', () => {
+    const { v, seeks, grip, root } = draggable()
+    v.setBrowseEnabled(true)
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 280, bubbles: true }))
+    v.flushNow()
+    grip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    v.flushNow()
+    expect(seeks).toEqual([rat(1)])
+    expect(v.isBrowsing()).toBe(false)
+    expect(transformX(host.querySelector('.pn-content')!) + 290).toBe(300)
+    v.setCursor(1.5, { smooth: false })
+    v.flushNow()
+    expect(transformX(host.querySelector('.pn-content')!) + 370).toBe(300)
+  })
+
+  it('a refused keyboard seek after browsing preserves the inspected position', () => {
+    const { v, grip, root } = draggable({ onCursorSeek: () => false })
+    v.setBrowseEnabled(true)
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 280, bubbles: true }))
+    v.flushNow()
+    const before = transformX(host.querySelector('.pn-content')!)
+    grip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    v.flushNow()
+    expect(v.isBrowsing()).toBe(true)
+    expect(transformX(host.querySelector('.pn-content')!)).toBe(before)
   })
 
   it('scrolls the music near the edges while dragging and keeps snapping under the finger', () => {

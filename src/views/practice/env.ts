@@ -47,6 +47,8 @@ export interface StripHandle extends StripSink {
    */
   respaceSnapshot?(next: PreparedLayout): RespaceSnapshot | null
   respaceFrom?(prev: RespaceSnapshot | null): void
+  /** Resolves when an active spacing glide ends, so a rapid reversal starts from visible notation. */
+  whenRespaced?(): Promise<void>
   /** Hides labels (fading) on a view about to be respaced to show them. */
   holdLabels?(on: boolean): void
 }

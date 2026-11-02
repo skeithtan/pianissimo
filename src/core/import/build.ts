@@ -95,7 +95,7 @@ export function buildScore(input: BuildInput): BuiltScore {
   if (skeleton.measures.length > limits.maxMeasures) {
     throw new ImportError(
       'score-too-large',
-      `The score has ${skeleton.measures.length} bars; the import limit is ${limits.maxMeasures}.`,
+      `The score has ${skeleton.measures.length} bars. The import limit is ${limits.maxMeasures}.`,
     )
   }
   if (skeleton.measures.length === 0) throw new ImportError('score-structure', 'The selected part contains no bars.')
@@ -103,7 +103,7 @@ export function buildScore(input: BuildInput): BuiltScore {
   if (noteCount > limits.maxNotes) {
     throw new ImportError(
       'score-too-large',
-      `The score has ${noteCount} notes; the import limit is ${limits.maxNotes}.`,
+      `The score has ${noteCount} notes. The import limit is ${limits.maxNotes}.`,
     )
   }
   const barOf = (m: number) => skeleton.measures[m]?.number ?? String(m + 1)
@@ -128,7 +128,7 @@ export function buildScore(input: BuildInput): BuiltScore {
   for (const [a, b] of ottavaLookup.overlaps()) {
     diag.warn(
       'ottava-overlap',
-      `Two octave shifts overlap on one staff (bars ${barOf(a.start.m)} and ${barOf(b.start.m)}); the later one applies.`,
+      `Two octave shifts overlap on one staff (bars ${barOf(a.start.m)} and ${barOf(b.start.m)}). The later one applies.`,
       {
         measure: barOf(b.start.m),
       },
@@ -207,7 +207,7 @@ export function buildScore(input: BuildInput): BuiltScore {
     } else {
       diag.info(
         'hand-cross-staff',
-        `Voice ${def.voice} of “${partName}” is the ${hand} hand; ${away} of its notes ${away === 1 ? 'is' : 'are'} written on the other staff (${barList}).`,
+        `Voice ${def.voice} of “${partName}” is the ${hand} hand, and ${away} of its notes ${away === 1 ? 'is' : 'are'} written on the other staff (${barList}).`,
         where,
       )
     }

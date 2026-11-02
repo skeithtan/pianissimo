@@ -158,7 +158,7 @@ export function createImportClient(options: ImportClientOptions = {}): ImportCli
       }
       // The worker could not load or crashed: run this job, and the next ones, on the main thread.
       onMainThread = true
-      log(`The import worker failed (${detail}); importing on the main thread instead.`, event)
+      log(`The import worker failed (${detail}). Importing on the main thread instead.`, event)
       if (job) dispatch(job)
     }
     worker = w

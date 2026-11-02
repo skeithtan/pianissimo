@@ -138,7 +138,7 @@ export function linkTies(
       if (unmatchedStarts++ < 10) {
         diag.warn(
           'tie-unmatched',
-          `A tie from ${s.sounding.step}${s.sounding.octave} in bar ${barOf(s.measure)} has no matching note; the next note is attacked again.`,
+          `A tie from ${s.sounding.step}${s.sounding.octave} in bar ${barOf(s.measure)} has no matching note. The next note is attacked again.`,
           {
             measure: barOf(s.measure),
           },
@@ -149,7 +149,7 @@ export function linkTies(
       if (unmatchedStops++ < 10) {
         diag.warn(
           'tie-unmatched',
-          `A tie ending on ${s.sounding.step}${s.sounding.octave} in bar ${barOf(s.measure)} has no start; the note is attacked.`,
+          `A tie ending on ${s.sounding.step}${s.sounding.octave} in bar ${barOf(s.measure)} has no start. The note is attacked.`,
           {
             measure: barOf(s.measure),
           },
@@ -189,7 +189,7 @@ export function groupArpeggios(
     if (directions.size > 1) {
       diag.warn(
         'arpeggio-direction-conflict',
-        `A rolled chord in bar ${barOf(sourceNotes[first.src]!.measure)} has conflicting arrows; the first is used.`,
+        `A rolled chord in bar ${barOf(sourceNotes[first.src]!.measure)} has conflicting arrows. The first is used.`,
         {
           measure: barOf(sourceNotes[first.src]!.measure),
           occ: first.occ,

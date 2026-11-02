@@ -9,7 +9,6 @@ import type { PieceRecord } from '../../core/storage/records'
 import { formatBpm } from '../../ui/speed'
 import { beatUnitName } from '../../core/music/tempo'
 import { Button, Notice, Sheet } from '../../ui/controls'
-import { Icon } from '../../ui/icons'
 import { useLibraryDeps } from './deps'
 import { formatLastSpeed, formatRelativeTime } from './format'
 import type { LibraryModel } from './libraryModel'
@@ -43,12 +42,8 @@ export function PieceCard({
           <h2 class={styles.cardTitle}>{piece.title}</h2>
           {piece.composer ? <p class={styles.composer}>{piece.composer}</p> : null}
           <ul class={styles.meta}>
-            <li>
-              <Icon name="restart" size={14} /> Opened {formatRelativeTime(piece.lastOpenedAt, now)}
-            </li>
-            <li>
-              <Icon name="forward" size={14} /> {formatLastSpeed(piece.lastMultiplier)}
-            </li>
+            <li>Opened {formatRelativeTime(piece.lastOpenedAt, now)}</li>
+            <li>{formatLastSpeed(piece.lastMultiplier)}</li>
             {piece.userTempo ? (
               <li>
                 Your tempo: {beatUnitName(piece.userTempo.beatUnit)} = {formatBpm(piece.userTempo.beatBpm)}
@@ -58,7 +53,7 @@ export function PieceCard({
         </div>
         <div class={styles.cardActions}>
           <Button
-            variant="primary"
+            class={styles.practiceButton}
             icon="play"
             onClick={() => void model.open(piece.id)}
             aria-label={`Practice ${piece.title}`}
@@ -145,7 +140,7 @@ function DeleteSheet({
       <div class={styles.flow}>
         <p>
           “{piece.title}” will be removed from this device with its score, results and practice history. This cannot be
-          undone; export a backup first if you might want it back.
+          undone. Export a backup first if you might want it back.
         </p>
         {error ? <Notice tone="danger">{error}</Notice> : null}
         <div class={styles.flowActions}>

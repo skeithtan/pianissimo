@@ -24,10 +24,12 @@ export interface SuggestionListProps {
   readonly disabled?: boolean
   /** Tighter cards for the Library's per-piece section. */
   readonly compact?: boolean
-  /** Heading element level for "Suggested practice" (default 2); cards use one level lower. */
+  /** Section heading level (default 2). Cards use the next level, or this level when the title is omitted. */
   readonly headingLevel?: HeadingLevel
   /** Section title (default "Suggested practice"). */
   readonly title?: string
+  /** Show the section heading (default true). Omit it when the parent already labels the list. */
+  readonly showHeading?: boolean
   /** "Practice this passage": open Practice with `suggestion.passage`, `hands` and `multiplier`. */
   readonly onPractice: (suggestion: Suggestion) => void
   /** "Dismiss for this session". Omit to hide the button. */
@@ -131,7 +133,7 @@ export function SuggestionCard({
         <p class={styles.evidence}>{s.evidence}</p>
         {s.prompt !== '' ? <p class={styles.prompt}>{s.prompt}</p> : null}
         {s.bars.some((b) => b.role === 'context') && !compact ? (
-          <p class={styles.legend}>Context bars give you a lead-in and lead-out; they do not need to come out clean.</p>
+          <p class={styles.legend}>Context bars give you a lead-in and lead-out. They do not need to come out clean.</p>
         ) : null}
 
         <div class={styles.progress} role="img" aria-label={s.progress.text}>
@@ -190,6 +192,7 @@ export function SuggestionList({
   compact = false,
   headingLevel = 2,
   title = 'Suggested practice',
+  showHeading = true,
   onPractice,
   onDismiss,
   onDisableSuggestions,
@@ -198,15 +201,25 @@ export function SuggestionList({
   renderPreview,
 }: SuggestionListProps) {
   const titleId = useId()
-  const cardLevel = headingLevel + 1
+  const cardLevel = headingLevel + (showHeading ? 1 : 0)
+  const showCount = !disabled && suggestions.length > 0
   return (
-    <section class={styles.root} data-compact={compact ? '' : undefined} aria-labelledby={titleId}>
-      <header class={styles.head}>
-        <Heading level={headingLevel} id={titleId} class={styles.title}>
-          {title}
-        </Heading>
-        {!disabled && suggestions.length > 0 ? <span class={styles.count}>{suggestions.length} of up to 3</span> : null}
-      </header>
+    <section
+      class={styles.root}
+      data-compact={compact ? '' : undefined}
+      aria-labelledby={showHeading ? titleId : undefined}
+      aria-label={showHeading ? undefined : title}
+    >
+      {showHeading || showCount ? (
+        <header class={styles.head}>
+          {showHeading ? (
+            <Heading level={headingLevel} id={titleId} class={styles.title}>
+              {title}
+            </Heading>
+          ) : null}
+          {showCount ? <span class={styles.count}>{suggestions.length} of up to 3</span> : null}
+        </header>
+      ) : null}
 
       {disabled ? (
         <div class={styles.empty} data-state="disabled">

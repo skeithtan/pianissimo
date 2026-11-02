@@ -109,8 +109,8 @@ describe('conditional rules', () => {
 
   it('uses strict wording: below C4 means lower than C4', () => {
     const panel = openConditional()
-    expect(panel.textContent).toContain('Notes lower than C4 are labeled; C4 itself is not.')
-    expect(panel.textContent).toContain('Notes higher than C5 are labeled; C5 itself is not.')
+    expect(panel.textContent).toContain('Notes lower than C4 are labeled. C4 itself is not.')
+    expect(panel.textContent).toContain('Notes higher than C5 are labeled. C5 itself is not.')
   })
 
   it('shows a live sample matching the spec example: B3 and C♯5 labeled, C4 E4 C5 not', () => {

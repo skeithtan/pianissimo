@@ -1,6 +1,6 @@
 /**
  * Practice beyond the smoke workflow (spec "Mistake feedback and hints", "Persistent score
- * labels", "Keyboard guide", "Repeating passages", "Results and timing"): hint button and
+ * labels", "Keyboard guide", "Repeating passages", "Results and timing"): automatic hints and
  * temporary labels that fade, persistent labels, the keyboard guide, Repeat readiness after a
  * completed attempt, the Details link into the Results scorecard, and Listen.
  * Uses the injected fake Web MIDI of practice-helpers.ts and a piece seeded in IndexedDB.
@@ -42,14 +42,14 @@ test.describe('practice assistance and repeat', () => {
     await installFakeMidi(page)
   })
 
-  test('the Hint button shows temporary note names that fade out on their own', async ({ page }) => {
+  test('automatic hints show temporary note names that fade out on their own', async ({ page }) => {
     // A short hint lifetime and a visible fade keep the test quick without fixed sleeps.
-    await seedPiece(page, { hints: { autoThreshold: null, lifetime: 1, fadeMs: 600, damageFlash: true } })
+    await seedPiece(page, { hints: { autoThreshold: 1, lifetime: 1, fadeMs: 600, damageFlash: true } })
     await openSeededPractice(page)
     await startWholePiece(page)
     await expect(labels(page)).toHaveCount(0)
 
-    // Sample every label's opacity per frame from just before the click, so the fade is observed.
+    // Sample every label's opacity per frame from just before the wrong note, so the fade is observed.
     await page.evaluate(() => {
       const seen: number[] = []
       ;(window as unknown as { __opacities: number[] }).__opacities = seen
@@ -61,7 +61,7 @@ test.describe('practice assistance and repeat', () => {
       }
       requestAnimationFrame(tick)
     })
-    await page.getByRole('button', { name: 'Hint' }).click()
+    await play(page, 70)
     await expect(labels(page).first()).toBeVisible()
     await expect(labels(page).filter({ hasText: /^C4$/ })).toHaveCount(1)
     await expect(labels(page)).toHaveCount(0) // lifetime over, fade done, labels removed
@@ -199,7 +199,7 @@ test.describe('practice assistance and repeat', () => {
     await expect(page.locator('[data-row="wrong-attacks"]')).toContainText('2')
     await expect(page.getByText('Not a pass: wrong-note attacks')).toBeVisible()
     await expect(page.locator('[data-row="assist-keyboard"]')).toContainText('Shown during this attempt.')
-    await expect(page.locator('[data-row="assist-hints"]')).toContainText('1 automatic hint; 1 group revealed')
+    await expect(page.locator('[data-row="assist-hints"]')).toContainText('1 automatic hint. 1 group revealed')
     await expect(page.locator('[data-row="completion-time"]')).toBeVisible()
 
     // The stored record matches what the card says.
@@ -237,7 +237,7 @@ test.describe('practice assistance and repeat', () => {
     await play(page, 71)
     await expect(page.getByTestId('feedback-chip')).toHaveCount(0)
     await expect(page.getByTestId('attempt-result')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Hint' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Hint', exact: true })).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()

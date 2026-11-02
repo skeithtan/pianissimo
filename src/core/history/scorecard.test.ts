@@ -110,7 +110,7 @@ describe('scorecard', () => {
         assistance: { ...noAssistance(), level: 'names', hintRequests: 1, autoHints: 2, hintGroups: [4] },
       }),
     )
-    expect(row(hinted, 'assistance')?.detail).toBe('1 hint request; 2 automatic hints; 1 group revealed by hints')
+    expect(row(hinted, 'assistance')?.detail).toBe('1 hint request, 2 automatic hints, 1 group revealed by hints')
     expect(hinted.assistance).toMatchObject({ hintRequests: 1, autoHints: 2, persistentLabelNotes: 0 })
 
     const keyboard = buildScorecard(

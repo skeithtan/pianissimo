@@ -38,6 +38,10 @@ the preset; bass stays unset until the learner chooses it and treble thresholds 
 Closing with unapplied label edits discards them and shows a toast; the tab shows a dot while edits
 are pending.
 
+The Apply row aligns with the settings cards without its own border or corner rounding. Its
+opaque background stays sticky at the bottom while long conditional rules scroll behind it,
+and the status and buttons wrap at narrow widths (U54).
+
 ## Files
 
 `SettingsOverlay.tsx` (sheet, tabs, close handling), `LabelsSection.tsx`, `RuleEditor.tsx`,

@@ -5,7 +5,7 @@ import type { PracticeStreak } from './results'
 /** Result-detail text for "Completion time" (spec "Results and timing"). */
 export const COMPLETION_TIME_DEFINITION =
   'Time from your first key press to the last missing correct attack of the final required onset. ' +
-  'Hesitation, chord assembly and wrong-note recovery after the first press count; waiting before ' +
+  'Hesitation, chord assembly and wrong-note recovery after the first press count. Waiting before ' +
   'the first press, automatic playback, final sustain and loop reset do not. It is a total-time ' +
   'measure, not proof of rhythm accuracy.'
 
@@ -146,7 +146,7 @@ function assistanceText(d: AssistanceDetails): { value: string; detail?: string 
   if (d.autoHints > 0) parts.push(plural(d.autoHints, 'automatic hint'))
   if (d.hintGroups > 0) parts.push(`${plural(d.hintGroups, 'group')} revealed by hints`)
   if (d.keyboardShown) parts.push('keyboard guide shown')
-  return { value: ASSISTANCE_TEXT[d.level], detail: parts.join('; ') }
+  return { value: ASSISTANCE_TEXT[d.level], detail: parts.join(', ') }
 }
 
 /**

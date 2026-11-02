@@ -47,6 +47,10 @@ class TestStrip extends FakeStrip implements StripHandle {
     return this.snapshot
   }
   respacedFrom: (RespaceSnapshot | null)[] = []
+  respacing = Promise.resolve()
+  whenRespaced(): Promise<void> {
+    return this.respacing
+  }
   respaceFrom(prev: RespaceSnapshot | null): void {
     this.respacedFrom.push(prev)
   }
@@ -154,9 +158,24 @@ describe('PracticeView', () => {
 
   it('opens the piece, mounts the strip and follows the learner in ordinary reading', async () => {
     const r = await rig()
+    let prepared!: () => void
+    const preparing = new Promise<void>((resolve) => (prepared = resolve))
+    const env: PracticeEnv = {
+      ...r.env,
+      prepare: async (...args) => {
+        args[2].onProgress?.('engraving', 0.4)
+        await preparing
+        return r.env.prepare(...args)
+      },
+    }
     practiceRequest.value = { pieceId: r.pieceId }
-    view = mount(<PracticeViewWith env={r.env} />)
+    view = mount(<PracticeViewWith env={env} />)
     await settle(r)
+    expect($(view.container, '[data-testid="score-skeleton"]')?.textContent).toContain('Preparing the score… 40%')
+    expect(r.strips).toHaveLength(0)
+    prepared()
+    await settle(r)
+    expect($(view.container, '[data-testid="score-skeleton"]')).toBeNull()
     expect($(view.container, 'h1')?.textContent).toBe('Two Hands')
     expect(r.strips).toHaveLength(1)
     click(byLabel(view.container, 'Start'))
@@ -347,6 +366,38 @@ describe('PracticeView', () => {
     expect(r.rooms).toEqual(['hints', 'all', 'hints', 'all'])
   })
 
+  it('coalesces rapid label reversals until the visible spacing glide finishes', async () => {
+    const r = await rig()
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    click(byLabel(view.container, 'Start'))
+    await settle(r)
+    const select = (label: string) =>
+      click($$(view!.container, '[role="radio"]').find((el) => el.textContent === label))
+    select('All')
+    await settle(r)
+    const gliding = r.strips[1]!
+    let finish!: () => void
+    gliding.respacing = new Promise<void>((resolve) => (finish = resolve))
+    select('Off')
+    await settle(r)
+    expect(gliding.destroyed).toBe(false)
+    expect(r.strips).toHaveLength(2)
+    // Returning to the roomy layout supersedes the pending Off replacement.
+    select('Conditional')
+    await settle(r)
+    finish()
+    await settle(r)
+    expect(gliding.destroyed).toBe(false)
+    expect(r.strips).toHaveLength(2)
+    select('Off')
+    await settle(r)
+    expect(gliding.destroyed).toBe(true)
+    expect(r.strips).toHaveLength(3)
+    expect(byLabel(view.container, 'Pause')).not.toBeNull()
+  })
+
   it('the Labels control applies label settings; both hands off turns Start into Listen', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
@@ -402,7 +453,7 @@ describe('PracticeView', () => {
     expect(byLabel(panel, 'Loop end')?.textContent).toContain('Bar 1')
     expect(panel.querySelector('label')?.textContent).toContain('Repeat until')
     // The overview row holds only the overview (U11): the steppers are not in it.
-    const overview = $(view.container, '[role="slider"]')!.closest('header + div')!
+    const overview = byLabel(view.container, 'Piece overview')!.parentElement!
     expect(overview.contains(panel)).toBe(false)
     expect(strip.loop).toEqual({ fromOcc: 0, toOcc: 0 })
     expect(strip.loopEditable).toBe(true)
@@ -412,6 +463,19 @@ describe('PracticeView', () => {
 
     // The strip's ✕ clears the loop and leaves Repeat mode; the panel fades out before it goes.
     act(() => strip.options.onLoopChange?.(null))
+    await settle(r)
+    expect($(view.container, '[data-testid="repeat-controls"]')?.hasAttribute('data-leaving')).toBe(true)
+    await faded()
+    expect(byLabel(view.container, 'Loop start')).toBeNull()
+    expect(strip.loop).toBeNull()
+    expect(strip.cursorAction).toBe(true)
+
+    // The toolbar's icon clears the same passage and leaves Repeat mode too.
+    act(() => strip.options.onCursorAction?.())
+    await settle(r)
+    const clear = byLabel(view.container, 'Clear loop')!
+    expect(clear.textContent).toBe('')
+    click(clear)
     await settle(r)
     expect($(view.container, '[data-testid="repeat-controls"]')?.hasAttribute('data-leaving')).toBe(true)
     await faded()
@@ -470,6 +534,7 @@ describe('PracticeView', () => {
     expect(byLabel(footer, 'Note names on the score')).not.toBeNull()
     expect(byLabel(footer, 'Faster by 5 percent')).not.toBeNull()
     expect(byLabel(header, 'Faster by 5 percent')).toBeNull()
+    expect(byLabel(footer, 'Hint')).toBeNull()
     // No caption under the hand toggles.
     expect(footer.textContent).not.toMatch(/piano plays/u)
   })
@@ -592,14 +657,24 @@ describe('PracticeView', () => {
     await settle(r, 1)
     expect(screen().dataset['recede']).toBe('true')
     // A tap on the footer brings it back for a while; the main button never recedes.
+    expect($(view.container, 'header')!.hasAttribute('inert')).toBe(true)
+    expect($(view.container, '[data-testid="footer-tools-slot"]')!.hasAttribute('inert')).toBe(true)
     act(() => {
       $(view!.container, 'footer')!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     })
     await settle(r, 1)
     expect(screen().dataset['recede']).toBeUndefined()
+    expect($(view.container, 'header')!.hasAttribute('inert')).toBe(false)
+    expect($(view.container, '[data-testid="footer-tools-slot"]')!.hasAttribute('inert')).toBe(false)
     act(() => r.clock.advance(REVEAL_MS))
     await settle(r, 1)
     expect(screen().dataset['recede']).toBe('true')
+    // Safari pointer clicks need not focus the play button: Tab can originate on the document.
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    })
+    await settle(r, 1)
+    expect(screen().dataset['recede']).toBeUndefined()
     // Error feedback remains the damage vignette; there is no text over the score.
     act(() => {
       r.midi.on(70, r.clock.now)

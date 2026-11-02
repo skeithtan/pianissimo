@@ -1,8 +1,9 @@
 /**
  * The practice footer (DECISIONS U4, U9, U12, U17): Speed on the start side, the hand
  * toggles around the large Start / Pause / Listen button in the middle, the Labels control,
- * Hint and Show keys on the end side. Large touch targets, icon + text, within thumb reach of
- * a piano bench. While playing, everything but the main button recedes (U13).
+ * and Show keys on the end side. Large touch targets, icon + text, within thumb reach of
+ * a piano bench. In portrait focus mode the tools slide down and their narrow-screen row
+ * collapses. Landscape tools stay in place and dim. The hand/play row stays available (U60).
  */
 import type { PracticeSession, SessionUi } from '../../app/session'
 import { pushNotice } from '../../app/state'
@@ -26,7 +27,7 @@ const QUARTER = rat(1, 4)
 /** The hand toggles without a connected piano (U27): the tooltip, and the toast a tap shows. */
 export const HANDS_UNAVAILABLE = 'Piano not connected'
 export const HANDS_UNAVAILABLE_NOTICE =
-  'Piano not connected. Connect a piano to play a hand yourself; until then Pianissimo plays the piece for you.'
+  'Piano not connected. Connect a piano to play a hand yourself. Until then Pianissimo plays the piece for you.'
 
 /** Icon-only footer tool (U18): the name is the accessible label and the tooltip. */
 function Tool({
@@ -61,6 +62,7 @@ export interface FooterProps {
   readonly ui: SessionUi
   readonly session: PracticeSession
   readonly zone: RecedeZone
+  readonly receded?: boolean
   readonly playLabel: string
   /** Source tempo at the passage start; null when the score has none. */
   readonly tempo: { readonly beatBpm: number; readonly beatUnit: Rational } | null
@@ -69,19 +71,55 @@ export interface FooterProps {
   readonly onRequestTempo: () => void
 }
 
-export function Footer({ ui, session, zone, playLabel, tempo, labels, onLabels, onRequestTempo }: FooterProps) {
+export function Footer({
+  ui,
+  session,
+  zone,
+  receded = false,
+  playLabel,
+  tempo,
+  labels,
+  onLabels,
+  onRequestTempo,
+}: FooterProps) {
   return (
     <footer class={styles.footer} {...zone}>
-      <div class={`${styles.footerSide} ${styles.recedes}`}>
-        <TempoControl
-          multiplier={ui.multiplier}
-          sourceBeatBpm={tempo?.beatBpm ?? 0}
-          beatUnit={tempo?.beatUnit ?? QUARTER}
-          onChange={(multiplier) => session.setSelection({ multiplier })}
-          noTempo={tempo === null}
-          onRequestTempo={onRequestTempo}
-          placement="up"
-        />
+      <div class={styles.footerToolsSlot} data-testid="footer-tools-slot" inert={receded}>
+        <div class={styles.footerToolsClip}>
+          <div class={styles.footerTools}>
+            <div class={styles.footerSide}>
+              <TempoControl
+                multiplier={ui.multiplier}
+                sourceBeatBpm={tempo?.beatBpm ?? 0}
+                beatUnit={tempo?.beatUnit ?? QUARTER}
+                onChange={(multiplier) => session.setSelection({ multiplier })}
+                noTempo={tempo === null}
+                onRequestTempo={onRequestTempo}
+                placement="up"
+              />
+            </div>
+            <div class={`${styles.footerSide} ${styles.footerEnd}`}>
+              <div class={styles.labels}>
+                <Segmented<PersistentLabelMode>
+                  label="Note names on the score"
+                  value={labels}
+                  options={LABEL_OPTIONS}
+                  onChange={onLabels}
+                  compact
+                />
+                <span class={styles.toolCaption} aria-hidden="true">
+                  Note names
+                </span>
+              </div>
+              <Tool
+                icon="keys"
+                label={ui.keyboardVisible ? 'Hide keys' : 'Show keys'}
+                pressed={ui.keyboardVisible}
+                onClick={() => session.setKeyboardVisible(!ui.keyboardVisible)}
+              />
+            </div>
+          </div>
+        </div>
       </div>
       <div class={styles.footerCenter}>
         <HandToggles
@@ -100,27 +138,6 @@ export function Footer({ ui, session, zone, playLabel, tempo, labels, onLabels, 
             {ui.startReason}
           </p>
         ) : null}
-      </div>
-      <div class={`${styles.footerSide} ${styles.footerEnd} ${styles.recedes}`}>
-        <div class={styles.labels}>
-          <Segmented<PersistentLabelMode>
-            label="Note names on the score"
-            value={labels}
-            options={LABEL_OPTIONS}
-            onChange={onLabels}
-            compact
-          />
-          <span class={styles.toolCaption} aria-hidden="true">
-            Note names
-          </span>
-        </div>
-        <Tool icon="hint" label="Hint" disabled={!ui.canHint} onClick={() => session.requestHint()} />
-        <Tool
-          icon="keys"
-          label={ui.keyboardVisible ? 'Hide keys' : 'Show keys'}
-          pressed={ui.keyboardVisible}
-          onClick={() => session.setKeyboardVisible(!ui.keyboardVisible)}
-        />
       </div>
     </footer>
   )

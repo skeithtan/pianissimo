@@ -290,6 +290,12 @@
   will-change: transform;
 }
 
+.pn-respace-motion {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+
 .pn-sub-L .pn-label[data-h='L'],
 .pn-sub-R .pn-label[data-h='R'] {
   fill: var(--pn-ink-muted);

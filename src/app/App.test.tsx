@@ -121,9 +121,9 @@ describe('connection setup modal', () => {
     const heading = byText(root, 'Library')
     expect($(root, 'dialog[open]')).toBeNull()
     act(() => openConnection())
-    for (let i = 0; i < 100 && !$(root, 'nav[aria-label="Setup steps"]'); i++) await settle()
+    for (let i = 0; i < 100 && !$(root, 'section[data-step="piano"]'); i++) await settle()
     expect($(root, 'dialog[open]')?.getAttribute('aria-label')).toBe('Connection and Pedal Setup')
-    expect($(root, 'nav[aria-label="Setup steps"]')).not.toBeNull()
+    expect($(root, 'section[data-step="piano"]')).not.toBeNull()
     expect(currentView.value).toBe('library') // not a page: the view stays
     expect(byText(root, 'Library')).toBe(heading)
     click(byLabel($(root, 'dialog[open]')!, 'Close'))

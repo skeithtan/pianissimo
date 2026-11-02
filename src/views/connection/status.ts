@@ -17,12 +17,6 @@ export interface StepStatus {
 /** Three steps (DECISIONS C11): the piano (access + input), playback (output + test notes + echo + options), hint pedal. */
 export type StepId = 'piano' | 'playback' | 'pedal'
 
-export const STEP_TITLES: Readonly<Record<StepId, string>> = {
-  piano: 'Your piano',
-  playback: 'Playback to the piano',
-  pedal: 'Hint pedal',
-}
-
 export const STEP_ORDER: readonly StepId[] = ['piano', 'playback', 'pedal']
 
 export function channelLabel(channel: number): string {

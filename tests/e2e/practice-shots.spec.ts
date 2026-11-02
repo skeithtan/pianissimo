@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
-import { installFakeMidi, openSeededPractice, playWhenDue, seedPiece, waitForOnset } from './practice-helpers'
+import { installFakeMidi, playWhenDue, seedPiece, waitForOnset } from './practice-helpers'
 
 const SHOTS = process.env['PRACTICE_SHOTS']
 const SIZES = [
@@ -31,7 +31,29 @@ test.describe('practice screenshots', () => {
         await page.emulateMedia({ colorScheme: theme })
         await installFakeMidi(page)
         await seedPiece(page, { view: { ...DEFAULT_SETTINGS.view, theme } })
-        await openSeededPractice(page)
+        // Hold engraving's first download to review the real preparation state deterministically.
+        let release!: () => void
+        const download = new Promise<void>((resolve) => (release = resolve))
+        await page.route('**/opensheetmusicdisplay.min-*.js', async (route) => {
+          await download
+          await route.continue()
+        })
+        await page.getByRole('button', { name: 'Practice Two Hands' }).click()
+        const skeleton = page.getByTestId('score-skeleton')
+        try {
+          await expect(skeleton).toBeVisible()
+          await shot('preparing')
+          if (size.name === 'phone') {
+            await page.emulateMedia({ reducedMotion: 'reduce' })
+            await expect(skeleton.locator('[aria-hidden="true"]')).toHaveCSS('animation-name', 'none')
+            await shot('preparing-reduced-motion')
+            await page.emulateMedia({ reducedMotion: 'no-preference' })
+          }
+        } finally {
+          release()
+        }
+        await expect(skeleton).toHaveCount(0, { timeout: 60_000 })
+        await expect(page.locator('.pn-strip')).toBeVisible()
         await page.waitForTimeout(400)
         await shot('idle')
 
@@ -39,7 +61,7 @@ test.describe('practice screenshots', () => {
         await expect(page.getByTestId('repeat-controls')).toBeVisible()
         await page.waitForTimeout(400)
         await shot('repeat')
-        await page.getByRole('button', { name: 'Clear passage selection' }).click()
+        await page.getByTestId('repeat-controls').getByRole('button', { name: 'Clear loop', exact: true }).click()
 
         await page.getByRole('button', { name: 'Show keys' }).click()
         await page.getByRole('button', { name: 'Start', exact: true }).click()

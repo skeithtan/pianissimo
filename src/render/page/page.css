@@ -15,16 +15,16 @@
 .pn-page-scroll {
   position: absolute;
   inset: 0;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  touch-action: pan-y;
+  touch-action: pan-x pan-y;
   background: var(--pn-paper);
 }
 
-/* While something plays the page belongs to the follow scroll (browse disabled). */
+/* A caller can lock browsing while the score is unavailable for interaction. */
 .pn-page-scroll.pn-page-locked {
-  overflow-y: hidden;
+  overflow: hidden;
   touch-action: none;
 }
 
@@ -67,6 +67,13 @@
   height: 0;
   will-change: transform;
   transition: transform var(--pn-scroll-ms) var(--pn-ease);
+}
+
+/* More specific than the page cursor rule above: playback and respacing write its exact
+   position each frame, so a CSS seek transition must not trail those positions or start at 0. */
+.pn-page.pn-instant .pn-cursor,
+.pn-page.pn-respacing .pn-cursor {
+  transition: none;
 }
 
 .pn-page .pn-cursor-readout {

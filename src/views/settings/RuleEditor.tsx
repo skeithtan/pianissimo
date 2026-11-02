@@ -59,7 +59,7 @@ function Condition({
         />
         {condition.enabled && pitch && !error ? (
           <span class={styles.strict}>
-            Notes {copy.wording} {pitch} are labeled; {pitch} itself is not.
+            Notes {copy.wording} {pitch} are labeled. {pitch} itself is not.
           </span>
         ) : null}
       </div>

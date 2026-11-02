@@ -30,8 +30,9 @@ const selection = await storage.loadSuggestions(piece.id, sessionDismissals); //
 | `improved?: readonly Suggestion[]` | `SuggestionSelection.improved`: shown in a collapsible "Improved (n)" list (open when three or fewer). Read-only, no actions. |
 | `disabled?: boolean` | Suggestions are off (global setting or this piece). Shows an explanation instead of the list; practice is still recorded while off. |
 | `compact?: boolean` | Tighter cards without the context-bar legend, for the Library's per-piece section. |
-| `headingLevel?: 2 \| 3 \| 4` | Level of the section title (default 2); card titles use the next level. |
+| `headingLevel?: 2 \| 3 \| 4` | Level of the section title (default 2); card titles use the next level, or this level when the section heading is omitted. |
 | `title?: string` | Section title (default "Suggested practice"). |
+| `showHeading?: boolean` | Show the section heading (default true). Library uses false beneath its disclosure label. The section retains an accessible name and active suggestion count, without an empty header row. |
 | `onPractice(s)` | **Practice this passage.** Open Practice with `s.passage`, `s.hands`, `s.multiplier` preselected; never start automatically (spec). |
 | `onDismiss?(s)` | "Not now": dismiss for this session (`sessionDismissals.dismiss(s.id)`, then reload). Button hidden when omitted. |
 | `onDisableSuggestions?()` | "Turn off suggestions" footer button (hidden when omitted or while disabled). |

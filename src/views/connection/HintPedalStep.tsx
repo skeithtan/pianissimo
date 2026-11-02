@@ -2,7 +2,7 @@
  * Step 5, "Set hint pedal" (spec "MIDI input, output, and pedal controls"): press the desired
  * pedal, the app observes its message, a test press confirms the mapping (one press = one
  * hint; holding never retriggers), then save it. Prefer the middle pedal when it sends a usable
- * message; if the piano does not transmit it, say so — the on-screen Hint button remains.
+ * message; if the piano does not transmit it, explain the alternative hint options.
  * Advanced: inversion and threshold. The pedal's action mirrors Settings → Pedal.
  */
 import { useEffect, useMemo, useState } from 'preact/hooks'
@@ -99,7 +99,7 @@ export function HintPedalStep({
       lead="Reveal a hint with your foot instead of touching the screen. The middle pedal works best."
     >
       {!inputReady && !active ? (
-        <Help>Choose your piano input first; then press the pedal you want to use.</Help>
+        <Help>Choose your piano input first, then press the pedal you want to use.</Help>
       ) : null}
 
       {phase === 'idle' ? (
@@ -171,7 +171,7 @@ export function HintPedalStep({
         </details>
       ) : null}
 
-      <Help>The on-screen Hint button always works, with or without a pedal. {PEDAL_SOUND_CAVEAT}</Help>
+      <Help>You can enable automatic hints in Settings without a pedal. {PEDAL_SOUND_CAVEAT}</Help>
     </Step>
   )
 }
@@ -213,8 +213,8 @@ function FlowPanel({
       {phase === 'listening' && quiet ? (
         <Callout tone="warning" title="No pedal message yet">
           <p>
-            If you are pressing the middle pedal, your piano may not send it. Try another pedal, or keep using the
-            on-screen Hint button.
+            If you are pressing the middle pedal, your piano may not send it. Try another pedal, or enable automatic
+            hints in Settings.
           </p>
         </Callout>
       ) : null}

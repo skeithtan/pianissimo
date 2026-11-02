@@ -269,6 +269,12 @@ function sliceSvg(doc: Document, s: Slice, pieces: readonly Piece[]): SVGSVGElem
 }
 
 export interface RespaceRun {
+  /** Resolves after the real score is shown again, including when the glide is canceled. */
+  readonly finished: Promise<void>
+  /** Eased progress shared by the notation and any live cursor riding its spacing change. */
+  progress(): number
+  /** Carries the glide with the destination view's live playback scroll and viewport fit. */
+  follow(frame: ScreenFrame): void
   /** Ends the glide now (the view shows its own notation again). */
   cancel(): void
 }
@@ -308,6 +314,11 @@ export function startRespace(o: RespaceOptions): RespaceRun | null {
   // Names belong to the wider engraving: they fade in with it (turned on) or out with it (off).
   overlay.className = cutPrev ? 'pn-respace pn-respace-out' : 'pn-respace pn-respace-in'
   overlay.setAttribute('aria-hidden', 'true')
+  // Keep clipping fixed to the viewport while this inner layer follows the live score. The
+  // slice tweens still describe the spacing change, independent of playback's translation.
+  const motion = doc.createElement('div')
+  motion.className = 'pn-respace-motion'
+  overlay.append(motion)
   const margin = Math.max(o.width, o.height) * 0.25
   const onScreen = (x: number, y: number, w: number, h: number): boolean =>
     x < o.width + margin && x + w > -margin && y < o.height + margin && y + h > -margin
@@ -341,11 +352,13 @@ export function startRespace(o: RespaceOptions): RespaceRun | null {
   if (!pending.length) return null
   for (const p of pending) {
     p.el.style.transform = p.from
-    overlay.append(p.el)
+    motion.append(p.el)
   }
   o.parent.insertBefore(overlay, o.before ?? null)
 
   let ended = false
+  let finish!: () => void
+  const finished = new Promise<void>((resolve) => (finish = resolve))
   const duration = o.duration ?? RESPACE_MS
   const end = (): void => {
     if (ended) return
@@ -354,6 +367,7 @@ export function startRespace(o: RespaceOptions): RespaceRun | null {
     for (const a of animations) a.cancel()
     overlay.remove()
     o.onDone()
+    finish()
   }
   for (const p of pending) {
     const a = p.el.animate([{ transform: p.from }, { transform: p.to }], {
@@ -366,5 +380,19 @@ export function startRespace(o: RespaceOptions): RespaceRun | null {
   animations[0]?.finished?.then(end, () => undefined)
   // A throttled or hidden page may never finish the animations: end on time anyway.
   const timer = setTimeout(end, duration + 120)
-  return { cancel: end }
+  let lastFrame = o.next.frame
+  return {
+    finished,
+    progress: () => (ended ? 1 : (animations[0]?.effect?.getComputedTiming().progress ?? 0)),
+    follow(frame) {
+      if (ended || (frame.scale === lastFrame.scale && frame.dx === lastFrame.dx && frame.dy === lastFrame.dy)) return
+      lastFrame = frame
+      const scale = frame.scale / o.next.frame.scale
+      motion.style.transform = t(
+        { x: frame.dx - o.next.frame.dx * scale, y: frame.dy - o.next.frame.dy * scale },
+        scale,
+      )
+    },
+    cancel: end,
+  }
 }

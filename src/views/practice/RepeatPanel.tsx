@@ -1,7 +1,7 @@
 /**
  * Repeat mode's loop controls (spec "Repeating passages", DECISIONS U10, U14, U22): a slim group
  * that floats at the top of the score while Repeat mode is open — "Loop start" / "Loop end"
- * steppers (one whole bar per press) and the consecutive-pass target. The strip's handles (which
+ * steppers (one whole bar per press), the consecutive-pass target, and an icon-only clear action. The strip's handles (which
  * can set note-level edges) and ✕ edit the same loop; the overview row shows it. Without Repeat
  * mode nothing here exists.
  */
@@ -11,6 +11,7 @@ import { edgeText } from '../../core/model/passage'
 import type { PassageRange } from '../../core/model/practice'
 import type { HandSelection, ScoreModel } from '../../core/model/score'
 import { LoopSteppers } from '../../ui/LoopSteppers'
+import { Icon } from '../../ui/icons'
 import type { RecedeZone } from './recede'
 import { useStoreValue } from './useStore'
 import styles from './practice.module.css'
@@ -59,23 +60,34 @@ export function RepeatPanel({
           barLabel={(occ) => `Bar ${barLabel(model, occ)}`}
           edgeLabel={(range, edge) => edgeText(model, range, edge, hands)}
         />
-        <label class={styles.selectWrap}>
-          <span class="visually-hidden">Repeat until</span>
-          <select
-            class={styles.select}
-            value={repeatTarget === null ? '' : String(repeatTarget)}
-            onChange={(e) => {
-              const v = (e.currentTarget as HTMLSelectElement).value
-              session.setRepeatTarget(v === '' ? null : Number(v))
-            }}
+        <div class={styles.repeatActions}>
+          <label class={styles.selectWrap}>
+            <span class="visually-hidden">Repeat until</span>
+            <select
+              class={styles.select}
+              value={repeatTarget === null ? '' : String(repeatTarget)}
+              onChange={(e) => {
+                const v = (e.currentTarget as HTMLSelectElement).value
+                session.setRepeatTarget(v === '' ? null : Number(v))
+              }}
+            >
+              {TARGETS.map((t) => (
+                <option key={String(t)} value={t === null ? '' : String(t)}>
+                  {t === null ? 'Repeat: no limit' : `Until ${t} clean in a row`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            class={styles.iconButton}
+            aria-label="Clear loop"
+            title="Clear loop"
+            onClick={() => session.setSelection({ range: null })}
           >
-            {TARGETS.map((t) => (
-              <option key={String(t)} value={t === null ? '' : String(t)}>
-                {t === null ? 'Repeat: no limit' : `Until ${t} clean in a row`}
-              </option>
-            ))}
-          </select>
-        </label>
+            <Icon name="close" size={22} />
+          </button>
+        </div>
       </div>
     </div>
   )

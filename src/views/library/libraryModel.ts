@@ -224,7 +224,7 @@ export function describeRestore(report: RestoreReport): string[] {
       ? 'Settings were restored from the backup (this device keeps its own piano connection).'
       : report.settings === 'kept'
         ? 'Settings on this device were kept.'
-        : 'The backup had no settings; yours were kept.',
+        : 'The backup had no settings. Yours were kept.',
   )
   return lines
 }

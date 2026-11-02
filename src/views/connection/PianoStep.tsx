@@ -10,19 +10,12 @@
  */
 import type { MidiService, MidiSnapshot } from '../../app/services'
 import type { FeatureReport } from '../../app/features'
-import { settings, updateSettings } from '../../app/state'
+import { settings } from '../../app/state'
 import type { MidiRouteSettings } from '../../core/model/settings'
-import { Button, Segmented } from '../../ui/controls'
+import { Button } from '../../ui/controls'
 import { Callout, Help, PortList, Step } from './parts'
 import type { StepStatus } from './status'
 import styles from './connection.module.css'
-
-const CONNECTION_HELP: Readonly<Record<MidiRouteSettings['connection'], string>> = {
-  usb: 'USB cable or a USB MIDI interface.',
-  bluetooth:
-    'Bluetooth MIDI, paired in the system or MIDIWeb settings. Bluetooth timing can vary a little more than USB.',
-  unknown: 'Recorded with this route so you can tell set-ups apart later.',
-}
 
 export function PianoStep({
   index,
@@ -53,23 +46,6 @@ export function PianoStep({
       ) : (
         <AccessBody snap={snap} features={features} onRequest={request} />
       )}
-      <div class={styles.inline}>
-        <span class={styles.inlineLabel} id="connection-type-label">
-          Connection type
-        </span>
-        <Segmented
-          label="Connection type"
-          value={route.connection}
-          compact
-          options={[
-            { value: 'usb', label: 'USB' },
-            { value: 'bluetooth', label: 'Bluetooth' },
-            { value: 'unknown', label: 'Not sure' },
-          ]}
-          onChange={(connection) => updateSettings({ route: { connection } })}
-        />
-      </div>
-      <Help>{CONNECTION_HELP[route.connection]}</Help>
       <PairingGuide />
     </Step>
   )
@@ -95,7 +71,7 @@ function AccessBody({
               have no Web MIDI.
             </li>
             <li>
-              <strong>Computer:</strong> use standard desktop Chrome; no special browser is needed.
+              <strong>Computer:</strong> use standard desktop Chrome. No special browser is needed.
             </li>
           </ul>
         </Callout>
@@ -186,7 +162,7 @@ function InputBody({ snap, service, route }: { snap: MidiSnapshot; service: Midi
       {snap.input && !snap.input.connected ? (
         <Callout tone="warning" title={`${snap.input.name} is disconnected`} live>
           <p>
-            Reconnect the piano. It is picked up again automatically; release all keys and pedals before practicing.
+            Reconnect the piano. It is picked up again automatically. Release all keys and pedals before practicing.
           </p>
         </Callout>
       ) : null}

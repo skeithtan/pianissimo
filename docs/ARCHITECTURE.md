@@ -167,7 +167,11 @@ emphasis + offscreen reminder, sticky clef/key/meter on staff lines with an opac
 wrong-key cursor tint (`pulseWrong()`), theme via `--score-*` tokens (U8). A change of label
 room swaps the engraving with a glide (`shared/respace.ts`: the wider engraving cut into onset
 columns that move from the old view's places to the new view's, cursor note anchored; Practice
-keeps the old view until the new layout is ready). Full API: `src/render/README.md`. Browser tests:
+keeps the old view until the new layout is ready). The glide follows the live view frame during
+playback. Rapid reversals await `whenRespaced()` before replacing the view, with stale requests
+discarded (U63). The portrait cursor shares the glide's eased progress between the layouts'
+live cursor geometry, with CSS seek transitions disabled during playback/respacing (U64).
+Full API: `src/render/README.md`. Browser tests:
 `tests/e2e/render-*.spec.ts` with the harness in `tests/harness/` (not in the production build).
 
 #### render/keyboard
@@ -240,9 +244,17 @@ includes an icon-only octave direction for same-pitch-class errors (U30); no gen
 Hiding the page saves progress without stopping playback (P10). Preparation calls `markPrepared`
 once the strip is attached and persistent-label fades have finished. `practiceModel` applies a user
 tempo; `createPieceSaver` debounces piece updates.
+Starting playback resolves the optional `StripSink.browsedPosition()` to an exact seek and
+calls `returnToCurrent()` to restore following, including after asynchronous sound loading.
+The strip reports the nearest onset beneath its fixed cursor while browsing. The page reports
+no alternate position because its cursor moves with the notation. Explicit accepted cursor
+seeks also end browsing (U52). Existing Repeat seek and Listen range rules still apply.
 `views/practice/`: `PracticeView` reads `practiceRequest`, loads piece and package, builds the
 session and `StripView` (`prepareLayout` + IndexedDB layout cache; re-prepared when
 `maxLabelWidthChars` changes). The `PracticeEnv` seam is injectable for tests.
+Focus mode collapses the header and narrow footer-tools row using CSS grid tracks (U60).
+Only the stage height changes, so the existing score view remeasures without re-engraving.
+`useRecede` restores chrome on pause, pointer/touch interaction, or keyboard navigation.
 `views/results`: `ResultsView` reads `resultsRequest` and calls `loadResultsData(storage,
 request, sessionDismissals)` (flush the history writer, read the piece, its attempts for one
 score version, the package occurrences, `loadSuggestions`). `deriveResults` (pure) picks the
@@ -251,7 +263,7 @@ attempt's context history and "other settings". `ScorecardPanel` and `HistoryPan
 presentational. "Practice again" / "Practice this passage" call `openPractice` with
 `{passage, hands, multiplier}` and never start practice.
 `views/shared/suggestions`: presentational `SuggestionList` / `SuggestionCard` (props:
-`suggestions`, `improved`, `disabled`, `compact`, `headingLevel`, `title`, `onPractice`,
+`suggestions`, `improved`, `disabled`, `compact`, `headingLevel`, `title`, `showHeading`, `onPractice`,
 `onDismiss`, `onDisableSuggestions`, `onEnableSuggestions`, `disableLabel`, `renderPreview`), text
 helpers, and `sessionDismissals`, the shared `SessionDismissals` instance used by Library and
 Results.
@@ -272,6 +284,15 @@ Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `prac
   Portrait page mode (U40): `render/page/PageView` implements the same strip contract over a
   page layout (`PrepareOptions.mode: 'page'`, one segment per system); `views/practice/useOrientation`
   picks the view, and a rotation re-prepares and recreates it at the current position.
+  Portrait label spacing (U65): `labels/spacing.ts` reserves adjacent-label envelopes at shared
+  onset columns before collision placement. Up to three passes widen voice spacing to wrap
+  bars, then widen the canvas when an isolated bar still cannot fit. Off stays compact.
+  The requested width remains the cache key, with actual engraving width in layout params.
+  Wider pages support horizontal browsing and cursor following, included in both-axis
+  respacing, pointer geometry, loop edge scrolling, and visible-label assistance tracking.
+  Page loop handles snap across systems using global passage bounds, wrap at horizontal edges,
+  and scroll vertically near viewport edges (U59). Pointer capture and cancellation keep edits
+  local until release, when `onLoopChange` commits the range.
   Practice flow (2026-10-31): every learner onset is a transport gate; nothing at or beyond an
   unreleased gate is emitted, so the automatic part sounds with the press, and an early release
   within the 120 ms grace fast-forwards the transport (P9, E12). In Repeat mode a seek before
@@ -282,7 +303,9 @@ Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `prac
   `wrapTo` (loop wrap pan), `setEarlyMarker` (amber tint), the cursor bar bounded to the staves.
   Theme tokens in `src/ui/global.css`: a four-step surface ramp (`--bg` / `--bg-elevated` /
   `--bg-sunken` / `--bg-raised`) that steps lighter with elevation in dark mode, and the accent
-  as text (`--accent`) versus fill (`--accent-fill` + `--accent-fg`) (A12, A17). Without a
+  as text (`--accent`) versus fill (`--accent-fill` + `--accent-fg`) (A12, A17, Olive U49).
+  Hand controls have separate dark contrast tokens; `--practice-surface` keeps their surface
+  themed when score paper is pinned light, with semantic light inks scoped to the score. Without a
   connected piano the session holds the hands in Listen (`setInputAvailable`, U27). Code style:
   Prettier without semicolons (D11).
 - Performance (PF1–PF4): `ScoreOverview` `follow` (live position without renders),

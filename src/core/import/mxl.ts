@@ -94,7 +94,7 @@ export function listZipEntries(zip: Uint8Array, limits: ImportLimits): ZipEntryI
         if (entries.length > limits.maxZipEntries) {
           throw new ImportError(
             'mxl-limits',
-            `The compressed file lists more than ${limits.maxZipEntries} entries; refusing to open it.`,
+            `The compressed file lists more than ${limits.maxZipEntries} entries. It cannot be opened.`,
           )
         }
         return false
@@ -144,7 +144,7 @@ export class ZipReader {
     if (info.size >= limits.zipRatioMinBytes && info.size > limits.maxZipRatio * Math.max(1, info.compressedSize)) {
       throw new ImportError(
         'mxl-limits',
-        `“${name}” has a suspicious compression ratio (${Math.round(info.size / Math.max(1, info.compressedSize))}:1); refusing to expand it.`,
+        `“${name}” has a suspicious compression ratio (${Math.round(info.size / Math.max(1, info.compressedSize))}:1). It cannot be expanded.`,
       )
     }
     let out: Uint8Array | undefined
@@ -196,7 +196,7 @@ export function mxlRootfiles(zipReader: ZipReader, limits: ImportLimits, diag: D
     if (fallback.length === 1 && fallback[0]) {
       diag.warn(
         'mxl-no-container',
-        `The compressed file has no META-INF/container.xml; using its only score “${fallback[0]}”.`,
+        `The compressed file has no META-INF/container.xml. Its only score, “${fallback[0]}”, is used.`,
       )
       return fallback
     }

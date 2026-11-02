@@ -5,7 +5,7 @@
  * only; ticks and section markers are built once per `measures` and never re-rendered while
  * playing. With `follow`, the overview tracks a live position without re-rendering at all: the
  * played fill and the marker are moved directly (only when they move by a visible step), and the
- * component re-renders only when the bar changes (spoken value, caption, section).
+ * component re-renders only when the bar changes (spoken value and section).
  *
  * With `onLoopChange`, the shown loop gets two edge handles that drag (or arrow-key) its start and
  * end a whole bar at a time; note-level edges stay a stage affair (U21).
@@ -345,11 +345,6 @@ export function ScoreOverview({
       <div ref={track} class={styles.markerTrack}>
         <div class={styles.marker} data-testid="overview-marker" />
       </div>
-      {count > 0 ? (
-        <span class={styles.caption} aria-hidden="true">
-          {current + 1} / {count}
-        </span>
-      ) : null}
     </div>
   )
 }

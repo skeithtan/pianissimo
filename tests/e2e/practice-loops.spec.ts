@@ -30,6 +30,36 @@ test.describe('note-level practice', () => {
     await openSeededPractice(page)
   })
 
+  for (const action of ['pause', 'browse'] as const) {
+    test(`the stage X clears the loop after Listen stops through ${action}`, async ({ page }) => {
+      await page.setViewportSize({ width: 958, height: 846 })
+      await page.getByRole('button', { name: 'Left hand', exact: true }).click()
+      await page.getByRole('button', { name: 'Right hand', exact: true }).click()
+      await page.getByRole('button', { name: 'Repeat from here' }).click()
+      await page.getByRole('button', { name: 'Listen', exact: true }).click()
+      await expect(page.locator('.pn-strip')).toHaveClass(/pn-loop-locked/)
+      if (action === 'pause') {
+        await page.getByRole('button', { name: 'Pause', exact: true }).click()
+      } else {
+        const stage = (await page.locator('.pn-strip').boundingBox())!
+        const x = stage.x + stage.width * 0.8
+        const y = stage.y + stage.height * 0.75
+        await page.mouse.move(x, y)
+        await page.mouse.down()
+        await page.mouse.move(x - 70, y, { steps: 5 })
+        await page.mouse.up()
+        await expect(page.locator('.pn-strip')).toHaveClass(/pn-browsing/)
+      }
+      await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
+      await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-loop-locked/)
+      const clear = page.locator('.pn-loop-clear')
+      await expect(clear).toBeVisible()
+      await clear.click()
+      await expect(page.getByTestId('repeat-controls')).toHaveCount(0)
+      await expect(page.locator('.pn-loop.pn-on')).toHaveCount(0)
+    })
+  }
+
   test('dragging the playhead onto a note continues practice from that note', async ({ page, browserName }) => {
     const grip = page.getByTestId('cursor-grip')
     const g = (await grip.boundingBox())!

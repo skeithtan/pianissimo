@@ -9,8 +9,9 @@
  *   plus 96 px faded at each end, at the x of the musical position along that system's cursor
  *   path; the round repeat button rides on it. Within a system it glides (180 ms per seek,
  *   per-frame while following); at a system boundary it jumps to the next system.
- * - The page stays still while a line is played. When the current system changes (and on a
- *   seek, wrap or return), the page scrolls (300 ms `--ease-standard`, instant with reduced
+ * - A page wider than the viewport can be browsed horizontally and pans to keep the cursor
+ *   readable during playback. Pages that fit stay still while a line is played. When the current
+ *   system changes (and on a seek, wrap or return), the page scrolls (300 ms `--ease-standard`, instant with reduced
  *   motion) so that system's top sits a quarter down the viewport, unless the learner browses
  *   (a manual scroll while browsing is enabled; "Return to current position").
  * - Note states, labels, ottava emphasis, loop band, corrections: the strip's classes and
@@ -97,6 +98,9 @@ const EASE_STANDARD = 'cubic-bezier(0.4, 0, 0.2, 1)'
 const CLEAR_SMALL_PX = 150
 /** Consecutive `smooth: false` calls advancing at most this far are one motion (R12). */
 const FOLLOW_MAX_STEP = 0.25
+/** A held loop handle scrolls within this distance of a viewport edge. */
+const HANDLE_SCROLL_ZONE = 48
+const HANDLE_SCROLL_SPEED = 600
 
 interface LabelNode {
   readonly text: SVGTextElement
@@ -158,6 +162,7 @@ export class PageView {
   private cursorAction = false
   /** The page should bring the current system to its resting place in the next frame. */
   private followRequest: 'smooth' | 'instant' | null = 'instant'
+  private followXRequest = true
   private lastSystem = -1
   private readonly reducedMotion =
     typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -168,16 +173,20 @@ export class PageView {
   private hostH = 0
   /** Last scroll offset read or written (scroll events update it; no reads in the frame). */
   private scrollY = 0
+  private scrollX = 0
   /** The offset this view last wrote; a scroll event elsewhere is the learner's. */
   private writtenY = 0
+  private writtenX = 0
   /** A follow scroll gliding (Web Animations FLIP on the sheet) until `until`. */
-  private glide: { from: number; to: number; until: number } | null = null
+  private glide: { from: number; to: number; fromX: number; toX: number; until: number } | null = null
   private glideAnim: Animation | null = null
   private instant = true
   private applied = {
     cursor: '',
     cursorH: NaN,
     sheetH: NaN,
+    sheetW: NaN,
+    position: NaN,
     transform: '',
     gx: NaN,
     actionTop: NaN,
@@ -209,18 +218,38 @@ export class PageView {
   private tapAnchor: number | null = null
 
   private readonly pointers = new Map<number, { x: number; y: number }>()
-  private gesture: { startX: number; startY: number; moved: boolean } | null = null
+  private gesture: {
+    startX: number
+    startY: number
+    scrollX: number
+    mouse: boolean
+    moved: boolean
+  } | null = null
   private pinch: { dist: number; scale: number } | null = null
   private handleDrag: {
+    pointerId: number
     which: 'start' | 'end'
     range: LoopRange
     system: number
-    knots: LoopKnots
     knot: number
     lo: number
     hi: number
     left: number
+    top: number
+    width: number
+    height: number
+    startX: number
+    clientX: number
+    clientY: number
+    wrappedSystem: number | null
+    wrappedY: number
+    edge: -1 | 0 | 1
+    scrolled: boolean
   } | null = null
+  private handleScrollFrame = 0
+  private handleScrollAt = 0
+  private handleScrollSpeed = 0
+  private handleScrollSpeedX = 0
   private cursorDrag: {
     pointerId: number
     startX: number
@@ -231,10 +260,21 @@ export class PageView {
     system: number
     knots: CursorKnots
     restore: number
+    clientX: number
+    viewLeft: number
+    scrollX: number
   } | null = null
+  private cursorScrollFrame = 0
+  private cursorScrollAt = 0
+  private cursorScrollSpeed = 0
   private zoomTimer: ReturnType<typeof setTimeout> | null = null
 
   private respace: RespaceRun | null = null
+  private cursorRespace: {
+    readonly geo: PageGeometry
+    readonly prev: ScreenFrame
+    readonly next: ScreenFrame
+  } | null = null
 
   private frame = 0
   private destroyed = false
@@ -336,9 +376,15 @@ export class PageView {
     this.measureHost()
     if (typeof ResizeObserver !== 'undefined') {
       this.resize = new ResizeObserver(() => {
+        const width = this.hostW
+        const height = this.hostH
         this.measureHost()
+        // The observer's initial notification often repeats the size measured above. It must
+        // not overwrite a respacing handoff's scroll anchor with a fresh follow request.
+        if (width === this.hostW && height === this.hostH) return
         this.instant = true
         this.followRequest = 'instant'
+        if (width !== this.hostW) this.followXRequest = true
         this.schedule()
       })
       this.resize.observe(this.root)
@@ -370,7 +416,10 @@ export class PageView {
     this.cursor = this.geo.cursorAt(position)
     if (instant) this.instant = true
     // A seek (anything but continuous following) brings its system to the resting place.
-    if (!follow) this.followRequest = 'smooth'
+    if (!follow) {
+      this.followRequest = 'smooth'
+      this.followXRequest = true
+    }
     this.schedule()
   }
 
@@ -385,6 +434,7 @@ export class PageView {
     this.cursor = this.geo.cursorAt(position)
     this.instant = true
     this.followRequest = 'smooth'
+    this.followXRequest = true
     this.schedule()
   }
 
@@ -495,6 +545,7 @@ export class PageView {
 
   setSnapPositions(onsets: readonly Rational[]): void {
     if (onsets === this.snapSource) return
+    this.endHandleDrag()
     this.snapSource = onsets
     this.cursorKnotCache.clear()
     this.loopKnotCache.clear()
@@ -524,7 +575,7 @@ export class PageView {
     this.opts.onLoopSelectModeChange?.(mode)
   }
 
-  /** Manual scrolling (browsing) is possible only while enabled (spec: while paused). */
+  /** Manual scrolling (browsing) is possible while enabled. The owner pauses playback on browse. */
   setBrowseEnabled(enabled: boolean): void {
     this.browseEnabled = enabled
     this.root.classList.toggle('pn-browse-enabled', enabled)
@@ -548,11 +599,17 @@ export class PageView {
     return this.browsing
   }
 
+  /** Scrolling the page leaves its notation-anchored cursor at the current musical position. */
+  browsedPosition(): Rational | null {
+    return null
+  }
+
   returnToCurrent(): void {
     if (!this.browsing) return
     this.browsing = false
     this.root.classList.remove('pn-browsing')
     this.followRequest = 'smooth'
+    this.followXRequest = true
     this.opts.onBrowse?.(false)
     this.schedule()
   }
@@ -628,10 +685,14 @@ export class PageView {
 
   // ---------------------------------------------------------------- respacing (R3 revised)
 
-  /** See `StripView.respaceSnapshot`. Null while browsing, dragging or gliding. */
+  /** A replacement waits for an active glide instead of snapping its slices to their end. */
+  whenRespaced(): Promise<void> {
+    return this.respace?.finished ?? Promise.resolve()
+  }
+
+  /** See `StripView.respaceSnapshot`. A follow glide is captured at its visible frame. */
   respaceSnapshot(next: PreparedLayout): RespaceSnapshot | null {
     if (this.destroyed || this.browsing || this.handleDrag || this.cursorDrag?.moved) return null
-    if (this.glide && performance.now() < this.glide.until) return null
     if (this.reducedMotion || !(this.hostW > 0) || !(this.hostH > 0)) return null
     this.respace?.cancel()
     return {
@@ -651,10 +712,19 @@ export class PageView {
     const L = this.layout
     const s = this.scale
     const occ = Math.max(0, occAtPosition(L.occurrences, this.cursorPos))
+    const prevGeo = new PageGeometry(prev.layout)
+    const wasX = prev.frame.dx + prevGeo.cursorAt(this.cursorPos).x * prev.frame.scale
+    const x = this.clampScrollX(this.gutter() + this.cursor.x * s - wasX)
     const was = prev.frame.dy + lineOf(prev.layout, occ).top * prev.frame.scale
     const y = PAGE_PAD_TOP + (lineOf(L, occ).top - L.top) * s - was
-    this.scrollTo(Math.max(0, Math.min(this.sheetHeight() - this.hostH, y)), false)
+    // Attaching at the current position may have started this new view's own follow glide.
+    // The old view's visible position owns this handoff, even when its target scroll is equal.
+    this.glideAnim?.cancel()
+    this.glideAnim = null
+    this.glide = null
+    this.scrollTo(Math.max(0, Math.min(this.sheetHeight() - this.hostH, y)), false, x)
     this.followRequest = null
+    this.followXRequest = false
     this.flushNow()
     // Everything the glide may show is cut now: mount the page ± one viewport at once.
     const toY = (sy: number): number => (sy - PAGE_PAD_TOP) / s + L.top
@@ -666,9 +736,11 @@ export class PageView {
     this.applyNotes()
     this.root.classList.add('pn-respacing')
     const systemOf = (layout: PreparedLayout) => (o: number) => layout.occurrences[o]?.system ?? -1
+    const nextFrame = this.screenFrame()
+    this.cursorRespace = { geo: prevGeo, prev: prev.frame, next: nextFrame }
     this.respace = startRespace({
       prev,
-      next: { layout: L, frame: this.screenFrame() },
+      next: { layout: L, frame: nextFrame },
       nextPieces: () => collectPieces(this.store.mounted.values()),
       segmentOf: { prev: systemOf(prev.layout), next: systemOf(L) },
       parent: this.root,
@@ -678,10 +750,21 @@ export class PageView {
       easing: this.ease,
       onDone: () => {
         this.respace = null
-        if (!this.destroyed) this.root.classList.remove('pn-respacing')
+        this.cursorRespace = null
+        if (!this.destroyed) {
+          this.applyCursor(this.applied.gx)
+          this.root.classList.remove('pn-respacing')
+        }
       },
     })
-    if (!this.respace) this.root.classList.remove('pn-respacing')
+    if (!this.respace) {
+      this.cursorRespace = null
+      this.root.classList.remove('pn-respacing')
+    } else {
+      // Place the new cursor at the old layout's visible musical position before the first paint.
+      this.applyCursor(this.applied.gx)
+      this.schedule()
+    }
   }
 
   /** See `StripView.holdLabels`. */
@@ -692,11 +775,23 @@ export class PageView {
   /** Layout px → root px as last applied (the scroller fills the root). */
   private screenFrame(): ScreenFrame {
     const s = this.scale
-    return { scale: s, dx: this.applied.gx, dy: PAGE_PAD_TOP - this.layout.top * s - this.scrollY }
+    // A follow scroll sets scrollY to its destination immediately, then the sheet's compositor
+    // animation carries the visible music there. Keep respacing on that visible frame too.
+    const progress = this.glideAnim?.effect?.getComputedTiming().progress
+    const remaining = progress == null ? 0 : 1 - progress
+    const offset = this.glide ? (this.glide.to - this.glide.from) * remaining : 0
+    const offsetX = this.glide ? (this.glide.toX - this.glide.fromX) * remaining : 0
+    return {
+      scale: s,
+      dx: this.applied.gx - this.scrollX + offsetX,
+      dy: PAGE_PAD_TOP - this.layout.top * s - this.scrollY + offset,
+    }
   }
 
   destroy(): void {
     this.destroyed = true
+    this.stopHandleScroll()
+    this.stopCursorScroll()
     this.respace?.cancel()
     if (this.frame) cancelAnimationFrame(this.frame)
     if (this.corrLeaveTimer) clearTimeout(this.corrLeaveTimer)
@@ -745,6 +840,7 @@ export class PageView {
     this.scale = scale
     this.instant = true
     this.followRequest = this.browsing ? null : 'instant'
+    this.followXRequest = !this.browsing
     this.root.style.setProperty('--pn-zoom', String(scale))
     if (notify && this.opts.onZoomChange) {
       if (this.zoomTimer) clearTimeout(this.zoomTimer)
@@ -768,6 +864,23 @@ export class PageView {
     return Math.max(Math.min(PAGE_GUTTER, free / 2), free / 2, 0)
   }
 
+  private sheetWidth(): number {
+    return Math.max(this.hostW, Math.ceil(this.layout.width * this.scale))
+  }
+
+  private clampScrollX(x: number): number {
+    return Math.max(0, Math.min(this.sheetWidth() - this.hostW, x))
+  }
+
+  /** Keep read-ahead room while following. A seek or a new line starts near the left third. */
+  private followScrollX(reset: boolean): number {
+    const x = this.gutter() + this.cursor.x * this.scale
+    if (reset) return this.clampScrollX(x - this.hostW / 3)
+    const left = Math.min(96, this.hostW * 0.2)
+    const right = (this.hostW * 2) / 3
+    return this.clampScrollX(Math.max(x - right, Math.min(this.scrollX, x - left)))
+  }
+
   private sheetHeight(): number {
     return Math.ceil(PAGE_PAD_TOP + this.layout.height * this.scale + Math.max(PAGE_PAD_TOP, this.hostH * 0.5))
   }
@@ -787,6 +900,12 @@ export class PageView {
     const L = this.layout
     const s = this.scale
     const gx = this.gutter()
+    const sheetW = this.sheetWidth()
+    if (sheetW !== this.applied.sheetW) {
+      this.sheet.style.width = `${sheetW}px`
+      this.applied.sheetW = sheetW
+    }
+    this.root.classList.toggle('pn-page-wide', sheetW > this.hostW)
     const sheetH = this.sheetHeight()
     if (sheetH !== this.applied.sheetH) {
       this.sheet.style.height = `${sheetH}px`
@@ -803,10 +922,13 @@ export class PageView {
     const system = this.cursor.system
     const changed = system !== this.lastSystem
     const request = this.followRequest
+    const requestX = this.followXRequest
     this.followRequest = null
+    this.followXRequest = false
     const instantCursor = this.instant || changed || this.following
     this.root.classList.toggle('pn-instant', instantCursor)
     this.instant = false
+    this.panTo(this.clampScrollX(this.scrollX))
     if ((changed || request) && !this.browsing && !this.handleDrag && !this.cursorDrag?.moved) {
       const target = this.geo.followScroll(system, {
         scale: s,
@@ -816,8 +938,21 @@ export class PageView {
         offset: this.opts.followOffset ?? 0.25,
       })
       const animate = this.lastSystem >= 0 && request !== 'instant' && !this.reducedMotion
-      this.scrollTo(target, animate)
+      const targetX = changed || requestX ? this.followScrollX(true) : this.scrollX
+      // The cursor already belongs to the next system. Panning from the previous system's
+      // right edge would carry that new cursor offscreen, so only the vertical axis glides.
+      this.scrollTo(target, animate, targetX, !changed)
+    } else if (
+      this.cursorPos !== this.applied.position &&
+      !this.browsing &&
+      !this.handleDrag &&
+      !this.cursorDrag?.moved
+    ) {
+      // Per-frame playback advances the scroll directly, alongside the cursor, without a
+      // delayed animation that would trail it. An existing vertical glide remains intact.
+      this.panTo(this.followScrollX(false))
     }
+    this.applied.position = this.cursorPos
     this.lastSystem = system
 
     // Mounting: the visible range (and, while gliding, where the glide started) ± one viewport.
@@ -830,6 +965,7 @@ export class PageView {
       vy1 = Math.max(vy1, toY(glide.from + this.hostH))
       this.schedule()
     } else this.glide = null
+    this.respace?.follow(this.screenFrame())
     const over = (this.opts.overscan ?? 1) * (this.hostH / s)
     const focus = (vy0 + vy1) / 2
     const required = new Set(this.store.wanted(vy0, vy1, focus))
@@ -846,15 +982,26 @@ export class PageView {
     const visY0 = toY(this.scrollY)
     const visY1 = toY(this.scrollY + this.hostH)
     this.applyOttava(gx, visY0, visY1)
-    this.reportVisibleLabels(visY0, visY1)
+    this.reportVisibleLabels()
     this.labelsChanged = false
-    if (!done) this.schedule()
+    if (!done || this.respace) this.schedule()
   }
 
-  /** Scrolls the page to `y`; animated as a FLIP glide of the sheet (compositor transform). */
-  private scrollTo(y: number, animate: boolean): void {
-    const from = this.scrollY
-    if (Math.abs(y - from) < 1) return
+  /** Writes horizontal following without restarting an active system-scroll animation. */
+  private panTo(x: number): void {
+    if (x === this.scrollX) return
+    this.writtenX = x
+    this.scrollX = x
+    this.scroller.scrollLeft = x
+  }
+
+  /** Scrolls the page in both axes, animated as a FLIP glide of the sheet. */
+  private scrollTo(y: number, animate: boolean, x = this.scrollX, animateX = true): void {
+    if (Math.abs(y - this.scrollY) < 1 && Math.abs(x - this.scrollX) < 1) return
+    const frame = this.screenFrame()
+    const from = PAGE_PAD_TOP - this.layout.top * this.scale - frame.dy
+    const fromX = animateX ? this.applied.gx - frame.dx : x
+    this.panTo(x)
     this.writtenY = y
     this.scrollY = y
     this.scroller.scrollTop = y
@@ -864,9 +1011,9 @@ export class PageView {
       this.glide = null
       return
     }
-    this.glide = { from, to: y, until: performance.now() + SCROLL_MS + 40 }
+    this.glide = { from, to: y, fromX, toX: x, until: performance.now() + SCROLL_MS + 40 }
     this.glideAnim = this.sheet.animate(
-      [{ transform: `translate3d(0, ${r2(y - from)}px, 0)` }, { transform: 'translate3d(0, 0, 0)' }],
+      [{ transform: `translate3d(${r2(x - fromX)}px, ${r2(y - from)}px, 0)` }, { transform: 'translate3d(0, 0, 0)' }],
       { duration: SCROLL_MS, easing: this.ease },
     )
     // A canceled glide rejects `finished`; nothing waits for it.
@@ -878,9 +1025,31 @@ export class PageView {
     const L = this.layout
     const s = this.scale
     const span = this.geo.staffSpan(this.cursor.system)
-    const sx = r2(gx + this.cursor.x * s)
-    const sy = r2(PAGE_PAD_TOP + (span.top - L.top) * s - CURSOR_MARGIN)
-    const h = r2((span.bottom - span.top) * s + 2 * CURSOR_MARGIN)
+    let sx = gx + this.cursor.x * s
+    let sy = PAGE_PAD_TOP + (span.top - L.top) * s - CURSOR_MARGIN
+    let h = (span.bottom - span.top) * s + 2 * CURSOR_MARGIN
+    const handoff = this.cursorRespace
+    if (handoff && this.respace) {
+      const frame = this.screenFrame()
+      const oldCursor = handoff.geo.cursorAt(this.cursorPos)
+      const oldSpan = handoff.geo.staffSpan(oldCursor.system)
+      const k = frame.scale / handoff.next.scale
+      const dx = frame.dx - handoff.next.dx * k
+      const dy = frame.dy - handoff.next.dy * k
+      const p = this.respace.progress()
+      const mix = (from: number, to: number) => from + (to - from) * p
+      const oldY = (y: number) => (handoff.prev.dy + y * handoff.prev.scale) * k + dy
+      const top = mix(oldY(oldSpan.top), frame.dy + span.top * s)
+      const bottom = mix(oldY(oldSpan.bottom), frame.dy + span.bottom * s)
+      sx =
+        mix((handoff.prev.dx + oldCursor.x * handoff.prev.scale) * k + dx, frame.dx + this.cursor.x * s) - frame.dx + gx
+      // The cursor rides the sheet, whereas the notation's glide is in viewport coordinates.
+      sy = top - (frame.dy - PAGE_PAD_TOP + L.top * s) - CURSOR_MARGIN
+      h = bottom - top + 2 * CURSOR_MARGIN
+    }
+    sx = r2(sx)
+    sy = r2(sy)
+    h = r2(h)
     const t = `translate3d(${sx}px, ${sy}px, 0)`
     if (t !== this.applied.cursor) {
       this.cursorEl.style.transform = t
@@ -1048,10 +1217,16 @@ export class PageView {
     }
   }
 
-  /** Labels in the visible page y range count as seen (assistance tracking). */
-  private reportVisibleLabels(y0: number, y1: number): void {
-    if (!this.labelsChanged && this.scrollY === this.reportedAt) return
-    this.reportedAt = this.scrollY
+  /** Labels intersecting the viewport count as seen (assistance tracking). */
+  private reportVisibleLabels(): void {
+    const frame = this.screenFrame()
+    const key = `${frame.scale}|${frame.dx}|${frame.dy}|${this.hostW}|${this.hostH}`
+    if (!this.labelsChanged && key === this.reportedAt) return
+    this.reportedAt = key
+    const x0 = -frame.dx / this.scale
+    const x1 = (this.hostW - frame.dx) / this.scale
+    const y0 = -frame.dy / this.scale
+    const y1 = (this.hostH - frame.dy) / this.scale
     const next = new Set<number>()
     for (const seg of this.store.mounted.values()) {
       if ((seg.data.y1 ?? 0) < y0 || (seg.data.y0 ?? 0) > y1) continue
@@ -1059,7 +1234,7 @@ export class PageView {
         const node = this.labelNodes.get(id)
         if (!node || node.opacity <= 0) continue
         const b = this.layout.labels[id]!.box
-        if (b.y + b.h > y0 && b.y < y1) next.add(id)
+        if (b.y + b.h > y0 && b.y < y1 && b.x + b.w > x0 && b.x < x1) next.add(id)
       }
     }
     const added: number[] = []
@@ -1067,7 +1242,7 @@ export class PageView {
     this.visibleLabelIds = next
     if (added.length) this.opts.onVisibleLabels?.(added.sort((a, b) => a - b))
   }
-  private reportedAt = NaN
+  private reportedAt = ''
 
   // ---------------------------------------------------------------- overlays
 
@@ -1094,7 +1269,10 @@ export class PageView {
       }
       box.classList.add('pn-on')
       const lb = g.labelBox
-      if (!remind && (lb.y < y0 || lb.y + lb.h > y1)) remind = g.text
+      const left = gx + lb.x * this.scale - this.scrollX
+      if (!remind && (lb.y < y0 || lb.y + lb.h > y1 || left < 0 || left + lb.w * this.scale > this.hostW)) {
+        remind = g.text
+      }
     }
     let el = this.reminders.get(0)
     if (!remind) {
@@ -1237,7 +1415,8 @@ export class PageView {
       this.on(el, 'pointerdown', (e) => this.handleDown(e, which))
       this.on(el, 'pointermove', (e) => this.handleMove(e))
       this.on(el, 'pointerup', (e) => this.handleUp(e))
-      this.on(el, 'pointercancel', (e) => this.handleUp(e))
+      this.on(el, 'pointercancel', (e) => this.handleUp(e, true))
+      this.on(el, 'lostpointercapture', (e) => this.handleUp(e, true))
       this.on(el, 'keydown', (e) => this.handleKey(e, which))
     }
     this.on(this.cursorGrip, 'keydown', (e) => this.cursorKey(e))
@@ -1264,16 +1443,22 @@ export class PageView {
   /** A scroll this view did not write is the learner browsing (when allowed). */
   private onScroll(): void {
     const y = this.scroller.scrollTop
+    const x = this.scroller.scrollLeft
     this.scrollY = y
-    if (Math.abs(y - this.writtenY) > 2) {
+    this.scrollX = x
+    if (Math.abs(y - this.writtenY) > 2 || Math.abs(x - this.writtenX) > 2) {
       this.writtenY = y
-      if (this.browseEnabled && !this.browsing) {
-        this.browsing = true
-        this.root.classList.add('pn-browsing')
-        this.opts.onBrowse?.(true)
-      }
+      this.writtenX = x
+      this.beginBrowse()
     }
     this.schedule()
+  }
+
+  private beginBrowse(): void {
+    if (!this.browseEnabled || this.browsing) return
+    this.browsing = true
+    this.root.classList.add('pn-browsing')
+    this.opts.onBrowse?.(true)
   }
 
   private pointerDown(e: PointerEvent): void {
@@ -1289,6 +1474,7 @@ export class PageView {
         // Synthetic events in tests have no active pointer.
       }
       const system = this.cursor.system
+      if (this.sheetWidth() > this.hostW) this.freezeScroll()
       this.cursorDrag = {
         pointerId: e.pointerId,
         startX: e.clientX,
@@ -1299,6 +1485,9 @@ export class PageView {
         system,
         knots: this.cursorKnotsOf(system),
         restore: this.cursorPos,
+        clientX: e.clientX,
+        viewLeft: this.root.getBoundingClientRect().left,
+        scrollX: this.scrollX,
       }
       return
     }
@@ -1308,7 +1497,17 @@ export class PageView {
       this.gesture = null
       return
     }
-    if (this.pointers.size === 1) this.gesture = { startX: e.clientX, startY: e.clientY, moved: false }
+    if (this.pointers.size === 1) {
+      const mouse = e.pointerType === 'mouse' && this.sheetWidth() > this.hostW
+      this.gesture = { startX: e.clientX, startY: e.clientY, scrollX: this.scrollX, mouse, moved: false }
+      if (mouse) {
+        try {
+          this.scroller.setPointerCapture(e.pointerId)
+        } catch {
+          /* Synthetic pointer. */
+        }
+      }
+    }
   }
 
   private pointerMove(e: PointerEvent): void {
@@ -1323,7 +1522,9 @@ export class PageView {
         d.moved = true
         this.root.classList.add('pn-cursor-dragging')
       }
+      d.clientX = e.clientX
       this.dragCursorTo(e.clientX)
+      this.updateCursorScroll()
       return
     }
     if (this.pinch && this.pointers.size >= 2) {
@@ -1333,6 +1534,14 @@ export class PageView {
     }
     const g = this.gesture
     if (g && !g.moved && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) > TAP_SLOP) g.moved = true
+    if (g?.mouse && g.moved && this.browseEnabled) {
+      const x = this.clampScrollX(g.scrollX + g.startX - e.clientX)
+      if (x !== this.scrollX) {
+        this.beginBrowse()
+        this.panTo(x)
+        this.schedule()
+      }
+    }
   }
 
   private pointerUp(e: PointerEvent, canceled = false): void {
@@ -1375,7 +1584,7 @@ export class PageView {
   private dragCursorTo(clientX: number): void {
     const d = this.cursorDrag
     if (!d || d.knots.pos.length === 0) return
-    const x = (clientX - d.left) / this.scale
+    const x = (clientX - d.left + this.scrollX - d.scrollX) / this.scale
     const k = nearestKnot(d.knots.x, x)
     if (k === d.knot) return
     d.knot = k
@@ -1386,10 +1595,51 @@ export class PageView {
     this.schedule()
   }
 
+  /** A held playhead reaches offscreen notes on its current system without changing its size. */
+  private updateCursorScroll(): void {
+    const d = this.cursorDrag
+    if (!d?.moved || this.sheetWidth() <= this.hostW) {
+      this.stopCursorScroll()
+      return
+    }
+    const x = d.clientX - d.viewLeft
+    const depth =
+      x < HANDLE_SCROLL_ZONE
+        ? -(HANDLE_SCROLL_ZONE - Math.max(0, x)) / HANDLE_SCROLL_ZONE
+        : x > this.hostW - HANDLE_SCROLL_ZONE
+          ? (HANDLE_SCROLL_ZONE - Math.max(0, this.hostW - x)) / HANDLE_SCROLL_ZONE
+          : 0
+    this.cursorScrollSpeed = depth * HANDLE_SCROLL_SPEED
+    if (!depth) this.stopCursorScroll()
+    else if (!this.cursorScrollFrame) this.cursorScrollFrame = requestAnimationFrame(this.cursorScrollTick)
+  }
+
+  private readonly cursorScrollTick = (now: number): void => {
+    this.cursorScrollFrame = 0
+    const d = this.cursorDrag
+    if (!d || this.destroyed || !this.cursorScrollSpeed) return
+    const ms = this.cursorScrollAt ? Math.min(32, now - this.cursorScrollAt) : 16
+    this.cursorScrollAt = now
+    const x = this.clampScrollX(this.scrollX + (this.cursorScrollSpeed * ms) / 1000)
+    if (x === this.scrollX) return
+    this.panTo(x)
+    this.dragCursorTo(d.clientX)
+    this.flushNow()
+    this.cursorScrollFrame = requestAnimationFrame(this.cursorScrollTick)
+  }
+
+  private stopCursorScroll(): void {
+    if (this.cursorScrollFrame) cancelAnimationFrame(this.cursorScrollFrame)
+    this.cursorScrollFrame = 0
+    this.cursorScrollAt = 0
+    this.cursorScrollSpeed = 0
+  }
+
   private endCursorDrag(clientX: number, clientY: number, canceled: boolean): void {
     const d = this.cursorDrag
     if (!d) return
     this.cursorDrag = null
+    this.stopCursorScroll()
     this.root.classList.remove('pn-cursor-dragging')
     if (!d.moved) {
       if (!canceled) this.tap(clientX, clientY)
@@ -1400,9 +1650,11 @@ export class PageView {
     if (canceled || !exact || !seek || seek(exact) === false) {
       this.cursorPos = d.restore
       this.cursor = this.geo.cursorAt(d.restore)
+      this.panTo(this.clampScrollX(d.scrollX))
     } else {
       this.cursorPos = toNumber(exact)
       this.cursor = this.geo.cursorAt(this.cursorPos)
+      this.returnToCurrent()
     }
     this.schedule()
   }
@@ -1432,6 +1684,7 @@ export class PageView {
       this.browsing = false
       this.root.classList.remove('pn-browsing')
       this.followRequest = 'smooth'
+      this.followXRequest = true
       this.opts.onBrowse?.(false)
       this.schedule()
     }
@@ -1466,14 +1719,26 @@ export class PageView {
     }
   }
 
-  /** A handle drags along the system it is on, snapping to that system's loop knots. */
+  /** Freeze a follow glide at its visible position before starting a direct-manipulation drag. */
+  private freezeScroll(): void {
+    if (!this.glideAnim) return
+    const rect = this.root.getBoundingClientRect()
+    const sheetRect = this.sheet.getBoundingClientRect()
+    const visibleY = rect.top - sheetRect.top
+    const visibleX = this.clampScrollX(rect.left - sheetRect.left)
+    this.scrollTo(Math.max(0, Math.min(this.sheetHeight() - this.hostH, visibleY)), false, visibleX)
+    this.glideAnim?.cancel()
+    this.glideAnim = null
+    this.glide = null
+  }
+
+  /** Capture a handle while keeping the other edge fixed in the whole piece's snap limits. */
   private handleDown(e: PointerEvent, which: 'start' | 'end'): void {
     e.stopPropagation()
-    if (!this.loop || !this.loopEditable) return
+    if (!this.loop || !this.loopEditable || this.handleDrag) return
     const { start, end } = passagePositions(this.layout.occurrences, this.loop)
     const system = this.geo.systemOfOcc[which === 'start' ? this.loop.fromOcc : this.loop.toOcc] ?? 0
-    const knots = this.loopKnotsOf(system)
-    const limits = edgeLimits(knots, which, which === 'start' ? end : start)
+    const limits = edgeLimits(this.globalLoopKnots, which, which === 'start' ? end : start)
     if (!limits) return
     try {
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
@@ -1481,51 +1746,186 @@ export class PageView {
       // Synthetic events in tests have no active pointer.
     }
     ;(e.currentTarget as HTMLElement).classList.add('pn-grab')
+    const rect = this.root.getBoundingClientRect()
+    this.freezeScroll()
     this.handleDrag = {
+      pointerId: e.pointerId,
       which,
       range: this.loop,
       system,
-      knots,
-      knot: knotAtPosition(knots.pos, which === 'start' ? start : end),
+      knot: knotAtPosition(this.globalLoopKnots.pos, which === 'start' ? start : end),
       ...limits,
-      left: this.sheet.getBoundingClientRect().left + this.gutter(),
+      left: rect.left,
+      top: rect.top,
+      width: rect.width || this.hostW,
+      height: rect.height || this.hostH,
+      startX: e.clientX,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      wrappedSystem: null,
+      wrappedY: e.clientY,
+      edge: 0,
+      scrolled: false,
     }
   }
 
   private handleMove(e: PointerEvent): void {
     const d = this.handleDrag
-    if (!d || !this.loop) return
+    if (!d || e.pointerId !== d.pointerId || !this.loop) return
     e.stopPropagation()
-    const x = (e.clientX - d.left) / this.scale
-    const k = nearestKnot(d.knots.x, x, d.lo, d.hi)
+    d.clientX = e.clientX
+    d.clientY = e.clientY
+    this.dragHandleTo(true)
+    this.updateHandleScroll()
+  }
+
+  /** Pick a system vertically, then its nearest knot, constrained by the other loop edge. */
+  private dragHandleTo(allowWrap = false): void {
+    const d = this.handleDrag
+    if (!d || !this.loop) return
+    if (d.wrappedSystem !== null && Math.abs(d.clientY - d.wrappedY) > TAP_SLOP) d.wrappedSystem = null
+    const y = (d.clientY - d.top + this.scrollY - PAGE_PAD_TOP) / this.scale + this.layout.top
+    let system = d.wrappedSystem ?? this.geo.systemAtY(y)
+    let knots = this.loopKnotsOf(system)
+    const x = (d.clientX - d.left + this.scrollX - this.gutter()) / this.scale
+    const first = knots.x[0] ?? 0
+    const last = knots.x[knots.x.length - 1] ?? first
+    // Reach the page edge even when the handle's outer half is clipped by the viewport.
+    const origin = d.left + this.gutter() - this.scrollX
+    const atLeft = d.clientX <= origin + first * this.scale - TAP_SLOP || (this.scrollX <= 1 && d.clientX <= d.left + 4)
+    const atRight =
+      d.clientX >= origin + last * this.scale + TAP_SLOP ||
+      (this.scrollX >= this.clampScrollX(Infinity) - 1 && d.clientX >= d.left + d.width - 4)
+    const edge = atLeft ? -1 : atRight ? 1 : 0
+    if (!edge) d.edge = 0
+    // A diagonal move onto another line selects that line first; it must re-enter the page
+    // before a horizontal edge gesture can wrap again.
+    const crossedVertically = d.wrappedSystem === null && system !== d.system
+    if (crossedVertically) d.edge = edge
+    const direction = Math.sign(d.clientX - d.startX)
+    const wrap = allowWrap && !crossedVertically && edge && edge !== d.edge && direction === edge
+    const fromSystem = system
+    let didWrap = false
+    let local: number
+    if (wrap && system + edge >= 0 && system + edge < this.geo.systems.length) {
+      system += edge
+      knots = this.loopKnotsOf(system)
+      // End edges are exclusive: move at least one knot into the new line.
+      local = edge > 0 ? (d.which === 'end' ? 1 : 0) : knots.pos.length - (d.which === 'start' ? 2 : 1)
+      didWrap = true
+    } else {
+      if (edge && d.edge === edge && d.wrappedSystem !== null) return
+      local = nearestKnot(knots.x, x)
+    }
+    const candidate = knotAtPosition(this.globalLoopKnots.pos, knots.pos[Math.max(0, local)] ?? 0)
+    const k = Math.max(d.lo, Math.min(d.hi, candidate))
+    if (didWrap) d.edge = edge
     if (k === d.knot) return
     d.knot = k
-    const next = this.withEdge(this.loop, d.which, d.knots, k)
+    const next = this.withEdge(this.loop, d.which, this.globalLoopKnots, k)
+    d.system = this.geo.systemOfOcc[d.which === 'start' ? next.fromOcc : next.toOcc] ?? system
+    if (didWrap && d.system !== fromSystem) {
+      d.wrappedSystem = d.system
+      d.wrappedY = d.clientY
+      // Keep the new line near the held finger. At the piece ends, the sticky system still
+      // permits horizontal editing until the finger deliberately moves up or down.
+      const span = this.geo.staffSpan(d.system)
+      const target = PAGE_PAD_TOP + ((span.top + span.bottom) / 2 - this.layout.top) * this.scale
+      this.scrollHandleTo(target - (d.clientY - d.top), edge > 0 ? 0 : this.clampScrollX(Infinity))
+    }
     if (!sameRange(next, d.range)) {
       d.range = next
       this.schedule()
     }
   }
 
-  private handleUp(e: PointerEvent): void {
+  private scrollHandleTo(y: number, x = this.scrollX): void {
     const d = this.handleDrag
-    ;(e.currentTarget as HTMLElement).classList.remove('pn-grab')
     if (!d) return
+    const next = Math.max(0, Math.min(Math.max(0, this.sheetHeight() - this.hostH), y))
+    if (Math.abs(next - this.scrollY) < 1 && Math.abs(x - this.scrollX) < 1) return
+    d.scrolled = true
+    this.scrollTo(next, false, x)
+    this.schedule()
+  }
+
+  /** Reveal the rest of a wide system or more systems while a held edge nears the viewport. */
+  private updateHandleScroll(): void {
+    const d = this.handleDrag
+    if (!d || d.wrappedSystem !== null) {
+      this.stopHandleScroll()
+      return
+    }
+    const rel = d.clientY - d.top
+    const depth =
+      rel < HANDLE_SCROLL_ZONE
+        ? -(HANDLE_SCROLL_ZONE - Math.max(0, rel)) / HANDLE_SCROLL_ZONE
+        : rel > d.height - HANDLE_SCROLL_ZONE
+          ? (HANDLE_SCROLL_ZONE - Math.max(0, d.height - rel)) / HANDLE_SCROLL_ZONE
+          : 0
+    this.handleScrollSpeed = depth * HANDLE_SCROLL_SPEED
+    const horizontal = d.clientX - d.left
+    const depthX =
+      horizontal < HANDLE_SCROLL_ZONE
+        ? -(HANDLE_SCROLL_ZONE - Math.max(0, horizontal)) / HANDLE_SCROLL_ZONE
+        : horizontal > d.width - HANDLE_SCROLL_ZONE
+          ? (HANDLE_SCROLL_ZONE - Math.max(0, d.width - horizontal)) / HANDLE_SCROLL_ZONE
+          : 0
+    this.handleScrollSpeedX = this.sheetWidth() > this.hostW ? depthX * HANDLE_SCROLL_SPEED : 0
+    if (!depth && !this.handleScrollSpeedX) this.stopHandleScroll()
+    else if (!this.handleScrollFrame) this.handleScrollFrame = requestAnimationFrame(this.handleScrollTick)
+  }
+
+  private readonly handleScrollTick = (now: number): void => {
+    this.handleScrollFrame = 0
+    if (!this.handleDrag || this.destroyed || (!this.handleScrollSpeed && !this.handleScrollSpeedX)) return
+    const ms = this.handleScrollAt ? Math.min(32, now - this.handleScrollAt) : 16
+    this.handleScrollAt = now
+    const before = this.scrollY
+    const beforeX = this.scrollX
+    this.scrollHandleTo(
+      before + (this.handleScrollSpeed * ms) / 1000,
+      this.clampScrollX(beforeX + (this.handleScrollSpeedX * ms) / 1000),
+    )
+    if (this.scrollY === before && this.scrollX === beforeX) return
+    this.dragHandleTo(true)
+    this.flushNow()
+    this.updateHandleScroll()
+  }
+
+  private stopHandleScroll(): void {
+    if (this.handleScrollFrame) cancelAnimationFrame(this.handleScrollFrame)
+    this.handleScrollFrame = 0
+    this.handleScrollAt = 0
+    this.handleScrollSpeed = 0
+    this.handleScrollSpeedX = 0
+  }
+
+  private handleUp(e: PointerEvent, canceled = false): void {
+    const d = this.handleDrag
+    if (!d || e.pointerId !== d.pointerId) return
     e.stopPropagation()
     this.endHandleDrag()
-    if (this.loop && this.loopEditable && !sameRange(d.range, this.loop)) {
+    if (!canceled && this.loop && this.loopEditable && !sameRange(d.range, this.loop)) {
       this.loop = d.range
       this.opts.onLoopChange?.(d.range)
     }
     this.schedule()
   }
 
-  /** Ends a handle drag without committing its range (the caller commits it on release). */
+  /** End without committing (the release caller commits), retaining any edge-scroll position. */
   private endHandleDrag(): void {
-    if (!this.handleDrag) return
+    const d = this.handleDrag
+    if (!d) return
     this.handleDrag = null
+    this.stopHandleScroll()
     this.startHandle.classList.remove('pn-grab')
     this.endHandle.classList.remove('pn-grab')
+    if (d.scrolled && this.browseEnabled && !this.browsing) {
+      this.browsing = true
+      this.root.classList.add('pn-browsing')
+      this.opts.onBrowse?.(true)
+    }
     this.schedule()
   }
 
@@ -1582,7 +1982,9 @@ export class PageView {
     if (!seek || seek(exact) === false) return
     this.cursorPos = P[k]!
     this.cursor = this.geo.cursorAt(this.cursorPos)
+    this.returnToCurrent()
     this.followRequest = 'smooth'
+    this.followXRequest = true
     const text = this.opts.cursorDragLabel?.(exact) ?? ''
     if (text) this.cursorGrip.setAttribute('aria-valuetext', text)
     if (this.readoutEl.textContent !== text) this.readoutEl.textContent = text

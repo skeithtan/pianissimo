@@ -237,7 +237,7 @@ function traversalText(history: PieceHistory, s: SuggestionRecord, labeler: BarL
   const withErrors = rows.filter((r) => r.errors > 0)
   const first = withErrors[0]
   if (first === undefined) {
-    return `${capitalize(labeler.range(s.coreFrom, s.coreTo))} was flagged earlier; recent passes have been clean so far.`
+    return `${capitalize(labeler.range(s.coreFrom, s.coreTo))} was flagged earlier. Recent passes have been clean so far.`
   }
   const uniform = withErrors.every((r) => r.errors === first.errors && r.complete === first.complete)
   if (uniform && withErrors.length === rows.length) {
@@ -246,7 +246,7 @@ function traversalText(history: PieceHistory, s: SuggestionRecord, labeler: BarL
   }
   const rest = withErrors.slice(1).map((r) => `bar ${labeler.label(r.occ)} on ${r.errors} of ${r.complete}`)
   const lead = `Mistakes in bar ${labeler.label(first.occ)} on ${first.errors} of your last ${first.complete} comparable passes`
-  return rest.length === 0 ? `${lead}.` : `${lead}; ${rest.join('; ')}.`
+  return rest.length === 0 ? `${lead}.` : `${lead}, and in ${rest.join(', and in ')}.`
 }
 
 /** "You restarted at bar 13 after mistakes three times." */

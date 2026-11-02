@@ -15,7 +15,7 @@ export function controllerName(controller: number): string {
 /** One-line summary of a mapping, or why none is set. */
 export function describeHintPedal(mapping: HintPedalMapping | null): string {
   if (mapping === null) {
-    return 'No hint pedal is set. The on-screen Hint button always works; set a pedal up in Connection to reveal names with your foot.'
+    return 'No hint pedal is set. Set one up in Connection to reveal names with your foot, or enable automatic hints in Settings.'
   }
   const channel = mapping.channel === null ? 'any channel' : `channel ${mapping.channel + 1}`
   const direction = mapping.inverted ? 'down at or below' : 'down at or above'

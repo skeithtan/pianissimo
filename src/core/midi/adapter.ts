@@ -40,7 +40,7 @@ export const MIDI_DENIED_EXPLANATION =
 
 export const MIDI_BLUETOOTH_HINT =
   'Bluetooth MIDI pianos are paired in the system or browser settings, not by this website. ' +
-  'Pair the piano there; it then appears in the lists below.'
+  'Pair the piano there. It then appears in the lists below.'
 
 export interface MidiPortInfo {
   readonly id: string

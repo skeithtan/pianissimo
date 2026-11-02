@@ -503,7 +503,7 @@ export class PracticeEngine {
   }
 
   /**
-   * Manual Hint (button or hint pedal): reveals the current group's names, restarting the
+   * Manual hint request: reveals the current group's names, restarting the
    * lifetime and canceling a fade of the same labels. Never skips notes, never starts the
    * clock or cancels Ready. Returns false when there is nothing to reveal.
    */

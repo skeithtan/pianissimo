@@ -77,7 +77,7 @@ export function sourceOttavaSpans(
       } else {
         diag.warn(
           'ottava-stop-unmatched',
-          `An octave-shift end in bar ${bar(r.m)} has no matching start; it was ignored.`,
+          `An octave-shift end in bar ${bar(r.m)} has no matching start. It was ignored.`,
           {
             measure: bar(r.m),
           },
@@ -88,7 +88,7 @@ export function sourceOttavaSpans(
     if (r.size !== 8 && r.size !== 15) {
       diag.warn(
         'ottava-size',
-        `An octave shift of size ${r.size} in bar ${bar(r.m)} is not supported; it was ignored.`,
+        `An octave shift of size ${r.size} in bar ${bar(r.m)} is not supported. It was ignored.`,
         {
           measure: bar(r.m),
         },
@@ -112,7 +112,7 @@ export function sourceOttavaSpans(
     const last = measures.length - 1
     diag.warn(
       'ottava-unclosed',
-      `The octave shift starting in bar ${bar(s.m)} is never ended; it runs to the end of the score.`,
+      `The octave shift starting in bar ${bar(s.m)} is never ended. It runs to the end of the score.`,
       {
         measure: bar(s.m),
       },

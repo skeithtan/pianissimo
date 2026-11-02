@@ -31,7 +31,7 @@ export function timewiseToPartwise(root: XmlElement, diag: DiagnosticSink): XmlE
       while (list.length < mi) {
         diag.warn(
           'timewise-missing-measure',
-          `Part “${id}” has no content in timewise measure ${mi + 1}; an empty measure was inserted.`,
+          `Part “${id}” has no content in timewise measure ${mi + 1}. An empty measure was inserted.`,
         )
         const src = measures[list.length]
         list.push(el('measure', src ? { ...src.attrs } : {}))
@@ -44,9 +44,6 @@ export function timewiseToPartwise(root: XmlElement, diag: DiagnosticSink): XmlE
     if (list.length === 0) continue
     parts.push(el('part', { id }, list))
   }
-  diag.info(
-    'timewise-converted',
-    'The score was written “timewise”; it was converted to part-by-part order for import.',
-  )
+  diag.info('timewise-converted', 'The timewise score was converted to part-by-part order for import.')
   return { name: 'score-partwise', attrs: { ...root.attrs }, children: [...header, ...parts] }
 }

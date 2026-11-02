@@ -40,7 +40,7 @@ describe('pedal summary', () => {
   })
 
   it('explains an unset pedal', () => {
-    expect(describeHintPedal(null)).toMatch(/Hint button always works/u)
+    expect(describeHintPedal(null)).toMatch(/enable automatic hints in Settings/u)
   })
 
   it('describes channel, direction and verification', () => {

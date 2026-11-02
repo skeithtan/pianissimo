@@ -51,7 +51,7 @@ let midiService: MidiService | null = null
 
 export const STORAGE_UNAVAILABLE_NOTICE =
   'Saving is unavailable in this browser window (a private window often blocks it). ' +
-  'Settings work until the page is closed; open Pianissimo in a normal window to keep them.'
+  'Settings work until the page is closed. Open Pianissimo in a normal window to keep them.'
 
 export const HISTORY_QUOTA_NOTICE =
   'Practice results could not be saved because this browser’s storage is full. ' +

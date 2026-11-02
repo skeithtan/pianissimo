@@ -243,6 +243,8 @@ export class PracticeSession {
   #inputHeld = false
   /** The Start in progress (`start`): sounds may be loading. */
   #starting: Promise<void> | null = null
+  /** Accepted seeks supersede a Listen resume position captured before sounds finish loading. */
+  #lastSeek: { position: Rational } | null = null
   /** Both hands' onset groups for the keyboard guide (U20); rebuilt on first use per selection. */
   #bothTimeline: Timeline | null = null
   /** Snap onsets of the current hands for the strip (U19), rebuilt when the hands change. */
@@ -401,6 +403,7 @@ export class PracticeSession {
   async #start(): Promise<void> {
     const first = this.#plan()
     if (!first.enabled) return
+    this.#followBrowsedCursor()
     this.#clearCorrections()
     if (first.action === 'listen') {
       await this.#startListening()
@@ -422,6 +425,7 @@ export class PracticeSession {
     }
     // One hand chosen meanwhile on browser sound not loaded yet: load it first.
     if (this.#sel.hands !== 'both' && !this.#ensureOutputSync()) return this.#start()
+    this.#followBrowsedCursor()
     this.#ensureAccompaniment()
     const t = this.#deps.clock()
     const lead = this.#leadIn
@@ -456,6 +460,18 @@ export class PracticeSession {
       this.#playAccompanimentFromCurrent(t)
     }
     this.#process(this.#deps.clock())
+  }
+
+  /** Start from the visible fixed cursor, then restore following in either score layout. */
+  #followBrowsedCursor(): void {
+    const strip = this.#strip
+    if (!strip?.isBrowsing()) return
+    const position = strip.browsedPosition?.()
+    if (position) this.seekPosition(position)
+    // A seek schedules the session frame. Update the view's cached position before returning
+    // so it cannot briefly pan to the previous transport position.
+    strip.setCursor(this.#cursorPosition(), { smooth: false })
+    strip.returnToCurrent?.()
   }
 
   /** Pause: reading keeps progress; a scored attempt is interrupted (spec); Preview pauses. */
@@ -564,13 +580,18 @@ export class PracticeSession {
     this.#clearCorrections()
     if (this.#listen) {
       this.#listen.transport.seek(position)
+      this.#lastSeek = { position }
       this.#clearHighlights()
       this.#process(now)
       return true
     }
     if (this.#repeat && this.#sel.range && this.#sel.hands !== 'none') {
       const p = lt(position, ZERO) ? ZERO : position
-      if (!eq(p, passageRange(this.#model, this.#sel.range).start)) return this.#seekLeadIn(p, now)
+      if (!eq(p, passageRange(this.#model, this.#sel.range).start)) {
+        const moved = this.#seekLeadIn(p, now)
+        if (moved) this.#lastSeek = { position: p }
+        return moved
+      }
     }
     if (this.#leadIn) {
       const p = this.#engine.state.phase
@@ -600,6 +621,7 @@ export class PracticeSession {
     if (group >= timeline.groups.length) return false
     this.#engine.seek(group, now)
     const g = timeline.groups[group]
+    if (g) this.#lastSeek = { position: g.position }
     if (this.#accomp && g) {
       this.#accomp.seek(g.position)
       this.#clearHighlights()
@@ -809,6 +831,7 @@ export class PracticeSession {
     const now = this.#deps.clock()
     const key = outputKey(this.#settings, this.#destination())
     const position = this.#listen ? this.#listen.transport.positionNow() : null
+    const seek = this.#lastSeek
     if (
       this.#listen &&
       !this.#listen.playing &&
@@ -827,6 +850,7 @@ export class PracticeSession {
     if (!output || this.#disposed) return
     await this.#ensureMetronome()
     if (this.#disposed) return
+    this.#followBrowsedCursor()
     const t = this.#deps.clock()
     // Leaving practice for Preview: a scored attempt is interrupted, reading pauses.
     this.#pauseTransports()
@@ -862,8 +886,10 @@ export class PracticeSession {
       onEmit: (ev, time) => this.#onEmit(ev, time),
     })
     let start = range.start
-    if (position !== null) start = this.#positionRational(position, range)
-    else if (!this.#sel.range) {
+    if (this.#lastSeek && this.#lastSeek !== seek) start = this.#lastSeek.position
+    else if (position !== null) {
+      start = seek && toNumber(seek.position) === position ? seek.position : this.#positionRational(position, range)
+    } else {
       const g = this.#engine.state.position
       if (g) start = g
     }
@@ -2340,7 +2366,7 @@ export class PracticeSession {
     const running = this.#engine.state.phase === 'running' || this.#leadInTail()
     // Loop handles only in Repeat mode (U10), never while an attempt (or a lead-in into it) runs
     // or Listen plays.
-    const editable = this.#repeat && !running && !this.#listen
+    const editable = this.#repeat && !running && !this.#listen?.playing
     // The score can always be browsed; browsing while something plays stops it (U41).
     const browse = true
     // The repeat button on the cursor (U14) opens Repeat at the cursor's bar: never in Repeat

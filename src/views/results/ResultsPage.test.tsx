@@ -148,7 +148,7 @@ describe('scorecard', () => {
     })
     root = show(data([hints]))
     const hintLine = row(root, 'assistance')?.querySelector('[data-row="assist-hints"]')
-    expect(hintLine?.textContent).toContain('2 hint requests (button or pedal), 1 automatic hint; 3 groups revealed')
+    expect(hintLine?.textContent).toContain('2 hint requests (manual), 1 automatic hint. 3 groups revealed')
     expect(row(root, 'assistance')?.querySelector('[data-row="assist-labels"]')?.textContent).toContain(
       'No notes were revealed by labels',
     )

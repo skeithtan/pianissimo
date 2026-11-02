@@ -33,10 +33,10 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   `shared/cursorAction.ts`), `setCorrections(marks: CorrectionMark[])` (teacher's red-pen
   marks after an attempt, `{ notes, kind, text }` with kind `'wrong'|'early'|'late'|'accidental'|
   'octave'|'spread'|'tie'|'pedal'`; `[]` clears them),
-  `setBrowseEnabled(bool)`, `returnToCurrent()`, `isBrowsing()`, `setZoom(s)`, `zoom()`,
+  `setBrowseEnabled(bool)`, `returnToCurrent()`, `isBrowsing()`, `browsedPosition()`, `setZoom(s)`, `zoom()`,
   `occAt(clientX)`, `visibleLabels()`, `stats()`, `flushNow()` (tests), `destroy()`,
-  `respaceSnapshot(nextLayout)` / `respaceFrom(snapshot)` / `holdLabels(on)` (respacing glide,
-  below; the page view has the same three).
+  `respaceSnapshot(nextLayout)` / `respaceFrom(snapshot)` / `whenRespaced()` / `holdLabels(on)`
+  (respacing glide, below; the page view has the same methods).
   Callbacks: `onBrowse`, `onSeekRequest(occ)` (tap outside select mode, also a tap on the cursor),
   `onCursorSeek(position) → boolean|void` (dragged playhead released on a note; `false` puts it
   back), `cursorDragLabel(position)` (readout text), `onLoopChange(range|null)`,
@@ -104,8 +104,14 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   slices on screen at either end. Meanwhile the view's own notation, loop and corrections are
   hidden (`.pn-respacing`). Visible names are cut too (whole, by their center) and fade in the
   overlay (`.pn-respace-in` / `-out`), so the view's own names show at once when it ends. The strip's cursor is fixed,
-  so its note stays; the page first scrolls so the cursor's line keeps its screen y. No glide
-  while browsing, dragging, following, or with reduced motion.
+  so its note stays; the page first scrolls so the cursor's line keeps its screen y. During
+  playback, an inner layer follows the live view frame, including the page's visible follow-scroll
+  offset, while the outer viewport clip stays fixed (U63). A rapid reversal waits on
+  `whenRespaced()` before taking its snapshot, without stopping playback. No glide while
+  browsing, dragging, wrapping the strip, or with reduced motion.
+  The page cursor follows the same eased progress between the two layouts' current musical
+  positions and staff spans (U64). Playback and respacing bypass CSS seek transitions. An
+  initial unchanged-size ResizeObserver notification does not reset the page's handoff anchor.
 - **Segments** (`partition.ts`): measure-range segments ≥ 400 px (a measure or two, PF6). A
   top-level unit belongs to the segment holding its center and is also copied into every segment
   it reaches more than 1.5 px into, clipped by the segment viewBox (2 px seam overlap), so ties/
@@ -136,6 +142,10 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   play mark lives only in the owning segment.
   A mid-bar clef change switches the sticky clef at its engraved change clef (else at its onset),
   not at the barline (`ADAPTER_VERSION` pn-7).
+  After browsing, `browsedPosition()` returns the exact nearest snap onset under the rendered
+  fixed cursor, so the session can seek there before resuming and call `returnToCurrent()` to
+  restore following. Keyboard seeks also start from that visible note and end browsing when
+  accepted. Returning without a seek still restores the original current position.
 - **Theme**: no colors in cached SVG; `--score-paper/--score-ink/--score-ink-muted`, `--danger`,
   `--color-loop`, `--color-target/accepted`, `--accent`, motion tokens with fallbacks; switching
   `data-theme` / `data-score-paper` recolors instantly without re-engraving.
@@ -189,10 +199,11 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   `extractPage` reads the strip's per-note / per-measure / ottava geometry plus each system's
   staves, `g.staffline` groups (braces go to the nearest system), bar range and its own label
   obstacles. The measure number is placed (R6) for the bar opening each system only; labels are
-  reserved per system with the same `layoutLabels`, against that system's marks. One engraving by
-  default: OSMD justifies every system, so widening spacing only pushes bars onto new lines (the
-  reference piece went to one bar per line) while the callouts stayed (36 → 32); the remaining callouts are
-  the spec's linked callouts.
+  reserved per system with the same `layoutLabels`, against that system's marks. For persistent
+  labels, `labels/spacing.ts` also measures note/label envelopes at shared onset columns.
+  Up to three passes widen voice spacing so bars wrap. If a bar already alone on a system is
+  still crowded, the canvas widens too, preserving full-size notes and labels. Off stays at
+  one compact engraving. Cache keys use the requested width; params record the actual width.
 - **Restacking** (`page/stack.ts`): OSMD's vertical spacing knows nothing about reserved labels, so
   each system's content extent (marks, labels, number, ottava brackets; + 6 px) is stacked below
   the previous one with `PAGE_SYSTEM_GAP` 36 px, and every coordinate of that system moves by the
@@ -201,30 +212,39 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   slur / bracket piece in its own system's staffline).
 - **View** (`page/PageView.ts`, `page.css` on top of strip.css: the root is `.pn-strip.pn-page`,
   so every token, note state, label, cursor, loop and correction style is the strip's): a
-  vertically scrolling sheet (`overflow-y: auto`, `overscroll-behavior: contain`, locked while
-  browsing is disabled), content scaled by the zoom and centered with ≥ 16 px gutters, systems
+  scrolling sheet (`overflow: auto`, `overscroll-behavior: contain`, locked while browsing is
+  disabled), content scaled by the zoom and centered when it fits, systems
   mounted for the visible range ± one viewport with the strip's bounded LRU
   (`page/segments.ts`, a copy of `SegmentStore` by y). The cursor bar (R13 look, staves + 96 px
   faded) rides on the sheet at the position's x along its system's `CursorPath` (knots = that
   system's onsets); 180 ms glide per seek, per-frame while following, a jump at a system change.
   The repeat button rides on it. **Follow**: when the system changes, and on a seek / wrap /
   return, the sheet scrolls so that system's top sits a quarter down (one `scrollTop` write plus
-  a 300 ms Web Animations FLIP glide in `--ease-standard`; reduced motion: instant); never during
-  a line, never while browsing (a scroll the view did not write, with browsing enabled →
-  `onBrowse(true)`, Return button). A tap is a seek and ends browsing. **Loop**: one band per
+  a 300 ms Web Animations FLIP glide in `--ease-standard`; reduced motion: instant). Wider
+  systems also pan horizontally as the cursor approaches the right third, keeping read-ahead
+  visible. Both axes are captured in respacing frames. Following stops while browsing (a scroll the view did not write, with browsing enabled →
+  `onBrowse(true)`, Return button). A tap, accepted playhead drag, or accepted keyboard seek ends
+  browsing. `browsedPosition()` returns null because scrolling never changes the page cursor's
+  musical position. Resuming calls `returnToCurrent()` to restore following. **Loop**: one band per
   system crossed (`PageGeometry.loopBands`), handles at the two edges, ✕ on the first band; a
-  handle drags along its own system (snap knots of that system), arrow keys step across systems.
+  either handle can drag vertically onto another system. Reaching the right/left page edge
+  wraps to the next/previous system once per edge entry, keeping that system near the held
+  finger; holding near viewport edges scrolls to further systems or along a wider system.
+  Horizontal wrapping waits until the actual system edge is reached. The selected edge
+  still snaps to notes/barlines and cannot cross the other edge. Canceled drags do not commit.
+  Arrow keys also step across systems (U59).
   **Playhead drag**: within the current system; keyboard (← → Shift Home End) across systems.
   **Zoom**: pinch / ctrl-wheel / `setZoom` scale the page at once; 250 ms later
   `onZoomChange(scale)` asks the owner to re-prepare at the new page width.
-- Reference piece at 788 px (Chromium, this Mac): 1 engraving, 1.16 s prepare, 1353/1353 mapped, 8va
-  mapped, 36 callouts (2.7 %), 1.7 MB of segments. Real iPad numbers still needed.
+- Reference piece at 565 px requested width: three engravings produce an 1180 px canvas,
+  with complete mapping. The dense reference bar expands from 530 to 1145 px and its stacked
+  or callout labels drop from 23 to 5. Real reference-tablet timing still needs measurement.
 - **Copied from the strip** (to deduplicate later): note flags + `paintNote`, label painting and
   visible-label reporting, `withEdge`, loop-handle key stepping, cursor keyboard stepping, the
   icons, `SegmentStore` (→ `page/segments.ts`). Corrections are shared, not copied
   (`shared/corrections.ts`: page labels use their system's staves and marks).
   Imported unchanged: `CursorPath`, `snap.ts`, `loop.ts`, `scroll.ts` helpers.
-- Not done: dragging a loop handle or the playhead across systems (keyboard only); the ottava
+- Not done: dragging the playhead across systems (keyboard only); the ottava
   reminder is one pill at the cursor (the strip has one per staff); pinch is synthetic-tested only.
 
 ## Measurements (this container, x86; Playwright, all-note labels, 1180×400 strip)

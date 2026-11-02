@@ -1,6 +1,6 @@
 /**
  * Connection and Pedal Setup (spec "Main user journey" step 3; "MIDI input, output, and pedal
- * controls"; "Delivery and device compatibility"): a calm checklist of three independent steps
+ * controls"; "Delivery and device compatibility"): three independent setup steps
  * (DECISIONS C11) — the piano (MIDI access, input with a live key/pedal test), playback to the
  * piano (output, test notes that double as the echo probe, accompaniment options) and the hint
  * pedal — with the remembered route and a clear exit.
@@ -20,9 +20,9 @@ import { Icon } from '../../ui/icons'
 import { HintPedalStep } from './HintPedalStep'
 import { LivePanel } from './LivePanel'
 import { PianoStep } from './PianoStep'
-import { StatusPill, stepAnchor, useMidiSnapshot } from './parts'
+import { useMidiSnapshot } from './parts'
 import { PlaybackStep, type EchoClock } from './PlaybackStep'
-import { STEP_ORDER, STEP_TITLES, channelLabel, stepStatuses, type StepId, type StepStatus } from './status'
+import { STEP_ORDER, channelLabel, stepStatuses, type StepId, type StepStatus } from './status'
 import styles from './connection.module.css'
 
 /** The registered screen (no props): the app's MIDI service and this browser's features. */
@@ -62,11 +62,10 @@ export function ConnectionSetup({
     <div class={styles.page}>
       <header class={styles.hero}>
         <p class={styles.intro}>
-          Connect your piano and make sure the app can play it. Each step works on its own; everything is remembered on
+          Connect your piano and make sure the app can play it. Each step works on its own. Everything is remembered on
           this device.
         </p>
         <RouteMemory snap={snap} route={current.route} />
-        <Checklist statuses={statuses} />
       </header>
 
       <div class={styles.layout}>
@@ -102,7 +101,7 @@ function doneSummary(statuses: Readonly<Record<StepId, StepStatus>>): string {
   return 'Your piano is ready for both-hands practice. One-hand practice needs playback to the piano, or browser sound in Settings → Sound.'
 }
 
-/** "Remembered: Piano → Piano, channel 1 · USB" and whether it is connected now. */
+/** "Remembered: Piano → Piano, channel 1" and whether it is connected now. */
 function RouteMemory({ snap, route }: { snap: MidiSnapshot; route: MidiRouteSettings }) {
   if (route.inputName === null && route.outputName === null) return null
   const parts = [
@@ -120,37 +119,8 @@ function RouteMemory({ snap, route }: { snap: MidiSnapshot; route: MidiRouteSett
     <p class={styles.memory} data-connected={connected ? '' : undefined}>
       <Icon name={connected ? 'check' : 'plug'} size={18} />
       <span>
-        <strong>Remembered:</strong> {parts.join(' → ')}
-        {route.connection !== 'unknown' ? ` · ${route.connection === 'usb' ? 'USB' : 'Bluetooth'}` : ''}. {state}
+        <strong>Remembered:</strong> {parts.join(' → ')}. {state}
       </span>
     </p>
-  )
-}
-
-/** Overview of every step; each item jumps to its step. */
-function Checklist({ statuses }: { statuses: Readonly<Record<StepId, StepStatus>> }) {
-  const go = (id: StepId) => {
-    const section = document.getElementById(stepAnchor(id))
-    section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    section?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true })
-  }
-  return (
-    <nav class={styles.checklist} aria-label="Setup steps">
-      <ol>
-        {STEP_ORDER.map((id, i) => (
-          <li key={id}>
-            <button type="button" class={styles.checkItem} data-tone={statuses[id].tone} onClick={() => go(id)}>
-              <span class={styles.checkNumber} aria-hidden="true">
-                {statuses[id].tone === 'done' ? <Icon name="check" size={14} /> : i + 1}
-              </span>
-              <span class={styles.checkText}>
-                <span class={styles.checkTitle}>{STEP_TITLES[id]}</span>
-                <StatusPill status={statuses[id]} />
-              </span>
-            </button>
-          </li>
-        ))}
-      </ol>
-    </nav>
   )
 }

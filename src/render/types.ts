@@ -331,8 +331,9 @@ export interface PrepareOptions {
   /** 'page' engraves wrapped systems (portrait page mode); default 'strip' (one staffline). */
   readonly mode?: LayoutMode
   /**
-   * Page mode: the width systems wrap to, in layout px (the stage width minus its side gutters,
-   * divided by the zoom; `pageWidthFor` in render/page). Ignored by the strip. Default 800.
+   * Page mode: preferred wrapping width in layout px (the stage width minus its side gutters,
+   * divided by zoom; `pageWidthFor` in render/page). Persistent-label layouts may engrave wider
+   * when a dense bar cannot fit readably. Ignored by the strip. Default 800.
    */
   readonly pageWidth?: number
 }

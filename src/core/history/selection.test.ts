@@ -124,7 +124,9 @@ describe('merging and splitting', () => {
       20_000,
     ).history
     h = bar(h, 13, ['error', 'error', 'error', 'error'])
-    expect(pick(h).active[0]?.evidence).toMatch(/^Mistakes in bar 13 on 3 of your last 3 comparable passes; bar 14 on /)
+    expect(pick(h).active[0]?.evidence).toMatch(
+      /^Mistakes in bar 13 on 3 of your last 3 comparable passes, and in bar 14 on /,
+    )
   })
 })
 

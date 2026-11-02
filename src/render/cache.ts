@@ -23,7 +23,7 @@ export interface LayoutKeyParts {
   readonly segmentWidth: number
   /** 'page' (portrait page mode) adds the page width to the key; the strip's key is unchanged. */
   readonly mode?: LayoutMode
-  /** Page mode: the width the systems wrap to (layout px). */
+  /** Page mode: requested wrapping width (layout px), before label-aware expansion. */
   readonly pageWidth?: number
 }
 
