@@ -42,6 +42,10 @@ export function setDraftMode(mode: PersistentLabelMode): void {
   stage((current) => ({ ...current, mode }))
 }
 
+export function setDraftTiedContinuations(tiedContinuations: boolean): void {
+  stage((current) => ({ ...current, tiedContinuations }))
+}
+
 export function setDraftRule(clef: ClefKey, rule: ClefLabelRule): void {
   stage((current) => ({ ...current, rules: { ...current.rules, [clef]: rule } }))
 }

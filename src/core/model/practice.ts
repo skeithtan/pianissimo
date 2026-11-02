@@ -134,6 +134,8 @@ export interface LabelSettingsSnapshot {
   readonly mode: PersistentLabelMode
   /** JSON of the active clef rules at the time (for result details). */
   readonly rulesJson: string
+  /** Tie continuations labeled too (U69); absent in records from before the setting (they were). */
+  readonly tiedContinuations?: boolean
 }
 
 export interface AssistanceRecord {

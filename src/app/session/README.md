@@ -60,7 +60,9 @@ Lead-in (Repeat mode): `seek(occ)` to any bar but the loop's first bar, or `seek
 anywhere but the loop start, keeps Repeat mode and the loop (`lastPassage` unchanged) and sets up
 a lead-in there: the cursor and the stage move to it at once (`ui.leadIn` true; `startAction`
 stays 'scored'; activity 'idle' until Start, then 'reading'; a running attempt is interrupted
-first, 'seek', P6). Start reads it like ordinary reading (same hands, tempo and gates, Pause keeps
+first, 'seek', P6). A seek while Repeat plays (an attempt, a finished pass's music playing on, a
+lead-in) keeps playing from there: the lead-in starts at once, and a seek to the loop start
+begins the next attempt there at Ready (U70); while paused or before Start it waits. Start reads it like ordinary reading (same hands, tempo and gates, Pause keeps
 progress, Resume continues); the scored attempt takes over the next time the music arrives at the
 loop start. **Before the loop** the lead-in passage is `[pos, loop start)` on **one** transport
 over `[pos, loop end)` whose gates are the lead-in timeline's groups followed by the loop's

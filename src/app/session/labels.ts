@@ -4,7 +4,8 @@
  *
  * - Texts: one formatted name per performed note (core/naming `labelFor`), recomputed only when
  *   the naming preferences change. The strip creates text nodes only while a label is visible.
- * - Eligibility: `isPersistentLabelVisible` per note (resolved sounding MIDI, governing clef).
+ * - Eligibility: `isPersistentLabelVisible` per note (resolved sounding MIDI, governing clef, and
+ *   whether it is a tie continuation).
  * - Fades: notes leaving eligibility fade out over `fadeMs` (smoothstep, from their current
  *   opacity); newly eligible notes fade in. While nothing fades, `opacity()` returns the same
  *   map object, so the per-frame merge with temporary hints costs nothing.
@@ -17,7 +18,10 @@ import type { PerformedNote } from '../../core/model/score'
 import type { NamingSettings, PersistentLabelSettings } from '../../core/model/settings'
 import { isPersistentLabelVisible, labelFor } from '../../core/naming'
 
-type LabelNote = Pick<PerformedNote, 'index' | 'midi' | 'clef' | 'sounding' | 'ottavaShift' | 'accidentalContext'>
+type LabelNote = Pick<
+  PerformedNote,
+  'index' | 'midi' | 'clef' | 'tieContinuation' | 'sounding' | 'ottavaShift' | 'accidentalContext'
+>
 
 interface Fade {
   readonly start: number
@@ -32,7 +36,7 @@ const EMPTY: ReadonlyMap<number, number> = new Map()
  * plain `{ [clef]: ClefLabelRule }` map, which the Results view parses.
  */
 export function labelSnapshot(labels: PersistentLabelSettings): LabelSettingsSnapshot {
-  return { mode: labels.mode, rulesJson: JSON.stringify(labels.rules) }
+  return { mode: labels.mode, rulesJson: JSON.stringify(labels.rules), tiedContinuations: labels.tiedContinuations }
 }
 
 export class PersistentLabels {
@@ -52,7 +56,7 @@ export class PersistentLabels {
     this.#fadeMs = fadeMs
     this.setNaming(naming)
     for (const n of notes) {
-      if (isPersistentLabelVisible({ midi: n.midi, clef: n.clef }, labels)) {
+      if (isPersistentLabelVisible(n, labels)) {
         this.#eligible[n.index] = 1
         this.#count++
       }
@@ -95,7 +99,7 @@ export class PersistentLabels {
   setLabels(labels: PersistentLabelSettings, now: number): boolean {
     let changed = false
     for (const n of this.#notes) {
-      const next = isPersistentLabelVisible({ midi: n.midi, clef: n.clef }, labels) ? 1 : 0
+      const next = isPersistentLabelVisible(n, labels) ? 1 : 0
       if (next === this.#eligible[n.index]) continue
       changed = true
       const from = this.#valueAt(n.index, now)

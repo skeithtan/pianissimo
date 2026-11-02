@@ -183,7 +183,11 @@ describe('settings persistence', () => {
 })
 
 describe('applyLabelSettings and onBeforeApplyLabels', () => {
-  const conditional: PersistentLabelSettings = { mode: 'conditional', rules: DEFAULT_SETTINGS.labels.rules }
+  const conditional: PersistentLabelSettings = {
+    mode: 'conditional',
+    rules: DEFAULT_SETTINGS.labels.rules,
+    tiedContinuations: false,
+  }
 
   it('runs the hook before the new labels take effect', () => {
     const order: string[] = []
@@ -239,8 +243,9 @@ describe('applyLabelSettings and onBeforeApplyLabels', () => {
         above: { enabled: false, threshold: null },
       },
     }
-    applyLabelSettings({ mode: 'conditional', rules })
+    applyLabelSettings({ mode: 'conditional', rules, tiedContinuations: true })
     expect(settings.value.labels.rules['F4']?.below.threshold).toEqual({ step: 'E', alter: 0, octave: 2 })
+    expect(settings.value.labels.tiedContinuations).toBe(true)
     expect(settings.value.labels.rules['G2']).toBe(TREBLE_PRESET)
   })
 })

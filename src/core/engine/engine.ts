@@ -681,11 +681,16 @@ export class PracticeEngine {
     this.#touch()
   }
 
-  /** Settings that do not change the comparison context. A changed label mode/rule interrupts a scored attempt. */
+  /** Settings that do not change the comparison context. A changed label setting interrupts a scored attempt. */
   updateSettings(patch: EngineSettingsPatch, now: number): void {
     this.#now(now)
     const labels = patch.labelSettings
-    if (labels && (labels.mode !== this.#labelSettings.mode || labels.rulesJson !== this.#labelSettings.rulesJson)) {
+    if (
+      labels &&
+      (labels.mode !== this.#labelSettings.mode ||
+        labels.rulesJson !== this.#labelSettings.rulesJson ||
+        labels.tiedContinuations !== this.#labelSettings.tiedContinuations)
+    ) {
       if (this.#mode === 'scored' && this.#attemptActive()) this.interrupt('setting-change', now)
       this.#labelSettings = labels
     }

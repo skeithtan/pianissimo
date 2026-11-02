@@ -9,6 +9,8 @@ export interface EligibilityNote {
   readonly midi: number
   /** Clef governing the note's displayed staff at its position. */
   readonly clef: ClefKey
+  /** Held over from a tie rather than played. */
+  readonly tieContinuation: boolean
 }
 
 function thresholdMidi(condition: LabelCondition): number | null {
@@ -41,11 +43,13 @@ export function ruleForClef(labels: PersistentLabelSettings, clefKey: ClefKey): 
  * Whether a persistent label is shown for this note under the label settings.
  *
  * `off` never; `all` for every pitched note (rests have no `PerformedNote`); `conditional`
- * applies the rule of the note's own clef. Only the sounding MIDI number and clef are read, so
- * naming language, spelling and simplification, hand assignment and the printed accidental
- * can never change which notes qualify.
+ * applies the rule of the note's own clef. Tie continuations are not played, so they qualify
+ * only with `tiedContinuations` on (DECISIONS U69). Otherwise only the sounding MIDI number and
+ * clef are read, so naming language, spelling and simplification, hand assignment and the
+ * printed accidental can never change which notes qualify.
  */
 export function isPersistentLabelVisible(note: EligibilityNote, labels: PersistentLabelSettings): boolean {
+  if (note.tieContinuation && !labels.tiedContinuations) return false
   switch (labels.mode) {
     case 'off':
       return false

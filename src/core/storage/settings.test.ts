@@ -28,6 +28,7 @@ const custom: AppSettings = {
         above: { enabled: false, threshold: null },
       },
     },
+    tiedContinuations: true,
   },
   hints: { autoThreshold: null, lifetime: 'until-correct', fadeMs: 150, damageFlash: false },
   pedal: {

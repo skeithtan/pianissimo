@@ -20,7 +20,7 @@ portrait: a scrolling strip on top.
 
 ## Staged label settings (spec "Persistent score labels")
 
-Mode and rule edits are held in `labelDraft` (module signal in `labelDraft.ts`). Nothing reaches
+Mode, rule and tied-note (U69) edits are held in `labelDraft` (module signal in `labelDraft.ts`). Nothing reaches
 `settings` until **Apply**, which calls `applyLabelSettings`, which runs the
 `onBeforeApplyLabels` hook (the practice session interrupts a scored attempt) and then updates
 settings. Apply is disabled while there is nothing to apply or while anything blocks it:

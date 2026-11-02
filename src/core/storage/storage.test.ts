@@ -389,6 +389,7 @@ describe('settings', () => {
           },
           C3: { below: { enabled: false, threshold: null }, above: { enabled: false, threshold: null } },
         },
+        tiedContinuations: true,
       },
       suggestions: { enabled: false },
     }

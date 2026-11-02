@@ -13,7 +13,11 @@ const score = buildScore({
 })
 const naming = DEFAULT_SETTINGS.naming
 const off = DEFAULT_SETTINGS.labels
-const conditional = { mode: 'conditional' as const, rules: { G2: TREBLE_PRESET, F4: DISABLED_RULE } }
+const conditional = {
+  mode: 'conditional' as const,
+  rules: { G2: TREBLE_PRESET, F4: DISABLED_RULE },
+  tiedContinuations: false,
+}
 
 describe('PersistentLabels', () => {
   it('formats every note and applies the conditional rule by sounding pitch', () => {
@@ -78,10 +82,26 @@ describe('label opacity helpers', () => {
     expect(sameOpacity(new Map([[1, 1]]), new Map([[1, 0.5]]))).toBe(false)
   })
 
+  it('leaves tie continuations unlabeled unless the setting is on (U69)', () => {
+    const tied = buildScore({
+      notes: [
+        { at: 0, midi: 60, dur: 1 },
+        { at: 1, midi: 60, dur: 1, cont: true },
+      ],
+      bars: 1,
+    })
+    const all = { ...conditional, mode: 'all' as const }
+    const l = new PersistentLabels(tied.notes, all, naming, 300)
+    expect([0, 1].map((n) => l.isEligible(n))).toEqual([true, false])
+    expect(l.setLabels({ ...all, tiedContinuations: true }, 0)).toBe(true)
+    expect(l.isEligible(1)).toBe(true)
+  })
+
   it('snapshots the plain clef → rule map (parsed by Results)', () => {
     const rules = { G2: TREBLE_PRESET, F4: DISABLED_RULE }
-    const snap = labelSnapshot({ mode: 'all', rules })
+    const snap = labelSnapshot({ mode: 'all', rules, tiedContinuations: false })
     expect(snap.mode).toBe('all')
+    expect(snap.tiedContinuations).toBe(false)
     expect(snap.rulesJson).toBe(JSON.stringify(rules))
     expect(JSON.parse(snap.rulesJson)).toEqual(rules)
   })

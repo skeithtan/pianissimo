@@ -158,7 +158,7 @@ export function applyLabelSettings(next: PersistentLabelSettings): boolean {
       console.error('onBeforeApplyLabels hook failed', error)
     }
   }
-  updateSettings({ labels: { mode: next.mode, rules: next.rules } })
+  updateSettings({ labels: { mode: next.mode, rules: next.rules, tiedContinuations: next.tiedContinuations } })
   return true
 }
 

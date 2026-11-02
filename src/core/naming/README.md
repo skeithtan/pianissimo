@@ -22,7 +22,7 @@ temporary labels), the keyboard guide (chip names, octave landmarks), the Settin
 `labelFor` takes `Pick<PerformedNote, 'sounding' | 'ottavaShift' | 'accidentalContext'>` and
 `NamingSettings` (`system` letter or fixed-do, `seventh` si or ti, `showOctave`,
 `alwaysShowEffectiveAccidentals`, `simplifyEnharmonics`). Eligibility takes only the sounding
-`midi` and the governing `clef` key plus `PersistentLabelSettings`.
+`midi`, the governing `clef` key and `tieContinuation` plus `PersistentLabelSettings`.
 
 ## Design notes
 
@@ -41,7 +41,8 @@ temporary labels), the keyboard guide (chip names, octave landmarks), the Settin
   simplification is "C♮5"). The two preferences are independent.
 - **Eligibility is pitch-only.** Strict comparisons on sounding MIDI (`< below`, `> above`),
   enabled conditions combined with OR, evaluated per note against the rule of the clef governing
-  its displayed staff. Enharmonic spellings, naming language, hand assignment and printed
+  its displayed staff. Tie continuations (held, not played) qualify only with
+  `tiedContinuations` on, which is off by default in both modes (DECISIONS U69). Enharmonic spellings, naming language, hand assignment and printed
   accidentals cannot change it. A clef with no stored rule gets a both-disabled rule; bass is
   never initialized from treble.
 - **Validation.** An enabled condition needs a valid pitch (note name, accidental up to two,

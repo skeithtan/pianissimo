@@ -41,6 +41,7 @@ const CUSTOM_SETTINGS: AppSettings = {
         above: { enabled: false, threshold: null },
       },
     },
+    tiedContinuations: true,
   },
   hints: { autoThreshold: 3, lifetime: 'until-correct', fadeMs: 250, damageFlash: false },
   suggestions: { enabled: false },

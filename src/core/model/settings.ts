@@ -42,6 +42,11 @@ export interface PersistentLabelSettings {
   readonly mode: PersistentLabelMode
   /** One rule per clef key ("G2", "F4", …). Unknown clefs get a both-disabled rule when first seen. */
   readonly rules: Readonly<Record<ClefKey, ClefLabelRule>>
+  /**
+   * Also label tie continuations, the notes held over rather than played (default off, DECISIONS
+   * U69). Applies to All notes and Conditional; temporary hints only ever name played notes.
+   */
+  readonly tiedContinuations: boolean
 }
 
 export interface HintSettings {
@@ -171,6 +176,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
       G2: TREBLE_PRESET,
       F4: DISABLED_RULE,
     },
+    tiedContinuations: false,
   },
   hints: { autoThreshold: 1, lifetime: 30, fadeMs: 300, damageFlash: true },
   pedal: { hintPedal: null, hintPedalAction: 'names', observedControllers: [] },

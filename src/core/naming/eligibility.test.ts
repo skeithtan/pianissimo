@@ -11,11 +11,12 @@ const midiOf = (step: Step, alter: number, octave: number) => spellingToMidi(sp(
 const conditional = (rules: PersistentLabelSettings['rules']): PersistentLabelSettings => ({
   mode: 'conditional',
   rules,
+  tiedContinuations: false,
 })
 const treble = conditional({ G2: TREBLE_PRESET, F4: DISABLED_RULE })
 
-const visible = (midi: number, clef: string, labels: PersistentLabelSettings) =>
-  isPersistentLabelVisible({ midi, clef }, labels)
+const visible = (midi: number, clef: string, labels: PersistentLabelSettings, tieContinuation = false) =>
+  isPersistentLabelVisible({ midi, clef, tieContinuation }, labels)
 
 describe('spec acceptance: G-clef below C4 or above C5', () => {
   it('labels B3 and C♯5', () => {
@@ -47,13 +48,31 @@ describe('spec acceptance: G-clef below C4 or above C5', () => {
 
 describe('modes', () => {
   it('off labels nothing', () => {
-    expect(visible(40, 'G2', { mode: 'off', rules: { G2: TREBLE_PRESET } })).toBe(false)
+    expect(visible(40, 'G2', { mode: 'off', rules: { G2: TREBLE_PRESET }, tiedContinuations: true })).toBe(false)
   })
 
   it('all labels every pitched note regardless of rules, clef or range', () => {
-    const all: PersistentLabelSettings = { mode: 'all', rules: {} }
+    const all: PersistentLabelSettings = { mode: 'all', rules: {}, tiedContinuations: false }
     for (const midi of [21, 60, 72, 108]) expect(visible(midi, 'G2', all)).toBe(true)
     expect(visible(60, 'C3', all)).toBe(true)
+  })
+})
+
+describe('tie continuations (U69)', () => {
+  const all: PersistentLabelSettings = { mode: 'all', rules: {}, tiedContinuations: false }
+
+  it('are not labeled by default, in All notes or Conditional', () => {
+    expect(visible(60, 'G2', all, true)).toBe(false)
+    expect(visible(midiOf('B', 0, 3), 'G2', treble, true)).toBe(false)
+    // The tie's first note keeps its label.
+    expect(visible(60, 'G2', all)).toBe(true)
+  })
+
+  it('are labeled like any other note with the setting on', () => {
+    expect(visible(60, 'G2', { ...all, tiedContinuations: true }, true)).toBe(true)
+    const tiedTreble = { ...treble, tiedContinuations: true }
+    expect(visible(midiOf('B', 0, 3), 'G2', tiedTreble, true)).toBe(true)
+    expect(visible(midiOf('C', 0, 4), 'G2', tiedTreble, true)).toBe(false)
   })
 })
 

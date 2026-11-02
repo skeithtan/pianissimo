@@ -573,7 +573,8 @@ export class PracticeSession {
    * but the loop start sets up a lead-in there (the cursor and the stage move at once; Start
    * reads from it until the music next arrives at the loop start, where the attempt takes over;
    * a running attempt is interrupted, P6); the loop start itself keeps the attempt at the loop
-   * start. Returns false when nothing moved (a scored attempt keeps its passage start, P6).
+   * start. Seeking while Repeat plays keeps it playing from there (U70). Returns false when
+   * nothing moved (a scored attempt keeps its passage start, P6).
    */
   seekPosition(position: Rational): boolean {
     const now = this.#deps.clock()
@@ -591,6 +592,12 @@ export class PracticeSession {
         const moved = this.#seekLeadIn(p, now)
         if (moved) this.#lastSeek = { position: p }
         return moved
+      }
+      // The loop start while Repeat plays (U70): a new attempt waits there, as the next pass does.
+      if (this.#repeatPlaying()) {
+        if (this.#engine.mode === 'scored') this.#engine.seek(0, now)
+        this.restart()
+        return false
       }
     }
     if (this.#leadIn) {
@@ -635,7 +642,7 @@ export class PracticeSession {
 
   /**
    * A seek in Repeat mode anywhere but the loop start: a lead-in from `position`. It is set up
-   * paused (a lead-in that was playing keeps playing from there); Start reads it like ordinary
+   * paused, or playing from there when Repeat was playing (U70); Start reads it like ordinary
    * reading with the same hands, tempo and gates, and the scored attempt over the loop takes over
    * the next time the music arrives at the loop start: at the loop start itself from before the
    * loop, after wrapping at the loop end from inside it, after wrapping at the piece end from
@@ -650,12 +657,7 @@ export class PracticeSession {
     const span = wrap ? passage : passageFromBounds(this.#model, start, loop.end)
     if (!passage || !span) return false
     const timeline = selectionTimeline(this.#model, this.#tempo, { ...this.#sel, range: passage })
-    const lead = this.#leadIn
-    const keepPlaying =
-      lead !== null &&
-      !lead.handedOver &&
-      this.#engine.mode === 'reading' &&
-      (this.#engine.state.phase === 'running' || this.#leadInTail())
+    const keepPlaying = this.#isPlaying() || this.#pendingRepeat
     this.#pauseTransports()
     this.#awaitPrepared = false
     this.#pendingRepeat = false
@@ -776,6 +778,15 @@ export class PracticeSession {
     this.#awaitPrepared = false
     this.#engine.markPrepared(now)
     this.#strip?.wrapTo?.(this.#cursorPosition())
+  }
+
+  /**
+   * Repeat is playing past a point a seek would stop it (U70): a running attempt, a finished pass
+   * whose music plays on into the next, or a lead-in reading or playing on to the wrap.
+   */
+  #repeatPlaying(): boolean {
+    if (this.#engine.mode === 'scored') return this.#engine.state.phase === 'running' || this.#pendingRepeat
+    return this.#leadIn !== null && this.#isPlaying()
   }
 
   /** A lead-in from inside or after the loop is done reading and its music plays on to the wrap. */

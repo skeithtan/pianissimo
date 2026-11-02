@@ -94,8 +94,9 @@ MIDI events and `now` (performance.now() timebase). Details and state diagram:
 (ottava applied once); `labelForMidi` for bare keys; `maxLabelWidthChars` sizes reserved label
 room. Order: simplify spelling → choose accidental (effective vs contextual via
 `contextAlter`) → fixed do. Naming never changes pitch, matching or eligibility.
-Eligibility: `isPersistentLabelVisible(note{midi, clef}, labels)` — strict sounding-MIDI
-comparisons, OR of enabled conditions, rule per governing clef (unknown clef = both off).
+Eligibility: `isPersistentLabelVisible(note{midi, clef, tieContinuation}, labels)` — strict
+sounding-MIDI comparisons, OR of enabled conditions, rule per governing clef (unknown clef = both
+off); tie continuations only with `labels.tiedContinuations` (default off, U69).
 Settings helpers: `validateRule`, `describeRule`, `sampleRule`, `parseSpelling` /
 `formatSpelling`, `clefDisplayName`. Full API in `src/core/naming/README.md`.
 

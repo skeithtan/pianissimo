@@ -1399,7 +1399,8 @@ describe('PracticeSession: lead-in before the loop', () => {
     h.session.seek(0)
     h.frames.flush()
     expect(h.attempts[0]).toMatchObject({ completion: 'interrupted', interruptReason: 'seek' })
-    expect(h.session.ui.get()).toMatchObject({ leadIn: true, repeat: true, playing: false, interruption: null })
+    // Repeat was playing: the lead-in plays on from there (U70).
+    expect(h.session.ui.get()).toMatchObject({ leadIn: true, repeat: true, playing: true, interruption: null })
     expect(h.strip.targets).toEqual([0])
   })
 
@@ -1565,7 +1566,7 @@ describe('PracticeSession: lead-in from inside or after the loop', () => {
     h.session.seek(2)
     h.frames.flush()
     expect(h.attempts[0]).toMatchObject({ completion: 'interrupted', interruptReason: 'seek' })
-    expect(h.session.ui.get()).toMatchObject({ leadIn: true, repeat: true, playing: false, interruption: null })
+    expect(h.session.ui.get()).toMatchObject({ leadIn: true, repeat: true, playing: true, interruption: null })
     expect(h.session.progress.get().position).toBeCloseTo(2)
     expect(h.strip.cursor).toBeCloseTo(2)
     expect(h.strip.targets).toEqual([8])
@@ -1576,6 +1577,103 @@ describe('PracticeSession: lead-in from inside or after the loop', () => {
     expect(h.session.engine.state.phase).toBe('ready')
     expect(h.strip.targets).toEqual([4])
     expect(h.attempts).toHaveLength(1)
+  })
+})
+
+describe('PracticeSession: seeking while Repeat plays (U70)', () => {
+  /** Three bars of quarters, the right hand over a left-hand whole note per bar; the loop is bar 2. */
+  const threeBars = buildScore({
+    notes: [
+      ...[60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79].map((midi, at) => ({ at, midi })),
+      { at: 0, midi: 48, hand: 'L' as const, dur: 4 },
+      { at: 4, midi: 43, hand: 'L' as const, dur: 4 },
+      { at: 8, midi: 41, hand: 'L' as const, dur: 4 },
+    ],
+    bars: 3,
+    tempo: { bpm: 60 },
+  })
+  const loop = { fromOcc: 1, toOcc: 1 }
+
+  it('scrubbing back during a running attempt keeps playing from the new bar into the loop', async () => {
+    const h = harness(threeBars, { hands: 'right', range: loop })
+    await h.session.start()
+    h.play(67, 69)
+    h.session.seek(0)
+    h.frames.flush()
+    expect(h.attempts[0]).toMatchObject({ completion: 'interrupted', interruptReason: 'seek' })
+    expect(h.session.ui.get()).toMatchObject({ leadIn: true, activity: 'reading', playing: true, interruption: null })
+    expect(h.session.progress.get().position).toBeCloseTo(0)
+    // The automatic part sounds from the new bar with the first press, as after Start.
+    const before = h.backend.calls.length
+    h.play(60)
+    expect(h.backend.calls.slice(before).some((c) => c.op === 'on' && c.note === 48)).toBe(true)
+    h.play(62, 64, 65)
+    expect(h.session.engine.mode).toBe('scored')
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ leadIn: false, activity: 'scored', playing: true })
+    expect(h.attempts).toHaveLength(1)
+  })
+
+  it('scrubbing to the loop start during a running attempt starts the next attempt there, still playing', async () => {
+    const h = harness(threeBars, { hands: 'right', range: loop })
+    await h.session.start()
+    h.frames.flush()
+    const loopStart = [...h.strip.targets]
+    h.play(67, 69, 71)
+    h.session.seek(1)
+    h.frames.flush()
+    expect(h.attempts[0]).toMatchObject({ completion: 'interrupted', interruptReason: 'seek' })
+    expect(h.session.engine.state.phase).toBe('ready')
+    expect(h.session.ui.get()).toMatchObject({ leadIn: false, activity: 'scored', playing: true, interruption: null })
+    expect(h.strip.targets).toEqual(loopStart)
+    h.play(67, 69, 71, 72)
+    h.step(1000)
+    expect(h.attempts[1]).toMatchObject({ kind: 'scored', completion: 'completed', passed: true })
+  })
+
+  it('scrubbing back while the music of a finished pass plays on keeps playing from the new bar', async () => {
+    const h = harness(threeBars, { hands: 'right', range: loop })
+    await h.session.start()
+    h.play(67, 69, 71, 72)
+    expect(h.attempts).toHaveLength(1)
+    h.session.seek(0)
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ leadIn: true, activity: 'reading', playing: true })
+    h.play(60, 62, 64, 65)
+    expect(h.session.engine.mode).toBe('scored')
+  })
+
+  it('a lead-in that plays keeps playing when scrubbed to the loop start: the attempt waits there', async () => {
+    const h = harness(threeBars, { hands: 'right', range: loop })
+    h.session.seek(0)
+    await h.session.start()
+    h.play(60)
+    h.session.seek(1)
+    h.frames.flush()
+    expect(h.session.engine.mode).toBe('scored')
+    expect(h.session.engine.state.phase).toBe('ready')
+    expect(h.session.ui.get()).toMatchObject({ leadIn: false, playing: true })
+    expect(h.attempts).toHaveLength(0)
+  })
+
+  it('a scrub while paused, or before Start, stays paused', async () => {
+    const h = harness(threeBars, { hands: 'right', range: loop })
+    h.session.seek(0)
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ leadIn: true, playing: false })
+    await h.session.start()
+    h.session.seek(1)
+    h.play(67, 69)
+    h.session.pause()
+    h.session.seek(0)
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ leadIn: true, playing: false })
+    h.session.seek(2)
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ leadIn: true, playing: false })
+    h.session.seek(1)
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ leadIn: false, playing: false })
   })
 })
 

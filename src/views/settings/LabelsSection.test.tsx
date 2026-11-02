@@ -28,6 +28,7 @@ const trebleBelow = (panel: HTMLElement) => pitch(panel, 'Treble (G) show below 
 const trebleAbove = (panel: HTMLElement) => pitch(panel, 'Treble (G) show above pitch')
 const bassBelow = (panel: HTMLElement) => pitch(panel, 'Bass (F) show below pitch')
 const bassAbove = (panel: HTMLElement) => pitch(panel, 'Bass (F) show above pitch')
+const bassRule = (panel: HTMLElement) => $(panel, '[role="group"][aria-label="Bass (F) label rule"]')!
 const apply = (panel: HTMLElement) => byLabel(panel, 'Apply label changes') as HTMLButtonElement
 const summary = (panel: HTMLElement, clef: string) => $(panel, `[data-testid="summary-${clef}"]`)?.textContent ?? ''
 const sampleLabels = (panel: HTMLElement, clef: string) =>
@@ -65,6 +66,18 @@ describe('mode', () => {
     expect(settings.value.labels.mode).toBe('all')
     expect(panel.textContent).toContain('Label settings applied')
     expect(apply(panel).disabled).toBe(true)
+  })
+
+  it('offers "Label tied notes" outside Off, off by default, staged until Apply (U69)', () => {
+    const panel = openLabels()
+    expect(() => toggle(panel, 'Label tied notes')).toThrow()
+    click(radio(panel, 'Persistent labels', 'All notes'))
+    expect(toggle(panel, 'Label tied notes').checked).toBe(false)
+    click(toggle(panel, 'Label tied notes'))
+    expect(currentLabels().tiedContinuations).toBe(true)
+    expect(settings.value.labels.tiedContinuations).toBe(false) // staged, not applied
+    click(apply(panel))
+    expect(settings.value.labels).toMatchObject({ mode: 'all', tiedContinuations: true })
   })
 
   it('discarding returns to the applied settings without calling the hook', () => {
@@ -239,9 +252,7 @@ describe('conditional rules', () => {
     onBeforeApplyLabels(() => order.push('hook'))
     const panel = openConditional()
     type(bassBelow(panel), 'E2')
-    const toggles = $$(panel, 'input[role="switch"]')
-    // Bass "Show below" is the third switch (treble below, treble above, bass below, bass above).
-    click(toggles[2]!)
+    click(toggle(bassRule(panel), 'Show below'))
     expect(apply(panel).disabled).toBe(false)
     click(apply(panel))
     expect(order).toEqual(['hook'])
@@ -256,8 +267,7 @@ describe('conditional rules', () => {
 
   it('never copies treble thresholds into the bass rule', () => {
     const panel = openConditional()
-    const toggles = $$(panel, 'input[role="switch"]')
-    click(toggles[2]!) // bass below on, no pitch yet
+    click(toggle(bassRule(panel), 'Show below')) // bass below on, no pitch yet
     expect(bassBelow(panel).value).toBe('')
     expect(
       $$(panel, '[role="alert"]')

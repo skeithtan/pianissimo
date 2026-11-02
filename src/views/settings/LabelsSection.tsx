@@ -1,11 +1,11 @@
 /**
  * Score labels (spec "Persistent score labels"): Off, All notes or Conditional with per-clef
- * rules. Everything here is staged in `labelDraft` and applies only on Apply, which calls the
+ * rules, and whether tie continuations are labeled (U69). Everything here is staged in `labelDraft` and applies only on Apply, which calls the
  * `onBeforeApplyLabels` hook first so a scored attempt is interrupted before new labels appear.
  */
 import { useEffect, useState } from 'preact/hooks'
 import { DISABLED_RULE, type PersistentLabelMode } from '../../core/model/settings'
-import { Button, Segmented } from '../../ui/controls'
+import { Button, Segmented, Toggle } from '../../ui/controls'
 import {
   applyLabelDraft,
   clefKeysOf,
@@ -15,6 +15,7 @@ import {
   isLabelDraftDirty,
   setDraftMode,
   setDraftRule,
+  setDraftTiedContinuations,
 } from './labelDraft'
 import { Group, Help, Setting } from './parts'
 import { RuleEditor, type TextErrors } from './RuleEditor'
@@ -68,6 +69,14 @@ export function LabelsSection() {
             onChange={setDraftMode}
           />
         </Setting>
+        {labels.mode !== 'off' ? (
+          <Toggle
+            label="Label tied notes"
+            description="Also name the later notes of a tie, which are held rather than played."
+            checked={labels.tiedContinuations}
+            onChange={setDraftTiedContinuations}
+          />
+        ) : null}
         <Help>
           Visible labels count as note-name assistance in your practice results. Applying a change during a scored
           attempt interrupts that attempt.

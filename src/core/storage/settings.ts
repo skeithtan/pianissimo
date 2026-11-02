@@ -177,6 +177,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
     labels: {
       mode: oneOf(labels['mode'], MODES, d.labels.mode),
       rules: rules(labels['rules'], d.labels.rules),
+      tiedContinuations: bool(labels['tiedContinuations'], d.labels.tiedContinuations),
     },
     hints: {
       autoThreshold: autoThreshold(hints['autoThreshold'], storedVersion, d.hints.autoThreshold),
