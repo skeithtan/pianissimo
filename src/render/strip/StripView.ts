@@ -15,6 +15,8 @@
  * - Pinch/ctrl-wheel zoom is a CSS scale (R2); drag inspection while browsing is enabled;
  *   passage selection with handles (snapping to note onsets, U21), tap selection and a clear
  *   button; the playhead itself can be dragged onto a note while nothing plays (U23).
+ * - A new engraving of the same score with other spacing (Labels Off ↔ on) glides in from the
+ *   previous view's columns, the cursor note staying under the fixed line (`respaceFrom`).
  */
 import type { Hand } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
@@ -28,6 +30,15 @@ import {
   type CorrectionMark,
 } from '../shared/corrections'
 import { ACTION_RADIUS, staffGap } from '../shared/cursorAction'
+import {
+  collectPieces,
+  standardEasing,
+  startRespace,
+  wider,
+  type RespaceRun,
+  type RespaceSnapshot,
+  type ScreenFrame,
+} from '../shared/respace'
 import type { LabelBox, PreparedLayout } from '../types'
 import { clampRange, sameRange, tapSelect, type LoopRange } from './loop'
 import { CursorPath } from './cursorPath'
@@ -314,6 +325,8 @@ export class StripView {
   private dragScrolled = false
   private edgeSpeed = 0
   private edgeFrame = 0
+
+  private respace: RespaceRun | null = null
 
   private frame = 0
   private destroyed = false
@@ -751,8 +764,72 @@ export class StripView {
     if (instant) void getComputedStyle(this.content).transform
   }
 
+  // ---------------------------------------------------------------- respacing (R3 revised)
+
+  /**
+   * Before this view gives way to `next` (the same score engraved with other spacing): where it
+   * draws the music and, when its engraving is the wider one, its notation. Null while browsing,
+   * dragging or wrapping, with reduced motion or before the strip has a size: the next view then
+   * simply appears.
+   */
+  respaceSnapshot(next: PreparedLayout): RespaceSnapshot | null {
+    if (this.destroyed || this.browsing || this.dragTx !== null || this.cursorDrag || this.wrap) return null
+    if (this.reducedMotion || !(this.hostW > 0) || !(this.hostH > 0)) return null
+    this.respace?.cancel()
+    return {
+      layout: this.layout,
+      frame: this.screenFrame(),
+      pieces: wider(this.layout, next) === 'prev' ? collectPieces(this.store.mounted.values()) : null,
+    }
+  }
+
+  /**
+   * Glides the notes from where `prev` drew them to their places here; the cursor line is fixed,
+   * so the cursor note stays put and everything else moves from there. Labels fade in after.
+   */
+  respaceFrom(prev: RespaceSnapshot | null): void {
+    if (!prev || this.destroyed || this.reducedMotion || !(this.hostW > 0)) return
+    this.flushNow()
+    // Everything the glide may show is cut now: mount the strip ± one viewport at once.
+    const view = visibleRange(this.tx, this.scale, this.hostW)
+    const over = this.hostW / this.scale
+    const wanted = this.store.wanted(view.x0 - over, view.x1 + over, this.cursorX)
+    this.store.sync(wanted, new Set(wanted), 0)
+    this.applyNotes()
+    this.root.classList.add('pn-respacing')
+    const prevSegments = new Map<number, number>()
+    for (const s of prev.layout.segments) for (let o = s.occStart; o < s.occEnd; o++) prevSegments.set(o, s.index)
+    this.respace = startRespace({
+      prev,
+      next: { layout: this.layout, frame: this.screenFrame() },
+      nextPieces: () => collectPieces(this.store.mounted.values()),
+      segmentOf: { prev: (occ) => prevSegments.get(occ) ?? -1, next: (occ) => this.store.segmentOfOcc(occ) },
+      parent: this.stage,
+      width: this.hostW,
+      height: this.hostH,
+      easing: standardEasing(this.root),
+      onDone: () => {
+        this.respace = null
+        if (!this.destroyed) this.root.classList.remove('pn-respacing')
+      },
+    })
+    if (!this.respace) this.root.classList.remove('pn-respacing')
+  }
+
+  /** Hides the labels (they fade) while a respaced engraving is being prepared to show them. */
+  holdLabels(on: boolean): void {
+    this.root.classList.toggle('pn-labels-held', on)
+  }
+
+  /** Layout px → root px as last applied. */
+  private screenFrame(): ScreenFrame {
+    const s = this.applied.scale
+    return { scale: s, dx: this.applied.tx, dy: this.applied.ty - this.layout.top * s }
+  }
+
   destroy(): void {
     this.destroyed = true
+    this.respace?.cancel()
     if (this.frame) cancelAnimationFrame(this.frame)
     if (this.edgeFrame) cancelAnimationFrame(this.edgeFrame)
     if (this.ctlLeaveTimer) clearTimeout(this.ctlLeaveTimer)

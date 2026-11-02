@@ -144,6 +144,7 @@ export class SegmentStore {
       numbers.append(t)
     }
     const labels = doc.createElementNS(SVG_NS, 'g')
+    labels.setAttribute('class', 'pn-labels')
     over.append(numbers, labels)
 
     const heads = new Map<number, Element>()

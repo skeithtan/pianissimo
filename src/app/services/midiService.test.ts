@@ -23,6 +23,7 @@ function harness(
   let route: MidiRouteSettings = { ...DEFAULT_SETTINGS.route, ...opts.route }
   const statuses: ConnectionStatus[] = []
   const notices: NoticeInput[] = []
+  const dismissed: number[] = []
   let created = 0
   const service = new MidiService({
     createAdapter: () => {
@@ -34,7 +35,8 @@ function harness(
       route = next
     },
     setStatus: (s) => statuses.push(s),
-    notify: (n) => notices.push(n),
+    notify: (n) => notices.push(n) - 1,
+    dismiss: (id) => dismissed.push(id),
     now: () => 5000,
   })
   return {
@@ -45,6 +47,7 @@ function harness(
     service,
     statuses,
     notices,
+    dismissed,
     get route() {
       return route
     },
@@ -241,6 +244,28 @@ describe('MidiService: disconnect and reconnect (spec: stop scheduling, interrup
     vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
     expect(h.notices[1]).toMatchObject({ kind: 'success' })
     expect(h.notices[1]!.text).toMatch(/Release all keys and pedals/)
+  })
+
+  it('dismisses the disconnect notice once the piano is fully back', async () => {
+    const h = await connected()
+    h.access.setState(h.piano, 'disconnected')
+    h.access.setState(h.pianoOut, 'disconnected')
+    vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
+    expect(h.notices.map((n) => n.kind)).toEqual(['warning'])
+
+    // The input alone is not the whole piano: the notice still says playback stopped.
+    h.access.setState(h.piano, 'connected')
+    expect(h.dismissed).toEqual([])
+    h.access.setState(h.pianoOut, 'connected')
+    expect(h.dismissed).toEqual([0])
+    vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
+    expect(h.notices.map((n) => n.kind)).toEqual(['warning', 'success'])
+
+    // A later disconnect gets its own notice, dismissed in turn.
+    h.access.setState(h.piano, 'disconnected')
+    vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
+    h.access.setState(h.piano, 'connected')
+    expect(h.dismissed).toEqual([0, 2])
   })
 
   it('a glitch that reconnects within the window only reports the reconnection', async () => {

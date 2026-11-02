@@ -39,6 +39,8 @@ import { Icon } from '../../ui/icons'
 import { WrongNoteFlash } from '../../ui/WrongNoteFlash'
 import { ConnectionChip } from '../shared/ConnectionChip'
 import { pageWidthFor } from '../../render/page/geometry'
+import type { LabelRoom, PreparedLayout, PrepareOptions } from '../../render'
+import { MemoryLayoutCache } from '../../render/cache'
 import type { PracticeEnv, StripHandle } from './env'
 import { GuidePanel, OverviewBar, StageCue } from './live'
 import { Banners } from './Banners'
@@ -78,6 +80,37 @@ function nearCursor(event: PointerEvent, view: StripHandle | null): boolean {
   if (moving !== undefined) return Math.abs(event.clientX - moving) <= CURSOR_REVEAL_PX
   const rect = el.getBoundingClientRect()
   return Math.abs(event.clientX - (rect.left + rect.width / 3)) <= CURSOR_REVEAL_PX
+}
+
+/** In-memory layouts per Practice screen: a few engravings of one piece on the reference tablet. */
+const RECENT_LAYOUT_BYTES = 24 * 1024 * 1024
+
+/**
+ * Idle time (nothing playing) before the other label room's engraving is prepared ahead, so the
+ * first Labels Off ↔ on switch does not wait for it (user). Engraving holds the main thread for a
+ * moment, so it never starts while something plays; once started it runs to the end.
+ */
+export const PREPARE_AHEAD_MS = 1500
+
+/** The preparation parameters a mounted view was made with. */
+interface LayoutParamsKey {
+  readonly maxChars: number
+  readonly mode: 'strip' | 'page'
+  readonly pageWidth: number
+  readonly room: LabelRoom
+}
+
+function paramsId(k: LayoutParamsKey): string {
+  return `${k.maxChars}|${k.mode}|${k.pageWidth}|${k.room}`
+}
+
+function sameParams(a: LayoutParamsKey, b: LayoutParamsKey): boolean {
+  return a.maxChars === b.maxChars && a.mode === b.mode && a.pageWidth === b.pageWidth && a.room === b.room
+}
+
+/** The engraving's room for note names under a Labels mode (DECISIONS R3 revised). */
+export function labelRoom(mode: PersistentLabelMode): LabelRoom {
+  return mode === 'off' ? 'hints' : 'all'
 }
 
 type Prep =
@@ -150,6 +183,35 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const stripRef = useRef<StripHandle | null>(null)
   const autoStarted = useRef(false)
   const maxChars = maxLabelWidthChars(appSettings.naming)
+  // Labels Off engraves tight, with room for hints only; a mode showing names leaves room for all
+  // of them (DECISIONS R3 revised).
+  const room = labelRoom(appSettings.labels.mode)
+  /** What the mounted view was prepared with (a change of `room` alone is a respacing glide). */
+  const shown = useRef<LayoutParamsKey | null>(null)
+  /** This screen's recent layouts (both label rooms, a rotation), checked before IndexedDB. */
+  const recentLayouts = useMemo(() => new MemoryLayoutCache(RECENT_LAYOUT_BYTES), [session])
+  /** Layouts prepared ahead (by `paramsId`): in flight, and done this session. */
+  const ahead = useMemo(
+    () => ({ running: new Map<string, Promise<PreparedLayout>>(), done: new Set<string>() }),
+    [session],
+  )
+  /** Prepares (or loads from memory / IndexedDB) the layout for `key`. */
+  const prepareLayoutFor = async (
+    key: LayoutParamsKey,
+    opts: Pick<PrepareOptions, 'signal' | 'onProgress'> = {},
+  ): Promise<PreparedLayout> => {
+    const storage = await env.storage().catch(() => null)
+    return env.prepare(
+      storage,
+      { ...model, renderXml: pkg.renderXml },
+      {
+        ...opts,
+        labels: { maxChars: key.maxChars, room: key.room },
+        ...(key.mode === 'page' ? { mode: key.mode, pageWidth: key.pageWidth } : {}),
+      },
+      recentLayouts,
+    )
+  }
   const lastOcc = model.occurrences.length - 1
   const browsed = useBrowsedBar(host, stripRef, lastOcc, env.frames)
   // Portrait shows the page (systems, moving cursor), landscape the strip (DECISIONS "Portrait
@@ -169,7 +231,11 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
 
   // Session lifetime: settings, label hook, page visibility, orientation, cleanup.
   useEffect(() => {
-    const offLabels = onBeforeApplyLabels((next) => session.beforeApplyLabels(next))
+    const offLabels = onBeforeApplyLabels((next) => {
+      session.beforeApplyLabels(next)
+      // Names about to show on the tight engraving stay hidden until the roomy one glides in.
+      if (shown.current?.room === 'hints' && labelRoom(next.mode) === 'all') stripRef.current?.holdLabels?.(true)
+    })
     const offSettings = settings.subscribe(() => session.updateSettings(pickSettings()))
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
@@ -197,31 +263,48 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     }
   }, [session, saver])
 
-  // Layout: cached → instant; otherwise OSMD prepares it. A label-width change re-prepares, so
-  // does a rotation (strip ↔ page) and, in portrait, a page width change (stage size, page zoom).
-  // The session restores the position, loop and hands on `attachStrip`.
+  // Layout: cached → instant; otherwise OSMD prepares it. A label-width or label-room change
+  // re-prepares, so does a rotation (strip ↔ page) and, in portrait, a page width change (stage
+  // size, page zoom). The session restores the position, loop and hands on `attachStrip`. A
+  // change of the label room alone keeps the current view until the new engraving is ready, then
+  // glides the notes to their new places around the cursor (R3 revised).
   useEffect(() => {
     const el = host.current
     if (!el) return
+    const key: LayoutParamsKey = { maxChars, mode, pageWidth, room }
+    const was = stripRef.current ? shown.current : null
+    if (was && sameParams(was, key)) {
+      // Back to what is shown (a quick Off → on → Off): nothing to prepare.
+      stripRef.current?.holdLabels?.(false)
+      return
+    }
+    const respace = !!was && sameParams(was, { ...key, room: was.room })
+    if (respace) session.layoutChanging(true)
+    else {
+      session.layoutChanging()
+      stripRef.current?.destroy()
+      stripRef.current = null
+      shown.current = null
+    }
     // The page waits for the stage's first measurement (its width decides the systems).
     if (mode === 'page' && pageWidth <= 0) return
     let live = true
     const ctrl = new AbortController()
-    setPrep({ state: 'preparing', fraction: 0 })
+    if (!respace) setPrep({ state: 'preparing', fraction: 0 })
     void (async () => {
       try {
-        const storage = await env.storage().catch(() => null)
-        const layout = await env.prepare(
-          storage,
-          { ...model, renderXml: pkg.renderXml },
-          {
-            labels: { maxChars },
+        // Already being prepared ahead: wait for that instead of engraving it a second time.
+        const layout = await (ahead.running.get(paramsId(key)) ??
+          prepareLayoutFor(key, {
             signal: ctrl.signal,
-            onProgress: (_stage, fraction) => live && setPrep({ state: 'preparing', fraction }),
-            ...(mode === 'page' ? { mode, pageWidth } : {}),
-          },
-        )
+            onProgress: (_stage, fraction) => live && !respace && setPrep({ state: 'preparing', fraction }),
+          }))
+        ahead.done.add(paramsId(key))
         if (!live) return
+        // The names turned off fade during the glide, which starts now (no wait).
+        const old = stripRef.current
+        const snapshot = respace ? (old?.respaceSnapshot?.(layout) ?? null) : null
+        old?.destroy()
         const strip = env.createStrip(
           el,
           layout,
@@ -251,7 +334,9 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           mode,
         )
         stripRef.current = strip
+        shown.current = key
         session.attachStrip(strip)
+        strip.respaceFrom?.(snapshot)
         setPrep({ state: 'ready' })
       } catch (e) {
         if (live) setPrep({ state: 'error', message: e instanceof Error ? e.message : 'The score could not be drawn.' })
@@ -260,11 +345,41 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     return () => {
       live = false
       ctrl.abort()
+    }
+  }, [session, maxChars, mode, pageWidth, room])
+
+  // Prepare the other label room ahead once nothing has played for a moment, so the first switch
+  // of Labels Off ↔ on glides at once instead of waiting for an engraving (user).
+  useEffect(() => {
+    if (prep.state !== 'ready' || ui.playing) return
+    if (mode === 'page' && pageWidth <= 0) return
+    const other: LayoutParamsKey = { maxChars, mode, pageWidth, room: room === 'all' ? 'hints' : 'all' }
+    const id = paramsId(other)
+    if (ahead.done.has(id) || ahead.running.has(id)) return
+    const timer = env.timers.setTimeout(() => {
+      const run = prepareLayoutFor(other)
+      ahead.running.set(id, run)
+      run.then(
+        () => {
+          ahead.running.delete(id)
+          ahead.done.add(id)
+        },
+        () => ahead.running.delete(id),
+      )
+    }, PREPARE_AHEAD_MS)
+    return () => env.timers.clearTimeout(timer)
+  }, [session, prep.state, ui.playing, maxChars, mode, pageWidth, room])
+
+  // Leaving Practice (or another piece's session): the view goes with it.
+  useEffect(
+    () => () => {
       session.layoutChanging()
       stripRef.current?.destroy()
       stripRef.current = null
-    }
-  }, [session, maxChars, mode, pageWidth])
+      shown.current = null
+    },
+    [session],
+  )
 
   // Add to library starts once the score is ready. Consume the request so history navigation
   // cannot start it again, and never retry automatically after a pause or an output failure.
@@ -291,7 +406,9 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           ? 'Pause'
           : ui.startAction === 'listen'
             ? 'Listen'
-            : ui.activity === 'reading' && ui.phase === 'paused' && ui.startAction !== 'scored'
+            : ui.activity === 'reading' &&
+                (ui.phase === 'paused' || ui.interruption?.reason === 'disconnect') &&
+                ui.startAction !== 'scored'
               ? 'Resume'
               : 'Start'
 

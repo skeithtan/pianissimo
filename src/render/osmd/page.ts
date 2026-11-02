@@ -43,6 +43,7 @@ import {
   type Box,
   type LabelBox,
   type LabelPlacement,
+  type LabelRoom,
   type LayoutStats,
   type OccurrenceGeometry,
   type OttavaGeometry,
@@ -56,7 +57,7 @@ import { toNumber } from '../../core/music/rational'
 import {
   Aborted,
   CALLOUT_TOLERANCE,
-  DEFAULT_SPACING,
+  defaultSpacing,
   OSMD_OPTIONS,
   defaultMeasureLabel,
   labelIndexByOcc,
@@ -118,7 +119,8 @@ export async function preparePage(
   // One engraving by default: OSMD justifies every system to the page width, so widening the
   // spacing only moves bars to new lines (the reference piece went to one bar per line) without freeing
   // room beside the notes; the few remaining callouts are the spec's linked callouts.
-  const maxIterations = Math.max(1, options.maxIterations ?? 1)
+  const room = options.labels.room ?? 'all'
+  const maxIterations = room === 'hints' ? 1 : Math.max(1, options.maxIterations ?? 1)
   const measureLabel = options.measureLabel ?? defaultMeasureLabel
   const pageWidth = pageWidthOf(options)
 
@@ -143,7 +145,7 @@ export async function preparePage(
     let engraveMs = now() - te
     let extractMs = 0
     let labelMs = 0
-    let spacing = options.spacing ?? DEFAULT_SPACING
+    let spacing = options.spacing ?? defaultSpacing(room)
     const failuresPerIteration: number[] = []
 
     for (let iteration = 1; ; iteration++) {
@@ -173,7 +175,7 @@ export async function preparePage(
       progress('labels', 0)
       const tlab = now()
       const units = labelUnits(input, ex, mapping)
-      const result = layoutSystemLabels(units, ex, occurrences, label.w, label.h, fontPx)
+      const result = layoutSystemLabels(units, ex, occurrences, label.w, label.h, fontPx, room)
       labelMs += now() - tlab
       failuresPerIteration.push(result.failures.length)
 
@@ -278,6 +280,7 @@ export async function preparePage(
           renderer,
           labelChars: options.labels.maxChars,
           labelFontPx: fontPx,
+          labelRoom: room,
           segmentWidth,
           mode: 'page',
           pageWidth,
@@ -287,6 +290,7 @@ export async function preparePage(
         params: {
           labelChars: options.labels.maxChars,
           labelFontPx: fontPx,
+          labelRoom: room,
           labelW: label.w,
           labelH: label.h,
           segmentWidth,
@@ -375,6 +379,7 @@ function layoutSystemLabels(
   labelW: number,
   labelH: number,
   fontPx: number,
+  room: LabelRoom,
 ): LabelLayoutResult {
   const bySystem = ex.systems.map(() => [] as number[])
   units.forEach((u, i) => bySystem[ex.systemOfOcc[u.occ] ?? 0]!.push(i))
@@ -392,6 +397,7 @@ function layoutSystemLabels(
       labelW,
       labelH,
       fontPx,
+      room,
     })
     res.labels.forEach((l, j) => (labels[ids[j]!] = l))
     for (const f of res.failures) failures.push(ids[f]!)

@@ -12,9 +12,14 @@
  *  4. a callout above/below the staff with a leader (always succeeds; adds vertical label
  *     space) — `callout`. Callouts count as failures that ask the adapter to widen spacing.
  * Labels are never omitted or shrunk.
+ *
+ * With `room: 'hints'` (Labels Off: a tight engraving, DECISIONS R3 revised) only one group's
+ * labels show at a time, as temporary hints: a label avoids engraved marks and the labels of its
+ * own group (same bar and onset) but not other groups' labels, and its callout searches only a
+ * few steps clear of the marks before it settles where it may sit over a neighboring mark.
  */
-import { BoxGrid, bottom, centerY, right } from '../geom'
-import type { Box, LabelBox, LabelPlacement, StaffGeometry } from '../types'
+import { BoxGrid, bottom, centerY, intersects, right } from '../geom'
+import type { Box, LabelBox, LabelPlacement, LabelRoom, StaffGeometry } from '../types'
 import type { Hand } from '../../core/model/score'
 
 export interface LabelUnitInput {
@@ -26,6 +31,8 @@ export interface LabelUnitInput {
   readonly head: Box
   /** Onset x (staff-entry x): heads of one staff with the same x form a column. */
   readonly x: number
+  /** Notes sounding together (bar + onset): one hint shows them all. Default: the column. */
+  readonly group?: string
 }
 
 export interface LabelLayoutInput {
@@ -38,6 +45,8 @@ export interface LabelLayoutInput {
   readonly fontPx: number
   /** Gap between notehead and label (default 2). */
   readonly gap?: number
+  /** 'all' (default): room for every label at once; 'hints': one group at a time (see above). */
+  readonly room?: LabelRoom
 }
 
 export type LabelDraft = Omit<LabelBox, 'id'>
@@ -65,8 +74,11 @@ interface Candidate {
 export function layoutLabels(input: LabelLayoutInput): LabelLayoutResult {
   const { labelW: w, labelH: h, fontPx } = input
   const gap = input.gap ?? 2
+  const hints = input.room === 'hints'
   const grid = new BoxGrid<Box>(64)
   for (const o of input.obstacles) grid.add(o)
+  // Hints: the labels placed so far in each group (a few boxes each).
+  const groups = new Map<string, Box[]>()
 
   const order = input.units
     .map((_, i) => i)
@@ -85,19 +97,22 @@ export function layoutLabels(input: LabelLayoutInput): LabelLayoutResult {
   for (const i of order) {
     const u = input.units[i]!
     const column = columns.get(columnKey(u)) ?? [i]
+    const own = hints ? groupOf(groups, u.group ?? columnKey(u)) : []
+    const taken = (b: Box): boolean => own.some((o) => intersects(o, b))
     let placed: Candidate | undefined
     for (const c of candidates(u.head, w, h, gap)) {
-      if (grid.hit(c.box)) continue
+      if (grid.hit(c.box) || taken(c.box)) continue
       if (c.placement === 'stagger' && !ownsStagger(c.box, i, column, input.units)) continue
       placed = c
       break
     }
     if (!placed) {
-      placed = callout(u, input.staves, w, h, gap, grid)
+      placed = hints ? hintCallout(u, input.staves, w, h, gap, grid, taken) : callout(u, input.staves, w, h, gap, grid)
       failures.push(i)
       ratios.push(widthRatio(u, columnXs, w, gap))
     }
-    grid.add(placed.box)
+    if (hints) own.push(placed.box)
+    else grid.add(placed.box)
     placements[placed.placement]++
     out[i] = draft(u, placed, fontPx, h)
   }
@@ -183,6 +198,55 @@ function callout(
   }
   const y = above ? start - 400 * (h / 2) : start + 400 * (h / 2)
   return { box: { x: cx - w / 2, y, w, h }, placement: 'callout', anchor: 'middle', leader: true }
+}
+
+/** Hint callouts search this many half-label steps clear of engraved marks, then may cover them. */
+export const HINT_CALLOUT_STEPS = 4
+
+/**
+ * A hint's callout (room 'hints'): where `callout` would put it, but only `HINT_CALLOUT_STEPS`
+ * steps out looking for a place clear of engraved marks; past that, the nearest place clear of its
+ * own group's labels, even over a neighboring mark (the paper halo keeps it legible).
+ */
+function hintCallout(
+  u: LabelUnitInput,
+  staves: readonly StaffGeometry[],
+  w: number,
+  h: number,
+  gap: number,
+  grid: BoxGrid<Box>,
+  taken: (b: Box) => boolean,
+): Candidate {
+  const staff = staves.find((s) => s.index === u.staff)
+  const cx = u.head.x + u.head.w / 2
+  const above = staff ? centerY(u.head) <= (staff.top + staff.bottom) / 2 : true
+  const start = above
+    ? Math.min(u.head.y, staff?.top ?? u.head.y) - gap - h
+    : Math.max(bottom(u.head), staff?.bottom ?? 0) + gap
+  const at = (step: number, dx: number): Box => ({
+    x: cx - w / 2 + dx,
+    y: above ? start - step * (h / 2) : start + step * (h / 2),
+    w,
+    h,
+  })
+  for (let step = 0; step <= HINT_CALLOUT_STEPS; step++) {
+    for (const dx of [0, -w / 2, w / 2]) {
+      const b = at(step, dx)
+      if (!grid.hit(b) && !taken(b)) return { box: b, placement: 'callout', anchor: 'middle', leader: true }
+    }
+  }
+  let step = 0
+  while (taken(at(step, 0)) && step < 400) step++
+  return { box: at(step, 0), placement: 'callout', anchor: 'middle', leader: true }
+}
+
+function groupOf(groups: Map<string, Box[]>, key: string): Box[] {
+  let list = groups.get(key)
+  if (!list) {
+    list = []
+    groups.set(key, list)
+  }
+  return list
 }
 
 function draft(u: LabelUnitInput, c: Candidate, fontPx: number, h: number): LabelDraft {

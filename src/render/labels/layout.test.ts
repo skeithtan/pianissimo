@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { intersects } from '../geom'
 import type { Box } from '../types'
-import { countCollisions, layoutLabels, type LabelUnitInput } from './layout'
+import { HINT_CALLOUT_STEPS, countCollisions, layoutLabels, type LabelUnitInput } from './layout'
 
 const staves = [
   { index: 0, top: 100, bottom: 140 },
@@ -79,5 +79,52 @@ describe('layoutLabels', () => {
       const other = Math.abs(cy - (chord[1 - i]!.head.y + 5))
       expect(own).toBeLessThan(other)
     }
+  })
+
+  describe("room 'hints' (Labels Off)", () => {
+    const hints = (units: LabelUnitInput[], extra: Box[] = []) => {
+      const obstacles = [...units.map((u) => u.head), ...extra]
+      return {
+        res: layoutLabels({ units, obstacles, staves, labelW: W, labelH: H, fontPx: 12, room: 'hints' }),
+        obstacles,
+      }
+    }
+
+    it('lets labels of different groups share space, never within a group', () => {
+      // Two chords 20 px apart: too close for both groups' labels beside their heads.
+      const a = [0, 1, 2].map((i) => ({ ...unit(i, 100, 105 + i * 10), group: 'a' }))
+      const b = [3, 4, 5].map((i) => ({ ...unit(i, 120, 105 + (i - 3) * 10), group: 'b' }))
+      const { res, obstacles } = hints([...a, ...b])
+      for (const group of [res.labels.slice(0, 3), res.labels.slice(3)]) {
+        expect(countCollisions(group, [])).toBe(0)
+        for (const l of group) for (const o of obstacles) expect(intersects(l.box, o)).toBe(false)
+      }
+      expect(countCollisions(res.labels, [])).toBeGreaterThan(0)
+    })
+
+    it('puts a boxed-in hint in a callout near the staff, over a mark if it must', () => {
+      const u = unit(0, 100, 120)
+      // Notation everywhere above and below the staff, as far as the callout searches clear of marks.
+      const marks: Box[] = [{ x: 0, y: 0, w: 300, h: 400 }]
+      const { res } = hints([u], marks)
+      const l = res.labels[0]!
+      expect(l.placement).toBe('callout')
+      expect(l.leader).toBeDefined()
+      // Settles at the first step (just above the staff), not hundreds of px away.
+      expect(l.box.y + l.box.h).toBeLessThanOrEqual(100)
+      expect(l.box.y).toBeGreaterThan(100 - 2 * H)
+    })
+
+    it('searches a few steps clear of marks before covering one', () => {
+      const u = unit(0, 100, 120)
+      // Everything from 2.5 label heights above the staff down is notation: beside the head, the
+      // stacks and the first callout steps are taken; the third step above is free.
+      const walls: Box[] = [{ x: 0, y: 100 - 2 - H - H / 2, w: 300, h: 400 }]
+      const { res } = hints([u], walls)
+      const l = res.labels[0]!
+      expect(l.placement).toBe('callout')
+      for (const w of walls) expect(intersects(l.box, w)).toBe(false)
+      expect(100 - (l.box.y + l.box.h)).toBeLessThanOrEqual(2 + (HINT_CALLOUT_STEPS * H) / 2)
+    })
   })
 })

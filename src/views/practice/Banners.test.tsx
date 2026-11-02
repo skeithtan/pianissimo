@@ -88,20 +88,18 @@ const DISCONNECT = {
 } as const
 
 describe('Banners', () => {
-  it('shows one disconnect notice: the input banner holds back the disconnect interruption', () => {
+  it('shows one disconnect notice, and none once the piano is back', () => {
     view = mount(banners({ inputDisconnected: true, interruption: DISCONNECT }))
     const notice = $(view.container, '[data-testid="input-disconnected"]')
     expect(notice?.textContent).toContain('Piano disconnected. Reconnect it to continue.')
     expect(byText(notice!, 'Connection')).not.toBeNull()
     expect($(view.container, '[data-testid="interruption"]')).toBeNull()
 
-    // The piano is back: the interruption shows with its actions.
+    // The piano is back: no disconnect message remains (the footer offers Resume / Start).
     view.rerender(banners({ inputDisconnected: false, interruption: DISCONNECT }))
     expect($(view.container, '[data-testid="input-disconnected"]')).toBeNull()
-    const interruption = $(view.container, '[data-testid="interruption"]')
-    expect(interruption?.textContent).toContain('The piano was disconnected')
-    expect(byText(interruption!, 'Resume from here')).not.toBeNull()
-    expect(byText(interruption!, 'Restart')).not.toBeNull()
+    expect($(view.container, '[data-testid="interruption"]')).toBeNull()
+    expect(view.container.textContent).not.toContain('disconnected')
   })
 
   it('other interruptions still show while the input is disconnected', () => {

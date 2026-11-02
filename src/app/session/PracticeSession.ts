@@ -1210,14 +1210,18 @@ export class PracticeSession {
     this.#process(now)
   }
 
-  /** The layout is being re-prepared (label width changed): an explicit layout operation. */
-  layoutChanging(): void {
+  /**
+   * The layout is being re-prepared (label width, label room, rotation): an explicit layout
+   * operation. `keepStrip`: the current view stays on screen until the new one attaches (a
+   * respacing glide, R3 revised), so it keeps receiving label fades meanwhile.
+   */
+  layoutChanging(keepStrip = false): void {
     const now = this.#deps.clock()
     if (this.#engine.mode === 'scored' && ACTIVE.includes(this.#engine.state.phase)) {
       this.#pauseTransports()
       this.#engine.interrupt('layout-change', now)
     }
-    this.#strip = null
+    if (!keepStrip) this.#strip = null
     this.#process(now)
   }
 

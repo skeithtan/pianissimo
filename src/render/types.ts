@@ -49,12 +49,23 @@ export interface RenderInput {
   readonly meters: readonly Pick<MeterEvent, 'at' | 'occ' | 'beats' | 'beatType' | 'beatsText' | 'symbol'>[]
 }
 
+/**
+ * How much room the engraving leaves for note names (DECISIONS R3 revised). 'all': persistent
+ * labels may show every name at once, so each gets a reserved box beside its notehead and the
+ * spacing widens until they fit. 'hints': Labels Off, only temporary hints for one group at a
+ * time; the music is engraved tight and a hint that finds no room beside its note becomes a
+ * callout above or below the staff, which may sit over a neighboring mark.
+ */
+export type LabelRoom = 'all' | 'hints'
+
 /** Label sizing supplied by the caller. Changing any field is an explicit relayout (R3). */
 export interface LabelSizing {
   /** Widest label in characters, e.g. `maxLabelWidthChars(naming)` from core/naming. */
   readonly maxChars: number
   /** Label font size in layout px (default `LABEL_FONT_PX`, 13.5). */
   readonly fontPx?: number
+  /** Default 'all'. */
+  readonly room?: LabelRoom
 }
 
 /** Engraving spacing actually used (OSMD EngravingRules names; other engines map their own). */
@@ -66,6 +77,8 @@ export interface SpacingParams {
 export interface LayoutParams {
   readonly labelChars: number
   readonly labelFontPx: number
+  /** Absent in layouts from before rooms existed ('all'). */
+  readonly labelRoom?: LabelRoom
   /** Reserved label box size (every label gets this box, R3). */
   readonly labelW: number
   readonly labelH: number
@@ -302,9 +315,9 @@ export interface PrepareOptions {
   readonly host?: HTMLElement
   /** Target segment width in layout px (default 1600). */
   readonly segmentWidth?: number
-  /** Bounded engravings when labels do not fit beside their notes (default 3). */
+  /** Bounded engravings when labels do not fit beside their notes (default 3; room 'hints': 1). */
   readonly maxIterations?: number
-  /** Spacing for the first engraving (default: the adapter's label-aware default). */
+  /** Spacing for the first engraving (default: the adapter's default for the label room). */
   readonly spacing?: SpacingParams
   readonly signal?: AbortSignal
   readonly onProgress?: (stage: PrepareStage, fraction: number) => void

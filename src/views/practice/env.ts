@@ -15,9 +15,12 @@ import {
   StripView,
   prepareLayout,
   storeLayoutCache,
+  tieredLayoutCache,
+  type LayoutCache,
   type PreparedLayout,
   type PrepareOptions,
   type RenderInput,
+  type RespaceSnapshot,
   type StripOptions,
 } from '../../render'
 
@@ -38,6 +41,14 @@ export interface StripHandle extends StripSink {
    * strip's fixed cursor at one third of the stage.
    */
   cursorClientX?(): number
+  /**
+   * Respacing (Labels Off ↔ on, R3 revised): the old view's snapshot for `next`, taken just before
+   * it is destroyed (null: nothing to glide from), and the new view's glide from it.
+   */
+  respaceSnapshot?(next: PreparedLayout): RespaceSnapshot | null
+  respaceFrom?(prev: RespaceSnapshot | null): void
+  /** Hides labels (fading) on a view about to be respaced to show them. */
+  holdLabels?(on: boolean): void
 }
 
 /** Which score view the Practice screen shows: the landscape strip or the portrait page. */
@@ -50,10 +61,16 @@ export interface PracticeEnv {
   readonly timers: TimerApi
   readonly frames: FrameApi
   readonly timeOrigin: number
+  /**
+   * `recent`: the Practice screen's in-memory layouts, checked before IndexedDB (Labels Off ↔ on
+   * swaps between two engravings; the one just left comes back at once). One per screen, so a
+   * package changed in the Library meanwhile never meets a layout kept from before.
+   */
   readonly prepare: (
     storage: PianissimoStorage | null,
     input: RenderInput,
     options: PrepareOptions,
+    recent?: LayoutCache,
   ) => Promise<PreparedLayout>
   /**
    * Mounts the score view: the strip, or in portrait the page (`mode: 'page'`, a layout prepared
@@ -92,9 +109,9 @@ export function defaultPracticeEnv(): PracticeEnv {
       cancel: (h) => cancelAnimationFrame(h as number),
     },
     timeOrigin: performance.timeOrigin,
-    prepare: async (storage, input, options) => {
+    prepare: async (storage, input, options, recent) => {
       renderer ??= new OsmdRenderer()
-      const cache = storage
+      const stored = storage
         ? storeLayoutCache({
             getLayout: (key) => storage.getLayout(key),
             putLayout: async (key, version, value, bytes) => {
@@ -102,6 +119,7 @@ export function defaultPracticeEnv(): PracticeEnv {
             },
           })
         : null
+      const cache = recent && stored ? tieredLayoutCache(recent, stored) : (recent ?? stored)
       return (await prepareLayout(renderer, cache, input, options)).layout
     },
     createStrip: (host, layout, options, mode) =>

@@ -25,6 +25,7 @@ import {
 import { getFeatures } from './features'
 import { MidiService } from './services/midiService'
 import {
+  dismissNotice,
   pushNotice,
   type NoticeInput,
   setConnectionStatus,
@@ -116,7 +117,8 @@ export function getMidiService(): MidiService {
     getRoute: () => settings.peek().route,
     setRoute: (route: MidiRouteSettings) => updateSettings({ route }),
     setStatus: setConnectionStatus,
-    notify: (notice) => void pushNotice(notice),
+    notify: pushNotice,
+    dismiss: dismissNotice,
     unsupportedDetail: getFeatures().features.webMidi.explanation,
     ...(env.now ? { now: env.now } : {}),
   })

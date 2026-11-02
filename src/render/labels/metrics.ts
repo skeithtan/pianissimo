@@ -2,7 +2,7 @@
  * Text metrics for reserved label boxes and app-drawn measure numbers (DECISIONS R3, R6).
  *
  * Widths come from the font the strip actually draws with (`.pn-label` / `.pn-mnum` in
- * strip.css: `LABEL_FONT_FAMILY` weight 600 at the label size / `--font-ui` weight 500 at 11 px),
+ * strip.css: `LABEL_FONT_FAMILY` weight 700 at the label size / `--font-ui` weight 500 at 11 px),
  * measured once per text with a canvas 2D context and cached for the session. The label font is a
  * web font: `loadLabelFont` must resolve before measuring (R14). Without a usable canvas (Node,
  * happy-dom) or when the browser rejects the font string, the deterministic estimate is used
@@ -24,8 +24,8 @@ export interface TextMeasurer {
   width(text: string, font: string): number
 }
 
-/** Strip label weight (strip.css `.pn-label`). */
-export const LABEL_FONT_WEIGHT = 600
+/** Strip label weight (strip.css `.pn-label`, `.pn-corr-label`; the bundled face's weight). */
+export const LABEL_FONT_WEIGHT = 700
 /**
  * Default note-label size in layout px (hint labels and persistent note names): 13.5, about 12 %
  * above the former 12 px (user, 2026-10-31). Part of the layout cache key (`labelFontPx`).
@@ -39,12 +39,12 @@ export const NUMBER_BOX_H = 13
 /** Fallback when `--font-ui` is not defined (strip.css uses the same fallback). */
 export const FALLBACK_FONT_FAMILY = 'system-ui, sans-serif'
 /**
- * Note-label font stack (R14): SF Compact where installed, else the self-hosted "Pianissimo
- * Label" (Inter SemiBold for letters and digits + Noto Music for ♯ ♭ ♮ 𝄪 𝄫, by unicode-range;
+ * Note-label font stack (R14, revised): the self-hosted "Pianissimo Label" (Inter Bold for
+ * letters and digits + Noto Music for ♯ ♭ ♮ 𝄪 𝄫, by unicode-range, both faces declared at 700;
  * `@font-face` in strip.css, files in public/fonts), else the system UI font. strip.css
  * `--pn-label-font` must be exactly this string (unit-tested).
  */
-export const LABEL_FONT_FAMILY = '"SF Compact Text", "SF Compact", "Pianissimo Label", system-ui, sans-serif'
+export const LABEL_FONT_FAMILY = '"Pianissimo Label", system-ui, sans-serif'
 /** Every glyph class a label can contain: loads both unicode-range faces. */
 const LABEL_FONT_SAMPLE = `CDEFGABdoremifasltiA0123456789${SHARP}${FLAT}${NATURAL}${DOUBLE_SHARP}${DOUBLE_FLAT}`
 

@@ -20,6 +20,7 @@ export async function prepareLayout(
     renderer: { name: adapter.name, version: adapter.version },
     labelChars: options.labels.maxChars,
     labelFontPx: options.labels.fontPx ?? LABEL_FONT_PX,
+    labelRoom: options.labels.room ?? 'all',
     segmentWidth: options.segmentWidth ?? DEFAULT_SEGMENT_WIDTH,
     ...(options.mode === 'page' ? { mode: 'page' as const, pageWidth: pageWidthOf(options) } : {}),
   })

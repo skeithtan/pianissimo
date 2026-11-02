@@ -1,12 +1,12 @@
 /**
  * Prepared-layout caching (spec "Execution and rendering architecture": cache reusable geometry so
  * reopening a piece avoids repeated engraving). A `PreparedLayout` is plain JSON keyed by score
- * version + renderer version + every parameter that changes geometry (label sizing, segment
- * width; in page mode the mode and the page width). Zoom is not part of the key: it is a CSS
+ * version + renderer version + every parameter that changes geometry (label sizing and room,
+ * segment width; in page mode the mode and the page width). Zoom is not part of the key: it is a CSS
  * scale (R2); page mode turns a zoom into a page width, which is.
  */
 import { isSafeSvgMarkup } from './sanitize'
-import { PREPARED_LAYOUT_FORMAT, type LayoutMode, type PreparedLayout } from './types'
+import { PREPARED_LAYOUT_FORMAT, type LabelRoom, type LayoutMode, type PreparedLayout } from './types'
 
 export interface LayoutCache {
   get(key: string): Promise<PreparedLayout | undefined>
@@ -18,6 +18,8 @@ export interface LayoutKeyParts {
   readonly renderer: { readonly name: string; readonly version: string }
   readonly labelChars: number
   readonly labelFontPx: number
+  /** Default 'all'. */
+  readonly labelRoom?: LabelRoom
   readonly segmentWidth: number
   /** 'page' (portrait page mode) adds the page width to the key; the strip's key is unchanged. */
   readonly mode?: LayoutMode
@@ -33,6 +35,7 @@ export function layoutKey(p: LayoutKeyParts): string {
     `l${p.labelChars}x${p.labelFontPx}`,
     `s${p.segmentWidth}`,
   ]
+  if (p.labelRoom === 'hints') parts.push('hints')
   if (p.mode === 'page') parts.push(`page${p.pageWidth ?? 0}`)
   return parts.join('|')
 }
@@ -110,6 +113,27 @@ export class MemoryLayoutCache implements LayoutCache {
 
   get size(): number {
     return this.entries.size
+  }
+}
+
+/**
+ * A fast cache in front of a slow one: hits in `slow` are copied into `fast`, puts go to both.
+ * Practice keeps recent layouts in memory so switching Labels Off ↔ on (two engravings) skips the
+ * IndexedDB read and validation of a layout that was just shown.
+ */
+export function tieredLayoutCache(fast: LayoutCache, slow: LayoutCache): LayoutCache {
+  return {
+    async get(key) {
+      const hit = await fast.get(key)
+      if (hit) return hit
+      const stored = await slow.get(key)
+      if (stored) await fast.put(stored)
+      return stored
+    },
+    async put(layout) {
+      await fast.put(layout)
+      await slow.put(layout)
+    },
   }
 }
 

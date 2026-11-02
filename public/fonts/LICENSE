@@ -1,7 +1,8 @@
 Note-label fonts (DECISIONS R14), subset for Pianissimo and served from this folder.
 
-inter-600-labels.woff2
-  Inter 4.001 SemiBold, subset to Basic Latin (U+0020-007E), from @fontsource/inter 5.3.0.
+inter-700-labels.woff2
+  Inter 4.001 Bold, subset to Basic Latin (U+0020-007E) with the kern and calt features, from
+  @fontsource/inter 5.3.0 (files/inter-latin-700-normal.woff2).
   Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
 
 noto-music-accidentals.woff2

@@ -14,7 +14,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
 - `prepareLayout(adapter, cache | null, input, opts)` — cache hit or prepare + put.
 - `LayoutCache` (`get(key)`, `put(layout)`), `MemoryLayoutCache` (byte-bounded LRU),
   `storeLayoutCache(store)` adapting the storage module's `getLayout/putLayout`, `layoutKey(...)`
-  (score version + renderer version + label chars/font + segment width; zoom is not in the key),
+  (score version + renderer version + label chars/font (+ `|hints` for the tight room) + segment
+  width; zoom is not in the key),
   `isPreparedLayout(v, key)` (format/key check + allow-list scan of all markup).
 - `new StripView(host, layout, opts)`:
   `setCursor(posWholeNotes, {smooth})`, `wrapTo(posWholeNotes)` (loop wrap: a quick 320 ms
@@ -33,7 +34,9 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   marks after an attempt, `{ notes, kind, text }` with kind `'wrong'|'early'|'late'|'accidental'|
   'octave'|'spread'|'tie'|'pedal'`; `[]` clears them),
   `setBrowseEnabled(bool)`, `returnToCurrent()`, `isBrowsing()`, `setZoom(s)`, `zoom()`,
-  `occAt(clientX)`, `visibleLabels()`, `stats()`, `flushNow()` (tests), `destroy()`.
+  `occAt(clientX)`, `visibleLabels()`, `stats()`, `flushNow()` (tests), `destroy()`,
+  `respaceSnapshot(nextLayout)` / `respaceFrom(snapshot)` / `holdLabels(on)` (respacing glide,
+  below; the page view has the same three).
   Callbacks: `onBrowse`, `onSeekRequest(occ)` (tap outside select mode, also a tap on the cursor),
   `onCursorSeek(position) → boolean|void` (dragged playhead released on a note; `false` puts it
   back), `cursorDragLabel(position)` (readout text), `onLoopChange(range|null)`,
@@ -55,10 +58,12 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
 
 - **Prepare** (`osmd/adapter.ts`): rules `SheetMaximumWidth` lifted (OSMD otherwise wraps a
   "single" staffline into new systems past 32 767 px — asserted to be one system), multi-rest
-  generation off, measure numbers/titles off. Spacing default `VoiceSpacingMultiplierVexflow 1.4`
-  (OSMD 0.85): room for a label beside nearly every notehead in one engraving; if > 0.5 % of
+  generation off, measure numbers/titles off. **Label room** (`LabelSizing.room`, DECISIONS R3
+  revised): `'all'` (default; Labels All / Conditional) spaces at `VoiceSpacingMultiplierVexflow
+  1.4` (OSMD 0.85): room for a label beside nearly every notehead in one engraving; if > 0.5 % of
   labels still need a callout, spacing widens for both staves together (factor from measured
-  demand, clamped 1.15–2) and re-engraves, max 3 engravings.
+  demand, clamped 1.15–2) and re-engraves, max 3 engravings. `'hints'` (Labels Off) engraves once
+  at `HINTS_SPACING` 1.0 and lays labels out for one group at a time (below).
 - **Extraction** (`osmd/extract.ts`): OSMD graphical model → per-notehead `GraphicNote`
   (occ = measure index, staff, voice, onset fraction, sounding MIDI = `halfTone + 12`, grace,
   notehead bbox, staff-entry x); measure x ranges + onset anchors; staff lines; ottava brackets
@@ -68,14 +73,14 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
 - **Mapping** (`mapping.ts`, pure): strict key (occ, staff, voice, onset, midi, grace), then
   relaxed passes (no voice, no staff, occ+onset+pitch, microtone fractional pitch) counted in
   `report.relaxedMatches`; a unison engraved once is shared (one label unit).
-- **Label font** (R14): `LABEL_FONT_FAMILY` = SF Compact (when installed) → self-hosted
-  "Pianissimo Label" (Inter SemiBold Basic Latin + Noto Music ♯ ♭ ♮ 𝄪 𝄫 by unicode-range,
-  `public/fonts`, OFL, 10.0 + 2.9 kB woff2, `@font-face` in strip.css, `font-display: block`) →
-  system UI. `loadLabelFont` runs before measuring in `prepare` and when a strip mounts.
+- **Label font** (R14 revised): `LABEL_FONT_FAMILY` = self-hosted "Pianissimo Label" (Inter
+  Bold Basic Latin + Noto Music ♯ ♭ ♮ 𝄪 𝄫 by unicode-range, both faces declared at 700 so
+  Chromium joins them, `public/fonts`, OFL, 9.9 + 2.9 kB woff2, `@font-face` in strip.css,
+  `font-display: block`) → system UI. `loadLabelFont` runs before measuring in `prepare` and when a strip mounts.
 - **Label metrics** (`labels/metrics.ts`): the reserved box is the widest label the naming family
   of `maxChars` can produce (every name × ♯ ♭ ♮ 𝄪 𝄫/none × octave digit), measured once per text
-  with canvas `measureText` in the label font (600 weight, `LABEL_FONT_PX` 13.5 px by default;
-  `ADAPTER_VERSION` pn-5) and cached for
+  with canvas `measureText` in the label font (700 weight, `LABEL_FONT_PX` 13.5 px by default;
+  `ADAPTER_VERSION` pn-9) and cached for
   the session; + 2 px, 1.2 em high. Measure numbers are measured in the `.pn-mnum` font (500,
   11 px). No canvas or a rejected font → the deterministic 0.62 em (labels) / 6.4 px per char
   (numbers) estimate; `PrepareOptions.textMeasurer` injects a measurer (tests).
@@ -86,7 +91,21 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
 - **Labels** (`labels/layout.ts`, pure): the measured worst-case box for every unit, preference
   right → left (small x nudges) → half-height stagger (only if nearer its own head) → stack with
   leader → callout above/below the staff with leader (always succeeds, extends vertical label
-  space). Never omitted or shrunk.
+  space). Never omitted or shrunk. Room `'hints'`: a label avoids marks and its own group's
+  labels only (`LabelUnitInput.group` = bar + onset), and its callout searches
+  `HINT_CALLOUT_STEPS` steps clear of marks, then settles nearest the staff over a mark.
+- **Respacing** (`shared/respace.ts`): Labels Off ↔ on swaps the engraving; the old view's
+  `respaceSnapshot(next)` (its layout → screen frame and, when it is the wider engraving, its
+  mounted marks with `getBBox` x extents, descending into groups wider than 30 px) goes to the new
+  view's `respaceFrom`, which cuts the wider engraving into one slice per onset column (half way
+  to its neighbors; bar / line ends to the barlines / line ends), matched to the same onset in the
+  other engraving, and glides each slice (an SVG of copies of the marks it overlaps, clipped) from
+  its old screen place to its new one: 420 ms, `--ease-standard`, Web Animations transforms, only
+  slices on screen at either end. Meanwhile the view's own notation, loop and corrections are
+  hidden (`.pn-respacing`). Visible names are cut too (whole, by their center) and fade in the
+  overlay (`.pn-respace-in` / `-out`), so the view's own names show at once when it ends. The strip's cursor is fixed,
+  so its note stays; the page first scrolls so the cursor's line keeps its screen y. No glide
+  while browsing, dragging, following, or with reduced motion.
 - **Segments** (`partition.ts`): measure-range segments ≥ 400 px (a measure or two, PF6). A
   top-level unit belongs to the segment holding its center and is also copied into every segment
   it reaches more than 1.5 px into, clipped by the segment viewBox (2 px seam overlap), so ties/
@@ -125,7 +144,7 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
 - **Teacher corrections** (`setCorrections`): after an attempt, a hand-drawn red ring (`--danger`,
   2.5 px, a single pen stroke slightly more than once around with growing radius, rotated −3°)
   around each mark's noteheads — one ring per staff, union box + 10 px — and one text per mark
-  (13 px semibold label font, red, `pn-corr-halo`: a 3 px `paint-order: stroke` halo in the score
+  (13 px bold label font, red, `pn-corr-halo`: a 3 px `paint-order: stroke` halo in the score
   paper). Every kind uses the same pen; the kind is a class (`pn-corr-<kind>`). Labels never sit
   over notation: a mark whose top ring is on the upper half of the staves puts its label in a band
   above the top staff, otherwise below the bottom staff, centered on its nearest ring with a 1.5 px

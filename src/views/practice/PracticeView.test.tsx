@@ -13,7 +13,8 @@ import { ManualClock } from '../../core/playback/testkit'
 import { importFixture } from '../../../tests/unit/import/fixtures'
 import { $, $$, byLabel, byText, click, mount, type Mounted } from '../shared/testing'
 import type { PracticeEnv, PracticeStripOptions, StripHandle } from './env'
-import { REPEAT_PANEL_FADE_MS } from './PracticeScreen'
+import type { RespaceSnapshot } from '../../render'
+import { PREPARE_AHEAD_MS, REPEAT_PANEL_FADE_MS } from './PracticeScreen'
 import { PracticeViewWith } from './PracticeView'
 import { RECEDE_DELAY_MS, REVEAL_MS } from './recede'
 
@@ -37,6 +38,18 @@ class TestStrip extends FakeStrip implements StripHandle {
   destroy(): void {
     this.destroyed = true
   }
+  held: boolean[] = []
+  holdLabels(on: boolean): void {
+    this.held.push(on)
+  }
+  readonly snapshot = { from: this } as unknown as RespaceSnapshot
+  respaceSnapshot(): RespaceSnapshot | null {
+    return this.snapshot
+  }
+  respacedFrom: (RespaceSnapshot | null)[] = []
+  respaceFrom(prev: RespaceSnapshot | null): void {
+    this.respacedFrom.push(prev)
+  }
 }
 
 interface Rig {
@@ -46,6 +59,8 @@ interface Rig {
   frames: ManualFrames
   midi: FakeMidi
   strips: TestStrip[]
+  /** The label room of every preparation, in order. */
+  rooms: (string | undefined)[]
   pieceId: string
 }
 
@@ -59,6 +74,7 @@ async function rig(): Promise<Rig> {
   const frames = new ManualFrames(clock.clock)
   const midi = new FakeMidi()
   const strips: TestStrip[] = []
+  const rooms: (string | undefined)[] = []
   const env: PracticeEnv = {
     storage: async () => storage,
     midi: () => midi,
@@ -66,7 +82,10 @@ async function rig(): Promise<Rig> {
     timers: clock,
     frames,
     timeOrigin: 0,
-    prepare: async () => ({ key: 'fake' }) as unknown as PreparedLayout,
+    prepare: async (_s, _i, options) => {
+      rooms.push(options.labels.room)
+      return { key: 'fake' } as unknown as PreparedLayout
+    },
     createStrip: (_host, _layout, options) => {
       const s = new TestStrip()
       s.options = options
@@ -74,7 +93,7 @@ async function rig(): Promise<Rig> {
       return s
     },
   }
-  return { env, storage, clock, frames, midi, strips, pieceId: piece.id }
+  return { env, storage, clock, frames, midi, strips, rooms, pieceId: piece.id }
 }
 
 /** Wait out the Repeat panel's fade-out (real timers), then settle. */
@@ -274,17 +293,79 @@ describe('PracticeView', () => {
     expect(resultsRequest.value?.attemptId).toMatch(/piece-1/)
   })
 
-  it('the Labels control applies label settings; both hands off turns Start into Listen', async () => {
+  it('prepares the other label room ahead while idle, never while something plays', async () => {
+    const r = await rig()
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    expect(r.rooms).toEqual(['hints'])
+    // Something plays before the idle delay is up: nothing is prepared meanwhile.
+    click(byLabel(view.container, 'Start')!)
+    await settle(r, 2)
+    act(() => r.clock.advance(PREPARE_AHEAD_MS * 2))
+    await settle(r, 2)
+    expect(r.rooms).toEqual(['hints'])
+    click(byLabel(view.container, 'Pause')!)
+    await settle(r, 2)
+    act(() => r.clock.advance(PREPARE_AHEAD_MS - 1))
+    await settle(r, 2)
+    expect(r.rooms).toEqual(['hints'])
+    act(() => r.clock.advance(1))
+    await settle(r, 2)
+    // The roomy engraving is ready (in memory) before Labels All is chosen; the view stays.
+    expect(r.rooms).toEqual(['hints', 'all'])
+    expect(r.strips).toHaveLength(1)
+    // Once the room has changed, the tight one is already known: nothing more to prepare.
+    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'All'))
+    await settle(r, 2)
+    expect(r.strips).toHaveLength(2)
+    act(() => r.clock.advance(PREPARE_AHEAD_MS * 2))
+    await settle(r, 2)
+    expect(r.rooms.filter((room) => room === 'hints')).toHaveLength(1)
+  })
+
+  it('Labels Off swaps to the tight engraving at once; the names fade during the glide (R3 revised)', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
     view = mount(<PracticeViewWith env={r.env} />)
     await settle(r)
     click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'All'))
+    await settle(r, 2)
+    expect(r.strips).toHaveLength(2)
+    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'Off'))
+    await settle(r, 2)
+    // No wait for a fade: the old view hands over as soon as the layout is ready.
+    expect(r.rooms).toEqual(['hints', 'all', 'hints'])
+    expect(r.strips).toHaveLength(3)
+    expect(r.strips[1]!.destroyed).toBe(true)
+    expect(r.strips[2]!.respacedFrom).toEqual([r.strips[1]!.snapshot])
+    // Conditional ↔ All keeps the room: no new engraving.
+    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'All'))
+    await settle(r, 2)
+    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'Conditional'))
+    await settle(r, 2)
+    expect(r.rooms).toEqual(['hints', 'all', 'hints', 'all'])
+  })
+
+  it('the Labels control applies label settings; both hands off turns Start into Listen', async () => {
+    const r = await rig()
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    expect(r.rooms).toEqual(['hints'])
+    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'All'))
     expect(settings.value.labels.mode).toBe('all')
-    await settle(r, 1)
+    // Names need room (R3 revised): the tight view hides its labels while the roomy engraving is
+    // prepared, then gives way to it, which glides in from the old view's snapshot.
+    expect(r.strips[0]!.held).toEqual([true])
+    await settle(r, 2)
+    expect(r.rooms).toEqual(['hints', 'all'])
+    expect(r.strips).toHaveLength(2)
+    expect(r.strips[0]!.destroyed).toBe(true)
+    expect(r.strips[1]!.respacedFrom).toEqual([r.strips[0]!.snapshot])
     act(() => r.clock.advance(400))
     act(() => r.frames.flush())
-    expect(r.strips[0]!.opacity.size).toBeGreaterThan(0)
+    expect(r.strips[1]!.opacity.size).toBeGreaterThan(0)
     click(byLabel(view.container, 'Left hand'))
     await settle(r, 1)
     click(byLabel(view.container, 'Right hand'))

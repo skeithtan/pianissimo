@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { MemoryLayoutCache, isPreparedLayout, layoutKey, storeLayoutCache, type LayoutStore } from './cache'
+import {
+  MemoryLayoutCache,
+  isPreparedLayout,
+  layoutKey,
+  storeLayoutCache,
+  tieredLayoutCache,
+  type LayoutStore,
+} from './cache'
 import { PREPARED_LAYOUT_FORMAT, type PreparedLayout } from './types'
 
 function layout(
@@ -95,6 +102,27 @@ describe('MemoryLayoutCache', () => {
     expect(await cache.get('a')).toBeDefined()
     expect(await cache.get('c')).toBeDefined()
     expect(cache.bytes).toBeLessThanOrEqual(2500 + 2000)
+  })
+})
+
+describe('tieredLayoutCache', () => {
+  it('answers from memory first, copies stored hits into memory, writes to both', async () => {
+    const fast = new MemoryLayoutCache()
+    const reads: string[] = []
+    const slowData = new Map([['s', layout('s')]])
+    const slow = {
+      get: async (key: string) => (reads.push(key), slowData.get(key)),
+      put: async (l: PreparedLayout) => void slowData.set(l.key, l),
+    }
+    const cache = tieredLayoutCache(fast, slow)
+    expect(await cache.get('s')).toBe(slowData.get('s'))
+    expect(await cache.get('s')).toBe(slowData.get('s'))
+    expect(reads).toEqual(['s'])
+    const m = layout('m')
+    await cache.put(m)
+    expect(await fast.get('m')).toBe(m)
+    expect(slowData.get('m')).toBe(m)
+    expect(await cache.get('none')).toBeUndefined()
   })
 })
 

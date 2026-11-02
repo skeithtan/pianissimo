@@ -4,9 +4,10 @@
  * passages": "After each attempt, show a compact result while preserving the score"). Rendered
  * into the stage's top overlay column, under the Repeat panel; never recedes (U13).
  *
- * One disconnect notice at a time: while the piano input is gone, its banner replaces the
- * attempt's "disconnected" interruption, which shows (with Resume / Restart) once the piano is
- * back. There is no end-of-piece banner: the footer's main button offers Start.
+ * One disconnect notice at a time: while the piano input is gone, its banner shows; once the
+ * piano is back every disconnect message goes away, including the attempt's "disconnected"
+ * interruption (the footer's main button offers Resume / Start, user 2026-11-02). There is no
+ * end-of-piece banner: the footer's main button offers Start.
  */
 import { useRef } from 'preact/hooks'
 import type { AttemptSummary, SessionUi } from '../../app/session'
@@ -42,8 +43,7 @@ export function Banners(p: BannersProps) {
   if (r) last.current = r
   const presence = useFadePresence(!!r, RESULT_FADE_MS)
   const shown = r ?? last.current
-  const interruption =
-    ui.interruption && !(ui.inputDisconnected && ui.interruption.reason === 'disconnect') ? ui.interruption : null
+  const interruption = ui.interruption && ui.interruption.reason !== 'disconnect' ? ui.interruption : null
   return (
     <>
       {ui.inputDisconnected ? (

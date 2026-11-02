@@ -9,8 +9,8 @@
    drawn in a fallback that does not fit their reserved box while the file is still arriving. */
 @font-face {
   font-family: 'Pianissimo Label';
-  src: url('/fonts/inter-600-labels.woff2') format('woff2');
-  font-weight: 600;
+  src: url('/fonts/inter-700-labels.woff2') format('woff2');
+  font-weight: 700;
   font-style: normal;
   font-display: block;
   unicode-range: U+0020-007E;
@@ -19,7 +19,9 @@
 @font-face {
   font-family: 'Pianissimo Label';
   src: url('/fonts/noto-music-accidentals.woff2') format('woff2');
-  font-weight: 100 900;
+  /* The same weight as the letters' face: Chromium joins unicode-range faces only when their
+     weights match, else it draws the accidentals from a system font (R14 addendum). */
+  font-weight: 700;
   font-style: normal;
   font-display: block;
   unicode-range: U+266D-266F, U+1D12A-1D12B;
@@ -62,7 +64,7 @@
   --pn-inv-zoom: 1;
   --pn-zoom: 1;
   /* Must equal LABEL_FONT_FAMILY in labels/metrics.ts (canvas measurement). */
-  --pn-label-font: "SF Compact Text", "SF Compact", "Pianissimo Label", system-ui, sans-serif;
+  --pn-label-font: "Pianissimo Label", system-ui, sans-serif;
   position: relative;
   width: 100%;
   height: 100%;
@@ -218,7 +220,7 @@
    legible over staff lines in both themes. */
 .pn-label {
   font-family: var(--pn-label-font);
-  font-weight: 600;
+  font-weight: 700;
   fill: var(--pn-label);
   paint-order: stroke;
   stroke: var(--pn-paper);
@@ -230,6 +232,62 @@
   stroke: var(--pn-ink-muted);
   stroke-width: 0.9;
   stroke-linecap: round;
+}
+
+/* Respacing (shared/respace.ts, R3 revised): while the notes glide to a new spacing, the view's
+   own notation waits hidden under the gliding slices, whose copies of the names fade in (names
+   turned on) or out (turned off) on the way. Names on a view about to be replaced by one with
+   room for them stay hidden meanwhile. */
+.pn-respacing .pn-segs .pn-labels,
+.pn-labels-held .pn-segs .pn-labels {
+  opacity: 0;
+}
+
+/* Duration: RESPACE_MS. In: from 40 % of the glide; out: by 60 %. */
+.pn-respace-in .pn-respace-label {
+  animation: pn-respace-label-in 420ms linear both;
+}
+
+.pn-respace-out .pn-respace-label {
+  animation: pn-respace-label-out 420ms linear both;
+}
+
+@keyframes pn-respace-label-in {
+  0%,
+  40% {
+    opacity: 0;
+  }
+}
+
+@keyframes pn-respace-label-out {
+  60%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.pn-respacing .pn-segs,
+.pn-respacing .pn-loop,
+.pn-respacing .pn-page-loops,
+.pn-respacing .pn-corrs,
+.pn-respacing .pn-loop-ctl {
+  visibility: hidden;
+}
+
+.pn-respace {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pn-respace-slice {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 .pn-sub-L .pn-label[data-h='L'],
@@ -483,7 +541,7 @@
 .pn-corr-label {
   font-family: var(--pn-label-font);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   fill: var(--pn-correction);
   white-space: pre;
 }
@@ -759,6 +817,14 @@
 .pn-strip .vf-measure > path,
 .pn-strip .vf-ledgers path {
   stroke-opacity: var(--pn-staff-opacity);
+}
+
+/* Respacing slices overlap their neighbors: translucent staff lines would darken where two meet,
+   so the gliding copies draw them in the same tint, opaque. */
+.pn-strip .pn-respace .vf-measure > path,
+.pn-strip .pn-respace .vf-ledgers path {
+  stroke: color-mix(in srgb, var(--pn-ink) calc(var(--pn-staff-opacity) * 100%), var(--pn-paper));
+  stroke-opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

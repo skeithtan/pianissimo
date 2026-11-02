@@ -18,6 +18,8 @@
  * - Zoom changes the page width: a pinch / ctrl-wheel / `setZoom` previews the scale at once and,
  *   250 ms after it settles, reports `onZoomChange(scale)`; the owner re-prepares the layout at
  *   `pageWidthFor(stage, scale)` and opens a new view at that zoom.
+ * - A new engraving with other spacing (Labels Off ↔ on) keeps the cursor's line where it was on
+ *   screen and glides the notes in from the previous view's columns (`respaceFrom`).
  */
 import type { Hand } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
@@ -46,6 +48,15 @@ import {
 } from '../strip/snap'
 import type { StripOptions, StripStats, LoopSelectMode } from '../strip/StripView'
 import { ACTION_RADIUS, staffGap } from '../shared/cursorAction'
+import {
+  collectPieces,
+  lineOf,
+  startRespace,
+  wider,
+  type RespaceRun,
+  type RespaceSnapshot,
+  type ScreenFrame,
+} from '../shared/respace'
 import type { LabelBox, PreparedLayout } from '../types'
 import { PAGE_GUTTER, PageGeometry, type Band } from './geometry'
 import { PageSegmentStore, type MountedSegment } from './segments'
@@ -222,6 +233,8 @@ export class PageView {
     restore: number
   } | null = null
   private zoomTimer: ReturnType<typeof setTimeout> | null = null
+
+  private respace: RespaceRun | null = null
 
   private frame = 0
   private destroyed = false
@@ -613,8 +626,78 @@ export class PageView {
     if (instant) void getComputedStyle(this.cursorEl).transform
   }
 
+  // ---------------------------------------------------------------- respacing (R3 revised)
+
+  /** See `StripView.respaceSnapshot`. Null while browsing, dragging or gliding. */
+  respaceSnapshot(next: PreparedLayout): RespaceSnapshot | null {
+    if (this.destroyed || this.browsing || this.handleDrag || this.cursorDrag?.moved) return null
+    if (this.glide && performance.now() < this.glide.until) return null
+    if (this.reducedMotion || !(this.hostW > 0) || !(this.hostH > 0)) return null
+    this.respace?.cancel()
+    return {
+      layout: this.layout,
+      frame: this.screenFrame(),
+      pieces: wider(this.layout, next) === 'prev' ? collectPieces(this.store.mounted.values()) : null,
+    }
+  }
+
+  /**
+   * Scrolls so the cursor's line sits where `prev` drew it, then glides the notes from their old
+   * places (other lines included) to their places here. Labels fade in after.
+   */
+  respaceFrom(prev: RespaceSnapshot | null): void {
+    if (!prev || this.destroyed || this.reducedMotion || !(this.hostH > 0)) return
+    this.flushNow()
+    const L = this.layout
+    const s = this.scale
+    const occ = Math.max(0, occAtPosition(L.occurrences, this.cursorPos))
+    const was = prev.frame.dy + lineOf(prev.layout, occ).top * prev.frame.scale
+    const y = PAGE_PAD_TOP + (lineOf(L, occ).top - L.top) * s - was
+    this.scrollTo(Math.max(0, Math.min(this.sheetHeight() - this.hostH, y)), false)
+    this.followRequest = null
+    this.flushNow()
+    // Everything the glide may show is cut now: mount the page ± one viewport at once.
+    const toY = (sy: number): number => (sy - PAGE_PAD_TOP) / s + L.top
+    const over = this.hostH / s
+    const vy0 = toY(this.scrollY)
+    const vy1 = toY(this.scrollY + this.hostH)
+    const wanted = this.store.wanted(vy0 - over, vy1 + over, (vy0 + vy1) / 2)
+    this.store.sync(wanted, new Set(wanted), 0)
+    this.applyNotes()
+    this.root.classList.add('pn-respacing')
+    const systemOf = (layout: PreparedLayout) => (o: number) => layout.occurrences[o]?.system ?? -1
+    this.respace = startRespace({
+      prev,
+      next: { layout: L, frame: this.screenFrame() },
+      nextPieces: () => collectPieces(this.store.mounted.values()),
+      segmentOf: { prev: systemOf(prev.layout), next: systemOf(L) },
+      parent: this.root,
+      before: this.scroller.nextElementSibling,
+      width: this.hostW,
+      height: this.hostH,
+      easing: this.ease,
+      onDone: () => {
+        this.respace = null
+        if (!this.destroyed) this.root.classList.remove('pn-respacing')
+      },
+    })
+    if (!this.respace) this.root.classList.remove('pn-respacing')
+  }
+
+  /** See `StripView.holdLabels`. */
+  holdLabels(on: boolean): void {
+    this.root.classList.toggle('pn-labels-held', on)
+  }
+
+  /** Layout px → root px as last applied (the scroller fills the root). */
+  private screenFrame(): ScreenFrame {
+    const s = this.scale
+    return { scale: s, dx: this.applied.gx, dy: PAGE_PAD_TOP - this.layout.top * s - this.scrollY }
+  }
+
   destroy(): void {
     this.destroyed = true
+    this.respace?.cancel()
     if (this.frame) cancelAnimationFrame(this.frame)
     if (this.corrLeaveTimer) clearTimeout(this.corrLeaveTimer)
     if (this.zoomTimer) clearTimeout(this.zoomTimer)

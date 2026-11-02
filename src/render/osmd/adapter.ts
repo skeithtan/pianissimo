@@ -38,6 +38,7 @@ import {
   PREPARED_LAYOUT_FORMAT,
   type Box,
   type LabelBox,
+  type LabelRoom,
   type LayoutStats,
   type NoteGeometry,
   type OccurrenceGeometry,
@@ -63,13 +64,22 @@ export const OSMD_VERSION = '2.2.1'
  * pn-5: default label size 13.5 px (was 12): wider and taller reserved label boxes.
  * pn-6: measure-sized segments without the neighboring measures copied in (PF6).
  * pn-7: a mid-bar clef change switches the sticky clef where its change clef is drawn.
+ * pn-8: label rooms ('hints': tight spacing, hint callouts, R3 revised).
+ * pn-9: labels in Inter Bold (wider boxes), SF Compact dropped (R14 revised).
  */
-export const ADAPTER_VERSION = 'pn-7'
+export const ADAPTER_VERSION = 'pn-9'
 export const RENDERER_NAME = 'osmd'
 export const RENDERER_VERSION = `${OSMD_VERSION}+${ADAPTER_VERSION}`
 
 /** Label-aware default: OSMD 0.85 × ~1.65 leaves room for a label beside nearly every notehead. */
 export const DEFAULT_SPACING: SpacingParams = { voiceSpacingMultiplier: 1.4, voiceSpacingAddend: 3 }
+/** Room 'hints' (Labels Off): tight, no room reserved for names (OSMD's own default is 0.85). */
+export const HINTS_SPACING: SpacingParams = { voiceSpacingMultiplier: 1, voiceSpacingAddend: 3 }
+
+/** The first engraving's spacing for a label room. */
+export function defaultSpacing(room: LabelRoom = 'all'): SpacingParams {
+  return room === 'hints' ? HINTS_SPACING : DEFAULT_SPACING
+}
 /** Width limit for the one horizontal system (layout px); far beyond any practical score. */
 const MAX_SHEET_WIDTH = 50_000_000
 /** Widen spacing when more than this share of labels would need a callout. */
@@ -150,7 +160,9 @@ export class OsmdRenderer implements RendererAdapter {
     const measure = options.textMeasurer ?? canvasMeasurer(document) ?? estimateMeasurer
     const label = labelMetrics(options.labels.maxChars, fontPx, measure, LABEL_FONT_FAMILY)
     const segmentWidth = options.segmentWidth ?? DEFAULT_SEGMENT_WIDTH
-    const maxIterations = Math.max(1, options.maxIterations ?? 3)
+    const room = options.labels.room ?? 'all'
+    // Hints never widen the music: a hint without room beside its note is a callout.
+    const maxIterations = room === 'hints' ? 1 : Math.max(1, options.maxIterations ?? 3)
     const measureLabel = options.measureLabel ?? defaultMeasureLabel
 
     progress('loading', 0)
@@ -172,7 +184,7 @@ export class OsmdRenderer implements RendererAdapter {
       let engraveMs = now() - te
       let extractMs = 0
       let labelMs = 0
-      let spacing = options.spacing ?? DEFAULT_SPACING
+      let spacing = options.spacing ?? defaultSpacing(room)
       const failuresPerIteration: number[] = []
 
       for (let iteration = 1; ; iteration++) {
@@ -207,6 +219,7 @@ export class OsmdRenderer implements RendererAdapter {
           labelW: label.w,
           labelH: label.h,
           fontPx,
+          room,
         })
         labelMs += now() - tlab
         failuresPerIteration.push(result.failures.length)
@@ -296,6 +309,7 @@ export class OsmdRenderer implements RendererAdapter {
             renderer,
             labelChars: options.labels.maxChars,
             labelFontPx: fontPx,
+            labelRoom: room,
             segmentWidth,
           }),
           scoreVersionId: input.scoreVersionId,
@@ -303,6 +317,7 @@ export class OsmdRenderer implements RendererAdapter {
           params: {
             labelChars: options.labels.maxChars,
             labelFontPx: fontPx,
+            labelRoom: room,
             labelW: label.w,
             labelH: label.h,
             segmentWidth,
@@ -408,6 +423,7 @@ export function labelUnits(input: RenderInput, ex: Extraction, mapping: NoteMapp
       hand: first.hand,
       head: unionAll(graphics.map((g) => g.head))!,
       x: g0.x,
+      group: `${first.occ}|${toNumber(first.onsetInMeasure)}${first.grace ? '|g' : ''}`,
     }
   })
 }

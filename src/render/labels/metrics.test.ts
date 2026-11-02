@@ -7,6 +7,7 @@ import {
   estimateMeasurer,
   LABEL_FONT_FAMILY,
   LABEL_FONT_PX,
+  LABEL_FONT_WEIGHT,
   labelBoxSize,
   labelCandidates,
   loadLabelFont,
@@ -129,14 +130,21 @@ describe('canvas measurer', () => {
 describe('label font (R14)', () => {
   const css = readFileSync(new URL('../strip/strip.css', import.meta.url), 'utf8')
 
-  it('draws labels in exactly the family that is measured, SF Compact first', () => {
+  it('draws labels in exactly the family and weight that are measured, the bundled font first', () => {
     expect(css).toContain(`--pn-label-font: ${LABEL_FONT_FAMILY};`)
-    expect(css).toMatch(/\.pn-label \{\s*font-family: var\(--pn-label-font\);/)
-    expect(LABEL_FONT_FAMILY.startsWith('"SF Compact Text", "SF Compact", "Pianissimo Label"')).toBe(true)
+    expect(css).toMatch(/\.pn-label \{\s*font-family: var\(--pn-label-font\);\s*font-weight: 700;/)
+    expect(LABEL_FONT_FAMILY.startsWith('"Pianissimo Label"')).toBe(true)
+    expect(LABEL_FONT_WEIGHT).toBe(700)
+  })
+
+  it('declares both faces at the label weight (Chromium joins unicode-range faces only then)', () => {
+    const faces = [...css.matchAll(/@font-face \{([^}]*)\}/g)].map((m) => m[1]!)
+    expect(faces).toHaveLength(2)
+    for (const face of faces) expect(face).toContain(`font-weight: ${LABEL_FONT_WEIGHT};`)
   })
 
   it('self-hosts both faces with a license, accidentals by unicode-range', () => {
-    for (const file of ['inter-600-labels.woff2', 'noto-music-accidentals.woff2']) {
+    for (const file of ['inter-700-labels.woff2', 'noto-music-accidentals.woff2']) {
       expect(css).toContain(`url('/fonts/${file}')`)
       expect(existsSync(new URL(`../../../public/fonts/${file}`, import.meta.url))).toBe(true)
     }
@@ -149,7 +157,7 @@ describe('label font (R14)', () => {
   it('loads every glyph class before measuring and never rejects', async () => {
     const load = vi.fn(async () => [])
     await loadLabelFont({ fonts: { load } } as unknown as Document, 12)
-    expect(load).toHaveBeenCalledWith(`600 12px ${LABEL_FONT_FAMILY}`, expect.stringContaining('\u{1D12B}'))
+    expect(load).toHaveBeenCalledWith(`700 12px ${LABEL_FONT_FAMILY}`, expect.stringContaining('\u{1D12B}'))
     await expect(
       loadLabelFont({ fonts: { load: () => Promise.reject(new Error('offline')) } } as unknown as Document),
     ).resolves.toBeUndefined()

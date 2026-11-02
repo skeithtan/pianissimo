@@ -63,7 +63,9 @@ export interface MidiServiceDeps {
   readonly getRoute: () => MidiRouteSettings
   readonly setRoute: (route: MidiRouteSettings) => void
   readonly setStatus: (status: ConnectionStatus) => void
-  readonly notify: (notice: NoticeInput) => void
+  /** Show a notice; returns its id when it can be dismissed later. */
+  readonly notify: (notice: NoticeInput) => number | void
+  readonly dismiss?: (id: number) => void
   /** Explanation shown when Web MIDI is missing (features.ts). */
   readonly unsupportedDetail?: string | null
   readonly now?: () => number
@@ -128,6 +130,8 @@ export class MidiService {
   private readonly setTimer: (fn: () => void, ms: number) => unknown
   private readonly clearTimer: (handle: unknown) => void
   private pendingNotice: { lost: Set<string>; back: Set<string>; output: boolean; timer: unknown } | null = null
+  /** "Piano disconnected" notices that may still show; dismissed once the piano is back. */
+  private lostNotices: number[] = []
   private matched: { input: SelectedPort['matchedBy']; output: SelectedPort['matchedBy'] } = {
     input: 'pick',
     output: 'pick',
@@ -442,10 +446,11 @@ export class MidiService {
     const list = (names: Set<string>) => [...names].join(', ')
     if (p.lost.size > 0) {
       const playback = p.output ? ' App playback stopped.' : ''
-      this.deps.notify({
+      const id = this.deps.notify({
         kind: 'warning',
         text: `Piano disconnected (${list(p.lost)}).${playback} Reconnect it to continue; an attempt in progress is interrupted.`,
       })
+      if (typeof id === 'number') this.lostNotices.push(id)
     }
     if (p.back.size > 0) {
       this.deps.notify({
@@ -490,6 +495,11 @@ export class MidiService {
 
   private publish(next: MidiSnapshot): void {
     this.state = next
+    // The piano is back (reconnected or another one chosen): its disconnect notices go away.
+    if (this.lostNotices.length > 0 && next.input?.connected && !this.lostFlags.output) {
+      for (const id of this.lostNotices) this.deps.dismiss?.(id)
+      this.lostNotices = []
+    }
     this.deps.setStatus(connectionStatusFor(next, this.deps.unsupportedDetail))
     for (const fn of [...this.stateListeners]) fn(next)
   }

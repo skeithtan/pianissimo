@@ -142,14 +142,15 @@ excluded; restore validates everything first (`BackupError`, nothing written on 
 merges by id in one transaction. Details: `src/core/storage/README.md`.
 
 ### render/
-`OsmdRenderer.prepare(RenderInput, {labels: {maxChars}})` → `PreparedLayout` (plain JSON,
+`OsmdRenderer.prepare(RenderInput, {labels: {maxChars, room}})` → `PreparedLayout` (plain JSON,
 cacheable via `LayoutCache` / `prepareLayout`; `storeLayoutCache` adapts the IndexedDB store).
 Pipeline: dynamic `import('opensheetmusicdisplay')` → one-system engraving
 (`SheetMaximumWidth` lifted) → extraction (graphic notes, measure anchors, staves, ottava
 brackets, glyph groups, obstacle boxes) → `mapNotes` (occ, staff, voice, onset, midi, grace;
 relaxed passes reported) → `layoutLabels` (worst-case box beside every notehead: right / left /
 stagger / stack / callout; widen both staves and re-engrave when > 0.5 % need callouts, at most
-3 engravings) → sanitize (allow-list; black → currentColor) → measure-range segments (≥ 400 px,
+3 engravings; label room `'hints'` for Labels Off: spacing 1.0, one engraving, labels clear of
+their own group only, callouts may cover a mark, DECISIONS R3 revised) → sanitize (allow-list; black → currentColor) → measure-range segments (≥ 400 px,
 a measure or two; crossing marks copied and clipped, touching neighbors not, PF6) → the full
 tree is discarded. Label boxes and
 measure-number boxes are measured once with canvas `measureText` in the strip font
@@ -163,7 +164,10 @@ fade stay left of the cursor. Overlays are class/attribute writes batched in one
 Label text nodes exist only while opacity > 0; visible ones are reported via
 `onVisibleLabels`. Also: passage band with handles, tap selection and ✕ clear (U5), ottava
 emphasis + offscreen reminder, sticky clef/key/meter on staff lines with an opacity fade,
-wrong-key cursor tint (`pulseWrong()`), theme via `--score-*` tokens (U8). Full API: `src/render/README.md`. Browser tests:
+wrong-key cursor tint (`pulseWrong()`), theme via `--score-*` tokens (U8). A change of label
+room swaps the engraving with a glide (`shared/respace.ts`: the wider engraving cut into onset
+columns that move from the old view's places to the new view's, cursor note anchored; Practice
+keeps the old view until the new layout is ready). Full API: `src/render/README.md`. Browser tests:
 `tests/e2e/render-*.spec.ts` with the harness in `tests/harness/` (not in the production build).
 
 #### render/keyboard
