@@ -23,6 +23,7 @@ import {
   type StorageOptions,
 } from '../core/storage'
 import { getFeatures } from './features'
+import { connectionOpen, currentView } from './navigation'
 import { MidiService } from './services/midiService'
 import {
   dismissNotice,
@@ -119,6 +120,7 @@ export function getMidiService(): MidiService {
     setStatus: setConnectionStatus,
     notify: pushNotice,
     dismiss: dismissNotice,
+    coversDisconnect: () => currentView.peek() === 'practice' || connectionOpen.peek(),
     unsupportedDetail: getFeatures().features.webMidi.explanation,
     ...(env.now ? { now: env.now } : {}),
   })

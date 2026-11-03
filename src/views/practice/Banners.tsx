@@ -4,8 +4,10 @@
  * passages": "After each attempt, show a compact result while preserving the score"). Rendered
  * into the stage's top overlay column, under the Repeat panel; never recedes (U13).
  *
- * One disconnect notice at a time: while the piano input is gone, its banner shows; once the
- * piano is back every disconnect message goes away, including the attempt's "disconnected"
+ * One disconnect notice at a time: while the piano input is gone, its banner shows and nothing
+ * else about the disconnect does (no sound-status line for the lost output, no "Piano
+ * disconnected" toast: `MidiService` skips it while Practice is on screen, U71); once the piano
+ * is back every disconnect message goes away, including the attempt's "disconnected"
  * interruption (the footer's main button offers Resume / Start, user 2026-11-02). There is no
  * end-of-piece banner: the footer's main button offers Start.
  */
@@ -47,7 +49,7 @@ export function Banners(p: BannersProps) {
           <Button onClick={p.onConnection}>Connection</Button>
         </div>
       ) : null}
-      {ui.soundStatus ? (
+      {ui.soundStatus && !ui.inputDisconnected ? (
         <div class={styles.banner} role="status">
           <Icon name="sound" size={20} />
           <span>{ui.soundStatus}</span>

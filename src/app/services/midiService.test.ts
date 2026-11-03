@@ -13,7 +13,12 @@ function withPermission(nav: MidiNavigatorLike, state: Permission): MidiNavigato
 }
 
 function harness(
-  opts: { route?: Partial<MidiRouteSettings>; permission?: Permission; outcome?: 'grant' | 'deny' } = {},
+  opts: {
+    route?: Partial<MidiRouteSettings>
+    permission?: Permission
+    outcome?: 'grant' | 'deny'
+    coversDisconnect?: () => boolean
+  } = {},
 ) {
   const access = new FakeAccess()
   const piano = access.addInput(new FakeInput('in-1', 'Digital Piano'))
@@ -37,6 +42,7 @@ function harness(
     setStatus: (s) => statuses.push(s),
     notify: (n) => notices.push(n) - 1,
     dismiss: (id) => dismissed.push(id),
+    ...(opts.coversDisconnect ? { coversDisconnect: opts.coversDisconnect } : {}),
     now: () => 5000,
   })
   return {
@@ -214,8 +220,8 @@ describe('MidiService: route memory', () => {
 })
 
 describe('MidiService: disconnect and reconnect (spec: stop scheduling, interrupt, clean state)', () => {
-  async function connected() {
-    const h = harness()
+  async function connected(opts: Parameters<typeof harness>[0] = {}) {
+    const h = harness(opts)
     await h.service.connect()
     h.service.selectInput('in-1')
     h.service.selectOutput('out-1')
@@ -235,7 +241,7 @@ describe('MidiService: disconnect and reconnect (spec: stop scheduling, interrup
     vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
     expect(h.notices).toHaveLength(1)
     expect(h.notices[0]).toMatchObject({ kind: 'warning' })
-    expect(h.notices[0]!.text).toMatch(/Piano disconnected \(Digital Piano\)\. App playback stopped\./)
+    expect(h.notices[0]!.text).toBe('Piano disconnected (Digital Piano). Reconnect it to continue.')
 
     h.access.setState(h.piano, 'connected')
     h.access.setState(h.pianoOut, 'connected')
@@ -253,7 +259,7 @@ describe('MidiService: disconnect and reconnect (spec: stop scheduling, interrup
     vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
     expect(h.notices.map((n) => n.kind)).toEqual(['warning'])
 
-    // The input alone is not the whole piano: the notice still says playback stopped.
+    // The input alone is not the whole piano: the notice stays until the output is back too.
     h.access.setState(h.piano, 'connected')
     expect(h.dismissed).toEqual([])
     h.access.setState(h.pianoOut, 'connected')
@@ -266,6 +272,29 @@ describe('MidiService: disconnect and reconnect (spec: stop scheduling, interrup
     vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
     h.access.setState(h.piano, 'connected')
     expect(h.dismissed).toEqual([0, 2])
+  })
+
+  it('skips the disconnect toast while another surface already shows the disconnect', async () => {
+    let covered = true
+    const h = await connected({ coversDisconnect: () => covered })
+    h.access.setState(h.piano, 'disconnected')
+    h.access.setState(h.pianoOut, 'disconnected')
+    vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
+    expect(h.notices).toEqual([])
+    expect(h.statuses.at(-1)).toMatchObject({ state: 'disconnected' })
+
+    // The reconnection is still announced, and nothing is left to dismiss.
+    h.access.setState(h.piano, 'connected')
+    h.access.setState(h.pianoOut, 'connected')
+    vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
+    expect(h.notices.map((n) => n.kind)).toEqual(['success'])
+    expect(h.dismissed).toEqual([])
+
+    // Elsewhere (Library, no modal) the toast is the one message.
+    covered = false
+    h.access.setState(h.piano, 'disconnected')
+    vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
+    expect(h.notices.map((n) => n.kind)).toEqual(['success', 'warning'])
   })
 
   it('a glitch that reconnects within the window only reports the reconnection', async () => {

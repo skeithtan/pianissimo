@@ -97,6 +97,19 @@ describe('Banners', () => {
     expect(view.container.textContent).not.toContain('disconnected')
   })
 
+  it('hides the sound status while the input is disconnected', () => {
+    const soundStatus = 'The piano output was disconnected. Reconnect it to hear playback.'
+    view = mount(banners({ inputDisconnected: true, soundStatus }))
+    expect($(view.container, '[data-testid="input-disconnected"]')).not.toBeNull()
+    expect(view.container.textContent).not.toContain(soundStatus)
+    expect(view.container.querySelectorAll('[role="alert"], [role="status"]')).toHaveLength(1)
+
+    // Only the output is gone (a 5-pin interface): its line is the one message.
+    view.rerender(banners({ inputDisconnected: false, soundStatus }))
+    expect($(view.container, '[data-testid="input-disconnected"]')).toBeNull()
+    expect(view.container.textContent).toContain(soundStatus)
+  })
+
   it('other interruptions still show while the input is disconnected', () => {
     view = mount(
       banners({

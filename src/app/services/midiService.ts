@@ -66,6 +66,12 @@ export interface MidiServiceDeps {
   /** Show a notice; returns its id when it can be dismissed later. */
   readonly notify: (notice: NoticeInput) => number | void
   readonly dismiss?: (id: number) => void
+  /**
+   * True while something on screen already says the piano is disconnected (the Practice
+   * screen's banner, the Connection modal's callout): the "Piano disconnected" toast is then
+   * skipped so only one message shows (U71).
+   */
+  readonly coversDisconnect?: () => boolean
   /** Explanation shown when Web MIDI is missing (features.ts). */
   readonly unsupportedDetail?: string | null
   readonly now?: () => number
@@ -444,11 +450,10 @@ export class MidiService {
     this.pendingNotice = null
     if (!p) return
     const list = (names: Set<string>) => [...names].join(', ')
-    if (p.lost.size > 0) {
-      const playback = p.output ? ' App playback stopped.' : ''
+    if (p.lost.size > 0 && !this.deps.coversDisconnect?.()) {
       const id = this.deps.notify({
         kind: 'warning',
-        text: `Piano disconnected (${list(p.lost)}).${playback} Reconnect it to continue. An attempt in progress is interrupted.`,
+        text: `Piano disconnected (${list(p.lost)}). Reconnect it to continue.`,
       })
       if (typeof id === 'number') this.lostNotices.push(id)
     }
