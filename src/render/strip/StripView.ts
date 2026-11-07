@@ -384,7 +384,9 @@ export class StripView {
     this.readoutEl.setAttribute('aria-hidden', 'true')
     this.cursorBtn = this.button('pn-cursor-action', icon.repeat, opts.cursorActionLabel ?? 'Repeat from here')
     this.cursorBtn.toggleAttribute('inert', true)
-    this.cursorEl.append(bar, grip, this.readoutEl, this.cursorBtn)
+    // Without a handler (Consult mode, U72) the button is never shown, so it is not in the DOM.
+    this.cursorEl.append(bar, grip, this.readoutEl)
+    if (opts.onCursorAction) this.cursorEl.append(this.cursorBtn)
 
     this.startHandle = this.button(
       'pn-loop-ctl pn-handle pn-handle-start',

@@ -23,6 +23,12 @@ practice", "Execution and rendering architecture", "Storage and recovery" (resum
 
 ### `PracticeSession`
 
+Consult mode (U72): `SessionOptions.cursorAction: false` keeps the cursor's repeat button off
+for good, and `revealAtCursor()` names both hands' notes at the cursor for the hint lifetime
+(`REVEAL_FALLBACK_S` when hints last until the correct note), fading over `hints.fadeMs`; it is
+a third label-opacity source merged with the persistent and temporary ones, independent of any
+attempt.
+
 Controls: `togglePlay()`, `start()` (reading, a scored attempt, or Listen with hands 'none' —
 always both parts), `pause()`, `restart()`, `resume()`, `seek(occ)`, `seekPosition(pos)`,
 `requestHint()`, `setKeyboardVisible(v)`, `setRepeatMode(open, at?)`, `repeatFrom(occ)` (a fresh
@@ -175,6 +181,28 @@ Stores (subscribe from the view):
   imports the bank (Playwright-checked). Under Auto a piano connecting while the device plays
   stops playback cleanly (the next Start uses the piano); a piano disconnecting interrupts and
   the next Start continues through the device. The metronome is separate (Web Audio).
+
+## Play-through (DECISIONS P12)
+
+`setPlayThrough(on)` turns on a performance aid beside the engine, wired like Listen: Repeat mode
+closes (the loop stays remembered, the cursor's repeat button hides), reading pauses at its
+position and its transport goes, `ui.activity` is `'playing'`, `ui.playThrough` true and
+`startAction` `'play'` (`startPlan(…, { playThrough: true })`: the reading blockers, never a
+scored one). Start builds `#play`: a gated transport over the whole piece
+(`transportGates(timeline)`, silent with both hands, the other hand automatic with one) and a
+`PlayFollower` (`core/engine/follow.ts`) at the first group at or after the cursor.
+`onGateReached(g)` → `follower.transportArrived(g, now)`; follower `release` events →
+`transport.releaseGate(g)` (re-entrant through a fast-forward, tolerated by `#processPlay`).
+While `#play` exists every human event goes to `follower.input` instead of the engine (the hint
+pedal → `revealAtCursor()`), the patience deadline joins `#scheduleTick`, and `#framePlay` draws
+the follower's group (targets, accepted marks, the amber tint for wrong presses, never the red
+marker, pulse or cue), the transport position, the guide and the resume position. Pause / Resume
+freeze and re-anchor the patience clock; seeks keep playing from the first group at or after the
+position; browsing pauses; speed applies live; new hands rebuild the transport at the same group;
+the range end leaves it idle at the end (the next Start begins at the start of the piece). The
+engine records nothing while the mode is on (a reading pass it replaced ends unrecorded). Off:
+`#play` goes and the engine seeks to the follower's group, so reading continues there. Tests:
+`PracticeSession.play.test.ts`.
 
 ## Tests
 

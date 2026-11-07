@@ -43,6 +43,7 @@ const UI: SessionUi = {
   interruption: null,
   soundStatus: null,
   inputDisconnected: false,
+  playThrough: false,
   finished: false,
 }
 
@@ -119,6 +120,20 @@ describe('Banners', () => {
     )
     expect($(view.container, '[data-testid="input-disconnected"]')).not.toBeNull()
     expect($(view.container, '[data-testid="interruption"]')?.textContent).toContain('Paused.')
+  })
+
+  it('shows no result card or interruption while playing through (P12)', () => {
+    view = mount(
+      banners({
+        activity: 'playing',
+        playThrough: true,
+        lastResult: RESULT,
+        interruption: { reason: 'seek', text: 'Moving through the score stopped the attempt.', canResume: true },
+      }),
+    )
+    expect($(view.container, '[data-testid="interruption"]')).toBeNull()
+    expect(view.container.textContent).not.toContain('Clean pass')
+    expect(byLabel(view.container, 'Hide result')).toBeNull()
   })
 
   it('has no end-of-piece banner', () => {

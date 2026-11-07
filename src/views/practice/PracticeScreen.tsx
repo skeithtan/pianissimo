@@ -399,20 +399,27 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const onLabels = (mode: PersistentLabelMode) => {
     applyLabelSettings({ ...settings.peek().labels, mode })
   }
+  // Play-through (DECISIONS P12) uses reading's words: Start, Pause, Resume when paused mid-piece.
   const playLabel =
-    ui.playing && ui.activity === 'listening'
-      ? 'Pause'
-      : ui.activity === 'listening'
-        ? 'Play'
-        : ui.playing
-          ? 'Pause'
-          : ui.startAction === 'listen'
-            ? 'Listen'
-            : ui.activity === 'reading' &&
-                (ui.phase === 'paused' || ui.interruption?.reason === 'disconnect') &&
-                ui.startAction !== 'scored'
-              ? 'Resume'
-              : 'Start'
+    ui.activity === 'playing'
+      ? ui.playing
+        ? 'Pause'
+        : ui.phase === 'paused'
+          ? 'Resume'
+          : 'Start'
+      : ui.playing && ui.activity === 'listening'
+        ? 'Pause'
+        : ui.activity === 'listening'
+          ? 'Play'
+          : ui.playing
+            ? 'Pause'
+            : ui.startAction === 'listen'
+              ? 'Listen'
+              : ui.activity === 'reading' &&
+                  (ui.phase === 'paused' || ui.interruption?.reason === 'disconnect') &&
+                  ui.startAction !== 'scored'
+                ? 'Resume'
+                : 'Start'
 
   return (
     <div

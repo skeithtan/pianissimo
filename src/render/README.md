@@ -215,8 +215,10 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   scrolling sheet (`overflow: auto`, `overscroll-behavior: contain`, locked while browsing is
   disabled), content scaled by the zoom and centered when it fits, systems
   mounted for the visible range ± one viewport with the strip's bounded LRU
-  (`page/segments.ts`, a copy of `SegmentStore` by y). The cursor bar (R13 look, staves + 96 px
-  faded) rides on the sheet at the position's x along its system's `CursorPath` (knots = that
+  (`page/segments.ts`, a copy of `SegmentStore` by y). The cursor bar (the strip's
+  width and colors, but a plain unfaded bar with rounded ends over the staves plus `PAGE_CURSOR_MARGIN` 16 px each
+  end, capped toward a neighboring system by `PageGeometry.cursorMargins` so it never enters it,
+  U73) rides on the sheet at the position's x along its system's `CursorPath` (knots = that
   system's onsets); 180 ms glide per seek, per-frame while following, a jump at a system change.
   The repeat button rides on it. **Follow**: when the system changes, and on a seek / wrap /
   return, the sheet scrolls so that system's top sits a quarter down (one `scrollTop` write plus

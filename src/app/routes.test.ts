@@ -10,6 +10,9 @@ describe('parseHash', () => {
     expect(parseHash('#/practice')).toEqual({ view: 'practice', overlay: null })
     expect(parseHash('#/results/p1')).toEqual({ view: 'results', pieceId: 'p1', overlay: null })
     expect(parseHash('#/results/p1/a9')).toEqual({ view: 'results', pieceId: 'p1', attemptId: 'a9', overlay: null })
+    expect(parseHash('#/consult/p1')).toEqual({ view: 'consult', pieceId: 'p1', overlay: null })
+    expect(parseHash('#/consult')).toEqual({ view: 'consult', overlay: null })
+    expect(parseHash('#/consult/p1?settings')).toEqual({ view: 'consult', pieceId: 'p1', overlay: 'settings' })
   })
 
   it('reads overlays from the query and the #/settings, #/connection aliases', () => {
@@ -48,6 +51,9 @@ describe('formatHash', () => {
     expect(formatHash({ view: 'library', overlay: null })).toBe('#/')
     expect(formatHash({ view: 'practice', pieceId: 'p1', overlay: null })).toBe('#/practice/p1')
     expect(formatHash({ view: 'practice', overlay: null })).toBe('#/practice')
+    expect(formatHash({ view: 'consult', pieceId: 'p1', overlay: null })).toBe('#/consult/p1')
+    expect(formatHash({ view: 'consult', pieceId: 'p1', overlay: 'settings' })).toBe('#/consult/p1?settings')
+    expect(formatHash({ view: 'consult', overlay: null })).toBe('#/consult')
     expect(formatHash({ view: 'results', pieceId: 'p1', attemptId: 'a9', overlay: null })).toBe('#/results/p1/a9')
     expect(formatHash({ view: 'library', overlay: 'connection' })).toBe('#/?connection')
     expect(formatHash({ view: 'practice', pieceId: 'p1', overlay: 'settings' })).toBe('#/practice/p1?settings')
@@ -84,6 +90,15 @@ describe('route comparison', () => {
       sameBase({ view: 'practice', pieceId: 'a', overlay: null }, { view: 'practice', pieceId: 'b', overlay: null }),
     ).toBe(false)
     expect(sameBase({ view: 'practice', overlay: null }, { view: 'results', overlay: null })).toBe(false)
+    expect(
+      sameBase(
+        { view: 'consult', pieceId: 'a', overlay: null },
+        { view: 'consult', pieceId: 'a', overlay: 'settings' },
+      ),
+    ).toBe(true)
+    expect(
+      sameBase({ view: 'consult', pieceId: 'a', overlay: null }, { view: 'practice', pieceId: 'a', overlay: null }),
+    ).toBe(false)
     expect(
       sameBase(
         { view: 'results', pieceId: 'a', attemptId: '1', overlay: null },

@@ -206,3 +206,55 @@ happened (`waitingForTransport` meanwhile).
     label fades do. `ReadyBlocker` keeps `'pedals-held'` for compatibility; it is never emitted.
 16. **Per-group outcomes.** See "Per-group outcomes" above (E15 revised, E16 tie-end presses;
     E17 pedal checking was removed). Reading traversals carry no `groups`.
+
+## Play-through follower (`follow.ts`, DECISIONS P12)
+
+`PlayFollower` follows the learner over the same `Timeline` in Play-through mode: a
+performance aid that is never blocked by wrong notes and grades or records nothing. Pure and
+synchronous like the engine (time injected, input consumed once by `seq`, lazy snapshot,
+drained events); no hints, records, pedals (except CC 123) or lifecycle.
+
+| Entry point | Effect |
+| --- | --- |
+| `new PlayFollower(timeline, {wrongFeedbackMs?, startGroup?}, now)` | Starts at `startGroup` (default 0). An empty timeline is finished from the start. |
+| `input(ev)` | Positive Note On = the only attack; Note Off / velocity 0 release; CC 123 releases the channel's keys; everything else ignored. While paused or finished only held keys change. |
+| `tick(now)` / `nextDeadline()` | Patience release of the current group; `nextDeadline` is null when there is no deadline (or paused). |
+| `transportArrived(group, now)` | Current group: marks arrival (first arrival kept). Earlier group: ignored. Later group: it becomes current (accepted cleared, `advanced`, nothing released). |
+| `pause(now)` / `resume(now)` | Freezes the patience clock and judging. |
+| `seek(group, now)` | New current group: accepted, arrival, first press and error cleared; held keys and pause kept; no events. |
+| `reconfigure(timeline, now, startGroup?)` | Speed/hands change. Default group: first at or after the old position; when the position is unchanged the arrival, first press and still-required accepted pitches are kept. |
+| `resetPhysical(now)` | Disconnect: forget held keys. |
+| `state` / `drainEvents()` | `FollowerState` snapshot; `accepted`, `wrong`, `release {group, reason: 'complete' \| 'skipped' \| 'patience'}`, `advanced {from, to}`, `key`, `finished`. |
+| `patienceMs(timeline, i)` | Patience of group `i` in real ms. |
+
+Rules, for a fresh press at current group `i` (any press, right or wrong, also starts the
+group's patience if none has):
+
+1. A missing pitch of `i` is accepted (also before the transport arrives); when the group is
+   complete: `release {i, 'complete'}`, and `i + 1` is current at once (**advance on release**,
+   so presses for `i + 1` before the transport gets there are accepted), or `finished`.
+   An accepted pitch again is a silent replay; a pitch in `i`'s `tiedPitches` is silent.
+2. **Moved on**: a pitch of group `j` in `(i, i + LOOKAHEAD_GROUPS]` (`LOOKAHEAD_GROUPS = 2`,
+   nearest first) emits `release {i..j-1, 'skipped'}` in order, `advanced {i, j}`, then accepts
+   the pitch in `j` (which may complete it). The moving press is `j`'s first press.
+3. A pitch of the previous `LOOKBEHIND_GROUPS = 1` group is a silent late correction. It is
+   checked before the lookahead, so a pitch of both the previous and a next group is a late
+   repeat (no move-on); a genuine skip is caught one note later by the next press's lookahead.
+4. Anything else is `wrong`: gentle feedback until `time + wrongFeedbackMs` (default
+   `FOLLOW_WRONG_FEEDBACK_MS = 300`), `groupHasError`, held-wrong key; never blocks.
+5. **Patience**: deadline `max(arrivedAt, firstPressSinceCurrent) + patienceMs(timeline, i)`,
+   only when both exist; then `release {i, 'patience'}`. A learner who stops playing (no press
+   since the group became current) is waited for indefinitely.
+   `patienceMs` = time at the current speed from the group's onset to the next group's onset,
+   clamped to `[PATIENCE_MIN_MS = 300, PATIENCE_MAX_MS = 2000]`; the last group (or no tempo)
+   `PATIENCE_LAST_MS = 1000`.
+6. **Pause**: `nextDeadline()` is null while paused and presses are not judged. On `resume`
+   the anchors set before the pause shift by the paused duration and anchors set during the
+   pause (an arrival) start at the resume, so paused time never counts.
+7. Keys held before a group became current never satisfy it (only fresh presses do).
+
+Session wiring: `transport.onGateReached(i)` → `transportArrived(i, at)`; each `release {g}` →
+`transport.releaseGate(g)` in order. A release before the transport reached the gate makes it
+fast-forward, so `transportArrived` runs re-entrantly inside the drain loop; arrivals at gates
+the follower already left are ignored, and new events land in the next drain (drain until
+empty). Schedule `tick` at `nextDeadline()` after every drain.

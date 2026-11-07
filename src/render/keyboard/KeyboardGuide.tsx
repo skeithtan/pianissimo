@@ -5,7 +5,7 @@ import { KeyBars, KeyLabels, RollArrow } from './Highlights'
 import { KeyLayer, Landmarks } from './Keys'
 import { placeGuideLabels } from './labels'
 import { buildLayout } from './layout'
-import { PIANO, boardHeight, keysHeight } from './metrics'
+import { PIANO, boardHeight, keysHeight, keysTop } from './metrics'
 import type { KeyboardGuideProps } from './types'
 import { useElementWidth } from './useElementWidth'
 import styles from './KeyboardGuide.module.css'
@@ -17,7 +17,9 @@ const FALLBACK_WIDTH = 640
  * SVG. Each highlighted key — a target, a played target, a key the app is sounding (Listen, the
  * accompaniment), a held key, a wrong key — gets a translucent bar in its part's color and its
  * note name above it (naming settings apply; dense chords stack into lanes). There is no hand
- * letter. A marked roll shows as an arrow above the keys.
+ * letter. A marked roll shows as an arrow above the keys. With `labels` false (a phone-size
+ * screen, DECISIONS U75) there are no names and no room reserved for them: the keys and their
+ * bars alone, under the roll arrow's strip.
  *
  * Cheap to update on the iPad: the plain keys and landmarks are built once per width and passed
  * as the same elements on every update (Preact skips them), so an update only diffs the few
@@ -33,25 +35,30 @@ export function KeyboardGuide(props: KeyboardGuideProps) {
     visible = true,
     fadeMs = DEFAULT_SETTINGS.hints.fadeMs,
     naming = DEFAULT_SETTINGS.naming,
+    labels: showLabels = true,
   } = props
 
   const measureRef = useRef<HTMLDivElement>(null)
   const width = Math.max(1, useElementWidth(measureRef, FALLBACK_WIDTH))
   const layout = useMemo(() => buildLayout(PIANO, width), [width])
   const height = keysHeight(layout.whiteWidth)
-  const whites = useMemo(() => <KeyLayer layout={layout} height={height} black={false} />, [layout, height])
-  const blacks = useMemo(() => <KeyLayer layout={layout} height={height} black />, [layout, height])
-  const landmarks = useMemo(
-    () => <Landmarks layout={layout} height={height} naming={naming} />,
-    [layout, height, naming],
+  const top = keysTop(showLabels)
+  const whites = useMemo(
+    () => <KeyLayer layout={layout} height={height} top={top} black={false} />,
+    [layout, height, top],
   )
-  const labels = useMemo(() => placeGuideLabels(keys, layout), [keys, layout])
+  const blacks = useMemo(() => <KeyLayer layout={layout} height={height} top={top} black />, [layout, height, top])
+  const landmarks = useMemo(
+    () => <Landmarks layout={layout} height={height} top={top} naming={naming} />,
+    [layout, height, top, naming],
+  )
+  const labels = useMemo(() => (showLabels ? placeGuideLabels(keys, layout) : []), [keys, layout, showLabels])
   const label = useMemo(() => describeGuide(keys, rollDirection), [keys, rollDirection])
   const rollXs = useMemo(
     () => keys.filter((k) => k.state === 'target' || k.state === 'accepted').map((k) => layout.centerX(k.midi)),
     [keys, layout],
   )
-  const board = boardHeight(layout.whiteWidth)
+  const board = boardHeight(layout.whiteWidth, showLabels)
   const fade = `opacity ${fadeMs}ms ease`
 
   return (
@@ -62,6 +69,7 @@ export function KeyboardGuide(props: KeyboardGuideProps) {
       aria-hidden={visible ? undefined : 'true'}
       data-part="keyboard-guide"
       data-visible={visible ? 'true' : 'false'}
+      data-labels={showLabels ? 'true' : 'false'}
       style={{
         opacity: visible ? '1' : '0',
         visibility: visible ? 'visible' : 'hidden',
@@ -79,12 +87,12 @@ export function KeyboardGuide(props: KeyboardGuideProps) {
           focusable="false"
         >
           {whites}
-          <KeyBars layout={layout} keys={keys} height={height} black={false} />
+          <KeyBars layout={layout} keys={keys} height={height} top={top} black={false} />
           {blacks}
-          <KeyBars layout={layout} keys={keys} height={height} black />
+          <KeyBars layout={layout} keys={keys} height={height} top={top} black />
           {landmarks}
-          {rollDirection ? <RollArrow xs={rollXs} direction={rollDirection} /> : null}
-          <KeyLabels labels={labels} />
+          {rollDirection ? <RollArrow xs={rollXs} direction={rollDirection} top={top} /> : null}
+          {showLabels ? <KeyLabels labels={labels} /> : null}
         </svg>
       </div>
     </div>

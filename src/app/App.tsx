@@ -23,11 +23,13 @@ export function App({ features = getFeatures() }: { features?: FeatureReport }) 
   const main = useRef<HTMLElement>(null)
   const first = useRef(true)
 
-  // A piano never touches the screen, so keep it awake while practicing.
+  // A piano never touches the screen, so keep it awake while practicing, or while a piece plays
+  // on a phone propped on the music stand (Consult, U72).
   useEffect(() => {
-    if (view !== 'practice') return
-    wakeLock.hold('view:practice')
-    return () => wakeLock.drop('view:practice')
+    if (view !== 'practice' && view !== 'consult') return
+    const owner = `view:${view}`
+    wakeLock.hold(owner)
+    return () => wakeLock.drop(owner)
   }, [view])
 
   // The tab title (and the browser's Back-button history list) names the page.

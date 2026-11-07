@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
 import { fixtureBytes } from '../../../tests/unit/import/fixtures'
 import { existingAudioContext, resetSharedAudioContext } from '../../core/playback/webaudio/context'
-import { currentView, practiceRequest, settingsOpen } from '../../app/navigation'
+import { consultRequest, currentView, practiceRequest, settingsOpen } from '../../app/navigation'
 import { notices, resetAppStateForTests, updateSettings } from '../../app/state'
 import { attemptFor, importPiece } from '../../core/storage/testkit'
 import { $, $$, byLabel, byText, click, mount, type, type Mounted } from '../shared/testing'
@@ -121,6 +121,17 @@ describe('Library list', () => {
     click(byLabel(root, 'Practice Etude'))
     await until(() => currentView.value === 'practice', 'navigation')
     expect(practiceRequest.value).toEqual({ pieceId: 'piece-v1' })
+    expect((await deps.storage.getPiece('piece-v1'))?.lastOpenedAt).toBe(deps.clock)
+  })
+
+  it('Consult opens the piece in the Consult view and counts as opening it (U72)', async () => {
+    await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })
+    const root = await open()
+    deps.clock += 5000
+    click(byLabel(root, 'Consult Etude'))
+    await until(() => currentView.value === 'consult', 'navigation')
+    expect(consultRequest.value).toEqual({ pieceId: 'piece-v1' })
+    expect(practiceRequest.value).toBeNull()
     expect((await deps.storage.getPiece('piece-v1'))?.lastOpenedAt).toBe(deps.clock)
   })
 

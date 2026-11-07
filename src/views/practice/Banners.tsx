@@ -33,13 +33,15 @@ export interface BannersProps {
 
 export function Banners(p: BannersProps) {
   const { ui } = p
-  const r = ui.lastResult
+  // Play-through grades nothing and is never interrupted like an attempt (DECISIONS P12).
+  const playing = ui.activity === 'playing'
+  const r = playing ? null : ui.lastResult
   // While it fades out, the card keeps showing the last result it had.
   const last = useRef<AttemptSummary | null>(r)
   if (r) last.current = r
   const presence = useFadePresence(!!r, RESULT_FADE_MS)
   const shown = r ?? last.current
-  const interruption = ui.interruption && ui.interruption.reason !== 'disconnect' ? ui.interruption : null
+  const interruption = !playing && ui.interruption && ui.interruption.reason !== 'disconnect' ? ui.interruption : null
   return (
     <>
       {ui.inputDisconnected ? (

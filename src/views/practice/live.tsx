@@ -11,6 +11,7 @@ import type { NamingSettings } from '../../core/model/settings'
 import { DOUBLE_FLAT, DOUBLE_SHARP, FLAT, NATURAL, SHARP } from '../../core/naming'
 import { KeyboardGuide } from '../../render/keyboard'
 import { useFadePresence } from '../../ui/fade'
+import { usePhone } from '../shared/usePhone'
 import { overviewMeasures } from '../../ui/overviewMath'
 import { ScoreOverview, type OverviewPositionSource } from '../../ui/ScoreOverview'
 import type { StripHandle } from './env'
@@ -127,7 +128,8 @@ export function StageCue({ session }: { session: PracticeSession }) {
 /**
  * The keyboard guide in a slot that slides open and closed (its grid row animates 0fr ↔ 1fr), so
  * the stage above follows smoothly. The guide stays mounted while the slot closes and fades out
- * at the same time (`useFadePresence`); a closed slot holds nothing.
+ * at the same time (`useFadePresence`); a closed slot holds nothing. On a phone-size screen the
+ * guide is the keys and their highlights alone, no note names (DECISIONS U75).
  */
 export function GuidePanel({
   session,
@@ -141,17 +143,19 @@ export function GuidePanel({
   const ui = useStore(session.ui)
   const guide = useStore(session.guide)
   const presence = useFadePresence(ui.keyboardVisible, fadeMs)
+  const phone = usePhone()
   return (
     <div class={styles.guideSlot} data-open={ui.keyboardVisible ? 'true' : 'false'} data-testid="guide-slot">
       <div class={styles.guideSlotInner}>
         {presence.mounted ? (
-          <section class={styles.guide} aria-label="Keyboard guide">
+          <section class={styles.guide} aria-label="Keyboard guide" data-compact={phone ? 'true' : undefined}>
             <KeyboardGuide
               keys={guide.keys}
               rollDirection={guide.rollDirection}
               visible={ui.keyboardVisible}
               fadeMs={fadeMs}
               naming={naming}
+              labels={!phone}
             />
           </section>
         ) : null}

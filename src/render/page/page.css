@@ -61,7 +61,8 @@
 
 /* The cursor moves along the system (translate3d set per frame); a seek glides like the strip's
    scroll, following and system jumps are instant (`pn-instant`). Its height is the system's
-   staves plus 96 px at each end, faded by the bar's mask (R13). */
+   staves plus a small margin at each end that stops short of the neighboring systems
+   (`PageGeometry.cursorMargins`, U73). */
 .pn-page .pn-cursor {
   bottom: auto;
   height: 0;
@@ -76,8 +77,18 @@
   transition: none;
 }
 
+/* A plain bar (U73): the strip fades its bar's ends because it runs the height of the stage; on
+   the page the bar ends just past its own staves, so nothing is faded and its ends are rounded
+   (fully: half its width). */
+.pn-page .pn-cursor-bar {
+  -webkit-mask-image: none;
+  mask-image: none;
+  border-radius: calc(var(--pn-cursor-w) * var(--pn-zoom) / 2);
+}
+
+/* The drag readout sits just above the bar. */
 .pn-page .pn-cursor-readout {
-  top: 56px;
+  top: -34px;
 }
 
 /* The ottava reminder is positioned in screen px next to the cursor. */

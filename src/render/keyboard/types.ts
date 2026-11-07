@@ -35,5 +35,10 @@ export interface KeyboardGuideProps {
   readonly fadeMs?: number | undefined
   /** Naming preferences for the octave landmarks (C1…C8). Defaults to the spec defaults. */
   readonly naming?: NamingSettings | undefined
+  /**
+   * Note names above the highlighted keys, with their reserved rows. Default true. False (a
+   * phone-size screen, DECISIONS U75): highlights only, and the panel is just the keys.
+   */
+  readonly labels?: boolean | undefined
   readonly class?: string | undefined
 }

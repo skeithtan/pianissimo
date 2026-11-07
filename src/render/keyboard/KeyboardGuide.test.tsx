@@ -4,6 +4,7 @@ import { act } from 'preact/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { KeyboardGuide } from './KeyboardGuide'
+import { ROLL_GAP, boardHeight, keysHeight } from './metrics'
 import type { GuideKey, KeyboardGuideProps } from './types'
 
 let host: HTMLDivElement
@@ -104,6 +105,24 @@ describe('KeyboardGuide', () => {
       }
     }
     expect(new Set(chips.map((c) => c.y)).size).toBeGreaterThan(1)
+  })
+
+  it('without labels draws the highlighted keys alone, with no room reserved above them (U75)', async () => {
+    setPanelWidth(366)
+    await mount({
+      keys: [key(60, 'target', 'C4', { hand: 'R' }), key(64, 'target', 'E4', { hand: 'R' })],
+      labels: false,
+    })
+    expect(bars()).toHaveLength(2)
+    expect(labelTexts()).toEqual([])
+    expect(root().dataset['labels']).toBe('false')
+    const svg = host.querySelector<SVGSVGElement>('[data-part="board"]')!
+    const whiteWidth = 366 / 52
+    expect(Number(svg.getAttribute('height'))).toBe(ROLL_GAP + keysHeight(whiteWidth) + 1)
+    expect(Number(svg.getAttribute('height'))).toBe(boardHeight(whiteWidth, false))
+    expect(boardHeight(whiteWidth, false)).toBeLessThan(boardHeight(whiteWidth) - 50)
+    // The keys start right under the roll strip.
+    expect(Number(bar(60)!.getAttribute('y'))).toBeLessThan(ROLL_GAP + 3)
   })
 
   it('shows the roll direction for a marked arpeggio', async () => {

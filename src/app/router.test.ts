@@ -3,9 +3,11 @@ import {
   closeConnection,
   closeSettings,
   connectionOpen,
+  consultRequest,
   currentView,
   navigate,
   openConnection,
+  openConsult,
   openPractice,
   openResults,
   openSettings,
@@ -120,6 +122,7 @@ function reset(): void {
   connectionOpen.value = false
   practiceRequest.value = null
   resultsRequest.value = null
+  consultRequest.value = null
 }
 
 function start(hash = '', state: unknown = null): FakeBrowser {
@@ -158,6 +161,18 @@ describe('opening a URL', () => {
     start('#/results/p1/a2')
     expect(currentView.value).toBe('results')
     expect(resultsRequest.value).toEqual({ pieceId: 'p1', attemptId: 'a2' })
+  })
+
+  it('reopens a deep-linked piece in Consult, and its empty state without a piece (U72)', () => {
+    start('#/consult/p1')
+    expect(currentView.value).toBe('consult')
+    expect(consultRequest.value).toEqual({ pieceId: 'p1' })
+    expect(practiceRequest.value).toBeNull()
+    stop?.()
+    reset()
+    start('#/consult')
+    expect(currentView.value).toBe('consult')
+    expect(consultRequest.value).toBeNull()
   })
 
   it('takes a Practice preset from history.state (what a reload keeps)', () => {
@@ -241,6 +256,20 @@ describe('navigation → URL', () => {
     openPractice({ pieceId: 'p2' })
     await b.settle()
     expect(b.hashes()).toEqual(['#/practice/p1', '#/practice/p2'])
+  })
+
+  it('Consult is its own page: opening it from the Library pushes, Settings over it is one entry', async () => {
+    const b = start()
+    openConsult({ pieceId: 'p1' })
+    await b.settle()
+    expect(b.hashes()).toEqual(['', '#/consult/p1'])
+    openSettings()
+    await b.settle()
+    expect(b.hashes()).toEqual(['', '#/consult/p1', '#/consult/p1?settings'])
+    navigate('library')
+    await b.settle()
+    expect(currentView.value).toBe('library')
+    expect(b.location.hash).toBe('#/')
   })
 
   it('a hand-typed hash drives the app', async () => {

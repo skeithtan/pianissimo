@@ -65,6 +65,11 @@ import { KeyboardGuide } from '../render/keyboard';
 - **Theming**: tokens only (test-checked, no literal colors). Keys stay `--paper` / `--ink` in
   dark mode; chips follow the theme.
 
+- **Phones (DECISIONS U75):** `labels: false` draws no name chips and reserves no rows for
+  them; the keys start right under the roll arrow's strip (`keysTop(false)`), so the panel is
+  the keys alone (`boardHeight(whiteWidth, false)`). The octave landmarks stay. The caller
+  decides (`views/practice/live.tsx` passes `!usePhone()`).
+
 ## Tests
 
 `KeyboardGuide.test.tsx` (happy-dom; width simulated by stubbing `clientWidth`): 88 keys, bars

@@ -20,6 +20,8 @@ Live: <https://skeithtan.github.io/pianissimo/>
   clean-pass targets, lead-ins from anywhere in the piece.
 - Teacher corrections after an attempt: wrong notes, wrong accidental or octave, too soon or
   too late, notes not played together, re-attacked tie ends, pedal.
+- Consult mode: listen to a piece and read its score on any device, a phone included, with
+  note names on request and no practice involved.
 - Listen mode, practice history and suggested passages, backup and restore, light and dark
   themes, a portrait page layout and a landscape strip.
 

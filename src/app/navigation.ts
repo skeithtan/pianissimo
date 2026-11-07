@@ -1,6 +1,7 @@
 /**
- * View navigation. Three main views (Library, Practice, Results; spec "Main user journey") and
- * two overlays, Settings and the Connection setup modal. Overlays sit on top of the mounted view
+ * View navigation. Four main views (Library, Practice, Results; spec "Main user journey"; and
+ * Consult, playback and reading only, DECISIONS U72) and two overlays, Settings and the
+ * Connection setup modal. Overlays sit on top of the mounted view
  * so opening one never loses the selected score or passage; at most one is open at a time.
  *
  * These signals are the source of truth for what is on screen. `router.ts` mirrors them to the URL
@@ -14,7 +15,7 @@ import { batch, signal } from '@preact/signals'
 import type { PassageRange } from '../core/model/practice'
 import type { HandSelection } from '../core/model/score'
 
-export type ViewName = 'library' | 'practice' | 'results'
+export type ViewName = 'library' | 'practice' | 'results' | 'consult'
 
 /**
  * What `navigate` accepts. `'connection'` is kept so older callers keep working: it opens the
@@ -42,11 +43,17 @@ export interface ResultsRequest {
   readonly attemptId?: string
 }
 
+/** Consult a piece (U72): playback and the score, no practice. Nothing to preselect. */
+export interface ConsultRequest {
+  readonly pieceId: string
+}
+
 export const currentView = signal<ViewName>('library')
 export const settingsOpen = signal(false)
 export const connectionOpen = signal(false)
 export const practiceRequest = signal<PracticeRequest | null>(null)
 export const resultsRequest = signal<ResultsRequest | null>(null)
+export const consultRequest = signal<ConsultRequest | null>(null)
 
 /** Show a main view. Closes any overlay (leaving a page is leaving its overlays). */
 export function navigate(target: NavigationTarget): void {
@@ -72,6 +79,13 @@ export function openResults(request: ResultsRequest): void {
   batch(() => {
     resultsRequest.value = request
     navigate('results')
+  })
+}
+
+export function openConsult(request: ConsultRequest): void {
+  batch(() => {
+    consultRequest.value = request
+    navigate('consult')
   })
 }
 

@@ -654,6 +654,13 @@ describe('StripView continuous motion and cursor action', () => {
     expect(host.querySelector('.pn-cursor')!.classList.contains('pn-action-on')).toBe(false)
   })
 
+  it('has no cursor action button at all without a handler (Consult mode, U72)', () => {
+    const { v } = view(40)
+    expect(host.querySelector('.pn-cursor-action')).toBeNull()
+    v.setCursorAction(true)
+    expect(host.querySelector('.pn-cursor-action')).toBeNull()
+  })
+
   it('sits the cursor action button dead center in the gap between the staves', () => {
     const btn = (): HTMLElement => host.querySelector<HTMLElement>('.pn-cursor-action')!
     const mounted = (headY: number | null, zoom = 1): StripView => {
@@ -662,7 +669,7 @@ describe('StripView continuous motion and cursor action', () => {
         const n0 = layout.notes[0]!
         ;(layout.notes as unknown as unknown[])[0] = { ...n0, head: { ...n0.head, y: headY } }
       }
-      const v = new StripView(host, layout, { initialZoom: zoom })
+      const v = new StripView(host, layout, { initialZoom: zoom, onCursorAction: () => undefined })
       views.push(v)
       v.flushNow()
       v.setCursorAction(true)

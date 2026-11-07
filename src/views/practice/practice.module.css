@@ -454,6 +454,10 @@
 .guide {
   padding: var(--space-2) calc(var(--space-3) + var(--safe-r)) 0 calc(var(--space-3) + var(--safe-l));
 }
+/* A phone shows the keys alone (U75): no room above them but the roll arrow's strip. */
+.guide[data-compact='true'] {
+  padding-top: 0;
+}
 
 /* ── Footer ─────────────────────────────────────────────────────────────── */
 .footer {

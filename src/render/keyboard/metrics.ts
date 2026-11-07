@@ -12,7 +12,16 @@ export const LANE_STEP = 18
 /** Room between the lowest label lane and the keys, where the roll arrow runs. */
 export const ROLL_GAP = 12
 export const LABELS_HEIGHT = MAX_LANES * LANE_STEP + 2
+/** Top edge of the keys with the note-name area above them. */
 export const KEYS_TOP = LABELS_HEIGHT + ROLL_GAP
+
+/**
+ * Top edge of the keys: below the note-name area, or, without names (a phone, DECISIONS U75),
+ * just the roll arrow's strip.
+ */
+export function keysTop(labels: boolean): number {
+  return labels ? KEYS_TOP : ROLL_GAP
+}
 
 /** Keys scale with the white-key width, within bounds, so the panel stays compact. */
 export const MIN_KEYS_HEIGHT = 52
@@ -27,8 +36,8 @@ export function keysHeight(whiteWidth: number): number {
   return Math.round(Math.min(MAX_KEYS_HEIGHT, Math.max(MIN_KEYS_HEIGHT, whiteWidth * 4.4)))
 }
 
-export function boardHeight(whiteWidth: number): number {
-  return KEYS_TOP + keysHeight(whiteWidth) + 1
+export function boardHeight(whiteWidth: number, labels = true): number {
+  return keysTop(labels) + keysHeight(whiteWidth) + 1
 }
 
 /** Top edge of a label chip in a lane (lane 0 sits nearest the keys). */

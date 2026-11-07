@@ -88,6 +88,15 @@ MIDI events and `now` (performance.now() timebase). Details and state diagram:
   labels. The session calls `markPrepared` only after persistent-label fades finish.
 - Scored: Preparing → Ready (prepared, keys and 64/66 released, hint fades done) → Running
   (first fresh press, even wrong) → Completed → restart. Reading: Running ⇄ Paused.
+- `PlayFollower` (`follow.ts`, P12): the play-through follower over the same `Timeline`, beside
+  the unchanged engine. `input(ev)`, `tick(now)` / `nextDeadline()` (the patience release),
+  `transportArrived(i, now)`, `pause` / `resume` (paused time never counts), `seek`,
+  `reconfigure(timeline, now)` (speed or hands), `resetPhysical`, readonly `state` +
+  `drainEvents()`: `release {group, reason: complete | skipped | patience}` →
+  `transport.releaseGate(group)`, `accepted`, `wrong`, `advanced`, `key`, `finished`. A gate is
+  released when its group was played, when a press matches one of the next 2 groups (skipped
+  gates released in order), or `patienceMs(timeline, i)` (onset-to-next-onset time clamped to
+  300–2000 ms, 1000 ms for the last group) after both the arrival and a press. Records nothing.
 
 ### core/naming
 `labelFor(note, naming)` → `{name, accidental, octave, text}` from the resolved sounding pitch
@@ -189,9 +198,10 @@ Fixed height, width from its container. Hide with `visible=false` and keep it mo
 
 ### app/ and views/
 `app/App.tsx` is the shell: current view from `app/views.ts`, compact app bar (non-practice
-views), toasts, Settings overlay. `views.ts` is the only place mapping a `ViewName` to a
-component: `component` (static) or `load: () => import(...)` (lazy), and `chrome: 'bar' |
-'none'` ('none' gives Practice the whole viewport). Navigation is `app/navigation.ts`;
+views), toasts, Settings overlay. `views.ts` is the only place mapping a `ViewName` (`library`,
+`practice`, `results`, `consult`) to a component: `component` (static) or `load: () =>
+import(...)` (lazy), and `chrome: 'bar' | 'none'` ('none' gives Practice and Consult the whole
+viewport). Navigation is `app/navigation.ts`;
 Settings is an overlay over the mounted view, so the score and passage are never lost.
 `app/state.ts` holds coarse signals only: `settings` (`updateSettings(patch)`, immutable deep
 merge, per-clef rules merged per key), `connectionStatus`, `notices` (`pushNotice`). Storage
@@ -250,12 +260,30 @@ calls `returnToCurrent()` to restore following, including after asynchronous sou
 The strip reports the nearest onset beneath its fixed cursor while browsing. The page reports
 no alternate position because its cursor moves with the notation. Explicit accepted cursor
 seeks also end browsing (U52). Existing Repeat seek and Listen range rules still apply.
+Play-through (P12): `setPlayThrough(on)` closes Repeat mode and pauses reading; Start builds a
+`#play` slot beside the engine, like Listen's: a gated transport over the whole piece (silent
+for both hands, the automatic part for one) and a `PlayFollower`. Human events then go to the
+follower instead of the engine (`#onMidi`), follower `release` events release transport gates,
+`onGateReached` → `follower.transportArrived`, and the frame draws the follower's group, the
+transport position, the amber tint for wrong presses and the guide. `ui.activity` is
+`'playing'`, `ui.playThrough` true, `startAction` `'play'`; the engine records nothing while the
+mode is on and resumes reading at the follower's group when it is switched off.
 `views/practice/`: `PracticeView` reads `practiceRequest`, loads piece and package, builds the
 session and `StripView` (`prepareLayout` + IndexedDB layout cache; re-prepared when
 `maxLabelWidthChars` changes). The `PracticeEnv` seam is injectable for tests.
+The footer's **Play through** tool (icon `flow`, `aria-pressed`, disabled while the hands are
+off) toggles play-through; the main button reads Start / Pause / Resume there, and no result card,
+interruption or Repeat panel shows while `activity === 'playing'`.
 Focus mode collapses the header and narrow footer-tools row using CSS grid tracks (U60).
 Only the stage height changes, so the existing score view remeasures without re-engraving.
 `useRecede` restores chrome on pause, pointer/touch interaction, or keyboard navigation.
+`views/consult` (U72): `ConsultView` reads `consultRequest` (`openConsult({pieceId})`, route
+`#/consult/<pieceId>`) and runs a `PracticeSession` in Listen (`hands: 'none'`,
+`cursorAction: false`, no-op history and piece sinks) over the same score views, layouts and
+`PracticeEnv` as Practice: playback, Note names, `session.revealAtCursor()` (names of both
+hands' notes at the cursor for the hint lifetime, a third label-opacity source merged with the
+persistent and temporary ones) and the keyboard guide, on any device including a phone; nothing
+of practice is offered or recorded.
 `views/results`: `ResultsView` reads `resultsRequest` and calls `loadResultsData(storage,
 request, sessionDismissals)` (flush the history writer, read the piece, its attempts for one
 score version, the package occurrences, `loadSuggestions`). `deriveResults` (pure) picks the

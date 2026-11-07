@@ -88,8 +88,6 @@ const FLAG_CLASSES: readonly [number, string][] = [
 const TAP_SLOP = 8
 /** Space above the first system (screen px). */
 export const PAGE_PAD_TOP = 16
-/** Cursor bar margin beyond the top and bottom staves, faded by its mask (screen px, R13). */
-const CURSOR_MARGIN = 96
 /** The page's follow scroll (`--dur-slow`), ms. */
 const SCROLL_MS = 300
 /** `--ease-standard` (global.css); read from the theme when available. */
@@ -329,7 +327,9 @@ export class PageView {
     this.readoutEl.setAttribute('aria-hidden', 'true')
     this.cursorBtn = this.button('pn-cursor-action', icon.repeat, opts.cursorActionLabel ?? 'Repeat from here')
     this.cursorBtn.toggleAttribute('inert', true)
-    this.cursorEl.append(bar, grip, this.readoutEl, this.cursorBtn)
+    // Without a handler (Consult mode, U72) the button is never shown, so it is not in the DOM.
+    this.cursorEl.append(bar, grip, this.readoutEl)
+    if (opts.onCursorAction) this.cursorEl.append(this.cursorBtn)
     this.startHandle = this.button(
       'pn-loop-ctl pn-handle pn-handle-start',
       icon.left,
@@ -1020,14 +1020,18 @@ export class PageView {
     this.glideAnim.finished?.catch(() => undefined)
   }
 
-  /** Cursor bar on the current system: staves + `CURSOR_MARGIN` each end, at the position's x. */
+  /**
+   * Cursor bar on the current system, at the position's x: a plain bar over the staves plus a
+   * small margin at each end that never reaches a neighboring system (`cursorMargins`, U73).
+   */
   private applyCursor(gx: number): void {
     const L = this.layout
     const s = this.scale
     const span = this.geo.staffSpan(this.cursor.system)
+    const margin = this.geo.cursorMargins(this.cursor.system, s)
     let sx = gx + this.cursor.x * s
-    let sy = PAGE_PAD_TOP + (span.top - L.top) * s - CURSOR_MARGIN
-    let h = (span.bottom - span.top) * s + 2 * CURSOR_MARGIN
+    let sy = PAGE_PAD_TOP + (span.top - L.top) * s - margin.top
+    let h = (span.bottom - span.top) * s + margin.top + margin.bottom
     const handoff = this.cursorRespace
     if (handoff && this.respace) {
       const frame = this.screenFrame()
@@ -1044,8 +1048,8 @@ export class PageView {
       sx =
         mix((handoff.prev.dx + oldCursor.x * handoff.prev.scale) * k + dx, frame.dx + this.cursor.x * s) - frame.dx + gx
       // The cursor rides the sheet, whereas the notation's glide is in viewport coordinates.
-      sy = top - (frame.dy - PAGE_PAD_TOP + L.top * s) - CURSOR_MARGIN
-      h = bottom - top + 2 * CURSOR_MARGIN
+      sy = top - (frame.dy - PAGE_PAD_TOP + L.top * s) - margin.top
+      h = bottom - top + margin.top + margin.bottom
     }
     sx = r2(sx)
     sy = r2(sy)
@@ -1059,20 +1063,21 @@ export class PageView {
       this.cursorEl.style.height = `${h}px`
       this.applied.cursorH = h
     }
-    this.placeActionButton(span.top, h)
+    this.placeActionButton(span.top, h, margin.top)
   }
 
   /**
    * The cursor's button sits dead center in the gap between the current system's staves (U14
    * addendum, user); without a gap (one staff), at the cursor bar's middle. Only while it shows.
-   * `spanTop`: the system's top staff (layout px); `h`: the cursor element's height (px).
+   * `spanTop`: the system's top staff (layout px); `h`: the cursor element's height (px);
+   * `marginTop`: how far the element starts above that staff (px).
    */
-  private placeActionButton(spanTop: number, h: number): void {
+  private placeActionButton(spanTop: number, h: number, marginTop: number): void {
     if (!this.cursorAction) return
     const sys = this.geo.systems[this.cursor.system]
     if (!sys) return
     const gap = staffGap(sys.staves)
-    const c = gap ? ((gap.top + gap.bottom) / 2 - spanTop) * this.scale + CURSOR_MARGIN : h / 2
+    const c = gap ? ((gap.top + gap.bottom) / 2 - spanTop) * this.scale + marginTop : h / 2
     const top = r2(c - ACTION_RADIUS)
     if (top === this.applied.actionTop) return
     this.cursorBtn.style.top = `${top}px`

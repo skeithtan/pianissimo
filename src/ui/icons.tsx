@@ -13,6 +13,8 @@ const paths: Record<string, JSX.Element> = {
   listen: (
     <path d="M4 15v-3a8 8 0 0 1 16 0v3M4 15a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2zm16 0a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2z" />
   ),
+  /** Play-through (DECISIONS P12): a play triangle followed by two forward chevrons. */
+  flow: <path d="M3 6.5v11l7-5.5zM13 7l4.5 5-4.5 5M17.5 7l4.5 5-4.5 5" />,
   repeat: <path d="M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4" />,
   hint: <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1.1 1.3 1.1 2.2h5c0-.9.5-1.7 1.1-2.2A6 6 0 0 0 12 3z" />,
   keys: (
@@ -29,6 +31,7 @@ const paths: Record<string, JSX.Element> = {
     </g>
   ),
   back: <path d="M15 18l-6-6 6-6" />,
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   forward: <path d="M9 18l6-6-6-6" />,
   plus: <path d="M12 5v14M5 12h14" />,
   minus: <path d="M5 12h14" />,

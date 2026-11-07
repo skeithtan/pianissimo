@@ -145,8 +145,11 @@ export interface MidiBackendLike extends OutputBackend {
   reconnect(output: MidiOutputLike, now: number): void
 }
 
-/** What the session is doing (coarse; drives the footer and banners). */
-export type Activity = 'idle' | 'reading' | 'scored' | 'listening'
+/**
+ * What the session is doing (coarse; drives the footer and banners). `'playing'`: play-through
+ * mode is on (DECISIONS P12), started or not.
+ */
+export type Activity = 'idle' | 'reading' | 'scored' | 'listening' | 'playing'
 
 export interface AttemptSummary {
   readonly id: string
@@ -184,7 +187,7 @@ export interface SessionUi {
   readonly handsAvailable: boolean
   readonly range: PassageRange | null
   readonly multiplier: number
-  readonly startAction: 'reading' | 'scored' | 'listen'
+  readonly startAction: 'reading' | 'scored' | 'listen' | 'play'
   readonly startEnabled: boolean
   readonly startReason: string | null
   /** Ready blockers in words ("Release the keys to begin."). */
@@ -209,6 +212,11 @@ export interface SessionUi {
   /** Output problems or loading ("Loading piano sounds…"). */
   readonly soundStatus: string | null
   readonly inputDisconnected: boolean
+  /**
+   * Play-through mode is on (DECISIONS P12): the cursor follows the music and the learner's
+   * playing, wrong notes never block, nothing is graded or recorded.
+   */
+  readonly playThrough: boolean
   /** Completed the whole piece in ordinary reading. */
   readonly finished: boolean
 }

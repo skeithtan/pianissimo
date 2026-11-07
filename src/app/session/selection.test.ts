@@ -71,4 +71,31 @@ describe('selection', () => {
       /^One-hand practice needs the piano or this device .* cannot play sound\.$/,
     )
   })
+
+  it('plans play-through with the reading blockers and never a scored one (P12)', () => {
+    const play = { playThrough: true }
+    const sel = { hands: 'both' as const, range: null, multiplier: 1 }
+    const timeline = selectionTimeline(score, score.tempo, sel)
+    expect(startPlan(timeline, sel, ok, play)).toEqual({ action: 'play', enabled: true, reason: null })
+    expect(startPlan(timeline, sel, { ...ok, hasTempo: false }, play)).toMatchObject({ action: 'play', enabled: false })
+    const right = { hands: 'right' as const, range: null, multiplier: 1 }
+    const rightTimeline = selectionTimeline(score, score.tempo, right)
+    expect(startPlan(rightTimeline, right, { ...ok, hasOutput: false }, play)).toMatchObject({
+      action: 'play',
+      enabled: false,
+    })
+    expect(startPlan(rightTimeline, right, { ...ok, accompanimentAllowed: false }, play).reason).toMatch(
+      /^One-hand play-through needs/,
+    )
+    // A passage with a scored blocker (the left hand has no notes in bars 1–2) still plays through
+    // the whole piece, which has left-hand notes.
+    const left = { hands: 'left' as const, range: null, multiplier: 1 }
+    expect(startPlan(selectionTimeline(score, score.tempo, left), left, ok, play)).toMatchObject({
+      action: 'play',
+      enabled: true,
+    })
+    // Hands off stays Listen.
+    const preview = { hands: 'none' as const, range: null, multiplier: 1 }
+    expect(startPlan(selectionTimeline(score, score.tempo, preview), preview, ok, play).action).toBe('listen')
+  })
 })

@@ -10,7 +10,7 @@ import {
   type SegmentData,
   type SystemGeometry,
 } from '../types'
-import { PageGeometry, pageWidthFor } from './geometry'
+import { PAGE_CURSOR_MARGIN, PageGeometry, pageWidthFor } from './geometry'
 import { PAGE_PAD_TOP, PageView, type PageOptions } from './PageView'
 
 const MEASURE = 180
@@ -216,6 +216,36 @@ describe('page geometry', () => {
     expect(g.systemAtY(290)).toBe(1)
   })
 
+  it('gives the cursor bar a small margin past its staves, less toward a close neighbor (U73)', () => {
+    const layout = testPageLayout(12)
+    const g = new PageGeometry(layout)
+    // Staves 160 px apart between systems: the full margin at both ends, at any system.
+    for (const k of [0, 1, 2])
+      expect(g.cursorMargins(k, 1)).toEqual({ top: PAGE_CURSOR_MARGIN, bottom: PAGE_CURSOR_MARGIN })
+    // Systems packed 30 px apart: the bar stops a third of the way into the gap on that side only.
+    const tight = new PageGeometry({
+      ...layout,
+      systems: layout.systems!.map((sys, k) => ({
+        ...sys,
+        staves: sys.staves.map((st) => ({ ...st, top: st.top - k * 130, bottom: st.bottom - k * 130 })),
+      })),
+    })
+    expect(tight.cursorMargins(0, 1)).toEqual({ top: PAGE_CURSOR_MARGIN, bottom: 10 })
+    expect(tight.cursorMargins(1, 1)).toEqual({ top: 10, bottom: 10 })
+    expect(tight.cursorMargins(2, 1)).toEqual({ top: 10, bottom: PAGE_CURSOR_MARGIN })
+    // The gap is in layout px: zoomed out, the cap shrinks with it.
+    expect(tight.cursorMargins(1, 0.6)).toEqual({ top: 6, bottom: 6 })
+    // Overlapping staves (never engraved, but never a negative margin).
+    const overlapping = new PageGeometry({
+      ...layout,
+      systems: layout.systems!.map((sys, k) => ({
+        ...sys,
+        staves: sys.staves.map((st) => ({ ...st, top: st.top - k * 200, bottom: st.bottom - k * 200 })),
+      })),
+    })
+    expect(overlapping.cursorMargins(1, 1)).toEqual({ top: 0, bottom: 0 })
+  })
+
   it('splits a loop band across the systems it crosses', () => {
     const g = new PageGeometry(testPageLayout(12))
     expect(g.loopBands({ fromOcc: 2, toOcc: 9 })).toEqual([
@@ -251,9 +281,11 @@ describe('PageView', () => {
     const { v, root } = view()
     const [x0, y0] = cursorXY(root)
     expect(x0).toBe(GX + 50)
-    // Staves 60–200 plus the 96 px margin above.
-    expect(y0).toBe(PAGE_PAD_TOP + 60 - 96)
-    expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe(`${140 + 192}px`)
+    // Staves 60–200 plus the small margin at each end: a plain bar on its own system (U73).
+    expect(y0).toBe(PAGE_PAD_TOP + 60 - PAGE_CURSOR_MARGIN)
+    expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe(`${140 + 2 * PAGE_CURSOR_MARGIN}px`)
+    // It ends well short of the next system's staves (360–500).
+    expect(y0 - PAGE_PAD_TOP + 140 + 2 * PAGE_CURSOR_MARGIN).toBeLessThan(360 - PAGE_CURSOR_MARGIN)
     for (const p of [0.1, 0.5, 1.2, 2.5]) {
       v.setCursor(p, { smooth: false })
       v.flushNow()
@@ -271,7 +303,7 @@ describe('PageView', () => {
     expect(v.currentSystem()).toBe(2)
     const [x, y] = cursorXY(root)
     expect(x).toBe(GX + 230)
-    expect(y).toBe(PAGE_PAD_TOP + 600 + 60 - 96)
+    expect(y).toBe(PAGE_PAD_TOP + 600 + 60 - PAGE_CURSOR_MARGIN)
     expect(scroller(root).scrollTop).toBe(PAGE_PAD_TOP + 600 - VIEW_H / 4)
     expect(root.classList.contains('pn-instant')).toBe(true)
   })
@@ -354,21 +386,22 @@ describe('PageView', () => {
         pieces: new Map([[0, [{ el: mark, chain: [], x0: 210, x1: 230 }]]]),
       })
       expect(root.querySelector('.pn-respace')).not.toBeNull()
-      expect(cursorXY(root)).toEqual([GX + 220, 0])
-      expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe('352px')
+      // The old engraving's staves (80–240), with the bar's margin at each end (U73).
+      expect(cursorXY(root)).toEqual([GX + 220, 96 - PAGE_CURSOR_MARGIN])
+      expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe(`${160 + 2 * PAGE_CURSOR_MARGIN}px`)
       // Playback advances during the glide, so use its new position in both layouts.
       progress = 0.5
       v.setCursor(0.75, { smooth: false })
       v.flushNow()
       const actual = new PageGeometry(layout).cursorAt(0.75).x
       expect(cursorXY(root)[0]).toBeCloseTo(GX + actual + 50, 1)
-      expect(cursorXY(root)[1]).toBe(-10)
-      expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe('342px')
+      expect(cursorXY(root)[1]).toBe(86 - PAGE_CURSOR_MARGIN)
+      expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe(`${150 + 2 * PAGE_CURSOR_MARGIN}px`)
       progress = 1
       v.flushNow()
       expect(cursorXY(root)[0]).toBeCloseTo(GX + actual, 1)
-      expect(cursorXY(root)[1]).toBe(-20)
-      expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe('332px')
+      expect(cursorXY(root)[1]).toBe(76 - PAGE_CURSOR_MARGIN)
+      expect(root.querySelector<HTMLElement>('.pn-cursor')!.style.height).toBe(`${140 + 2 * PAGE_CURSOR_MARGIN}px`)
     } finally {
       if (original) Object.defineProperty(Element.prototype, 'animate', original)
       else Reflect.deleteProperty(Element.prototype, 'animate')
@@ -613,6 +646,11 @@ describe('PageView', () => {
     expect(zooms).toEqual([])
     vi.advanceTimersByTime(2)
     expect(zooms).toEqual([1.6])
+  })
+
+  it('has no repeat button on the cursor without a handler (Consult mode, U72)', () => {
+    const { root } = view(24)
+    expect(root.querySelector('.pn-cursor .pn-cursor-action')).toBeNull()
   })
 
   it('rides the repeat button on the cursor', () => {

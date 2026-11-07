@@ -23,6 +23,19 @@ export {
   type TimelineMeasure,
   type TimelineOptions,
 } from './timeline'
+export {
+  PlayFollower,
+  patienceMs,
+  LOOKAHEAD_GROUPS,
+  LOOKBEHIND_GROUPS,
+  PATIENCE_MIN_MS,
+  PATIENCE_MAX_MS,
+  PATIENCE_LAST_MS,
+  FOLLOW_WRONG_FEEDBACK_MS,
+  type FollowerConfig,
+  type FollowerEvent,
+  type FollowerState,
+} from './follow'
 export { easeInOut, fadeOutOpacity } from './fade'
 export { buildAttemptRecord, comparisonContextOf, READING_UNTIMED } from './attempt'
 export type { HintSource } from './hints'

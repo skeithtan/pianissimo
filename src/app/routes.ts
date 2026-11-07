@@ -8,6 +8,7 @@
  * | `#/practice/<pieceId>`                | Practice that piece (`#/practice` = its empty state) |
  * | `#/results/<pieceId>`                 | Results for the piece's latest attempt               |
  * | `#/results/<pieceId>/<attemptId>`     | Results showing that attempt                         |
+ * | `#/consult/<pieceId>`                 | Consult that piece (`#/consult` = its empty state)   |
  * | any of the above + `?settings`        | Settings overlay open over that view                 |
  * | any of the above + `?connection`      | Connection setup modal open over that view           |
  * | `#/settings`, `#/connection`          | Aliases: the overlay over the Library                |
@@ -25,7 +26,7 @@ export type OverlayName = 'settings' | 'connection'
 
 export interface Route {
   readonly view: ViewName
-  /** Practice and Results only. */
+  /** Practice, Results and Consult only. */
   readonly pieceId?: string
   /** Results only. */
   readonly attemptId?: string
@@ -82,6 +83,8 @@ export function parseHash(hash: string): Route {
       return attempt
         ? { view: 'results', pieceId: id, attemptId: attempt, overlay }
         : { view: 'results', pieceId: id, overlay }
+    case 'consult':
+      return id ? { view: 'consult', pieceId: id, overlay } : { view: 'consult', overlay }
     case 'settings':
     case 'connection':
       return { view: 'library', overlay: head }
@@ -98,6 +101,8 @@ export function formatHash(route: Route): string {
   } else if (route.view === 'results') {
     path = route.pieceId ? `/results/${encodeURIComponent(route.pieceId)}` : '/results'
     if (route.pieceId && route.attemptId) path += `/${encodeURIComponent(route.attemptId)}`
+  } else if (route.view === 'consult') {
+    path = route.pieceId ? `/consult/${encodeURIComponent(route.pieceId)}` : '/consult'
   }
   return `#${path}${route.overlay ? `?${route.overlay}` : ''}`
 }
@@ -106,7 +111,7 @@ export function formatHash(route: Route): string {
 export function sameBase(a: Route, b: Route): boolean {
   if (a.view !== b.view) return false
   if (a.view === 'library') return true
-  return a.pieceId === b.pieceId && (a.view === 'practice' || a.attemptId === b.attemptId)
+  return a.pieceId === b.pieceId && (a.view !== 'results' || a.attemptId === b.attemptId)
 }
 
 export function sameRoute(a: Route, b: Route): boolean {

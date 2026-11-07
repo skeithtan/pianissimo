@@ -18,6 +18,7 @@
 import { batch, effect } from '@preact/signals'
 import {
   connectionOpen,
+  consultRequest,
   currentView,
   practiceRequest,
   resultsRequest,
@@ -66,6 +67,10 @@ export function routeFromSignals(): Route {
         ? { view: 'results', pieceId: request.pieceId, attemptId: request.attemptId, overlay }
         : { view: 'results', pieceId: request.pieceId, overlay }
     }
+    case 'consult': {
+      const request = consultRequest.value
+      return request ? { view: 'consult', pieceId: request.pieceId, overlay } : { view: 'consult', overlay }
+    }
     case 'library':
       return { view: 'library', overlay }
   }
@@ -96,6 +101,13 @@ export function applyRoute(route: Route, preset: PracticePreset | undefined): vo
         if (current) resultsRequest.value = null
       } else if (!current || current.pieceId !== route.pieceId || current.attemptId !== route.attemptId) {
         resultsRequest.value = { pieceId: route.pieceId, ...(route.attemptId ? { attemptId: route.attemptId } : {}) }
+      }
+    } else if (route.view === 'consult') {
+      const current = consultRequest.peek()
+      if (!route.pieceId) {
+        if (current) consultRequest.value = null
+      } else if (!current || current.pieceId !== route.pieceId) {
+        consultRequest.value = { pieceId: route.pieceId }
       }
     }
     settingsOpen.value = route.overlay === 'settings'

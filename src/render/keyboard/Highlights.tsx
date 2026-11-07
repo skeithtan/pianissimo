@@ -13,11 +13,14 @@ export function KeyBars({
   layout,
   keys,
   height,
+  top,
   black,
 }: {
   layout: KeyboardLayout
   keys: readonly GuideKey[]
   height: number
+  /** Top edge of the keys in px (`keysTop`). */
+  top: number
   black: boolean
 }) {
   const h = black ? Math.round(height * BLACK_KEY_RATIO) : height
@@ -38,7 +41,7 @@ export function KeyBars({
               data-hand={handAttr(key.hand)}
               data-black={black ? 'true' : undefined}
               x={g.x + inset}
-              y={KEYS_TOP + inset}
+              y={top + inset}
               width={Math.max(1, g.width - 2 * inset)}
               height={h - 2 * inset}
               rx={Math.min(3, g.width / 4)}
@@ -49,7 +52,7 @@ export function KeyBars({
                 data-marker="held"
                 data-midi={key.midi}
                 cx={g.cx}
-                cy={KEYS_TOP + h - Math.max(5, dotR + 3)}
+                cy={top + h - Math.max(5, dotR + 3)}
                 r={dotR}
               />
             ) : null}
@@ -102,12 +105,21 @@ export function KeyLabels({ labels }: { labels: readonly PlacedLabel[] }) {
 }
 
 /** A marked roll: an arrow just above the keys from the lowest to the highest target. */
-export function RollArrow({ xs, direction }: { xs: readonly number[]; direction: 'up' | 'down' }) {
+export function RollArrow({
+  xs,
+  direction,
+  top,
+}: {
+  xs: readonly number[]
+  direction: 'up' | 'down'
+  /** Top edge of the keys in px (`keysTop`). */
+  top: number
+}) {
   if (xs.length < 2) return null
   const low = Math.min(...xs)
   const high = Math.max(...xs)
   if (high - low < 6) return null
-  const y = KEYS_TOP - ROLL_GAP / 2
+  const y = top - ROLL_GAP / 2
   const tip = direction === 'up' ? high : low
   const back = direction === 'up' ? -1 : 1
   return (

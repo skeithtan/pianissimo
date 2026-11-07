@@ -70,7 +70,8 @@ export function passageSummary(model: ScoreModel, tempo: TempoMapData, sel: Sele
 
 /** Why the main button cannot start what it would start; null when it can. */
 export interface StartPlan {
-  readonly action: 'reading' | 'scored' | 'listen'
+  /** `'play'`: play-through (DECISIONS P12), unscored performance over the whole piece. */
+  readonly action: 'reading' | 'scored' | 'listen' | 'play'
   readonly enabled: boolean
   readonly reason: string | null
 }
@@ -85,14 +86,28 @@ export interface StartContext {
   readonly hasTempo: boolean
 }
 
-export function startPlan(timeline: Timeline, sel: Selection, ctx: StartContext): StartPlan {
+export interface StartPlanOptions {
+  /**
+   * Play-through mode is on (DECISIONS P12): with a hand selected the action is `'play'`, with
+   * the same blockers as reading (tempo, one-hand output, accompaniment allowed, notes exist);
+   * never a scored blocker. Hands 'none' stays Listen.
+   */
+  readonly playThrough?: boolean
+}
+
+export function startPlan(
+  timeline: Timeline,
+  sel: Selection,
+  ctx: StartContext,
+  opts: StartPlanOptions = {},
+): StartPlan {
   const noOutput = ctx.noOutputReason ?? 'Nothing can play sound here.'
   if (sel.hands === 'none') {
     if (!ctx.hasOutput) return { action: 'listen', enabled: false, reason: `${noOutput} Listen is not available.` }
     if (!ctx.hasTempo) return { action: 'listen', enabled: false, reason: 'Set a practice tempo to listen.' }
     return { action: 'listen', enabled: true, reason: null }
   }
-  const action = sel.range ? 'scored' : 'reading'
+  const action = opts.playThrough ? 'play' : sel.range ? 'scored' : 'reading'
   if (!ctx.hasTempo) {
     return {
       action,
@@ -113,7 +128,9 @@ export function startPlan(timeline: Timeline, sel: Selection, ctx: StartContext)
         action,
         enabled: false,
         reason:
-          'Graded one-hand practice needs a verified output with no echo. Play the test notes in Connection, or practice both hands.',
+          action === 'play'
+            ? 'One-hand play-through needs a verified output with no echo. Play the test notes in Connection, or play both hands.'
+            : 'Graded one-hand practice needs a verified output with no echo. Play the test notes in Connection, or practice both hands.',
       }
     }
   }

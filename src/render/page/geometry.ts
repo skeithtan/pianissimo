@@ -21,6 +21,12 @@ import {
 export const PAGE_GUTTER = 16
 
 /**
+ * How far the page cursor bar reaches past the outer staff lines of its system (screen px,
+ * DECISIONS U73): enough to cover a notehead sitting on the outer line, no more.
+ */
+export const PAGE_CURSOR_MARGIN = 16
+
+/**
  * The page width to prepare for a stage `stageWidth` CSS px wide at `zoom`: the stage minus
  * its gutters, in layout px, rounded to 8 px so tiny size changes keep the cached layout.
  */
@@ -82,6 +88,22 @@ export class PageGeometry {
     const st = this.systems[system]?.staves ?? []
     const top = st[0]?.top ?? 0
     return { top, bottom: st[st.length - 1]?.bottom ?? top }
+  }
+
+  /**
+   * The cursor bar's reach above and below a system's staves at `scale` (screen px, U73):
+   * `PAGE_CURSOR_MARGIN`, less toward a neighboring system whose staves are close (at most a
+   * third of the gap between the two systems' staves), so the bar never enters another system.
+   */
+  cursorMargins(system: number, scale: number): { top: number; bottom: number } {
+    const span = this.staffSpan(system)
+    const cap = (gap: number): number => Math.max(0, Math.min(PAGE_CURSOR_MARGIN, (gap * scale) / 3))
+    const prev = system > 0 && system < this.systems.length ? this.staffSpan(system - 1) : null
+    const next = system >= 0 && system < this.systems.length - 1 ? this.staffSpan(system + 1) : null
+    return {
+      top: prev ? cap(span.top - prev.bottom) : PAGE_CURSOR_MARGIN,
+      bottom: next ? cap(next.top - span.bottom) : PAGE_CURSOR_MARGIN,
+    }
   }
 
   /** The system whose extent contains page y `y`, or the nearest one. */

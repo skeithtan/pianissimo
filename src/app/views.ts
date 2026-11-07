@@ -43,6 +43,11 @@ export const views: Readonly<Record<ViewName, ViewEntry>> = {
     chrome: 'bar',
     load: () => import('../views/results/ResultsView').then((m) => ({ default: m.ResultsView })),
   },
+  consult: {
+    title: 'Consult',
+    chrome: 'none',
+    load: () => import('../views/consult/ConsultView').then((m) => ({ default: m.ConsultView })),
+  },
 }
 
 /** Screens shown in a modal over the current view instead of replacing it. */

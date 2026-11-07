@@ -1,7 +1,7 @@
 /**
  * The practice footer (DECISIONS U4, U9, U12, U17): Speed on the start side, the hand
  * toggles around the large Start / Pause / Listen button in the middle, the Labels control,
- * and Show keys on the end side. Large touch targets, icon + text, within thumb reach of
+ * Play through (DECISIONS P12) and Show keys on the end side. Large touch targets, icon + text, within thumb reach of
  * a piano bench. In portrait focus mode the tools slide down and their narrow-screen row
  * collapses. Landscape tools stay in place and dim. The hand/play row stays available (U60).
  */
@@ -111,6 +111,13 @@ export function Footer({
                   Note names
                 </span>
               </div>
+              <Tool
+                icon="flow"
+                label="Play through"
+                pressed={ui.playThrough}
+                disabled={!ui.handsAvailable || ui.hands === 'none'}
+                onClick={() => session.setPlayThrough(!ui.playThrough)}
+              />
               <Tool
                 icon="keys"
                 label={ui.keyboardVisible ? 'Hide keys' : 'Show keys'}

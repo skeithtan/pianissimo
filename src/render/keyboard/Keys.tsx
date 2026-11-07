@@ -1,13 +1,15 @@
 import type { NamingSettings } from '../../core/model/settings'
 import type { KeyboardLayout } from './layout'
 import { keyName, MIDDLE_C } from './landmarks'
-import { ALL_LANDMARKS_MIN_WHITE, BLACK_KEY_RATIO, KEYS_TOP } from './metrics'
+import { ALL_LANDMARKS_MIN_WHITE, BLACK_KEY_RATIO } from './metrics'
 import styles from './KeyboardGuide.module.css'
 
 export interface KeyLayerProps {
   readonly layout: KeyboardLayout
   /** White-key height in px. */
   readonly height: number
+  /** Top edge of the keys in px (`keysTop`). */
+  readonly top: number
   readonly black: boolean
 }
 
@@ -16,7 +18,7 @@ export interface KeyLayerProps {
  * guide passes the same element on every update, so Preact skips it). White keys go under the
  * white-key highlights, black keys over them, so a white key's bar never tints a black key.
  */
-export function KeyLayer({ layout, height, black }: KeyLayerProps) {
+export function KeyLayer({ layout, height, top, black }: KeyLayerProps) {
   const h = black ? Math.round(height * BLACK_KEY_RATIO) : height
   return (
     <g data-part={black ? 'black-keys' : 'white-keys'}>
@@ -28,7 +30,7 @@ export function KeyLayer({ layout, height, black }: KeyLayerProps) {
             class={black ? styles.black : styles.white}
             data-midi={key.midi}
             x={key.x}
-            y={KEYS_TOP}
+            y={top}
             width={key.width}
             height={h}
             rx={Math.min(2, key.width / 4)}
@@ -45,10 +47,12 @@ export function KeyLayer({ layout, height, black }: KeyLayerProps) {
 export function Landmarks({
   layout,
   height,
+  top,
   naming,
 }: {
   layout: KeyboardLayout
   height: number
+  top: number
   naming: NamingSettings
 }) {
   const all = layout.whiteWidth >= ALL_LANDMARKS_MIN_WHITE
@@ -64,7 +68,7 @@ export function Landmarks({
             data-part="landmark"
             data-midi={key.midi}
             x={Math.min(Math.max(key.cx, 8), layout.width - 8)}
-            y={KEYS_TOP + height - 4}
+            y={top + height - 4}
             style={{ fontSize: `${size}px` }}
           >
             {keyName(key.midi, naming)}

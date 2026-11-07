@@ -6,7 +6,7 @@
  * records only, so opening the library stays cheap however large the scores are.
  */
 import { signal, type Signal } from '@preact/signals'
-import { openPractice, type PracticeRequest } from '../../app/navigation'
+import { openConsult, openPractice, type PracticeRequest } from '../../app/navigation'
 import { BackupError } from '../../core/storage/errors'
 import { backupFileName } from '../../core/storage/backupFormat'
 import { estimateStorage, isStoragePersistent, isQuotaError } from '../../core/storage/persist'
@@ -95,6 +95,12 @@ export class LibraryModel {
   ): Promise<void> {
     await this.markOpened(pieceId)
     go(preset ? { pieceId, preset } : { pieceId })
+  }
+
+  /** Consult a piece (U72): listen and read, nothing practiced. */
+  async consult(pieceId: string): Promise<void> {
+    await this.markOpened(pieceId)
+    openConsult({ pieceId })
   }
 
   /** Delete a piece with its results and history (one transaction, storage cascades). */

@@ -8,10 +8,10 @@ The shell the four main views plug into. Spec: "Main user journey", "Practice sc
 
 | File | Role |
 | --- | --- |
-| `App.tsx` | Shell: current view, app bar (non-practice), capability banner (library), toasts, the Settings overlay and the Connection modal. Holds the wake lock while the practice view is shown; moves focus into `<main>` and sets the tab title after navigation. |
-| `views.ts` | **The view registry.** One entry per `ViewName` (`library`, `practice`, `results`): `{ title, chrome, component | load }`, plus `overlayScreens` for screens shown in a modal (`connection`). |
+| `App.tsx` | Shell: current view, app bar (non-practice), capability banner (library), toasts, the Settings overlay and the Connection modal. Holds the wake lock while the Practice or Consult view is shown; moves focus into `<main>` and sets the tab title after navigation. |
+| `views.ts` | **The view registry.** One entry per `ViewName` (`library`, `practice`, `results`, `consult`): `{ title, chrome, component | load }`, plus `overlayScreens` for screens shown in a modal (`connection`). |
 | `LazyView.tsx` | Renders the registry entry; caches lazily loaded views; quiet "Loading…" after 250 ms; retry on load failure. `preloadView(name)` to prefetch. |
-| `navigation.ts` | The signals views read: `currentView`, `practiceRequest`, `resultsRequest`, `settingsOpen`, `connectionOpen`, and `navigate`, `openPractice`, `openResults`, `openSettings`/`closeSettings`, `openConnection`/`closeConnection`. At most one overlay is open; `navigate(view)` closes overlays. `navigate('connection')` is kept as an alias for `openConnection()`. |
+| `navigation.ts` | The signals views read: `currentView`, `practiceRequest`, `resultsRequest`, `consultRequest`, `settingsOpen`, `connectionOpen`, and `navigate`, `openPractice`, `openResults`, `openConsult`, `openSettings`/`closeSettings`, `openConnection`/`closeConnection`. At most one overlay is open; `navigate(view)` closes overlays. `navigate('connection')` is kept as an alias for `openConnection()`. |
 | `routes.ts`, `router.ts` | URL hash routing (below): pure parse/format, and the two-way sync between the signals and `location.hash` / `history.state`, started by `boot.ts`. |
 | `state.ts` | Global signals and actions (below). |
 | `settingsMerge.ts` | Pure: `mergeSettings` (immutable deep merge), `deepEqual`, `normalizeSettings` / `settingsFromStored` (identity-preserving wrappers over the single normalizer in `core/storage/settings.ts`), `SettingsPatch<T>`. |
@@ -39,6 +39,7 @@ mirrors every change back.
 | `#/` (or empty) | Library |
 | `#/practice/<pieceId>` (`#/practice`: its empty state) | Practice |
 | `#/results/<pieceId>[/<attemptId>]` | Results |
+| `#/consult/<pieceId>` (`#/consult`: its empty state) | Consult (U72) |
 | any of the above + `?settings` / `?connection` | that overlay over the screen |
 | `#/connection`, `#/settings` | aliases: the overlay over the Library (rewritten to `#/?connection`) |
 

@@ -644,6 +644,53 @@ describe('PracticeView', () => {
     expect(byLabel(view.container, 'Start')).not.toBeNull()
   })
 
+  it('the Play through tool toggles play-through with Start, Pause and Resume; no wrong-key cue (P12)', async () => {
+    const r = await rig()
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    const tool = () => byLabel(view!.container, 'Play through') as HTMLButtonElement
+    expect(tool()).not.toBeNull()
+    expect(tool().getAttribute('aria-pressed')).toBe('false')
+    expect(tool().disabled).toBe(false)
+    click(tool())
+    await settle(r, 1)
+    expect($(view.container, '[data-activity]')?.dataset['activity']).toBe('playing')
+    expect(tool().getAttribute('aria-pressed')).toBe('true')
+    click(byLabel(view.container, 'Start'))
+    await settle(r)
+    expect(byLabel(view.container, 'Pause')).not.toBeNull()
+    act(() => {
+      r.midi.on(70, r.clock.now)
+      r.frames.flush()
+    })
+    await settle(r, 2)
+    expect($(view.container, '[data-testid="stage-cue"]')).toBeNull()
+    expect($(view.container, '[data-testid="interruption"]')).toBeNull()
+    click(byLabel(view.container, 'Pause'))
+    await settle(r, 1)
+    expect(byLabel(view.container, 'Resume')).not.toBeNull()
+    click(tool())
+    await settle(r, 1)
+    expect($(view.container, '[data-activity]')?.dataset['activity']).not.toBe('playing')
+    expect(tool().getAttribute('aria-pressed')).toBe('false')
+    // Both hands off is Listen: play-through is not available there.
+    click(byLabel(view.container, 'Left hand'))
+    await settle(r, 1)
+    click(byLabel(view.container, 'Right hand'))
+    await settle(r, 1)
+    expect(tool().disabled).toBe(true)
+  })
+
+  it('the Play through tool is disabled without a connected piano (P12, U27)', async () => {
+    connectionStatus.value = { state: 'disconnected' }
+    const r = await rig()
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    expect((byLabel(view.container, 'Play through') as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('the chrome recedes while playing and comes back on a tap near it or on pause (U13)', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
