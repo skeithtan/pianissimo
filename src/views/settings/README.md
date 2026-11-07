@@ -11,7 +11,7 @@ portrait: a scrolling strip on top.
 | --- | --- | --- |
 | Note names | Letter / fixed do, si / ti, octave, *Always show effective accidentals* (default on), *Simplify enharmonic names* (default off); live examples (B♯4 in C♯ major, C♯4 in D major, F𝄪4, B♭4 in F major) computed with `core/naming` | immediately |
 | Score labels | Off / All notes / Conditional; per-clef rules (G and F first, then any other clef key in settings): Show below / Show above toggles, threshold pitch inputs, strict wording, validation, plain-language summary, live sample, treble preset | on **Apply** |
-| Hints | Automatic threshold 1 / 2 / 3 / custom positive integer / off; lifetime 10 / 20 / 30 / 60 s / custom / Until correct; fade duration (100–1000 ms, default 300) | immediately |
+| Hints | Automatic threshold 1 / 2 / 3 / custom positive integer / off; lifetime 10 / 20 / 30 / 60 s / custom / Until correct; fade duration (100–1000 ms, default 300); red flash; a **Keep time** group (`KeepTimeGroup.tsx`, P13): the timing window Tight ±80 ms / Normal ±150 ms (default) / Loose ±250 ms with one line of explanation (a stored non-preset value shows "Now ±N ms." with no choice selected) | immediately (a new Keep time window stops a Keep time attempt in progress, like a label change) |
 | Pedal | Hint pedal action (note names / Show keys); summary of the learned mapping; *Set up in Connection* closes Settings and navigates | immediately |
 | Sound | Destination: Connected piano (MIDI, default) / Browser sound (explicit); browser volume; accompaniment level; metronome on/off + volume; optional input monitoring | immediately |
 | General | Suggestions toggle; theme System / Light / Dark; score paper | immediately |
@@ -46,7 +46,7 @@ and the status and buttons wrap at narrow widths (U54).
 
 `SettingsOverlay.tsx` (sheet, tabs, close handling), `LabelsSection.tsx`, `RuleEditor.tsx`,
 `PitchInput.tsx`, `labelDraft.ts`, `NamingSection.tsx` + `namingExamples.ts`, `HintsSection.tsx` +
-`numbers.ts`, `PedalSection.tsx` + `pedalSummary.ts`, `SoundSection.tsx`, `GeneralSection.tsx`,
+`numbers.ts` + `KeepTimeGroup.tsx`, `PedalSection.tsx` + `pedalSummary.ts`, `SoundSection.tsx`, `GeneralSection.tsx`,
 `AboutSection.tsx`, `parts.tsx` (layout), `settings.module.css`, `testkit.tsx` (test helpers).
 
 ## Decisions and open points
@@ -70,6 +70,6 @@ and the status and buttons wrap at narrow widths (U54).
 
 `SettingsOverlay.test.tsx` (open/close/Escape/focus/tabs/discard notice), `LabelsSection.test.tsx`
 (validation, staged apply and hook order, summary, sample, strict wording, preset, other clefs),
-`Sections.test.tsx` (naming examples change with every switch, hints, pedal, sound, general,
-about), `BackupSection.test.tsx` (export download, in-place restore with merge report, invalid file),
+`Sections.test.tsx` (naming examples change with every switch, hints, Keep time window, pedal,
+sound, general, about), `BackupSection.test.tsx` (export download, in-place restore with merge report, invalid file),
 `helpers.test.ts`. Run: `npx vitest run src/views/settings`.

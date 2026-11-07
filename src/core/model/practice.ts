@@ -46,6 +46,20 @@ export function passageKey(p: PassageRange): string {
  * Results are only compared within one context (spec: same score version, passage
  * occurrences, hands, tempo map and speed, roll policy, transport mode, matching rules).
  */
+/**
+ * How musical time relates to the learner's input: 'free' = both-hands immediate advancement;
+ * 'accompaniment' = transport-gated, the music waits at every learner onset; 'strict' = rhythm
+ * mode (DECISIONS P13), the music never waits and every onset group is judged against its
+ * scheduled time.
+ */
+export type TransportKind = 'free' | 'accompaniment' | 'strict'
+
+/** Rhythm mode (strict transport) parameters recorded with an attempt. */
+export interface RhythmParams {
+  /** A group completed within this many ms of its scheduled time is on time (pass condition). */
+  readonly toleranceMs: number
+}
+
 export interface ComparisonContext {
   readonly scoreVersionId: string
   readonly passage: PassageRange
@@ -58,8 +72,8 @@ export interface ComparisonContext {
   readonly tempoMapId: string
   readonly multiplier: number
   readonly rollPolicy: string
-  /** 'free' = both-hands immediate advancement; 'accompaniment' = transport-gated. */
-  readonly transport: 'free' | 'accompaniment'
+  /** See `TransportKind`. Strict attempts are their own comparison contexts. */
+  readonly transport: TransportKind
   readonly matchingRules: string
 }
 
@@ -207,6 +221,14 @@ export interface GroupOutcome {
    * which the learner should not have re-attacked.
    */
   readonly tieEndPresses?: number
+  /**
+   * Strict transport only (rhythm mode, P13): whole milliseconds from the group's scheduled time
+   * (the transport's arrival at its gate) to the learner completing it; negative = early. Absent
+   * when the group was not completed or on gated attempts.
+   */
+  readonly offsetMs?: number
+  /** Strict transport only: the music moved on before the group was complete. */
+  readonly missed?: boolean
 }
 
 export interface AttemptRecord {
@@ -230,7 +252,11 @@ export interface AttemptRecord {
   readonly notatedDurationSec: number | null
   readonly timingUnscoredReason?: string
   readonly assistance: AssistanceRecord
-  /** Passed the selected pass condition (zero wrong attacks, no assistance, optional time tolerance). */
+  /**
+   * Passed the selected pass condition: zero wrong attacks, no assistance and the optional total
+   * time tolerance; in strict transport (rhythm mode) no missed group and every group within
+   * `rhythm.toleranceMs` of its scheduled time instead of the time tolerance.
+   */
   readonly passed: boolean
   readonly onsets: readonly OnsetTimestamp[]
   readonly measures: readonly MeasureTraversal[]
@@ -240,6 +266,10 @@ export interface AttemptRecord {
    * records stored before it existed.
    */
   readonly groups?: readonly GroupOutcome[]
+  /** Strict transport (rhythm mode, P13) parameters; absent on gated and free attempts. */
+  readonly rhythm?: RhythmParams
+  /** Strict transport: groups the music passed before they were complete. Absent = 0. */
+  readonly missedGroups?: number
 }
 
 /** A user-initiated restart/stop after wrong notes in a bar (repeated-abandonment trigger). */

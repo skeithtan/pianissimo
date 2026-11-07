@@ -7,7 +7,15 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
-import { installFakeMidi, loopWholePiece, openSeededPractice, play, playWhenDue, seedPiece } from './practice-helpers'
+import {
+  installFakeMidi,
+  loopWholePiece,
+  openSeededPractice,
+  play,
+  playWhenDue,
+  seedPiece,
+  setShowKeys,
+} from './practice-helpers'
 
 const SHOTS = process.env['APP_SHOTS']
 const SIZES = [
@@ -43,7 +51,7 @@ test.describe('dark mode screenshots', () => {
     await shot('library')
     await page.setViewportSize(SIZES[0]) // practice in landscape; the later shots may rotate
     await openSeededPractice(page)
-    await page.getByRole('button', { name: 'Show keys' }).click()
+    await setShowKeys(page)
     await loopWholePiece(page)
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await expect(page.getByTestId('ready')).toBeVisible()

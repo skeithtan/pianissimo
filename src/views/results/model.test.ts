@@ -121,6 +121,7 @@ describe('deriveResults: special attempts', () => {
     expect(passReason(attempt(A, 1, { passed: false, wrongAttacks: 1 }), false)).toBe('wrong-notes')
     expect(passReason(attempt(A, 1, { passed: false }), true)).toBe('assistance')
     expect(passReason(attempt(A, 1, { passed: false }), false)).toBe('timing')
+    expect(passReason(attempt(A, 1, { passed: false, missedGroups: 2 }), false)).toBe('missed')
     expect(passReason(attempt(A, 1, { completion: 'abandoned' }), false)).toBe('incomplete')
   })
 

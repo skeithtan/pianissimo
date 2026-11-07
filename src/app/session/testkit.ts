@@ -237,6 +237,7 @@ export function testSettings(patch: Partial<SessionSettings> = {}): SessionSetti
     route: { ...d.route, outputId: 'out-1', outputName: 'Piano', outputVerified: true, echo: 'none' },
     sound: d.sound,
     metronome: d.metronome,
+    rhythm: d.rhythm,
     ...patch,
   }
 }

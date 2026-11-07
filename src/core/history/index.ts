@@ -18,7 +18,8 @@ export {
   summarizeByContext,
   summarizeContext,
   timeDifferenceSec,
+  timingAccuracy,
 } from './results'
-export type { ContextResults, PracticeStreak } from './results'
+export type { ContextResults, PracticeStreak, TimingAccuracy } from './results'
 export { COMPLETION_TIME_DEFINITION, buildScorecard, formatSeconds } from './scorecard'
 export type { AssistanceDetails, Scorecard, ScorecardRow, ScorecardRowId, TimingKind } from './scorecard'

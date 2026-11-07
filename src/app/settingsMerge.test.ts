@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_RHYTHM_TOLERANCE_MS } from '../core/engine'
 import { DEFAULT_SETTINGS, DISABLED_RULE, TREBLE_PRESET, type AppSettings } from '../core/model/settings'
 import { deepEqual, mergeSettings, normalizeSettings, settingsFromStored } from './settingsMerge'
 
@@ -121,6 +122,19 @@ describe('settingsFromStored', () => {
     expect(loaded.naming.system).toBe('fixed-do')
     expect(loaded.naming.showOctave).toBe(true)
     expect(loaded.metronome).toEqual(DEFAULT_SETTINGS.metronome)
+    expect(loaded.rhythm).toEqual(DEFAULT_SETTINGS.rhythm)
+  })
+
+  it("defaults the Keep time tolerance to the engine's default", () => {
+    expect(DEFAULT_SETTINGS.rhythm.toleranceMs).toBe(DEFAULT_RHYTHM_TOLERANCE_MS)
+  })
+
+  it('merges a tolerance patch and clamps an out-of-range one', () => {
+    const next = mergeSettings(DEFAULT_SETTINGS, { rhythm: { toleranceMs: 80 } })
+    expect(normalizeSettings(next).rhythm).toEqual({ toleranceMs: 80 })
+    expect(normalizeSettings(mergeSettings(DEFAULT_SETTINGS, { rhythm: { toleranceMs: 2 } })).rhythm).toEqual({
+      toleranceMs: 40,
+    })
   })
 
   it('survives garbage', () => {

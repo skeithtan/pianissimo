@@ -44,6 +44,7 @@ import { MemoryLayoutCache } from '../../render/cache'
 import type { PracticeEnv, StripHandle } from './env'
 import { GuidePanel, OverviewBar, StageCue } from './live'
 import { Banners } from './Banners'
+import { CountIn } from './CountIn'
 import { Footer } from './Footer'
 import { RepeatPanel } from './RepeatPanel'
 import { ScoreSkeleton } from './ScoreSkeleton'
@@ -129,6 +130,7 @@ function pickSettings(): SessionSettings {
     route: s.route,
     sound: s.sound,
     metronome: s.metronome,
+    rhythm: s.rhythm,
   }
 }
 
@@ -155,6 +157,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         settings: pickSettings(),
         startPosition: resume?.position ?? null,
         repeatTarget: piece.repeatTarget,
+        ladder: piece.ladder ?? null,
+        rhythm: piece.rhythm === true,
         repeat: presetRange !== null,
       },
       {
@@ -492,6 +496,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           </div>
         ) : null}
         <StageCue session={session} />
+        <CountIn beats={ui.countIn} />
         <div class={styles.banners}>
           {repeatPresence.mounted ? (
             <RepeatPanel
@@ -500,6 +505,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
               loop={ui.range ?? lastRange.current}
               hands={ui.hands}
               repeatTarget={ui.repeatTarget}
+              multiplier={ui.multiplier}
+              ladder={ui.ladder}
               browsedOcc={browsed.occ}
               zone={recede.zone}
               leaving={repeatPresence.phase === 'leaving'}

@@ -11,10 +11,12 @@ import { idbAll } from './app-helpers'
 import {
   installFakeMidi,
   loopWholePiece,
+  openFooterMenu,
   openSeededPractice,
   play,
   playWhenDue,
   seedPiece,
+  setShowKeys,
   waitForOnset,
 } from './practice-helpers'
 
@@ -92,6 +94,7 @@ test.describe('practice assistance and repeat', () => {
   test('Labels All keeps note names on the score, Off removes them', async ({ page }) => {
     await seedPiece(page)
     await openSeededPractice(page)
+    await openFooterMenu(page)
     const group = page.getByRole('radiogroup', { name: 'Note names on the score' })
     await expect(group.getByRole('radio', { name: 'Off' })).toHaveAttribute('aria-checked', 'true')
     await expect(labels(page)).toHaveCount(0)
@@ -109,19 +112,23 @@ test.describe('practice assistance and repeat', () => {
     await playWhenDue(page, ...FIRST)
     await expect(labels(page).filter({ hasText: /^D4$/ })).toHaveCount(1)
 
+    await openFooterMenu(page) // Start closed it
     await group.getByRole('radio', { name: 'Off' }).click()
     await expect(labels(page)).toHaveCount(0)
   })
 
-  test('Show keys opens the keyboard guide and Hide keys closes it', async ({ page }) => {
+  test('the Show keys switch in the footer menu opens the keyboard guide and closes it', async ({ page }) => {
     await seedPiece(page)
     await openSeededPractice(page)
     const guide = page.getByRole('region', { name: 'Keyboard guide' })
     await expect(guide).toHaveCount(0)
-    const show = page.getByRole('button', { name: 'Show keys' })
-    await expect(show).toHaveAttribute('aria-pressed', 'false')
+    const menu = await openFooterMenu(page)
+    const show = menu.getByRole('switch', { name: 'Show keys' })
+    await expect(show).not.toBeChecked()
     await show.click()
     await expect(guide).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
     // The whole 88-key piano, with the first group's keys named above them (U15).
     await expect(guide.locator('[data-part="white-keys"] rect')).toHaveCount(52)
     await expect(guide.locator('[data-part="black-keys"] rect')).toHaveCount(36)
@@ -137,11 +144,11 @@ test.describe('practice assistance and repeat', () => {
     await page.evaluate(() => window.__midi.on(60))
     await expect(guide.locator('[data-part="bar"][data-midi="60"]')).toHaveAttribute('data-state', 'accepted')
     await page.evaluate(() => window.__midi.off(60))
-    const hide = page.getByRole('button', { name: 'Hide keys' })
-    await expect(hide).toHaveAttribute('aria-pressed', 'true')
-    await hide.click()
+    await openFooterMenu(page)
+    await expect(show).toBeChecked()
+    await show.click()
     await expect(guide).toHaveCount(0) // unmounted once the fade has finished
-    await expect(page.getByRole('button', { name: 'Show keys' })).toBeVisible()
+    await expect(show).not.toBeChecked()
   })
 
   test('Repeat waits for released keys after a completed attempt, then returns to Ready', async ({ page }) => {
@@ -180,7 +187,7 @@ test.describe('practice assistance and repeat', () => {
   test('Details opens the Results page with a scorecard of the attempt', async ({ page }) => {
     await seedPiece(page)
     await openSeededPractice(page)
-    await page.getByRole('button', { name: 'Show keys' }).click()
+    await setShowKeys(page)
     await startWholePiece(page)
 
     await play(page, 70) // wrong attack 1

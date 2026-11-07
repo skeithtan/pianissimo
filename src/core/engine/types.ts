@@ -11,6 +11,8 @@ import type {
   InterruptReason,
   LabelSettingsSnapshot,
   MeasureTraversal,
+  RhythmParams,
+  TransportKind,
 } from '../model/practice'
 import type { HintSettings } from '../model/settings'
 import type { HintSource } from './hints'
@@ -18,12 +20,19 @@ import type { Timeline } from './timeline'
 
 /** 'reading' = ordinary unscored reading; 'scored' = a passage attempt (DECISIONS P1). */
 export type PracticeMode = 'reading' | 'scored'
-/** 'free' = immediate advancement on input completion; 'accompaniment' = also wait for the transport. */
-export type TransportMode = 'free' | 'accompaniment'
+/**
+ * 'free' = immediate advancement on input completion; 'accompaniment' = also wait for the
+ * transport; 'strict' = rhythm mode (scored only): the transport never waits and every group is
+ * judged against its scheduled time (see README "Strict transport").
+ */
+export type { TransportKind } from '../model/practice'
+/** @deprecated Use `TransportKind` (the contract's name); kept as an alias. */
+export type TransportMode = TransportKind
 
 /**
  * - preparing: scored attempt created; waiting for `markPrepared`, released keys and label fades.
  * - ready: accepts the first fresh press (which starts the clock); hints and pedals do not.
+ *   Strict transport: presses only update key state; `startRunning` starts the clock.
  * - running: grading input (ordinary reading is running while not paused).
  * - paused: ordinary reading paused (progress kept, hint timers and fades frozen).
  * - completed: the final group was completed (record emitted).
@@ -55,12 +64,15 @@ export type TransportEta = (group: number, atTime: number) => number | null
 /**
  * Why a press was graded wrong: 'pitch' = not a required pitch here; 'ahead' = a next-group
  * pitch played before the current group completed (beyond the grace window); 'early' = a
- * correct pitch played too long before its accompaniment gate; 'tie-end' = a re-attack of a
- * pitch tied into the current group (it should sound through). A 'tie-end' press is reported
- * only as `GroupOutcome.tieEndPresses`: it is not a wrong attack (no totals, red wash, wrong-key
- * marking, hint count or ottava warning; DECISIONS E16), so give it gentle feedback only.
+ * correct pitch played too long before its gate (accompaniment: the grace; strict: the rhythm
+ * tolerance); 'tie-end' = a re-attack of a pitch tied into the current group (it should sound
+ * through); 'late' = strict only, a pitch of the group that just closed as missed, pressed within
+ * the tolerance of its close (a late slip). A 'tie-end' press is reported only as
+ * `GroupOutcome.tieEndPresses` and a 'late' press is not recorded at all: neither is a wrong
+ * attack (no totals, red wash, wrong-key marking, hint count or ottava warning; DECISIONS E16),
+ * so give them gentle feedback only.
  */
-export type WrongReason = 'pitch' | 'ahead' | 'early' | 'tie-end'
+export type WrongReason = 'pitch' | 'ahead' | 'early' | 'tie-end' | 'late'
 
 /** The hint settings the engine uses (the damage flash is the session's business, S5). */
 export type EngineHintSettings = Pick<HintSettings, 'autoThreshold' | 'lifetime' | 'fadeMs'>
@@ -68,8 +80,13 @@ export type EngineHintSettings = Pick<HintSettings, 'autoThreshold' | 'lifetime'
 export interface EngineConfig {
   readonly mode: PracticeMode
   readonly pieceId: string
-  /** Default: 'free' for both hands, 'accompaniment' for one hand. */
-  readonly transport?: TransportMode
+  /**
+   * Default: 'free' for both hands, 'accompaniment' for one hand. 'strict' (rhythm mode) is
+   * scored only and needs `rhythm` (RangeError otherwise).
+   */
+  readonly transport?: TransportKind
+  /** Strict transport: the on-time tolerance. Required with `transport: 'strict'`. */
+  readonly rhythm?: RhythmParams
   /** Default: `DEFAULT_SETTINGS.hints` (threshold 1, lifetime 30 s, fade 300 ms). */
   readonly hints?: EngineHintSettings
   /** Label mode and rules recorded with assistance. Default: mode off. */
@@ -95,7 +112,11 @@ export interface EngineConfig {
   readonly newId?: (n: number, createdAt: number) => string
   /** Early-press grace in real milliseconds (default `EARLY_PRESS_GRACE_MS` = 120; not tempo-scaled). */
   readonly earlyGraceMs?: number
-  /** Accompaniment: gate ETA from the transport. Without it, current-group presses are never "too early". */
+  /**
+   * Accompaniment and strict: gate ETA from the transport. Accompaniment without it: current-group
+   * presses are never "too early". Strict without it: a press before its gate's arrival is "too
+   * early" (the scheduled time is unknown).
+   */
   readonly transportEta?: TransportEta | null
 }
 
@@ -115,8 +136,14 @@ export interface EngineReconfigure extends AttemptStartOptions {
   /** New timeline (hands, range, tempo or multiplier changed). */
   readonly timeline?: Timeline
   readonly mode?: PracticeMode
-  /** Default: kept, or derived from the new timeline's hands when the timeline changes. */
-  readonly transport?: TransportMode
+  /**
+   * Default: kept, or derived from the new timeline's hands when the timeline changes. A kept
+   * 'strict' falls back to the default when the new mode is 'reading'; an explicit 'strict' with
+   * 'reading' throws. 'strict' needs rhythm parameters (here, in the config or a settings patch).
+   */
+  readonly transport?: TransportKind
+  /** Strict transport: new rhythm parameters (a different tolerance is a different context). */
+  readonly rhythm?: RhythmParams
   /** Reading mode: where the new traversal starts (default: the group at or after the old position). */
   readonly startGroup?: number
   /**
@@ -135,6 +162,11 @@ export interface EngineSettingsPatch {
   readonly passTimeTolerance?: number | null
   readonly wrongFeedbackMs?: number
   readonly transportEta?: TransportEta | null
+  /**
+   * Strict transport parameters. A different tolerance during an active strict scored attempt
+   * interrupts it ('setting-change'): it is a different comparison context.
+   */
+  readonly rhythm?: RhythmParams
 }
 
 export interface HintView {
@@ -150,7 +182,7 @@ export interface HintView {
 export interface EngineState {
   readonly version: number
   readonly mode: PracticeMode
-  readonly transport: TransportMode
+  readonly transport: TransportKind
   readonly phase: Phase
   /** Why a preparing scored attempt is not Ready yet. */
   readonly readyBlockers: readonly ReadyBlocker[]
@@ -194,6 +226,10 @@ export interface EngineState {
   /** Assistance recorded so far in this attempt/traversal. */
   readonly assistance: AssistanceLevel
   readonly wrongAttacks: number
+  /** Strict transport: groups closed by the clock before they were complete, this attempt. */
+  readonly missedGroups: number
+  /** Strict transport: offset (ms, negative = early) of the most recently completed group; null before any. */
+  readonly lastOffsetMs: number | null
   /** MIDI time the attempt clock started; null before the first fresh press. */
   readonly clockStartedAt: number | null
   readonly attemptId: string
@@ -229,6 +265,11 @@ export type EngineEvent =
   /** Every required pitch was attacked: release transport gate `group` (exactly once per group). */
   | { readonly type: 'input-complete'; readonly group: number; readonly time: number }
   | { readonly type: 'waiting-for-transport'; readonly group: number }
+  /**
+   * Strict transport: group `group` closed incomplete at `time` (its scheduled time plus the
+   * tolerance, or the arrival of a later gate); its missing notes are no longer required.
+   */
+  | { readonly type: 'missed'; readonly group: number; readonly notes: readonly number[]; readonly time: number }
   | { readonly type: 'advanced'; readonly from: number; readonly to: number | null }
   | {
       readonly type: 'hint-shown'

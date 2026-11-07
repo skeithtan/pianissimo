@@ -11,7 +11,7 @@ import type { Rational } from '../../core/music/rational'
 import type { AppSettings } from '../../core/model/settings'
 import type { Phase } from '../../core/engine'
 import type { BrowserAudioModule, MetronomeModule, OutputBackend, TimerApi } from '../../core/playback'
-import type { ResumePosition } from '../../core/storage/records'
+import type { LadderSettings, ResumePosition } from '../../core/storage/records'
 import type { GuideKey } from '../../render/keyboard/types'
 import type { CorrectionMark } from '../../render/strip/StripView'
 
@@ -108,6 +108,9 @@ export interface PiecePatch {
   readonly lastPassage?: PassageRange | null
   readonly resume?: ResumePosition | null
   readonly repeatTarget?: number | null
+  readonly ladder?: LadderSettings | null
+  /** Keep time (rhythm mode) for this piece. */
+  readonly rhythm?: boolean
 }
 
 export interface PieceSink {
@@ -164,6 +167,43 @@ export interface AttemptSummary {
   /** Consecutive passed attempts in this run (Repeat target). */
   readonly streak: number
   readonly targetReached: boolean
+  /** What the speed ladder did after this attempt (absent when it did nothing). */
+  readonly ladder?: {
+    /** The next attempt is prepared at this faster speed. */
+    readonly climbedTo?: number
+    /** The next attempt is prepared at this slower speed. */
+    readonly droppedTo?: number
+    /** The target was met at the goal: the climb is over. */
+    readonly done?: boolean
+  }
+  /**
+   * Keep time (strict transport) only: how the attempt kept time (`timingAccuracy`), shown in
+   * place of the completion time. Absent for gated attempts.
+   */
+  readonly timing?: AttemptTiming
+}
+
+/** How a Keep time attempt kept time: groups judged and how many were on time, early, late, missed. */
+export interface AttemptTiming {
+  readonly groups: number
+  readonly onTime: number
+  readonly early: number
+  readonly late: number
+  readonly missed: number
+}
+
+/**
+ * The speed ladder while it is set (Repeat mode, see `ladder.ts`). Speeds are multipliers.
+ */
+export interface LadderUi {
+  readonly goal: number
+  readonly step: number
+  /** The speed when the ladder was switched on (or opened with): the floor for drops. */
+  readonly start: number
+  /** Consecutive failed attempts since the last pass, climb, drop or manual speed change. */
+  readonly failures: number
+  /** The target was met at the goal (or the speed was set at or above it). */
+  readonly done: boolean
 }
 
 export interface Interruption {
@@ -205,6 +245,8 @@ export interface SessionUi {
    */
   readonly leadIn: boolean
   readonly repeatTarget: number | null
+  /** The speed ladder, or null when off. It acts only while Repeat mode is open. */
+  readonly ladder: LadderUi | null
   readonly lastResult: AttemptSummary | null
   /** Teacher's correction marks shown on the score now (0 when none), e.g. "3 points to improve". */
   readonly corrections: number
@@ -217,6 +259,13 @@ export interface SessionUi {
    * playing, wrong notes never block, nothing is graded or recorded.
    */
   readonly playThrough: boolean
+  /**
+   * Keep time (rhythm mode, DECISIONS P13) is on: every Start is a scored attempt played against
+   * the music (strict transport), after a one-bar count-in. Exclusive with play-through.
+   */
+  readonly rhythm: boolean
+  /** Beats left in the Keep time count-in (the number to show), else null. */
+  readonly countIn: number | null
   /** Completed the whole piece in ordinary reading. */
   readonly finished: boolean
 }
@@ -260,4 +309,7 @@ export interface GuideState {
 export type SessionSettings = Pick<
   AppSettings,
   'naming' | 'labels' | 'hints' | 'pedal' | 'route' | 'sound' | 'metronome'
->
+> & {
+  /** Keep time tolerance; absent (Consult, which has no Keep time) = the engine default. */
+  readonly rhythm?: AppSettings['rhythm']
+}

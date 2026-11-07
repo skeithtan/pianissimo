@@ -34,6 +34,16 @@ export function stepMultiplier(multiplier: number, dir: -1 | 1): number {
   return (Math.min(maxSteps, Math.max(minSteps, target)) * STEP_PERCENT) / 100
 }
 
+/**
+ * `multiplier + delta` on the stepper's 5% grid (nearest grid value), within 5%..1000%. The speed
+ * ladder climbs and drops with it, so its speeds stay where the stepper would put them.
+ */
+export function offsetOnGrid(multiplier: number, delta: number): number {
+  const steps = Math.round(((multiplier + delta) * 100) / STEP_PERCENT)
+  const value = (steps * STEP_PERCENT) / 100
+  return Math.min(MAX_CUSTOM_MULTIPLIER, Math.max(MIN_MULTIPLIER, value))
+}
+
 /** Whether a press in `dir` would change the speed. */
 export function canStepMultiplier(multiplier: number, dir: -1 | 1): boolean {
   return Math.abs(stepMultiplier(multiplier, dir) - multiplier) > 1e-9

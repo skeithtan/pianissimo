@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { Suggestion, SuggestionSelection } from '../../core/history'
 import type { AttemptRecord } from '../../core/model/practice'
-import { formatSeconds } from '../../core/history'
+import { formatSeconds, timingAccuracy } from '../../core/history'
 import { getStorage } from '../../app/services'
 import { navigate, openPractice, openSettings, resultsRequest } from '../../app/navigation'
 import type { ResultsRequest } from '../../app/navigation'
@@ -176,8 +176,8 @@ export function ResultsPage(props: ResultsPageProps) {
                 <section class={styles.panel} aria-labelledby="others-heading" data-panel="others">
                   <h2 id="others-heading">Other settings you have practiced</h2>
                   <p class={styles.note}>
-                    Results are never mixed across different passages, hands, speeds or accompaniment, so each is kept
-                    on its own.
+                    Results are never mixed across different passages, hands, speeds, accompaniment or keep-time
+                    windows, so each is kept on its own.
                   </p>
                   <ul class={styles.others}>
                     {model.others.map((o) => (
@@ -189,7 +189,11 @@ export function ResultsPage(props: ResultsPageProps) {
                           <p class={styles.muted}>
                             {plural(o.count, 'attempt')} ·{' '}
                             {o.results.bestClean?.completionTimeSec !== undefined
-                              ? `best clean unassisted ${formatSeconds(o.results.bestClean.completionTimeSec)}`
+                              ? `best clean unassisted ${
+                                  o.results.context.transport === 'strict'
+                                    ? `±${Math.round(timingAccuracy(o.results.bestClean)?.meanAbsOffsetMs ?? 0)} ms`
+                                    : formatSeconds(o.results.bestClean.completionTimeSec)
+                                }`
                               : 'no clean unassisted run yet'}{' '}
                             · last {whenText(o.latest.createdAt, now)}
                           </p>

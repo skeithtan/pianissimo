@@ -130,7 +130,7 @@ export function earlyAttackCount(attempt: AttemptRecord): number | null {
     : null
 }
 
-export type PassReason = 'passed' | 'wrong-notes' | 'assistance' | 'timing' | 'incomplete'
+export type PassReason = 'passed' | 'wrong-notes' | 'assistance' | 'timing' | 'missed' | 'incomplete'
 
 /** Why an attempt did or did not meet the pass condition (completion, no wrong attacks, no assistance). */
 export function passReason(attempt: AttemptRecord, assisted: boolean): PassReason {
@@ -138,5 +138,6 @@ export function passReason(attempt: AttemptRecord, assisted: boolean): PassReaso
   if (attempt.passed) return 'passed'
   if (attempt.wrongAttacks > 0) return 'wrong-notes'
   if (assisted) return 'assistance'
+  if ((attempt.missedGroups ?? 0) > 0) return 'missed'
   return 'timing'
 }

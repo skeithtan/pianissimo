@@ -16,6 +16,7 @@ import {
   type Completion,
   type InterruptReason,
   type LabelSettingsSnapshot,
+  type RhythmParams,
 } from '../model/practice'
 import { DEFAULT_SETTINGS } from '../model/settings'
 import { AttemptLog, buildAbandonEvent, buildAttemptRecord, comparisonContextOf } from './attempt'
@@ -35,7 +36,7 @@ import type {
   PracticeMode,
   ReadyBlocker,
   TransportEta,
-  TransportMode,
+  TransportKind,
   WrongReason,
 } from './types'
 
@@ -54,8 +55,37 @@ export function matchingRulesFor(graceMs: number): string {
   return graceMs === EARLY_PRESS_GRACE_MS ? MATCHING_RULES_VERSION : `match-v2-early-grace-${graceMs}ms`
 }
 
+/**
+ * Rhythm mode (strict transport) default on-time tolerance: a group completed within this many
+ * real milliseconds of its scheduled time is on time. Not scaled by the tempo multiplier.
+ */
+export const DEFAULT_RHYTHM_TOLERANCE_MS = 150
+
+/** Matching-rules id of strict-transport attempts (a different tolerance is a different context). */
+export function rhythmMatchingRulesFor(toleranceMs: number): string {
+  return `strict-v1-tol-${toleranceMs}ms`
+}
+
+function checkRhythm(r: RhythmParams | null | undefined): RhythmParams {
+  if (!r) throw new RangeError("Strict transport needs rhythm parameters ('rhythm.toleranceMs')")
+  if (!Number.isFinite(r.toleranceMs) || r.toleranceMs < 0) {
+    throw new RangeError(`Invalid rhythm tolerance: ${r.toleranceMs}`)
+  }
+  return { toleranceMs: r.toleranceMs }
+}
+
+function checkStrictMode(mode: PracticeMode): void {
+  if (mode !== 'scored') throw new RangeError('Strict transport (rhythm mode) is scored only')
+}
+
+/** Whole ms without a negative zero. */
+function wholeMs(x: number): number {
+  const r = Math.round(x)
+  return r === 0 ? 0 : r
+}
+
 /** Spec default transport: free advancement for both hands, accompaniment for one hand. */
-export function defaultTransport(timeline: Timeline): TransportMode {
+export function defaultTransport(timeline: Timeline): TransportKind {
   return timeline.hands === 'both' ? 'free' : 'accompaniment'
 }
 
@@ -91,7 +121,9 @@ type PendingOutcome = 'keep' | 'done'
 export class PracticeEngine {
   #timeline: Timeline
   #mode: PracticeMode
-  #transport: TransportMode
+  #transport: TransportKind
+  /** Strict transport parameters (kept across transports once set). */
+  #rhythm: RhythmParams | null
   readonly #pieceId: string
   #hintSettings: EngineHintSettings
   #labelSettings: LabelSettingsSnapshot
@@ -132,6 +164,12 @@ export class PracticeEngine {
   #firstAcceptAt = Infinity
   #lastAcceptAt = -Infinity
   #pending: PendingPress[] = []
+  /** Strict: close time per gate reached (arrival + tolerance; a skipped gate closes at the arrival that skipped it). */
+  readonly #closeAt = new Map<number, number>()
+  /** Strict: the group that most recently closed as missed (late-slip detection, O(1)). */
+  #lastClosed: { readonly group: number; readonly pitches: readonly number[]; readonly at: number } | null = null
+  /** Strict: offset of the most recently completed group. */
+  #lastOffsetMs: number | null = null
   #groupWrong = 0
   /** Wrong attacks counting toward the automatic hint threshold (re-armed on show and expiry). */
   #sinceArm = 0
@@ -153,6 +191,11 @@ export class PracticeEngine {
     this.#timeline = timeline
     this.#mode = config.mode
     this.#transport = config.transport ?? defaultTransport(timeline)
+    this.#rhythm = config.rhythm ? checkRhythm(config.rhythm) : null
+    if (this.#transport === 'strict') {
+      checkStrictMode(config.mode)
+      this.#rhythm = checkRhythm(config.rhythm)
+    }
     this.#pieceId = config.pieceId
     this.#hintSettings = config.hints ?? DEFAULT_SETTINGS.hints
     this.#labelSettings = config.labelSettings ?? LABELS_OFF
@@ -184,13 +227,23 @@ export class PracticeEngine {
     return this.#mode
   }
 
-  get transport(): TransportMode {
+  get transport(): TransportKind {
     return this.#transport
   }
 
   /** Matching-rules id recorded in comparison contexts. */
   get matchingRules(): string {
+    if (this.#strict) return rhythmMatchingRulesFor(this.#rhythm!.toleranceMs)
     return matchingRulesFor(this.#graceMs)
+  }
+
+  get #strict(): boolean {
+    return this.#transport === 'strict'
+  }
+
+  /** Strict: the rhythm tolerance; otherwise the early-press grace (pending-press window). */
+  get #windowMs(): number {
+    return this.#strict ? this.#rhythm!.toleranceMs : this.#graceMs
   }
 
   // ── Input ────────────────────────────────────────────────────────────────────────────
@@ -205,17 +258,21 @@ export class PracticeEngine {
     if (ev.seq <= this.#lastSeq) return
     this.#lastSeq = ev.seq
     this.#now(ev.time)
-    this.#expirePending(ev.time)
+    if (this.#strict) this.#runDue(ev.time, false)
+    else this.#expirePending(ev.time)
     if (ev.kind === 'noteon' && ev.velocity > 0) this.#press(ev.note, ev.channel, ev.time)
     else if (ev.kind === 'cc') this.#controller(ev)
     else this.#release(ev.note, ev.time)
+    // Strict: a group made current by this press may already be past its close (a skipped gate).
+    if (this.#strict) this.#runDue(ev.time, false)
     this.#touch()
   }
 
   #press(note: number, channel: number, time: number): void {
     this.#physical.keyDown(note, channel)
     let wrong = false
-    if (this.#phase === 'ready') {
+    // Strict: the clock starts at the end of the count-in (`startRunning`), never with a press.
+    if (this.#phase === 'ready' && !this.#strict) {
       this.#startClock(time)
       this.#setPhase('running', time)
     }
@@ -273,6 +330,9 @@ export class PracticeEngine {
    * - Pitch of i+1 only → pending for the grace window (applied to i+1 if i advances in time).
    * - Pitch tied into i → tie-end press (E16); tied into i+1 → pending, a tie-end press of i+1
    *   if i advances in time, else 'pitch'.
+   * - Strict: a pitch of the group that just closed as missed, before the music reaches the
+   *   current group or within the tolerance of its close → 'late' (gentle, not a wrong attack).
+   *   Strict windows use the tolerance instead of the grace.
    * - Otherwise → 'pitch'.
    */
   #attack(pitch: number, time: number): boolean {
@@ -292,8 +352,17 @@ export class PracticeEngine {
       this.#accept(gi, g, k, time)
       return false
     }
+    const closed = this.#lastClosed
+    if (
+      closed !== null &&
+      closed.pitches.includes(pitch) &&
+      (this.#transportGate < gi || time - closed.at <= this.#windowMs)
+    ) {
+      this.#emit({ type: 'wrong', group: closed.group, pitch, time, feedbackUntil: this.#wrongUntil, reason: 'late' })
+      return false
+    }
     if (groups[gi + 1]?.pitches.includes(pitch)) {
-      this.#pending.push({ pitch, time, from: gi, target: gi + 1, deadline: time + this.#graceMs })
+      this.#pending.push({ pitch, time, from: gi, target: gi + 1, deadline: time + this.#windowMs })
       return false
     }
     if (g.tiedPitches.includes(pitch)) {
@@ -301,7 +370,7 @@ export class PracticeEngine {
       return false
     }
     if (groups[gi + 1]?.tiedPitches.includes(pitch)) {
-      this.#pending.push({ pitch, time, from: gi, target: gi + 1, deadline: time + this.#graceMs, tieEnd: true })
+      this.#pending.push({ pitch, time, from: gi, target: gi + 1, deadline: time + this.#windowMs, tieEnd: true })
       return false
     }
     this.#wrong(gi, g, pitch, time, 'pitch')
@@ -318,8 +387,16 @@ export class PracticeEngine {
     this.#emit({ type: 'wrong', group: gi, pitch, time, feedbackUntil: this.#wrongUntil, reason: 'tie-end' })
   }
 
-  /** Accompaniment: the gate of group `gi` is not reached within the grace of `time`. */
+  /**
+   * Accompaniment: the gate of group `gi` is not reached within the grace of `time`. Strict: it is
+   * more than the tolerance away (unknown counts as too far).
+   */
   #tooEarly(gi: number, time: number): boolean {
+    if (this.#strict) {
+      if (this.#transportGate >= gi) return false
+      const eta = this.#transportEta?.(gi, time) ?? null
+      return eta === null || eta > this.#rhythm!.toleranceMs
+    }
     if (this.#transport === 'free' || this.#transportEta === null || this.#transportGate >= gi) return false
     const eta = this.#transportEta(gi, time)
     return eta === null || eta >= this.#graceMs
@@ -359,17 +436,32 @@ export class PracticeEngine {
     this.#inputComplete = true
     this.#lastCompleteAt = time
     const spreadMs = g.pitches.length > 1 ? Math.max(0, Math.round(this.#lastAcceptAt - this.#firstAcceptAt)) : 0
+    const offsetMs = this.#strict ? this.#offsetMs(gi, time) : null
+    if (offsetMs !== null) this.#lastOffsetMs = offsetMs
     this.#log.groupComplete(gi, g.occ, time, this.#groupWrong === 0, {
       lateMs: this.#lateMs(gi, time),
       spreadMs,
+      ...(offsetMs !== null ? { offsetMs } : {}),
     })
     if (gi === this.#timeline.groups.length - 1) this.#log.finalAttack = time
     this.#emit({ type: 'input-complete', group: gi, time })
     this.#groupHasError = false
     this.#clearOttava()
     this.#retireHint(time, 'completed')
-    if (this.#transport === 'free' || this.#transportGate >= gi) this.#advance(time)
+    // Strict never waits for the transport: a completed group advances at once.
+    if (this.#transport !== 'accompaniment' || this.#transportGate >= gi) this.#advance(time)
     else this.#emit({ type: 'waiting-for-transport', group: gi })
+  }
+
+  /**
+   * Strict: whole ms from group `gi`'s scheduled time to `time` (negative = early). The scheduled
+   * time is the gate's arrival, or `time` + ETA before it; null when unknown.
+   */
+  #offsetMs(gi: number, time: number): number | null {
+    const at = this.#transportGate >= gi ? this.#arrivedAt.get(gi) : undefined
+    if (at !== undefined) return wholeMs(time - at)
+    const eta = this.#transportEta?.(gi, time) ?? null
+    return eta === null ? null : wholeMs(-eta)
   }
 
   /**
@@ -378,7 +470,8 @@ export class PracticeEngine {
    * that press (P9), unless it was already running into it (`runningStart`, a lead-in).
    */
   #lateMs(gi: number, time: number): number {
-    if (gi === this.#clockGroup && !this.#runningStart) return 0
+    // Strict: the first group is judged like every other (the never-late rule is gated-only).
+    if (gi === this.#clockGroup && !this.#runningStart && !this.#strict) return 0
     if (this.#transport === 'free' || this.#transportGate < gi) return 0
     const at = this.#arrivedAt.get(gi)
     return at === undefined ? 0 : Math.max(0, Math.round(time - at))
@@ -450,7 +543,17 @@ export class PracticeEngine {
       return 'done'
     }
     let verdict: 'accept' | 'early' | 'keep'
-    if (this.#transport === 'free' || this.#transportEta === null) {
+    if (this.#strict) {
+      const tol = this.#rhythm!.toleranceMs
+      if (this.#transportGate >= cur) {
+        verdict = (this.#arrivedAt.get(cur) ?? -Infinity) - p.time <= tol ? 'accept' : 'early'
+      } else if (expired || this.#transportEta === null) {
+        verdict = 'early'
+      } else {
+        const eta = this.#transportEta(cur, p.time)
+        verdict = eta === null ? 'keep' : eta <= tol ? 'accept' : 'early'
+      }
+    } else if (this.#transport === 'free' || this.#transportEta === null) {
       verdict = 'accept'
     } else if (this.#transportGate >= cur) {
       const arrivedAt = this.#transportGate === cur ? this.#gateAt : -Infinity
@@ -476,6 +579,10 @@ export class PracticeEngine {
    */
   transportArrived(group: number, now: number = this.#lastNow): void {
     if (this.#transport === 'free') return
+    if (this.#strict) {
+      this.#strictArrived(group, now)
+      return
+    }
     this.#now(now)
     const expired = this.#expirePending(now)
     if (group <= this.#transportGate) {
@@ -491,7 +598,85 @@ export class PracticeEngine {
     this.#touch()
   }
 
+  /**
+   * Strict: record the arrival (gates in between count as reached at the same time and close at
+   * once: the clock is ahead), then close what is due. Arrivals at gates already reached or groups
+   * already left change nothing else.
+   */
+  #strictArrived(group: number, now: number): void {
+    this.#now(now)
+    if (group > this.#transportGate) {
+      const tol = this.#rhythm!.toleranceMs
+      for (let g = this.#transportGate + 1; g <= group; g++) {
+        this.#arrivedAt.set(g, now)
+        this.#closeAt.set(g, g < group ? now : now + tol)
+      }
+      this.#transportGate = group
+      this.#gateAt = now
+    }
+    this.#runDue(this.#lastNow, true)
+    this.#settlePending(this.#lastNow, false)
+    this.#touch()
+  }
+
+  /**
+   * Strict: process time-driven changes due by `now` in time order: the current group's close by
+   * the clock (inclusive of its close time when `inclusive`, so a press exactly at the close is
+   * still on time) and pending-press deadlines. Closes run only while Running.
+   */
+  #runDue(now: number, inclusive: boolean): boolean {
+    let changed = false
+    for (;;) {
+      const close = this.#dueClose()
+      let pending = Infinity
+      for (const p of this.#pending) if (p.deadline < pending) pending = p.deadline
+      const closeDue = close !== null && (inclusive ? close <= now : close < now)
+      if (closeDue && close <= pending) {
+        this.#closeMissed(close)
+      } else if (pending <= now) {
+        this.#settlePending(pending, true)
+      } else {
+        return changed
+      }
+      changed = true
+    }
+  }
+
+  /** Strict: close time of the current group, null when none (not Running, not reached yet). */
+  #dueClose(): number | null {
+    if (!this.#strict || this.#phase !== 'running' || this.#group === null) return null
+    const at = this.#closeAt.get(this.#group)
+    return at === undefined ? null : Math.max(at, this.#log.clockStart ?? at)
+  }
+
+  /** Strict: the clock passed the current group's close while it was incomplete. */
+  #closeMissed(at: number): void {
+    const gi = this.#group!
+    const g = this.#timeline.groups[gi]!
+    this.#log.groupMissed(gi, g.occ)
+    if (gi === this.#timeline.groups.length - 1) this.#log.finalAttack = at
+    this.#emit({ type: 'missed', group: gi, notes: g.notes, time: at })
+    this.#lastClosed = { group: gi, pitches: g.pitches, at }
+    this.#groupHasError = false
+    this.#retireHint(at, 'dismissed')
+    this.#advance(at)
+  }
+
   // ── Session controls ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Strict transport, scored: the count-in ended, the transport runs from `now`. Ready → Running,
+   * the attempt clock starts at `now` (event `clock-started`). A no-op in any other transport or
+   * phase (e.g. still Preparing, already Running).
+   */
+  startRunning(now: number): void {
+    this.#now(now)
+    if (!this.#strict || this.#mode !== 'scored' || this.#phase !== 'ready') return
+    this.#startClock(now)
+    this.#setPhase('running', now)
+    this.#runDue(this.#lastNow, true)
+    this.#touch()
+  }
 
   /** Scored: preparation finished (score ready, automatic tail done, output released, transport at start). */
   markPrepared(now: number): void {
@@ -648,7 +833,16 @@ export class PracticeEngine {
     this.#now(now)
     const timeline = change.timeline ?? this.#timeline
     const mode = change.mode ?? this.#mode
-    const transport = change.transport ?? (change.timeline ? defaultTransport(timeline) : this.#transport)
+    let transport = change.transport ?? (change.timeline ? defaultTransport(timeline) : this.#transport)
+    // A kept strict transport does not follow into ordinary reading; an explicit one throws below.
+    if (transport === 'strict' && mode === 'reading' && change.transport === undefined) {
+      transport = defaultTransport(timeline)
+    }
+    const rhythm = change.rhythm ? checkRhythm(change.rhythm) : this.#rhythm
+    if (transport === 'strict') {
+      checkStrictMode(mode)
+      checkRhythm(rhythm)
+    }
     if (mode === 'scored') assertScored(timeline)
     this.#pending = []
     const keep =
@@ -671,6 +865,7 @@ export class PracticeEngine {
     this.#timeline = timeline
     this.#mode = mode
     this.#transport = transport
+    this.#rhythm = rhythm
     if (mode === 'scored') {
       this.#begin(now, 0, 'preparing', change.runningStart)
       this.#checkReady(now)
@@ -693,6 +888,13 @@ export class PracticeEngine {
     ) {
       if (this.#mode === 'scored' && this.#attemptActive()) this.interrupt('setting-change', now)
       this.#labelSettings = labels
+    }
+    if (patch.rhythm) {
+      const rhythm = checkRhythm(patch.rhythm)
+      if (rhythm.toleranceMs !== this.#rhythm?.toleranceMs) {
+        if (this.#strict && this.#attemptActive()) this.interrupt('setting-change', now)
+        this.#rhythm = rhythm
+      }
     }
     if (patch.hints) this.#hintSettings = patch.hints
     if (patch.hintPedal !== undefined) this.#hintPedal = patch.hintPedal
@@ -718,7 +920,7 @@ export class PracticeEngine {
    */
   tick(now: number): void {
     this.#now(now)
-    let changed = this.#expirePending(this.#lastNow)
+    let changed = this.#strict ? this.#runDue(this.#lastNow, true) : this.#expirePending(this.#lastNow)
     const t = this.#clock.active(this.#lastNow)
     const expired = this.#hints.expire(t)
     if (expired !== null) {
@@ -733,11 +935,12 @@ export class PracticeEngine {
   }
 
   /**
-   * Real time of the next time-driven change (pending-press deadline, hint expiry or fade
-   * end); null when none. Hint deadlines are absent while an ordinary reading pause freezes them.
+   * Real time of the next time-driven change (pending-press deadline, strict close of the current
+   * group, hint expiry or fade end); null when none. Hint deadlines are absent while an ordinary
+   * reading pause freezes them.
    */
   nextDeadline(): number | null {
-    let next: number | null = null
+    let next: number | null = this.#dueClose()
     for (const p of this.#pending) if (next === null || p.deadline < next) next = p.deadline
     const d = this.#hints.nextDeadline()
     const hint = d === null ? null : this.#clock.toReal(d)
@@ -816,6 +1019,8 @@ export class PracticeEngine {
       keyboardVisible: this.#keyboard,
       assistance: this.#log.assistanceLevel,
       wrongAttacks: this.#log.wrongAttacks,
+      missedGroups: this.#log.missedGroups,
+      lastOffsetMs: this.#lastOffsetMs,
       clockStartedAt: this.#log.clockStart,
       attemptId: this.#log.id,
       interruptReason: this.#interruptReason,
@@ -893,6 +1098,9 @@ export class PracticeEngine {
     this.#transportGate = (start ?? 0) - 1
     this.#gateAt = -Infinity
     this.#arrivedAt.clear()
+    this.#closeAt.clear()
+    this.#lastClosed = null
+    this.#lastOffsetMs = null
     this.#enterGroup(start, now)
   }
 
@@ -1016,6 +1224,7 @@ export class PracticeEngine {
         reason,
         timeTolerance: this.#passTimeTolerance,
         matchingRules: this.matchingRules,
+        rhythm: this.#strict ? this.#rhythm : null,
       }),
     })
   }

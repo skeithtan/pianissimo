@@ -18,6 +18,7 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `new PracticeEngine(timeline, config, now)` | The state machine (see below). |
 | `fadeOutOpacity(elapsedMs, durationMs)`, `easeInOut(p)` | Shared eased fade curve (smoothstep): exactly 1 before, exactly 0 at the end. Renderer labels and keyboard-guide hiding use it too. |
 | `EARLY_PRESS_GRACE_MS` (120), `matchingRulesFor(graceMs)` | Early-press grace window and the matching-rules id recorded with it. |
+| `DEFAULT_RHYTHM_TOLERANCE_MS` (150), `rhythmMatchingRulesFor(toleranceMs)` | Rhythm mode (strict transport) default tolerance and its matching-rules id (`strict-v1-tol-<n>ms`). See "Strict transport (rhythm mode)". |
 | `buildAttemptRecord`, `comparisonContextOf` | Record builders (used internally; exported for history tests). Scored records carry per-group outcomes (`groups: GroupOutcome[]`, type re-exported here). |
 | `testkit.ts` | Test-only: `buildScore` (compact note lists → valid `ScoreModel`), `MidiScript`, `EngineDriver`, `pedalDetector`. |
 
@@ -36,9 +37,10 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `interrupt(reason, now)` | Ends the attempt/traversal: `user-stop`/`user-restart` → abandoned, others → interrupted. `disconnect` forgets physical state. |
 | `restart(now, {runningStart?})` | Repeat reset (scored → Preparing) / restart passage (reading → group 0). `runningStart`: see "Per-group outcomes". |
 | `seek(group, now)` | Scored: interrupts. Reading: new traversal at `group`. |
-| `transportArrived(group, now?)` | Transport reached gate `group` (accompaniment only). |
-| `reconfigure({reason, timeline?, mode?, transport?, startGroup?, runningStart?}, now)` | Hands/range/tempo/speed/mode change. Pass `runningStart: true` at a lead-in hand-over (the transport keeps playing into the loop). |
-| `updateSettings(patch, now)` | Hint settings, label snapshot (a changed mode/rule interrupts an active scored attempt), hint pedal, pass tolerance. |
+| `transportArrived(group, now?)` | Transport reached gate `group` (accompaniment and strict; ignored in free). |
+| `startRunning(now)` | Strict transport only: the count-in ended; Ready → Running and the attempt clock starts at `now`. A no-op in any other transport or phase. |
+| `reconfigure({reason, timeline?, mode?, transport?, rhythm?, startGroup?, runningStart?}, now)` | Hands/range/tempo/speed/mode change. Pass `runningStart: true` at a lead-in hand-over (the transport keeps playing into the loop). |
+| `updateSettings(patch, now)` | Hint settings, label snapshot (a changed mode/rule interrupts an active scored attempt), hint pedal, pass tolerance, `transportEta`, `rhythm` (a changed tolerance interrupts an active strict attempt). |
 | `state` | Readonly snapshot, reused until `version` changes. |
 | `drainEvents()` | Change events since the last drain (see `EngineEvent` in `types.ts`). |
 
@@ -47,14 +49,14 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 ```
 MIDI adapter ─(human events)─► engine.input ─► drainEvents ─► rAF visuals / transport / history
 transport.onGateReached(i) ──► engine.transportArrived(i)
-'input-complete' {group} ────► transport.releaseGate(group)
+'input-complete' {group} ────► transport.releaseGate(group)   (not in strict, see below)
 'exposure-reset' ────────────► engine.recordPersistentLabelExposure(visible labels)
 'attempt-ended' {record} ────► history.ingestAttempt + storage batch
 'abandon' {event} ───────────► history.ingestAbandon
 restart: engine.restart() → transport.seek(start) → … → engine.markPrepared()
 ```
 
-The transport is created with `transportGates(timeline)` in accompaniment mode only, and
+The transport is created with `transportGates(timeline)` in accompaniment and strict modes, and
 the engine gets `config.transportEta = (group, atTime) => ms until that gate` (0 when
 reached/holding/passed, null when blocked behind an unreleased gate); pass the transport's
 own arrival time as `transportArrived(i, at)`. A gate released before the transport reaches
@@ -111,6 +113,64 @@ none. A tie chain attacked **before** a loop start is not required inside the lo
 reattack, no group of its own): its pitch is a tied pitch of the first group (user, 31 October
 2026). Held, untied notes crossing the loop start keep the boundary reattack.
 
+## Strict transport (rhythm mode, DECISIONS P13)
+
+`transport: 'strict'` (`TransportKind`, the contract's name; `TransportMode` is a deprecated
+alias) is scored only and needs `rhythm: { toleranceMs }` (config, `reconfigure` or a settings
+patch; RangeError otherwise, and for strict with reading mode). The music never waits: every
+onset group is judged against its scheduled time, the transport's arrival at its gate.
+
+1. **Clock.** Presses in Ready only update physical key state (no clock, no judging, no wrong
+   attack). The session calls `startRunning(now)` at the end of its count-in: Ready → Running,
+   `clockStartedAt = now`, event `clock-started`. The first group is judged like every other
+   (the never-late rule of E15 is gated-only, so its `lateMs` is measured too).
+2. **Current group i.** A press of a missing pitch before gate i arrives and more than
+   `toleranceMs` before it (by `transportEta`; unknown counts as too far) is a `'early'` wrong
+   attack (E12 semantics: soft feedback, counts, not toward auto hints). Within the tolerance
+   before arrival, or any time after arrival while the group is open, it is accepted.
+3. **Offsets.** When the group completes, `offsetMs` = completion − scheduled arrival in whole
+   ms (before arrival the scheduled time is completion + ETA, so it is negative). `lateMs` stays
+   ≥ 0 as before. `state.lastOffsetMs` holds the latest one for live feedback. A completed group
+   advances at once: strict never sets `waitingForTransport`.
+4. **Closing by the clock.** Group i closes at `arrival(i) + toleranceMs` if still incomplete:
+   event `missed { group, notes, time }`, outcome `missed: true`, `missedGroups` + 1, a group with
+   errors of its bar (whose traversal can still be `complete`: missed groups count as traversed),
+   hint retired, local marker cleared, then group i + 1 is current (or the attempt completes).
+   A press exactly at the close time is still on time; a `tick` at that time closes.
+   `nextDeadline()` includes the close once gate i has arrived. An arrival at a later gate than
+   the current group (the clock is ahead) closes the groups whose gates it skipped at once, in
+   order; a group whose own gate arrived earlier keeps its own close. Arrivals at gates already
+   reached or at groups already left change nothing.
+5. **Late slip.** A press of a pitch of the group that just closed as missed (and not a pitch of
+   the current group), before the transport reaches the current group's gate or within
+   `toleranceMs` after the close (whichever is later), emits `wrong` with
+   reason `'late'`: like `'tie-end'` it is not a wrong attack and is not recorded (no totals,
+   bar counts, red wash, hint count, marker, `lastWrongReason`). O(1): only the last closed
+   group is remembered.
+6. **Next group.** Presses for group i + 1 while i is current are pending as in E12, with
+   `toleranceMs` as the window; when i + 1 becomes current they are accepted if its gate is (or
+   was) within the tolerance of the press, else `'early'`; still waiting at the window's end they
+   are `'ahead'`. A close and a pending deadline at the same time: the close is processed first.
+7. **Completion and records.** The attempt completes when the last group closes (complete or
+   missed); `completionTimeSec` runs from the clock start to the last group's completion or
+   close. Records carry `context.transport = 'strict'`, `matchingRules = strict-v1-tol-<n>ms`,
+   `rhythm`, `missedGroups` and per-group `offsetMs` / `missed`. `passed` = completed ∧ no wrong
+   attack ∧ no assistance ∧ no missed group ∧ every completed group within ±`toleranceMs`; the
+   total-time tolerance does not apply. Hints, labels, keyboard assistance and ottava warnings
+   are unchanged. Pause, seek, restart, reconfigure and interruptions behave as for any scored
+   attempt (`restart` → Preparing → Ready; the session calls `startRunning` after its next
+   count-in).
+
+Session wiring (strict):
+
+```
+count-in ends at t0 ─────────► engine.startRunning(t0); the transport runs from t0
+transport.onGateReached(i) ──► transport.releaseGate(i) at once, then engine.transportArrived(i, at)
+'input-complete' {group} ────► (ignored: releasing a gate early would move the music)
+'missed' {group, notes} ─────► gentle "missed" feedback; nothing to release
+schedule tick at nextDeadline() (closes and pending windows)
+```
+
 ## State diagram
 
 ```
@@ -133,7 +193,7 @@ reattack, no group of its own): its pitch is a tied pitch of the first group (us
 
 Per group: `current` → (each fresh correct pitch accepted, kept after release) → `input
 complete` (exactly once; hint retired + fading, ottava warning and local marker cleared) →
-free: advance at once; accompaniment: advance when `transportArrived(group)` has also
+free and strict: advance at once; accompaniment: advance when `transportArrived(group)` has also
 happened (`waitingForTransport` meanwhile).
 
 ## Design notes

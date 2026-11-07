@@ -98,4 +98,22 @@ describe('selection', () => {
     const preview = { hands: 'none' as const, range: null, multiplier: 1 }
     expect(startPlan(selectionTimeline(score, score.tempo, preview), preview, ok, play).action).toBe('listen')
   })
+
+  it('plans Keep time as a scored attempt over the whole piece or the loop, with the scored blockers', () => {
+    const keep = { rhythm: true }
+    const sel = { hands: 'both' as const, range: null, multiplier: 1 }
+    expect(startPlan(selectionTimeline(score, score.tempo, sel), sel, ok, keep)).toEqual({
+      action: 'scored',
+      enabled: true,
+      reason: null,
+    })
+    expect(startPlan(selectionTimeline(score, score.tempo, sel), sel, { ...ok, hasTempo: false }, keep)).toMatchObject({
+      action: 'scored',
+      enabled: false,
+    })
+    const loop = { hands: 'both' as const, range: { fromOcc: 2, toOcc: 2 }, multiplier: 1 }
+    expect(startPlan(selectionTimeline(score, score.tempo, loop), loop, ok, keep).action).toBe('scored')
+    const preview = { hands: 'none' as const, range: null, multiplier: 1 }
+    expect(startPlan(selectionTimeline(score, score.tempo, preview), preview, ok, keep).action).toBe('listen')
+  })
 })

@@ -101,14 +101,21 @@ export function Toggle({
   checked,
   onChange,
   description,
+  disabled,
+  class: className,
 }: {
   label: string
   checked: boolean
   onChange: (v: boolean) => void
   description?: string
+  disabled?: boolean
+  class?: string
 }) {
   return (
-    <label class={styles.toggleRow}>
+    <label
+      class={[styles.toggleRow, className].filter(Boolean).join(' ')}
+      data-disabled={disabled ? 'true' : undefined}
+    >
       <span class={styles.toggleText}>
         <span>{label}</span>
         {description ? <small>{description}</small> : null}
@@ -118,6 +125,7 @@ export function Toggle({
         role="switch"
         class={styles.toggle}
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange((e.currentTarget as HTMLInputElement).checked)}
       />
     </label>

@@ -1,6 +1,6 @@
 /**
  * The teacher's corrections after a scored attempt: one red-pen mark per onset group that went
- * wrong, came too soon or too late, was spread out or re-attacked a tie, built from the record's
+ * wrong, came too soon or too late (or, in rhythm mode, was missed), was spread out or re-attacked a tie, built from the record's
  * per-group outcomes (pure).
  */
 import type { Timeline } from '../../core/engine'
@@ -28,7 +28,8 @@ type Group = Timeline['groups'][number]
  * One mark per group with a problem, in group order. A group with several gets the first of:
  * a wrong accidental ("F♯, not F"), a wrong octave ("Wrong octave ↑"), another wrong key ("Wrong
  * note(s)"), a re-attacked tie ("Tied, hold it"), a spread chord ("Together"), too soon, too
- * late. A mark's notes are the group's performed-note indices (the strip's note ids) whose onset
+ * late. In a strict (rhythm mode) record a group the music passed is "Missed" (after the wrong
+ * classes), and "Too late" means more than the record's tolerance after its scheduled time. A mark's notes are the group's performed-note indices (the strip's note ids) whose onset
  * lies inside the attempt's passage: a ring never goes around notes outside it (a tie head before
  * the loop start), and a mark with none left is dropped.
  * `score` spells the target as the score does, with the `naming` settings. Records without
@@ -51,7 +52,7 @@ export function correctionMarks(
       return note !== undefined && (!bounds || (ge(note.onset, bounds.start) && lt(note.onset, bounds.end)))
     })
     if (notes.length === 0) continue
-    const mark = classify(g, group, score, naming)
+    const mark = classify(g, group, score, naming, record.rhythm?.toleranceMs)
     if (mark) marks.push({ notes, ...mark })
   }
   return marks
@@ -73,6 +74,7 @@ function classify(
   group: Group,
   score: CorrectionScore,
   naming: NamingSettings,
+  strictToleranceMs: number | undefined,
 ): Omit<CorrectionMark, 'notes'> | null {
   const wrongPitches = g.wrongPitches ?? []
   for (const p of wrongPitches) {
@@ -91,6 +93,13 @@ function classify(
   if (wrong > 0) return { kind: 'wrong', text: wrong > 1 ? 'Wrong notes' : 'Wrong note' }
   if ((g.tieEndPresses ?? 0) > 0) return { kind: 'tie', text: 'Tied, hold it' }
   if ((g.spreadMs ?? 0) >= SPREAD_MARK_MS && group.pitches.length >= 2) return { kind: 'spread', text: 'Together' }
+  if (strictToleranceMs !== undefined) {
+    // Rhythm mode: the music never waited, so lateness is the offset from the scheduled time.
+    if (g.missed === true) return { kind: 'missed', text: 'Missed' }
+    if (g.earlyAttacks > 0) return { kind: 'early', text: 'Too soon' }
+    if ((g.offsetMs ?? 0) > strictToleranceMs) return { kind: 'late', text: 'Too late' }
+    return null
+  }
   if (g.earlyAttacks > 0) return { kind: 'early', text: 'Too soon' }
   if (g.lateMs >= LATE_MARK_MS) return { kind: 'late', text: 'Too late' }
   return null

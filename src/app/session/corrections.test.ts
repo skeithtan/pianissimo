@@ -209,3 +209,47 @@ describe('correctionMarks', () => {
     ])
   })
 })
+
+describe('rhythm mode (strict) marks', () => {
+  const strictRecord = (groups: GroupOutcome[]): AttemptRecord =>
+    ({
+      groups,
+      rhythm: { toleranceMs: 150 },
+      context: { passage: WHOLE, transport: 'strict' },
+    }) as unknown as AttemptRecord
+  const strictMarks = (groups: GroupOutcome[]) => correctionMarks(strictRecord(groups), timeline, score, NAMING)
+
+  it('marks a missed group "Missed"', () => {
+    expect(strictMarks([outcome(2, 0, 0, 0, { missed: true })])).toEqual([
+      { notes: [3], kind: 'missed', text: 'Missed' },
+    ])
+  })
+
+  it('a wrong pitch outranks a miss', () => {
+    expect(strictMarks([outcome(2, 1, 0, 0, { missed: true, wrongPitches: [61] })])).toEqual([
+      { notes: [3], kind: 'wrong', text: 'Wrong note' },
+    ])
+  })
+
+  it('late means beyond the record tolerance, not the gated threshold', () => {
+    expect(strictMarks([outcome(2, 0, 0, 0, { offsetMs: 150 })])).toEqual([])
+    expect(strictMarks([outcome(2, 0, 0, 0, { offsetMs: 151 })])).toEqual([
+      { notes: [3], kind: 'late', text: 'Too late' },
+    ])
+    // The gated lateMs field is ignored in strict records.
+    expect(strictMarks([outcome(2, 0, 0, LATE_MARK_MS * 2)])).toEqual([])
+  })
+
+  it('early offsets alone are not marked; an early press is "Too soon"', () => {
+    expect(strictMarks([outcome(2, 0, 0, 0, { offsetMs: -400 })])).toEqual([])
+    expect(strictMarks([outcome(2, 1, 1, 0, { offsetMs: 0 })])).toEqual([
+      { notes: [3], kind: 'early', text: 'Too soon' },
+    ])
+  })
+
+  it('gated records keep the LATE_MARK_MS threshold and never get "Missed"', () => {
+    expect(marks([outcome(2, 0, 0, LATE_MARK_MS, { missed: true })])).toEqual([
+      { notes: [3], kind: 'late', text: 'Too late' },
+    ])
+  })
+})

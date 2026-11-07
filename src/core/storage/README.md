@@ -34,7 +34,11 @@ default 50 MB / 256 entries), `history` (`HistoryWriterOptions`), `now`.
 `PieceRecord`: `id`, `title`, `composer?`, `scoreVersionId`, `createdAt`, `lastOpenedAt`,
 `lastMultiplier` (last speed for the piece), `userTempo?` (`{ beatBpm, beatUnit }`),
 `lastHands`, `resume` (`{ occ, position, group?, hands, multiplier, savedAt }` or null; the
-`position` Rational is authoritative), `lastPassage`, `repeatTarget`. A `savedPassages`
+`position` Rational is authoritative), `lastPassage`, `repeatTarget`, `ladder?` (the speed
+ladder, `LadderSettings { goal, step }` multipliers or null; absent on records written before it,
+validated on restore: finite, goal in [0.05, 10], step in (0, 1]; `newPieceRecord` sets null),
+`rhythm?` (Keep time on for the piece, a boolean; absent = off, validated on restore). Attempt
+records with `context.transport` 'strict' (Keep time) restore like any other. A `savedPassages`
 key left by records written before 2026-10-31 is ignored.
 Saving the resume position is a plain `updatePiece(id, { resume })` on a small record: call it
 on pause, seek, hide and every few seconds of reading, not per MIDI event.
@@ -106,6 +110,8 @@ user stores. A connection told to upgrade by another tab closes itself.
 - **Settings.** `normalizeSettings` validates field by field: absent or malformed values take
   the default, deliberate `null`s (cleared threshold, unset pedal) are kept, label rules merge
   per clef, unknown clefs are preserved. Settings added later get defaults automatically.
+  `rhythm.toleranceMs` (Keep time) is clamped to [40, 500] and rounded to whole ms; a
+  non-number takes the default (150).
 
 ## Backup format (`*.pianissimo.zip`, format 1)
 

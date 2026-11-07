@@ -1,5 +1,5 @@
 import type { AttemptRecord, Completion, InterruptReason } from '../model/practice'
-import { isAssistedAttempt, timeDifferenceSec } from './results'
+import { isAssistedAttempt, timeDifferenceSec, timingAccuracy } from './results'
 import type { PracticeStreak } from './results'
 
 /** Result-detail text for "Completion time" (spec "Results and timing"). */
@@ -16,6 +16,12 @@ export type ScorecardRowId =
   | 'completion-time'
   | 'expected-time'
   | 'time-difference'
+  | 'on-time'
+  | 'early'
+  | 'late'
+  | 'missed'
+  | 'offset'
+  | 'tolerance'
   | 'assistance'
   | 'streak'
 
@@ -30,9 +36,11 @@ export interface ScorecardRow {
  * - `scored`: completed with a reference attack span, so a difference is defined.
  * - `ungraded`: a single onset group (no tempo ratio); the time is an ungraded time-to-solve.
  * - `unscored`: an unresolved fermata, rubato or tempo issue; no comparison is made.
+ * - `rhythm`: a completed strict (rhythm mode) attempt; the music set the pace, so the rows
+ *   report per-group offsets instead of a completion time.
  * - `none`: not completed, or the clock never started.
  */
-export type TimingKind = 'scored' | 'ungraded' | 'unscored' | 'none'
+export type TimingKind = 'scored' | 'ungraded' | 'unscored' | 'rhythm' | 'none'
 
 export interface AssistanceDetails {
   readonly level: AttemptRecord['assistance']['level']
@@ -109,11 +117,22 @@ function signed(sec: number): string {
   return text.startsWith('-') ? text : `+${text}`
 }
 
+/** "+23 ms, dragging" / "−18 ms, rushing" beyond a third of the tolerance, else "+4 ms". */
+function offsetText(meanMs: number, toleranceMs: number): string {
+  const rounded = Math.round(meanMs)
+  const text = rounded === 0 ? '0 ms' : `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)} ms`
+  if (Math.abs(meanMs) <= toleranceMs / 3) return text
+  return `${text}, ${meanMs > 0 ? 'dragging' : 'rushing'}`
+}
+
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`
 }
 
 function timingKind(a: AttemptRecord): TimingKind {
+  if (a.context.transport === 'strict') {
+    return a.completion === 'completed' && timingAccuracy(a) !== null ? 'rhythm' : 'none'
+  }
   if (a.timingUnscoredReason !== undefined) return 'unscored'
   if (a.completionTimeSec === undefined) return 'none'
   return a.expectedTimeSec === null ? 'ungraded' : 'scored'
@@ -181,7 +200,21 @@ export function buildScorecard(a: AttemptRecord, streak?: PracticeStreak): Score
   ]
 
   const completionTime = a.completionTimeSec ?? null
-  if (timing === 'scored' || timing === 'ungraded') {
+  const accuracy = timing === 'rhythm' ? timingAccuracy(a) : null
+  if (accuracy !== null && a.rhythm !== undefined) {
+    const tol = a.rhythm.toleranceMs
+    const percent = accuracy.groups > 0 ? Math.round((accuracy.onTime / accuracy.groups) * 100) : 0
+    rows.push(
+      { id: 'on-time', label: 'On-time groups', value: `${accuracy.onTime} of ${accuracy.groups} (${percent}%)` },
+      { id: 'early', label: 'Early groups', value: String(accuracy.early), detail: `more than ${tol} ms early` },
+      { id: 'late', label: 'Late groups', value: String(accuracy.late), detail: `more than ${tol} ms late` },
+      { id: 'missed', label: 'Missed groups', value: String(accuracy.missed) },
+      { id: 'offset', label: 'Average offset', value: offsetText(accuracy.meanOffsetMs, tol) },
+      { id: 'tolerance', label: 'Timing window', value: `within ±${tol} ms` },
+    )
+  } else if (a.context.transport === 'strict') {
+    // The music set the pace: no completion time, and an incomplete attempt shows no timing.
+  } else if (timing === 'scored' || timing === 'ungraded') {
     rows.push({
       id: 'completion-time',
       label: timing === 'ungraded' ? 'Time to solve' : 'Completion time',

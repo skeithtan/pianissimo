@@ -237,6 +237,37 @@ describe('restore into an empty browser', () => {
     expect(await target.getLayout('layout-1')).toBeUndefined()
   })
 
+  it('a speed ladder survives export and restore; a piece without one stays without one', async () => {
+    const source = await fresh()
+    const { piece: on } = await importPiece(source, 'lad', { ladder: { goal: 1, step: 0.05 } })
+    const { piece: off } = await importPiece(source, 'flat')
+    const target = await fresh()
+    await target.restore(await source.exportAll())
+    expect((await target.getPiece(on.id))?.ladder).toEqual({ goal: 1, step: 0.05 })
+    expect((await target.getPiece(off.id))?.ladder).toBeNull()
+  })
+
+  it('a Keep time (strict) attempt and the piece setting survive export and restore', async () => {
+    const source = await fresh()
+    const { piece } = await importPiece(source, 'kt', { rhythm: true })
+    const context = { ...comparisonContext(), transport: 'strict' as const, matchingRules: 'strict-v1-tol-150ms' }
+    const strict = attemptFor(piece.id, [[1, 'clean']], {
+      context,
+      rhythm: { toleranceMs: 150 },
+      missedGroups: 1,
+      passed: false,
+    })
+    source.history.queueAttempt(strict)
+    const bytes = await source.exportAll()
+    const target = await fresh()
+    const report = await target.restore(bytes)
+    expect(report.warnings).toEqual([])
+    expect(report.stores.attempts.added).toBe(1)
+    const [restored] = await target.listAttempts({ pieceId: piece.id })
+    expect(restored).toEqual(strict)
+    expect((await target.getPiece(piece.id))?.rhythm).toBe(true)
+  })
+
   it('label settings (mode and per-clef conditions) survive export and restore', async () => {
     const source = await fresh()
     await source.saveSettings(CUSTOM_SETTINGS)

@@ -84,6 +84,56 @@ describe('record validators', () => {
     expect(pieceProblem(legacy)).toBeNull()
   })
 
+  it('accept a speed ladder, null or none (records written before the ladder)', () => {
+    expect(piece.ladder).toBeNull()
+    expect(pieceProblem(set(piece, { ladder: { goal: 1, step: 0.05 } }))).toBeNull()
+    expect(pieceProblem(set(piece, { ladder: { goal: 0.05, step: 1 } }))).toBeNull()
+    expect(pieceProblem(set(piece, { ladder: { goal: 10, step: 0.5 } }))).toBeNull()
+    expect(pieceProblem(set(piece, { ladder: null }))).toBeNull()
+    const legacy = Object.fromEntries(Object.entries(clone(piece)).filter(([k]) => k !== 'ladder'))
+    expect(pieceProblem(legacy)).toBeNull()
+  })
+
+  it('reject a malformed speed ladder', () => {
+    for (const ladder of [
+      { goal: 1 },
+      { step: 0.05 },
+      { goal: 0.04, step: 0.05 },
+      { goal: 10.5, step: 0.05 },
+      { goal: 1, step: 0 },
+      { goal: 1, step: 1.5 },
+      { goal: Number.NaN, step: 0.05 },
+      { goal: 1, step: Number.POSITIVE_INFINITY },
+      { goal: '1', step: 0.05 },
+      [1, 0.05],
+      1,
+    ]) {
+      expect(pieceProblem(set(piece, { ladder }))).toBe('ladder is missing or invalid')
+    }
+  })
+
+  it('accept Keep time on, off or absent (older records), and reject anything else', () => {
+    expect(pieceProblem(set(piece, { rhythm: true }))).toBeNull()
+    expect(pieceProblem(set(piece, { rhythm: false }))).toBeNull()
+    expect(pieceProblem(clone(piece))).toBeNull()
+    for (const rhythm of ['on', 1, null, {}]) {
+      expect(pieceProblem(set(piece, { rhythm }))).toBe('rhythm is missing or invalid')
+    }
+  })
+
+  it('accept a strict (Keep time) attempt and reject an unknown transport', () => {
+    const base = attemptRecord()
+    const strict = set(base, {
+      context: { ...base.context, transport: 'strict', matchingRules: 'strict-v1-tol-150ms' },
+      rhythm: { toleranceMs: 150 },
+      missedGroups: 1,
+    })
+    expect(attemptProblem(clone(strict))).toBeNull()
+    expect(attemptProblem(set(base, { context: { ...base.context, transport: 'rubato' } }))).toBe(
+      'context.transport is missing or invalid',
+    )
+  })
+
   it('name the first bad piece field', () => {
     for (const [field, value] of [
       ['id', ''],

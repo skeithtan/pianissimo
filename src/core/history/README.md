@@ -18,7 +18,7 @@ clean unassisted versus assisted), the assistance paragraph of "Persistent score
 | Choosing | `selectSuggestions(history, occurrences, { scoreVersionId, enabled, dismissed?, max? })` → `{ active, improved, disabled }` of display-ready `Suggestion`s |
 | Passages | `adjacentRuns`, `chunkRun`, `withContextBars`, `MAX_CORE_BARS` |
 | Controls | `SessionDismissals` (in-memory), `setSuggestionsDisabled`, `clearPracticeHistory` |
-| Results | `summarizeContext`, `summarizeByContext` → `ContextResults` (best clean, assisted, incomplete, streak), `practiceStreak`, `compareCleanRuns`, `isAssistedAttempt`, `isCleanUnassistedCompletion`, `timeDifferenceSec` |
+| Results | `summarizeContext`, `summarizeByContext` → `ContextResults` (best clean, assisted, incomplete, streak), `practiceStreak`, `compareCleanRuns`, `isAssistedAttempt`, `isCleanUnassistedCompletion`, `timeDifferenceSec`, `timingAccuracy` (strict records: groups, onTime, early, late, missed, mean and mean absolute offset) |
 | Scorecard | `buildScorecard(attempt, streak?)` → typed values plus formatted `rows`; `COMPLETION_TIME_DEFINITION`, `formatSeconds` |
 | Labels | `createBarLabeler(occurrences)` ("12", "12 (pass 2)", "bars 12–14") |
 
@@ -98,3 +98,13 @@ Left: the notation preview of a suggestion (renderer), the Practice-this-passage
 boundary adjustment (views open the repeat workflow with `Suggestion.passage`, `hands`,
 `multiplier`), and the engine wiring (`app/session` queues the engine's records into
 `HistoryWriter`).
+
+## Rhythm mode (strict transport) results
+
+A clean unassisted completion also needs `missedGroups` 0 (absent = 0) in every context. For two
+strict records `compareCleanRuns` ranks by `timingAccuracy(...).meanAbsOffsetMs` (fewest first,
+then most recent): the music set the pace, so there is no expected total time. Early and late mean
+beyond `rhythm.toleranceMs`. `buildScorecard` gives a completed strict record `timing: 'rhythm'`
+and the rows on-time groups ("38 of 42 (90%)"), early, late, missed, average offset (signed ms,
+"dragging" / "rushing" beyond a third of the tolerance) and the timing window; it has no
+completion time, expected time or difference rows, and an incomplete strict attempt shows no timing.

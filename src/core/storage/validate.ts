@@ -47,6 +47,14 @@ function passage(v: unknown): boolean {
   )
 }
 
+/** A speed ladder: finite multipliers, goal in [0.05, 10], step in (0, 1]. */
+export function ladderOk(v: unknown): boolean {
+  if (!isObj(v)) return false
+  const goal = v['goal']
+  const step = v['step']
+  return isNum(goal) && goal >= 0.05 && goal <= 10 && isNum(step) && step > 0 && step <= 1
+}
+
 /** First failing field among `[name, ok]` pairs, as "name is not valid". */
 function firstBad(checks: ReadonlyArray<readonly [string, boolean]>): string | null {
   for (const [name, ok] of checks) if (!ok) return `${name} is missing or invalid`
@@ -84,6 +92,8 @@ export function pieceProblem(v: unknown): string | null {
     ],
     ['lastPassage', v['lastPassage'] === null || passage(v['lastPassage'])],
     ['repeatTarget', v['repeatTarget'] === null || (isInt(v['repeatTarget']) && (v['repeatTarget'] as number) >= 1)],
+    ['ladder', v['ladder'] === undefined || v['ladder'] === null || ladderOk(v['ladder'])],
+    ['rhythm', v['rhythm'] === undefined || isBool(v['rhythm'])],
   ])
 }
 
@@ -97,7 +107,7 @@ function contextProblem(v: unknown): string | null {
     ['context.tempoMapId', isStr(v['tempoMapId'])],
     ['context.multiplier', isNum(v['multiplier']) && (v['multiplier'] as number) > 0],
     ['context.rollPolicy', isStr(v['rollPolicy'])],
-    ['context.transport', isOneOf(v['transport'], ['free', 'accompaniment'])],
+    ['context.transport', isOneOf(v['transport'], ['free', 'accompaniment', 'strict'])],
     ['context.matchingRules', isStr(v['matchingRules'])],
   ])
 }

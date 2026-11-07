@@ -1,8 +1,8 @@
 /**
- * Throttled piece updates (last speed, hands, passage, resume position, repeat target). The
- * session saves on pause, seek and hide (`immediate`) and debounces everything else; nothing
- * is written from the MIDI input path (spec "Persist history in asynchronous batches outside
- * the input handler").
+ * Throttled piece updates (last speed, hands, passage, resume position, repeat target, speed
+ * ladder). The session saves on pause, seek and hide (`immediate`) and debounces everything
+ * else; nothing is written from the MIDI input path (spec "Persist history in asynchronous
+ * batches outside the input handler").
  */
 import type { TimerApi } from '../../core/playback'
 import type { PiecePatch, PieceSink } from './types'

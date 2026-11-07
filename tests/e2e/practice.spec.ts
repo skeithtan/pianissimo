@@ -14,6 +14,7 @@ import {
   play,
   playWhenDue,
   seedPiece,
+  setShowKeys,
   waitForOnset,
 } from './practice-helpers'
 
@@ -160,7 +161,7 @@ test.describe('practice', () => {
     await page.setViewportSize({ width: 768, height: 1024 })
     await seedPiece(page)
     await openSeededPractice(page)
-    await page.getByRole('button', { name: 'Show keys' }).click()
+    await setShowKeys(page)
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await playWhenDue(page, 60, 48)
     const strip = await page.locator('[data-testid="strip-host"]').boundingBox()

@@ -93,6 +93,12 @@ export interface StartPlanOptions {
    * never a scored blocker. Hands 'none' stays Listen.
    */
   readonly playThrough?: boolean
+  /**
+   * Keep time is on (rhythm mode, DECISIONS P13): with a hand selected the action is always
+   * `'scored'` (over the loop in Repeat mode, else the whole piece), with the scored blockers.
+   * Hands 'none' stays Listen; play-through wins (the session never sets both).
+   */
+  readonly rhythm?: boolean
 }
 
 export function startPlan(
@@ -107,7 +113,7 @@ export function startPlan(
     if (!ctx.hasTempo) return { action: 'listen', enabled: false, reason: 'Set a practice tempo to listen.' }
     return { action: 'listen', enabled: true, reason: null }
   }
-  const action = opts.playThrough ? 'play' : sel.range ? 'scored' : 'reading'
+  const action = opts.playThrough ? 'play' : sel.range || opts.rhythm ? 'scored' : 'reading'
   if (!ctx.hasTempo) {
     return {
       action,

@@ -28,8 +28,17 @@
  * when each gate is released: the group was played, the learner moved on to one of the next
  * groups, or the patience after the transport's arrival ran out. Human events go to the
  * follower instead of the engine; the engine stays paused at its position and records nothing.
+ *
+ * Keep time (rhythm mode, DECISIONS P13): every Start is a scored attempt on the strict transport
+ * (over the loop in Repeat mode, else the whole piece). When the engine is Ready a one-bar
+ * count-in clicks through the metronome sink; at its end the transport plays and the engine's
+ * clock starts at the same timestamp. The music never waits: every gate is released (ahead of
+ * time, so timer jitter never delays the music) and each arrival is reported to the engine, which
+ * judges every group against it. Exclusive with play-through; lead-ins are off.
  */
 import {
+  DEFAULT_RHYTHM_TOLERANCE_MS,
+  DEFAULT_WRONG_FEEDBACK_MS,
   PlayFollower,
   PracticeEngine,
   fadeOutOpacity,
@@ -38,8 +47,11 @@ import {
   type EngineEvent,
   type EngineState,
   type Phase,
+  type RhythmParams,
   type Timeline,
+  type TransportKind,
 } from '../../core/engine'
+import { timingAccuracy } from '../../core/history'
 import { HintPedalTrigger } from '../../core/midi/hintPedal'
 import { NATURAL, labelFor, labelForMidi } from '../../core/naming'
 import type { MidiRouteEvent } from '../../core/midi/adapter'
@@ -47,6 +59,7 @@ import { CC_ALL_NOTES_OFF, type MidiInputEvent } from '../../core/midi/types'
 import { onsetPositions, passageFromBounds, passageKey, samePassage } from '../../core/model/passage'
 import type { AttemptRecord, InterruptReason, PassageRange } from '../../core/model/practice'
 import type { HandSelection, ScoreModel } from '../../core/model/score'
+import type { LadderSettings } from '../../core/storage/records'
 import { type Rational, ZERO, eq, key as ratKey, lt, toNumber } from '../../core/music/rational'
 import { hasTempo, type TempoMapData } from '../../core/music/tempo'
 import {
@@ -79,6 +92,15 @@ import {
 import { clampPassage, sameSelection, selectionTimeline, startPlan, type Selection, type StartPlan } from './selection'
 import { buildGuideKeys, sameGuideKeys } from './guide'
 import { correctionMarks, type CorrectionMark } from './corrections'
+import { countInPlan } from './countIn'
+import {
+  LADDER_DEFAULT_TARGET,
+  ladderAfterAttempt,
+  ladderAfterManualSpeed,
+  retargetLadder,
+  sameLadder,
+  startLadder,
+} from './ladder'
 import { Store, shallowEqual } from './store'
 import type {
   Activity,
@@ -87,6 +109,7 @@ import type {
   FlashSink,
   GuideState,
   Interruption,
+  LadderUi,
   MidiBackendLike,
   SessionDeps,
   SessionProgress,
@@ -105,6 +128,8 @@ export interface SessionOptions {
   /** Reading starts here (resume position); default: the start of the selection. */
   readonly startPosition?: Rational | null
   readonly repeatTarget?: number | null
+  /** The piece's speed ladder (Repeat mode); its start is the opening speed. Default: off. */
+  readonly ladder?: LadderSettings | null
   /**
    * Open with Repeat mode on (a preset passage, DECISIONS U10). `selection.range` is the loop;
    * without one the loop starts at the first bar. Default: closed (reading), loop remembered.
@@ -115,6 +140,19 @@ export interface SessionOptions {
    * Repeat, so it passes false and the button never appears in either score view.
    */
   readonly cursorAction?: boolean
+  /** Open with Keep time on (the piece's saved choice; ignored without a numerical tempo). */
+  readonly rhythm?: boolean
+}
+
+/** The Keep time count-in in progress (`#beginCountIn`). */
+interface CountIn {
+  /** Real time of the first click. */
+  readonly start: number
+  readonly beats: number
+  readonly beatMs: number
+  /** Beats left to count, the number shown (`ui.countIn`). */
+  remaining: number
+  timer: unknown
 }
 
 /**
@@ -227,6 +265,17 @@ export class PracticeSession {
   #playAgain = false
   /** The hint pedal while the follower has the input (the engine's own detector never sees it). */
   #playPedal: HintPedalTrigger | null = null
+  /** Keep time (rhythm mode, DECISIONS P13) is on. */
+  #rhythm: boolean
+  /** The Keep time count-in in progress, else null. */
+  #countIn: CountIn | null = null
+  /** The amber marker for a late slip (a pitch of a group just missed) shows until this time. */
+  #lateUntil = -Infinity
+  #lateShown = false
+  /** Groups the music passed (Keep time) since the last frame: the soft wash. */
+  #missedPending = 0
+  /** The text of an interruption the session caused (the Keep time tolerance changed). */
+  #interruptText: string | null = null
 
   // Lifecycle
   #readingStarted = false
@@ -237,6 +286,11 @@ export class PracticeSession {
   /** The loop, remembered while Repeat mode is closed (saved as `lastPassage`). */
   #loop: PassageRange | null = null
   #repeatTarget: number | null
+  /** The speed ladder's settings (persisted) and its state, or null when off. */
+  #ladderSettings: LadderSettings | null
+  #ladder: LadderUi | null
+  /** The speed the ladder set for the next attempt, applied when the Repeat reset comes. */
+  #ladderNext: number | null = null
   /** A lead-in before the loop (Repeat mode), until the attempt it leads into is replaced. */
   #leadIn: LeadIn | null = null
   /** Passage keys of lead-ins: their reading traversals are not recorded. */
@@ -316,11 +370,14 @@ export class PracticeSession {
     this.#model = options.model
     this.#tempo = options.model.tempo
     this.#settings = options.settings
+    this.#rhythm = options.rhythm === true && hasTempo(options.model.tempo)
     this.#loop = clampPassage(options.model, options.selection.range)
     this.#repeat = options.repeat === true
     if (this.#repeat && !this.#loop) this.#loop = { fromOcc: 0, toOcc: 0 }
     this.#sel = { ...options.selection, range: this.#repeat ? this.#loop : null }
     this.#repeatTarget = options.repeatTarget ?? null
+    this.#ladderSettings = options.ladder ?? null
+    this.#ladder = this.#ladderSettings ? startLadder(this.#ladderSettings, this.#sel.multiplier) : null
     this.#cursorActionAllowed = options.cursorAction !== false
     this.#timeline = selectionTimeline(this.#model, this.#tempo, this.#sel)
     this.#labels = new PersistentLabels(
@@ -468,7 +525,8 @@ export class PracticeSession {
       const output = await this.#ensureOutput()
       if (!output || this.#disposed) return
     }
-    await this.#ensureMetronome()
+    // Keep time counts in through the metronome even when the Metronome setting is off.
+    await this.#ensureMetronome(this.#rhythm)
     if (this.#disposed) return
     // The selection may have changed while sounds loaded (the loop cleared, the hands changed).
     const plan = this.#plan()
@@ -490,11 +548,9 @@ export class PracticeSession {
     if (lead && !lead.handedOver && this.#engine.mode === 'reading') {
       this.#startLeadIn(t)
     } else if (plan.action === 'scored') {
-      if (this.#engine.mode !== 'scored') {
-        this.#engine.reconfigure(
-          { reason: 'mode-change', mode: 'scored', timeline: this.#timeline, transport: 'accompaniment' },
-          t,
-        )
+      const kind = this.#scoredKind()
+      if (this.#engine.mode !== 'scored' || this.#engine.transport !== kind.transport) {
+        this.#engine.reconfigure({ reason: 'mode-change', mode: 'scored', timeline: this.#timeline, ...kind }, t)
       } else if (!ACTIVE.includes(this.#engine.state.phase)) {
         this.#engine.restart(t)
       }
@@ -549,6 +605,7 @@ export class PracticeSession {
       this.#process(now)
       return
     }
+    this.#cancelCountIn(now)
     this.#pauseTransports()
     this.#pendingRepeat = false
     this.#awaitPrepared = false
@@ -573,6 +630,12 @@ export class PracticeSession {
       this.#process(now)
       return
     }
+    if (this.#rhythm && this.#engine.mode !== 'scored') {
+      // Keep time has no reading to restart: a fresh attempt from the passage start.
+      void this.start()
+      return
+    }
+    this.#cancelCountIn(now)
     this.#pauseTransports()
     this.#pendingRepeat = false
     if (this.#leadIn && this.#engine.mode === 'reading') {
@@ -581,7 +644,7 @@ export class PracticeSession {
       this.#leaveLeadIn(now)
       if (plan.enabled && plan.action === 'scored') {
         this.#engine.reconfigure(
-          { reason: 'mode-change', mode: 'scored', timeline: this.#timeline, transport: 'accompaniment' },
+          { reason: 'mode-change', mode: 'scored', timeline: this.#timeline, ...this.#scoredKind() },
           now,
         )
         this.#lastResult = null
@@ -655,7 +718,8 @@ export class PracticeSession {
       this.#process(now)
       return true
     }
-    if (this.#repeat && this.#sel.range && this.#sel.hands !== 'none') {
+    // Keep time has no lead-ins: a seek interrupts an attempt, or moves the cursor while idle.
+    if (this.#repeat && this.#sel.range && this.#sel.hands !== 'none' && !this.#rhythm) {
       const p = lt(position, ZERO) ? ZERO : position
       if (!eq(p, passageRange(this.#model, this.#sel.range).start)) {
         const moved = this.#seekLeadIn(p, now)
@@ -684,7 +748,9 @@ export class PracticeSession {
     const phase = this.#engine.state.phase
     if (this.#engine.mode === 'scored') {
       // A seek during a running attempt interrupts it; otherwise the attempt stays at its start.
-      if (phase === 'running') {
+      // Keep time: also during its count-in (Preparing, Ready).
+      if (phase === 'running' || (this.#rhythm && ACTIVE.includes(phase))) {
+        this.#cancelCountIn(now)
         this.#pauseTransports()
         this.#engine.seek(0, now)
         this.#process(now)
@@ -1296,6 +1362,7 @@ export class PracticeSession {
     const now = this.#deps.clock()
     if (on) {
       if (this.#sel.hands === 'none') return
+      if (this.#rhythm) this.setRhythmMode(false)
       if (this.#repeat) this.setRepeatMode(false)
       this.#stopListening()
       this.#pauseTransports()
@@ -1326,6 +1393,136 @@ export class PracticeSession {
     this.#syncLock()
     this.#process(now)
     this.#publishUi()
+  }
+
+  /**
+   * Keep time (rhythm mode, DECISIONS P13), saved on the piece. On: every Start is a scored
+   * attempt on the strict transport after a one-bar count-in, over the loop in Repeat mode, else
+   * the whole piece from its start; play-through goes off; needs a hand selected and a numerical
+   * tempo. Switching either way ends an attempt in progress ('mode-change'); off returns to
+   * ordinary reading, paused at the attempt's current position.
+   */
+  setRhythmMode(on: boolean): void {
+    if (on === this.#rhythm || this.#disposed) return
+    if (on && (this.#sel.hands === 'none' || !hasTempo(this.#tempo))) return
+    if (on && this.#playThrough) this.setPlayThrough(false)
+    const now = this.#deps.clock()
+    this.#cancelCountIn(now)
+    this.#pauseTransports()
+    this.#awaitPrepared = false
+    this.#pendingRepeat = false
+    this.#ladderNext = null
+    if (this.#leadIn) {
+      if (this.#engine.mode === 'reading') this.#leaveLeadIn(now)
+      else this.#endLeadIn()
+    }
+    if (this.#engine.mode === 'scored') {
+      const position = this.#engine.state.position
+      const startGroup = !on && position ? groupAtOrAfter(this.#timeline, position) : 0
+      this.#engine.reconfigure(
+        {
+          reason: 'mode-change',
+          mode: 'reading',
+          timeline: this.#timeline,
+          transport: 'accompaniment',
+          startGroup: Math.min(startGroup, Math.max(0, this.#timeline.groups.length - 1)),
+        },
+        now,
+      )
+      this.#readingStarted = false
+    }
+    if (this.#engine.state.phase === 'running') this.#engine.pause(now)
+    // The next Start builds the transport for the new mode.
+    this.#disposeAccompaniment()
+    this.#rhythm = on
+    this.#lastResult = null
+    this.#clearCorrections()
+    this.#cue = null
+    this.#lateUntil = -Infinity
+    this.#flash?.clear()
+    this.#deps.piece.save({ rhythm: on })
+    this.#lockState = ''
+    this.#syncLock()
+    this.#process(now)
+    this.#publishUi()
+  }
+
+  #toleranceMs(settings: SessionSettings): number {
+    return settings.rhythm?.toleranceMs ?? DEFAULT_RHYTHM_TOLERANCE_MS
+  }
+
+  /** The engine transport and rhythm parameters of a scored attempt (strict in Keep time). */
+  #scoredKind(): { transport: TransportKind; rhythm?: RhythmParams } {
+    return this.#rhythm
+      ? { transport: 'strict', rhythm: { toleranceMs: this.#toleranceMs(this.#settings) } }
+      : { transport: 'accompaniment' }
+  }
+
+  /**
+   * Keep time: the engine is Ready, so count in one bar from now (`countInPlan` at the passage
+   * start): every click goes to the metronome sink at once (accent on the first), `ui.countIn`
+   * counts the beats down, and the attempt starts when the bar is over (`#endCountIn`).
+   */
+  #beginCountIn(now: number): void {
+    this.#cancelCountIn(now)
+    if (!this.#accomp || !hasTempo(this.#tempo)) return
+    const start = passageRange(this.#model, this.#sel.range).start
+    const plan = countInPlan(this.#model, this.#tempo, start, this.#sel.multiplier)
+    for (let k = 0; k < plan.beats; k++) this.#metronomeSink.click(now + k * plan.beatMs, k === 0)
+    this.#countIn = { start: now, beats: plan.beats, beatMs: plan.beatMs, remaining: plan.beats, timer: null }
+    this.#nextCountInBeat()
+    this.#scheduleFrame()
+  }
+
+  /** One timer per beat: the shown number goes down, and after the last beat the attempt starts. */
+  #nextCountInBeat(): void {
+    const c = this.#countIn
+    if (!c) return
+    const k = c.beats - c.remaining + 1
+    const at = c.start + k * c.beatMs
+    c.timer = this.#deps.timers.setTimeout(
+      () => {
+        if (this.#countIn !== c) return
+        c.timer = null
+        if (k >= c.beats) {
+          this.#endCountIn(at)
+          return
+        }
+        c.remaining = c.beats - k
+        this.#publishUi()
+        this.#nextCountInBeat()
+      },
+      Math.max(0, at - this.#deps.clock()),
+    )
+  }
+
+  /**
+   * The count-in is over: the engine's clock starts and the transport plays from the passage start
+   * with the same timestamp. Every gate is released first, so the music never holds; the
+   * transport still reports each arrival (`onGateReached` → `transportArrived`).
+   */
+  #endCountIn(at: number): void {
+    this.#countIn = null
+    const t = this.#accomp
+    const s = this.#engine.state
+    if (!t || this.#engine.mode !== 'scored' || this.#engine.transport !== 'strict' || s.phase !== 'ready') {
+      this.#publishUi()
+      return
+    }
+    this.#engine.startRunning(at)
+    for (let g = 0; g < this.#engine.timeline.groups.length; g++) t.releaseGate(g + this.#gateOffset)
+    t.play(at)
+    this.#process(this.#deps.clock())
+  }
+
+  /** Cancel a count-in in progress: its timer and its clicks still to come (through the sink). */
+  #cancelCountIn(now: number): void {
+    const c = this.#countIn
+    if (!c) return
+    this.#countIn = null
+    if (c.timer !== null) this.#deps.timers.clearTimeout(c.timer)
+    this.#metronomeSink.cancel(now)
+    this.#scheduleFrame()
   }
 
   /**
@@ -1419,6 +1616,24 @@ export class PracticeSession {
     this.#publishUi()
   }
 
+  /**
+   * The speed ladder (Repeat mode; null = off), persisted like the Repeat target. Switching it on
+   * starts it at the current speed; new settings for a ladder already on keep its start.
+   */
+  setLadder(ladder: LadderSettings | null): void {
+    if (sameLadder(ladder, this.#ladderSettings)) return
+    const speed = this.#sel.multiplier
+    this.#ladderSettings = ladder
+    this.#ladder = ladder
+      ? this.#ladder
+        ? retargetLadder(this.#ladder, ladder, speed)
+        : startLadder(ladder, speed)
+      : null
+    this.#ladderNext = null
+    this.#deps.piece.save({ ladder })
+    this.#publishUi()
+  }
+
   /** Dismiss the compact result card. */
   dismissResult(): void {
     this.#lastResult = null
@@ -1434,6 +1649,11 @@ export class PracticeSession {
    * reading continues from the current position; Preview reschedules speed live.
    */
   setSelection(patch: Partial<Selection>): void {
+    const speed = patch.multiplier
+    if (this.#ladder && speed !== undefined && Math.abs(speed - this.#sel.multiplier) > 1e-9) {
+      this.#ladder = ladderAfterManualSpeed(this.#ladder, speed)
+      this.#publishUi()
+    }
     let loop = this.#loop
     let repeat = this.#repeat
     if (patch.range !== undefined) {
@@ -1448,8 +1668,20 @@ export class PracticeSession {
     )
   }
 
-  /** `persist` false: a selection the session imposes (hands held without a piano), not the learner's. */
-  #select(base: Omit<Selection, 'range'>, loop: PassageRange | null, repeat: boolean, persist = true): void {
+  /**
+   * `persist` false: a selection the session imposes (hands held without a piano), not the
+   * learner's. `ladder`: the speed ladder's step after a completed attempt: the result card and
+   * its marks stay, and a fresh attempt is prepared at the new speed.
+   */
+  #select(
+    base: Omit<Selection, 'range'>,
+    loop: PassageRange | null,
+    repeat: boolean,
+    persist = true,
+    ladder = false,
+  ): void {
+    // Any selection change cancels a ladder speed waiting for the Repeat reset.
+    this.#ladderNext = null
     // Repeat mode and Listen (hands off, also held without a piano) are not play-through.
     if (this.#playThrough && (repeat || base.hands === 'none')) this.setPlayThrough(false)
     const next: Selection = { ...base, range: repeat ? loop : null }
@@ -1471,10 +1703,13 @@ export class PracticeSession {
       if (modeChanged) this.#process(this.#deps.clock())
       return
     }
-    // The result card goes with its corrections (U39).
-    this.#lastResult = null
-    this.#clearCorrections()
+    // The result card goes with its corrections (U39), unless the ladder set the speed after it.
+    if (!ladder) {
+      this.#lastResult = null
+      this.#clearCorrections()
+    }
     const now = this.#deps.clock()
+    this.#cancelCountIn(now)
     const reason: InterruptReason =
       next.hands !== prev.hands
         ? 'hand-change'
@@ -1535,7 +1770,7 @@ export class PracticeSession {
       this.#process(now)
       return
     }
-    const scoredActive = this.#engine.mode === 'scored' && ACTIVE.includes(phase)
+    const scoredActive = this.#engine.mode === 'scored' && (ladder || ACTIVE.includes(phase))
     // Any other change ends a lead-in: the session stops where Repeat mode would (P4).
     const leadReading = lead !== null && this.#engine.mode === 'reading'
     const leadPosition = leadReading ? (this.#engine.state.position ?? lead.start) : null
@@ -1559,7 +1794,7 @@ export class PracticeSession {
 
     if (this.#engine.mode === 'scored' || scoredActive) {
       if (scoredActive && plan.action === 'scored' && plan.enabled) {
-        this.#engine.reconfigure({ reason, timeline: this.#timeline, mode: 'scored', transport: 'accompaniment' }, now)
+        this.#engine.reconfigure({ reason, timeline: this.#timeline, mode: 'scored', ...this.#scoredKind() }, now)
         this.#streak = 0
         this.#ensureTransport((t) => this.#tryPrepared(t))
         this.#prepareAttempt(now)
@@ -1622,6 +1857,16 @@ export class PracticeSession {
       if (this.#labels.setLabels(next.labels, now)) {
         this.#labelsDirty = true
         this.#lastVersion = -1
+      }
+    }
+    if (this.#toleranceMs(prev) !== this.#toleranceMs(next)) {
+      // A different tolerance is a different comparison context: the engine interrupts an active
+      // Keep time attempt by itself ('setting-change').
+      const was = this.#engine.state.phase
+      this.#engine.updateSettings({ rhythm: { toleranceMs: this.#toleranceMs(next) } }, now)
+      if (was !== 'interrupted' && this.#engine.state.phase === 'interrupted') {
+        this.#cancelCountIn(now)
+        this.#interruptText = 'The Keep time tolerance changed, so the attempt stopped.'
       }
     }
     if (prev.pedal !== next.pedal) {
@@ -1707,6 +1952,7 @@ export class PracticeSession {
     ) {
       this.#engine.interrupt('user-stop', now)
     }
+    this.#cancelCountIn(now)
     this.#saveResume(now, true)
     this.#drain(now)
     this.#disposed = true
@@ -1913,7 +2159,7 @@ export class PracticeSession {
         ? 'The piano output was disconnected. Press Play to keep listening through this device.'
         : 'The piano output was disconnected. Press Start to continue through this device.'
     if (
-      this.#engine.transport === 'accompaniment' &&
+      this.#engine.transport !== 'free' &&
       (this.#engine.state.phase === 'running' || ACTIVE.includes(this.#engine.state.phase))
     ) {
       this.#awaitPrepared = false
@@ -1927,7 +2173,7 @@ export class PracticeSession {
   #stopSound(): void {
     // Stuck-note recovery: stop app playback; a scored attempt cannot continue without it.
     if (this.#listen?.playing || this.#play?.playing) this.pause()
-    else if (this.#engine.transport === 'accompaniment' && this.#isPlaying()) this.pause()
+    else if (this.#engine.transport !== 'free' && this.#isPlaying()) this.pause()
     this.#accomp?.stopSound()
     this.#listen?.transport.stopSound()
     this.#play?.transport.stopSound()
@@ -1974,12 +2220,23 @@ export class PracticeSession {
         break
       case 'input-complete':
         this.#cue = null
-        this.#accomp?.releaseGate(ev.group + this.#gateOffset)
+        // Keep time: the music never waits, and releasing a gate early would move it ahead.
+        if (this.#engine.transport !== 'strict') this.#accomp?.releaseGate(ev.group + this.#gateOffset)
+        break
+      case 'missed':
+        // The music passed the group (Keep time): the soft wash only, never a pulse or a cue.
+        this.#missedPending++
+        this.#cue = null
         break
       case 'wrong':
         // A re-attacked tie end is a gentle nudge: the amber marker only (`#frame`), no pulse,
         // flash or cue. Widened: an engine without the reason never sends it.
         if ((ev.reason as string) === 'tie-end') break
+        if ((ev.reason as string) === 'late') {
+          // A late slip (Keep time): the amber marker for a moment, nothing else (`#frame`).
+          this.#lateUntil = Math.max(now, this.#deps.clock()) + DEFAULT_WRONG_FEEDBACK_MS
+          break
+        }
         this.#wrongPending++
         this.#wrongReason = ev.reason === 'early' ? 'early' : 'wrong'
         this.#cue =
@@ -2066,9 +2323,14 @@ export class PracticeSession {
 
   #onPhase(phase: Phase, now: number): void {
     const t = Math.max(now, this.#deps.clock())
+    // Leaving Ready ends a count-in (pause, seek, selection change, interruption, a new attempt).
+    if (phase !== 'ready') this.#cancelCountIn(t)
+    if (phase !== 'interrupted') this.#interruptText = null
     if (phase === 'ready') {
       // The automatic part may start (an introduction plays); the clock waits for the first press.
       if (this.#accomp && this.#engine.transport === 'accompaniment') this.#accomp.play(t)
+      // Keep time: count in, then the clock and the music start together.
+      else if (this.#engine.transport === 'strict' && this.#engine.mode === 'scored') this.#beginCountIn(t)
     } else if (phase === 'running' && this.#engine.mode === 'scored') {
       // The first press of the next pass: the previous pass's card and marks go (Repeat keeps
       // them through the automatic restart so the learner sees what to improve).
@@ -2093,7 +2355,23 @@ export class PracticeSession {
     this.#deps.history.queueAttempt(record)
     if (record.kind !== 'scored' || record.completion !== 'completed') return
     this.#streak = record.passed ? this.#streak + 1 : 0
-    const targetReached = this.#repeatTarget !== null && this.#streak >= this.#repeatTarget
+    this.#ladderNext = null
+    let ladder: AttemptSummary['ladder'] | undefined
+    if (this.#repeat && this.#ladder) {
+      const step = ladderAfterAttempt(
+        this.#ladder,
+        this.#sel.multiplier,
+        record.passed,
+        this.#streak,
+        this.#repeatTarget ?? LADDER_DEFAULT_TARGET,
+      )
+      this.#ladder = step.ladder
+      this.#ladderNext = step.next ?? null
+      ladder = step.note
+    }
+    // A climb keeps Repeat going: the target applies again at the new speed.
+    const climbing = ladder?.climbedTo !== undefined
+    const targetReached = !climbing && this.#repeatTarget !== null && this.#streak >= this.#repeatTarget
     this.#lastResult = {
       id: record.id,
       passed: record.passed,
@@ -2106,6 +2384,8 @@ export class PracticeSession {
       persistentLabels: record.assistance.persistentLabelNotes.length > 0,
       streak: this.#streak,
       targetReached,
+      ...(ladder ? { ladder } : {}),
+      ...timingSummary(record),
     }
     this.#corrections = correctionMarks(record, this.#timeline, this.#model, this.#settings.naming)
     this.#strip?.setCorrections?.(this.#corrections)
@@ -2140,12 +2420,30 @@ export class PracticeSession {
   }
 
   #repeatReset(now: number): void {
+    const speed = this.#ladderNext
+    if (speed !== null && this.#repeat) {
+      this.#ladderStep(speed)
+      return
+    }
     this.#pendingRepeat = false
     this.#accomp?.stop()
     this.#clearHighlights()
     this.#engine.restart(now)
     this.#prepareAttempt(now)
     // Back to the loop start: the strip pans there quickly instead of scrolling backward.
+    this.#strip?.wrapTo?.(this.#cursorPosition())
+  }
+
+  /**
+   * The speed ladder's climb or drop, at the Repeat reset: the same path as a speed change
+   * (`setSelection({ multiplier })`, saved as the piece's last speed; the streak starts over) but
+   * the result card stays and the fresh attempt is prepared at the new speed.
+   */
+  #ladderStep(speed: number): void {
+    this.#pendingRepeat = false
+    this.#accomp?.stop()
+    this.#clearHighlights()
+    this.#select({ hands: this.#sel.hands, multiplier: speed }, this.#loop, true, true, true)
     this.#strip?.wrapTo?.(this.#cursorPosition())
   }
 
@@ -2199,7 +2497,7 @@ export class PracticeSession {
   #tryPrepared(now: number): void {
     if (!this.#awaitPrepared || this.#engine.state.phase !== 'preparing') return
     if (!this.#strip) return
-    if (this.#engine.transport === 'accompaniment' && !this.#accomp) return
+    if (this.#engine.transport !== 'free' && !this.#accomp) return
     if (this.#labels.fadingUntil() > now) return
     this.#awaitPrepared = false
     this.#engine.markPrepared(now)
@@ -2285,8 +2583,9 @@ export class PracticeSession {
     return this.#deps.hasWebAudio?.() ?? true
   }
 
-  async #ensureMetronome(): Promise<void> {
-    if (!this.#settings.metronome.enabled || this.#metronome || !this.#deps.loadMetronome) return
+  /** Load the metronome when the setting is on, or `force` (the Keep time count-in clicks anyway). */
+  async #ensureMetronome(force = false): Promise<void> {
+    if ((!this.#settings.metronome.enabled && !force) || this.#metronome || !this.#deps.loadMetronome) return
     try {
       const m = await this.#deps.loadMetronome()
       if (this.#disposed || this.#metronome) return
@@ -2349,6 +2648,8 @@ export class PracticeSession {
         // Before the hand-over only the lead-in's gates belong to the (reading) engine.
         const early = lead !== null && !lead.handedOver && gate >= leadGroups
         if (!early && gate >= this.#gateOffset) this.#engine.transportArrived(gate - this.#gateOffset, t)
+        // Keep time: the music never holds (already released at the count-in's end: a no-op).
+        if (this.#engine.transport === 'strict') transport.releaseGate(gate)
         this.#process(t)
       },
       onRangeEnd: () => this.#onAccompanimentEnd(),
@@ -2485,7 +2786,11 @@ export class PracticeSession {
     const versionChanged = s.version !== this.#lastVersion || force
     // Listen mode (both hands off, U9) shows no targets, even before Play.
     const quiet = this.#listen !== null || this.#sel.hands === 'none'
-    if (versionChanged || previewChanged) {
+    // A late slip (Keep time) tints the cursor amber for a moment; the engine records nothing.
+    const late = now < this.#lateUntil
+    const lateChanged = late !== this.#lateShown
+    this.#lateShown = late
+    if (versionChanged || previewChanged || lateChanged) {
       this.#lastVersion = s.version
       if (strip) {
         strip.setTargets(quiet ? [] : s.targetNotes)
@@ -2497,7 +2802,7 @@ export class PracticeSession {
         // A previewed wrong key tints the cursor too, without a pulse or a flash (U31).
         const wrong = (s.groupHasError && !soft) || this.#previewWrong.size > 0
         strip.setWrongMarker(wrong && !quiet)
-        strip.setEarlyMarker?.(s.groupHasError && soft && !quiet)
+        strip.setEarlyMarker?.(((s.groupHasError && soft) || late) && !quiet)
         strip.setOttavaEmphasis(quiet ? [] : s.ottavaWarning)
         if (!this.#listen && !this.#accomp) strip.setCursor(this.#cursorPosition())
       }
@@ -2513,6 +2818,11 @@ export class PracticeSession {
         strip?.pulseWrong()
         if (this.#settings.hints.damageFlash) this.#flash?.hit(now, s.wrongFeedbackUntil)
       }
+    }
+    if (this.#missedPending > 0) {
+      this.#missedPending = 0
+      // A group the music passed (Keep time): the gentle wash, no pulse, marker or cue.
+      if (this.#settings.hints.damageFlash) this.#flash?.hit(now, now + DEFAULT_WRONG_FEEDBACK_MS, { soft: true })
     }
     // The cue stays until its target is accepted or another wrong attack replaces it. A tie-end
     // press shows nothing here: the amber marker is its whole feedback.
@@ -2672,6 +2982,8 @@ export class PracticeSession {
       const fadeStart = this.#reveal.until - this.#settings.hints.fadeMs
       if (fadeStart > now) at = Math.min(at, fadeStart)
     }
+    // The late-slip marker goes when its moment is over.
+    if (this.#lateUntil > now) at = Math.min(at, this.#lateUntil)
     if (at === this.#tickAt && this.#tickHandle !== null) return
     if (this.#tickHandle !== null) this.#deps.timers.clearTimeout(this.#tickHandle)
     this.#tickHandle = null
@@ -2708,7 +3020,7 @@ export class PracticeSession {
         accompanimentAllowed: accompanimentAllowed(this.#settings, out, browser),
         hasTempo: hasTempo(this.#tempo),
       },
-      { playThrough: this.#playThrough },
+      { playThrough: this.#playThrough, rhythm: this.#rhythm },
     )
   }
 
@@ -2733,7 +3045,7 @@ export class PracticeSession {
     const reason = s.interruptReason ?? 'pause'
     // No "Paused" banner: the main button reads Resume / Start (user, 2026-10-31).
     if (reason === 'mode-change' || reason === 'user-stop' || reason === 'pause') return null
-    return { reason, text: INTERRUPT_TEXT[reason], canResume: this.#engine.mode === 'reading' }
+    return { reason, text: this.#interruptText ?? INTERRUPT_TEXT[reason], canResume: this.#engine.mode === 'reading' }
   }
 
   /** The play-through UI (DECISIONS P12): no attempt states, results, interruptions or hints. */
@@ -2766,12 +3078,15 @@ export class PracticeSession {
       repeat: this.#repeat,
       leadIn: false,
       repeatTarget: this.#repeatTarget,
+      ladder: this.#ladder,
       lastResult: null,
       corrections: 0,
       interruption: null,
       soundStatus: this.#soundStatus,
       inputDisconnected: this.#inputDisconnected,
       playThrough: true,
+      rhythm: false,
+      countIn: null,
       finished: false,
     }
   }
@@ -2812,12 +3127,15 @@ export class PracticeSession {
       repeat: this.#repeat,
       leadIn,
       repeatTarget: this.#repeatTarget,
+      ladder: this.#ladder,
       lastResult: this.#lastResult,
       corrections: this.#corrections.length,
       interruption: this.#interruption(),
       soundStatus: this.#soundStatus,
       inputDisconnected: this.#inputDisconnected,
       playThrough: false,
+      rhythm: this.#rhythm,
+      countIn: this.#countIn?.remaining ?? null,
       // A lead-in that read to its end is not the end of the piece: it wraps into the attempt.
       finished: this.#engine.mode === 'reading' && s.phase === 'completed' && !leadIn,
     }
@@ -2955,7 +3273,8 @@ export class PracticeSession {
     // Play-through covers the whole piece: no repeat button (P12).
     const cursorAction =
       this.#cursorActionAllowed && !this.#repeat && !this.#playThrough && (!playing || this.#chromeRevealed)
-    const draggable = !this.#repeat && !playing
+    // Keep time always starts at the passage start: no playhead to drag.
+    const draggable = !this.#repeat && !playing && !this.#rhythm
     const key = `${editable}|${browse}|${cursorAction}|${draggable}`
     if (key === this.#lockState) return
     this.#lockState = key
@@ -2995,6 +3314,12 @@ export class PracticeSession {
     const m = settings.pedal.hintPedal
     return m ? new HintPedalTrigger(m) : null
   }
+}
+
+/** The timing summary of a Keep time record (`timingAccuracy`); nothing for any other record. */
+function timingSummary(record: AttemptRecord): Pick<AttemptSummary, 'timing'> {
+  const t = timingAccuracy(record)
+  return t ? { timing: { groups: t.groups, onTime: t.onTime, early: t.early, late: t.late, missed: t.missed } } : {}
 }
 
 /** Stored settings are not clamped (normalizeSettings falls back per field only): keep 0..1. */

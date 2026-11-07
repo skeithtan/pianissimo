@@ -4,6 +4,7 @@ export { DB_VERSION, DEFAULT_DB_NAME } from './schema'
 export { newId, newPieceRecord } from './records'
 export type {
   AbandonRecord,
+  LadderSettings,
   LayoutCacheLimits,
   NewPieceOptions,
   PiecePatch,

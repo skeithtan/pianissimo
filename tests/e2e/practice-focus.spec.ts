@@ -104,13 +104,13 @@ for (const size of [
   }) => {
     await page.setViewportSize(size)
     await open(page)
+    const menu = page.locator('footer').getByRole('button', { name: 'Menu', exact: true })
     const speed = page.getByRole('button', { name: /Open speed options/ })
-    const keys = page.getByRole('button', { name: 'Show keys', exact: true })
     const start = page.getByRole('button', { name: 'Start', exact: true })
     const footer = page.locator('footer')
     const initial = {
+      menu: await menu.boundingBox(),
       speed: await speed.boundingBox(),
-      keys: await keys.boundingBox(),
       play: await start.boundingBox(),
       footer: await footer.boundingBox(),
     }
@@ -123,13 +123,13 @@ for (const size of [
     const focusedTools = await footer.evaluate((el) => {
       const control = (label: string) => el.querySelector<HTMLElement>(`[aria-label$="${label}"]`)!
       return {
+        menu: el.querySelector<HTMLElement>('[aria-label="Menu"]')!.getBoundingClientRect().toJSON(),
         speed: control('Open speed options').getBoundingClientRect().toJSON(),
-        keys: control('Show keys').getBoundingClientRect().toJSON(),
         play: control('Pause').getBoundingClientRect().toJSON(),
         footer: el.getBoundingClientRect().toJSON(),
       }
     })
-    for (const name of ['speed', 'keys', 'play', 'footer'] as const) {
+    for (const name of ['menu', 'speed', 'play', 'footer'] as const) {
       expect(Math.abs(focusedTools[name].x - initial[name]!.x), name).toBeLessThan(2)
       expect(Math.abs(focusedTools[name].y - initial[name]!.y), name).toBeLessThan(2)
       expect(Math.abs(focusedTools[name].height - initial[name]!.height), name).toBeLessThan(2)

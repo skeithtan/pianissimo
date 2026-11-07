@@ -1,5 +1,11 @@
 import type { ClefKey } from '../model/score'
-import { DEFAULT_SETTINGS, DISABLED_RULE, SETTINGS_VERSION } from '../model/settings'
+import {
+  DEFAULT_SETTINGS,
+  DISABLED_RULE,
+  MAX_RHYTHM_TOLERANCE_MS,
+  MIN_RHYTHM_TOLERANCE_MS,
+  SETTINGS_VERSION,
+} from '../model/settings'
 import type {
   AppSettings,
   ClefLabelRule,
@@ -110,6 +116,11 @@ function controllers(v: unknown, fallback: readonly number[]): number[] {
   return [...new Set(v.filter((x): x is number => typeof x === 'number' && Number.isInteger(x) && x >= 0 && x <= 127))]
 }
 
+/** A finite number clamped to [min, max]; anything else falls back. */
+function clamped(v: unknown, fallback: number, min: number, max: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback
+}
+
 const MODES: readonly PersistentLabelMode[] = ['off', 'all', 'conditional']
 const DESTINATIONS: readonly SoundDestination[] = ['auto', 'midi', 'browser']
 
@@ -158,6 +169,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const route = obj(s['route'])
   const sound = obj(s['sound'])
   const metronome = obj(s['metronome'])
+  const rhythm = obj(s['rhythm'])
   const view = obj(s['view'])
   const suggestions = obj(s['suggestions'])
   const storedVersion = typeof s['version'] === 'number' ? s['version'] : 0
@@ -216,6 +228,11 @@ export function normalizeSettings(raw: unknown): AppSettings {
     metronome: {
       enabled: bool(metronome['enabled'], d.metronome.enabled),
       volume: num(metronome['volume'], d.metronome.volume, 0, 1),
+    },
+    rhythm: {
+      toleranceMs: Math.round(
+        clamped(rhythm['toleranceMs'], d.rhythm.toleranceMs, MIN_RHYTHM_TOLERANCE_MS, MAX_RHYTHM_TOLERANCE_MS),
+      ),
     },
     view: {
       zoom: num(view['zoom'], d.view.zoom, 0.1, 20),

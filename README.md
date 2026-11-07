@@ -18,6 +18,10 @@ Live: <https://skeithtan.github.io/pianissimo/>
   88-key keyboard guide, octave and accidental cues at the cursor.
 - Repeat mode: whole-bar loops from the overview or note-level loops on the staff, consecutive
   clean-pass targets, lead-ins from anywhere in the piece.
+- Keep time: a count-in, then the music runs at tempo × Speed and never waits; every note is
+  judged against its beat, late notes are missed, and the scorecard reports timing accuracy.
+- Speed ladder: in Repeat mode the app raises Speed one step each time the clean-pass target is
+  met and drops it back after repeated failures, up to the goal you set.
 - Teacher corrections after an attempt: wrong notes, wrong accidental or octave, too soon or
   too late, notes not played together, re-attacked tie ends, pedal.
 - Consult mode: listen to a piece and read its score on any device, a phone included, with

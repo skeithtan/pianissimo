@@ -11,7 +11,7 @@ import type { PianissimoStorage } from '../../core/storage'
 import type { PreparedLayout } from '../../render'
 import { ManualClock } from '../../core/playback/testkit'
 import { importFixture } from '../../../tests/unit/import/fixtures'
-import { $, $$, byLabel, byText, click, mount, type Mounted } from '../shared/testing'
+import { $, $$, byLabel, byText, click, mount, press, type Mounted } from '../shared/testing'
 import type { PracticeEnv, PracticeStripOptions, StripHandle } from './env'
 import type { RespaceSnapshot } from '../../render'
 import { PREPARE_AHEAD_MS, REPEAT_PANEL_FADE_MS } from './PracticeScreen'
@@ -125,6 +125,29 @@ function tap(r: Rig, ...notes: number[]): void {
     }
     r.frames.flush()
   })
+}
+
+/** Opens the footer menu (U76) if it is closed and returns its panel. */
+function openMenu(root: HTMLElement): HTMLElement {
+  const button = byLabel($(root, 'footer')!, 'Menu')!
+  if (button.getAttribute('aria-expanded') !== 'true') click(button)
+  return byLabel(root, 'Practice menu')!
+}
+
+/** Chooses a Note names option from the footer menu. */
+function pickLabels(root: HTMLElement, label: string): void {
+  click($$(openMenu(root), '[role="radio"]').find((el) => el.textContent === label))
+}
+
+/** A switch in the footer menu, by its label (Play through, Show keys). */
+function menuSwitch(root: HTMLElement, name: string): HTMLInputElement {
+  const row = $$(openMenu(root), 'label').find((el) => el.textContent?.trim() === name)!
+  return row.querySelector<HTMLInputElement>('input[role="switch"]')!
+}
+
+/** The Play through switch in the footer menu. */
+function playThroughSwitch(root: HTMLElement): HTMLInputElement {
+  return menuSwitch(root, 'Play through')
 }
 
 let view: Mounted | null = null
@@ -335,7 +358,7 @@ describe('PracticeView', () => {
     expect(r.rooms).toEqual(['hints', 'all'])
     expect(r.strips).toHaveLength(1)
     // Once the room has changed, the tight one is already known: nothing more to prepare.
-    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'All'))
+    pickLabels(view.container, 'All')
     await settle(r, 2)
     expect(r.strips).toHaveLength(2)
     act(() => r.clock.advance(PREPARE_AHEAD_MS * 2))
@@ -348,10 +371,10 @@ describe('PracticeView', () => {
     practiceRequest.value = { pieceId: r.pieceId }
     view = mount(<PracticeViewWith env={r.env} />)
     await settle(r)
-    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'All'))
+    pickLabels(view.container, 'All')
     await settle(r, 2)
     expect(r.strips).toHaveLength(2)
-    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'Off'))
+    pickLabels(view.container, 'Off')
     await settle(r, 2)
     // No wait for a fade: the old view hands over as soon as the layout is ready.
     expect(r.rooms).toEqual(['hints', 'all', 'hints'])
@@ -359,9 +382,9 @@ describe('PracticeView', () => {
     expect(r.strips[1]!.destroyed).toBe(true)
     expect(r.strips[2]!.respacedFrom).toEqual([r.strips[1]!.snapshot])
     // Conditional ↔ All keeps the room: no new engraving.
-    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'All'))
+    pickLabels(view.container, 'All')
     await settle(r, 2)
-    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'Conditional'))
+    pickLabels(view.container, 'Conditional')
     await settle(r, 2)
     expect(r.rooms).toEqual(['hints', 'all', 'hints', 'all'])
   })
@@ -373,8 +396,7 @@ describe('PracticeView', () => {
     await settle(r)
     click(byLabel(view.container, 'Start'))
     await settle(r)
-    const select = (label: string) =>
-      click($$(view!.container, '[role="radio"]').find((el) => el.textContent === label))
+    const select = (label: string) => pickLabels(view!.container, label)
     select('All')
     await settle(r)
     const gliding = r.strips[1]!
@@ -404,7 +426,7 @@ describe('PracticeView', () => {
     view = mount(<PracticeViewWith env={r.env} />)
     await settle(r)
     expect(r.rooms).toEqual(['hints'])
-    click($$(view.container, '[role="radio"]').find((el) => el.textContent === 'All'))
+    pickLabels(view.container, 'All')
     expect(settings.value.labels.mode).toBe('all')
     // Names need room (R3 revised): the tight view hides its labels while the roomy engraving is
     // prepared, then gives way to it, which glides in from the old view's snapshot.
@@ -517,7 +539,7 @@ describe('PracticeView', () => {
     expect(strip.cursor).toBeGreaterThanOrEqual(1)
   })
 
-  it('has no passage bar; Settings is in the header, Speed and Labels in the footer (U12)', async () => {
+  it('has no passage bar; Settings is in the header, Speed in the footer, Labels in its menu (U12, U76)', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
     view = mount(<PracticeViewWith env={r.env} />)
@@ -531,8 +553,10 @@ describe('PracticeView', () => {
     click(byLabel(header, 'Settings'))
     expect(settingsOpen.value).toBe(true)
     expect(byLabel(header, 'Note names on the score')).toBeNull()
+    expect(byLabel(footer, 'Note names on the score')).toBeNull() // inside the closed menu (U76)
+    expect(byLabel(footer, 'Faster by 5 percent')).not.toBeNull() // Speed is always there
+    openMenu(view.container)
     expect(byLabel(footer, 'Note names on the score')).not.toBeNull()
-    expect(byLabel(footer, 'Faster by 5 percent')).not.toBeNull()
     expect(byLabel(header, 'Faster by 5 percent')).toBeNull()
     expect(byLabel(footer, 'Hint')).toBeNull()
     // No caption under the hand toggles.
@@ -644,19 +668,19 @@ describe('PracticeView', () => {
     expect(byLabel(view.container, 'Start')).not.toBeNull()
   })
 
-  it('the Play through tool toggles play-through with Start, Pause and Resume; no wrong-key cue (P12)', async () => {
+  it('the Play through switch toggles play-through with Start, Pause and Resume; no wrong-key cue (P12)', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
     view = mount(<PracticeViewWith env={r.env} />)
     await settle(r)
-    const tool = () => byLabel(view!.container, 'Play through') as HTMLButtonElement
+    const tool = () => playThroughSwitch(view!.container)
     expect(tool()).not.toBeNull()
-    expect(tool().getAttribute('aria-pressed')).toBe('false')
+    expect(tool().checked).toBe(false)
     expect(tool().disabled).toBe(false)
     click(tool())
     await settle(r, 1)
     expect($(view.container, '[data-activity]')?.dataset['activity']).toBe('playing')
-    expect(tool().getAttribute('aria-pressed')).toBe('true')
+    expect(tool().checked).toBe(true)
     click(byLabel(view.container, 'Start'))
     await settle(r)
     expect(byLabel(view.container, 'Pause')).not.toBeNull()
@@ -673,7 +697,7 @@ describe('PracticeView', () => {
     click(tool())
     await settle(r, 1)
     expect($(view.container, '[data-activity]')?.dataset['activity']).not.toBe('playing')
-    expect(tool().getAttribute('aria-pressed')).toBe('false')
+    expect(tool().checked).toBe(false)
     // Both hands off is Listen: play-through is not available there.
     click(byLabel(view.container, 'Left hand'))
     await settle(r, 1)
@@ -682,13 +706,150 @@ describe('PracticeView', () => {
     expect(tool().disabled).toBe(true)
   })
 
-  it('the Play through tool is disabled without a connected piano (P12, U27)', async () => {
+  it('the Keep time switch: exclusive with Play through, a badge on Menu, Start counts in over the stage (P13)', async () => {
+    const r = await rig()
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    const keep = () => menuSwitch(view!.container, 'Keep time')
+    const badge = () => $(view!.container, '[data-testid="keep-time-badge"]')
+    expect(keep().checked).toBe(false)
+    expect(keep().disabled).toBe(false)
+    expect(badge()).toBeNull()
+    click(playThroughSwitch(view.container))
+    await settle(r, 1)
+    click(keep())
+    await settle(r, 1)
+    expect(keep().checked).toBe(true)
+    expect(playThroughSwitch(view.container).checked).toBe(false)
+    expect(badge()).not.toBeNull()
+    // Saved on the piece through the debounced piece saver.
+    act(() => r.clock.advance(1100))
+    await settle(r)
+    expect((await r.storage.getPiece(r.pieceId))?.rhythm).toBe(true)
+    click(byLabel(view.container, 'Start'))
+    await settle(r)
+    const countIn = $(view.container, '[data-testid="count-in"]')
+    expect(countIn).not.toBeNull()
+    expect(countIn?.getAttribute('role')).toBe('status')
+    expect(Number(countIn?.textContent)).toBeGreaterThan(0)
+    // The count-in sits on the stage, never over the footer's hand toggles.
+    expect(countIn?.closest('footer')).toBeNull()
+    expect($(view.container, '[data-testid="ready"]')).toBeNull()
+    expect(byLabel(view.container, 'Pause')).not.toBeNull()
+    click(byLabel(view.container, 'Pause'))
+    await settle(r, 1)
+    expect($(view.container, '[data-testid="count-in"]')).toBeNull()
+    expect(byLabel(view.container, 'Start')).not.toBeNull()
+    // Play through switches Keep time off again.
+    click(playThroughSwitch(view.container))
+    await settle(r, 1)
+    expect(keep().checked).toBe(false)
+    expect(badge()).toBeNull()
+  })
+
+  it('the Play through switch is disabled without a connected piano (P12, U27)', async () => {
     connectionStatus.value = { state: 'disconnected' }
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
     view = mount(<PracticeViewWith env={r.env} />)
     await settle(r)
-    expect((byLabel(view.container, 'Play through') as HTMLButtonElement).disabled).toBe(true)
+    expect(playThroughSwitch(view.container).disabled).toBe(true)
+  })
+
+  describe('footer menu (U76)', () => {
+    const menuButton = () => byLabel($(view!.container, 'footer')!, 'Menu')!
+    const panel = () => byLabel(view!.container, 'Practice menu')
+    /** Lets the 160 ms fade-out finish. */
+    const faded = () =>
+      act(async () => {
+        await new Promise((res) => setTimeout(res, 400))
+      })
+
+    async function opened(): Promise<Rig> {
+      const r = await rig()
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={r.env} />)
+      await settle(r)
+      return r
+    }
+
+    it('opens a popover dialog with Note names, Play through, Keep time and Show keys; aria-expanded follows', async () => {
+      await opened()
+      const button = menuButton()
+      expect(button.getAttribute('aria-haspopup')).toBe('dialog')
+      expect(button.getAttribute('aria-expanded')).toBe('false')
+      expect(panel()).toBeNull()
+      click(button)
+      expect(button.getAttribute('aria-expanded')).toBe('true')
+      const dialog = panel()!
+      expect(dialog.getAttribute('role')).toBe('dialog')
+      expect(dialog.getAttribute('aria-modal')).toBeNull()
+      expect(
+        [...dialog.children].map(
+          (row) => row.textContent?.trim().match(/^(Note names|Play through|Keep time|Show keys)/)?.[0],
+        ),
+      ).toEqual(['Note names', 'Play through', 'Keep time', 'Show keys'])
+      expect(byLabel(dialog, 'Faster by 5 percent')).toBeNull()
+      expect(byLabel(dialog, 'Note names on the score')).not.toBeNull()
+      expect(dialog.querySelectorAll('input[role="switch"]')).toHaveLength(3)
+      expect(dialog.contains(document.activeElement)).toBe(true)
+      // The Menu button again closes it.
+      click(button)
+      expect(button.getAttribute('aria-expanded')).toBe('false')
+      await faded()
+      expect(panel()).toBeNull()
+    })
+
+    it('Escape closes it and returns focus to the Menu button', async () => {
+      await opened()
+      const dialog = openMenu(view!.container)
+      press(dialog, 'Escape')
+      expect(menuButton().getAttribute('aria-expanded')).toBe('false')
+      expect(document.activeElement).toBe(menuButton())
+      await faded()
+      expect(panel()).toBeNull()
+    })
+
+    it('a press outside the menu closes it; one inside does not', async () => {
+      await opened()
+      const dialog = openMenu(view!.container)
+      act(() => {
+        dialog.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      })
+      expect(menuButton().getAttribute('aria-expanded')).toBe('true')
+      act(() => {
+        $(view!.container, 'header')!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      })
+      expect(menuButton().getAttribute('aria-expanded')).toBe('false')
+    })
+
+    it('closes when playback starts', async () => {
+      const r = await opened()
+      openMenu(view!.container)
+      click(byLabel(view!.container, 'Start'))
+      await settle(r)
+      expect(byLabel(view!.container, 'Pause')).not.toBeNull()
+      expect(menuButton().getAttribute('aria-expanded')).toBe('false')
+    })
+
+    it('Show keys is a switch in the menu; Speed stays in the footer outside it', async () => {
+      const r = await opened()
+      const footer = $(view!.container, 'footer')!
+      expect(byLabel(footer, 'Show keys')).toBeNull()
+      expect(byLabel(footer, 'Faster by 5 percent')).not.toBeNull()
+      const dialog = openMenu(view!.container)
+      expect(byLabel(dialog, 'Faster by 5 percent')).toBeNull()
+      const keys = menuSwitch(view!.container, 'Show keys')
+      expect(keys.checked).toBe(false)
+      expect($(view!.container, '[aria-label="Keyboard guide"]')).toBeNull()
+      click(keys)
+      await settle(r, 1)
+      expect(menuSwitch(view!.container, 'Show keys').checked).toBe(true)
+      expect($(view!.container, '[aria-label="Keyboard guide"]')).not.toBeNull()
+      // The menu stays open while toggling.
+      expect(menuButton().getAttribute('aria-expanded')).toBe('true')
+    })
   })
 
   it('the chrome recedes while playing and comes back on a tap near it or on pause (U13)', async () => {
@@ -733,6 +894,44 @@ describe('PracticeView', () => {
     click(byLabel(view.container, 'Pause'))
     await settle(r, 1)
     expect(screen().dataset['recede']).toBeUndefined()
+  })
+
+  it('the speed ladder select offers goals above the speed, shows its status and is saved on the piece', async () => {
+    const r = await rig()
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    act(() => r.strips.at(-1)!.options.onCursorAction?.())
+    await settle(r)
+    const panel = $(view.container, '[data-testid="repeat-controls"]')!
+    const select = $(panel, '[data-testid="ladder-select"]') as HTMLSelectElement
+    expect(select.closest('label')?.textContent).toContain('Speed ladder')
+    // At 100% the goals are the faster presets.
+    expect([...select.options].map((o) => o.textContent)).toEqual([
+      'Ladder: off',
+      'Ladder to 125%',
+      'Ladder to 150%',
+      'Ladder to 200%',
+    ])
+    expect($(panel, '[data-testid="ladder-line"]')).toBeNull()
+    act(() => {
+      select.value = '150'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await settle(r)
+    expect($(panel, '[data-testid="ladder-line"]')?.textContent).toBe('Ladder 100% → 150%')
+    act(() => r.clock.advance(1500))
+    await settle(r)
+    expect((await r.storage.getPiece(r.pieceId))?.ladder).toEqual({ goal: 1.5, step: 0.05 })
+    act(() => {
+      select.value = ''
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await settle(r)
+    expect($(panel, '[data-testid="ladder-line"]')).toBeNull()
+    act(() => r.clock.advance(1500))
+    await settle(r)
+    expect((await r.storage.getPiece(r.pieceId))?.ladder).toBeNull()
   })
 
   it('remembers hands, passage and speed on the piece', async () => {

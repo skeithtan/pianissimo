@@ -7,3 +7,6 @@ test-results/
 .DS_Store
 .vite/
 .claude/worktrees/
+
+# Private audio recordings (large; see tests/fixtures/private/audio/README.md)
+tests/fixtures/private/audio/*.wav

@@ -32,6 +32,17 @@ export interface ResumePosition {
   readonly savedAt: number
 }
 
+/**
+ * The speed ladder of a piece (Repeat mode): after each met consecutive-pass target the speed
+ * rises by `step` until it reaches `goal`. Both are speed multipliers (goal 1 = 100%, step 0.05).
+ */
+export interface LadderSettings {
+  /** Speed the climb ends at, in [0.05, 10]. */
+  readonly goal: number
+  /** Speed added per climb (and taken away per drop), in (0, 1]. */
+  readonly step: number
+}
+
 /** One library entry. Its heavy data (package, source) is stored separately by `scoreVersionId`. */
 export interface PieceRecord {
   readonly id: string
@@ -49,6 +60,10 @@ export interface PieceRecord {
   readonly lastPassage: PassageRange | null
   /** Consecutive-pass target for Repeat; null = unlimited. */
   readonly repeatTarget: number | null
+  /** Speed ladder for Repeat mode; null or absent (older records) = off. */
+  readonly ladder?: LadderSettings | null
+  /** Keep time (rhythm mode) is on for this piece; absent (older records) = off. */
+  readonly rhythm?: boolean
 }
 
 export interface NewPieceOptions {
@@ -72,6 +87,7 @@ export function newPieceRecord(pkg: ScorePackage, options: NewPieceOptions = {})
     resume: null,
     lastPassage: null,
     repeatTarget: null,
+    ladder: null,
   }
 }
 

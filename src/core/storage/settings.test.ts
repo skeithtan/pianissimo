@@ -58,6 +58,7 @@ const custom: AppSettings = {
   },
   sound: { destination: 'browser', browserVolume: 0.25, monitorInput: true },
   metronome: { enabled: true, volume: 0.1 },
+  rhythm: { toleranceMs: 250 },
   view: { zoom: 1.75, pageZoom: 1.25, theme: 'dark', scorePaper: 'light' },
   suggestions: { enabled: false },
 }
@@ -80,9 +81,10 @@ describe('normalizeSettings', () => {
   })
 
   it('fills fields missing from an older version with defaults', () => {
-    const { metronome: _m, view: _v, suggestions: _s, ...older } = custom
+    const { metronome: _m, view: _v, suggestions: _s, rhythm: _r, ...older } = custom
     const loaded = normalizeSettings(older)
     expect(loaded.metronome).toEqual(DEFAULT_SETTINGS.metronome)
+    expect(loaded.rhythm).toEqual({ toleranceMs: 150 })
     expect(loaded.view).toEqual(DEFAULT_SETTINGS.view)
     expect(loaded.suggestions).toEqual(DEFAULT_SETTINGS.suggestions)
     expect(loaded.naming).toEqual(custom.naming)
@@ -100,6 +102,18 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({ view: { pageZoom: 0.8 } }).view.pageZoom).toBe(0.8)
     expect(normalizeSettings({ view: { pageZoom: 0 } }).view.pageZoom).toBe(1)
     expect(normalizeSettings({ view: { pageZoom: 'big' } }).view.pageZoom).toBe(1)
+  })
+
+  it('reads the Keep time tolerance: clamped to 40–500 ms, whole ms, the default for anything else', () => {
+    expect(DEFAULT_SETTINGS.rhythm).toEqual({ toleranceMs: 150 })
+    expect(normalizeSettings({ rhythm: { toleranceMs: 80 } }).rhythm.toleranceMs).toBe(80)
+    expect(normalizeSettings({ rhythm: { toleranceMs: 10 } }).rhythm.toleranceMs).toBe(40)
+    expect(normalizeSettings({ rhythm: { toleranceMs: 9000 } }).rhythm.toleranceMs).toBe(500)
+    expect(normalizeSettings({ rhythm: { toleranceMs: 120.6 } }).rhythm.toleranceMs).toBe(121)
+    for (const toleranceMs of ['tight', null, Number.NaN, Infinity]) {
+      expect(normalizeSettings({ rhythm: { toleranceMs } }).rhythm.toleranceMs).toBe(150)
+    }
+    expect(normalizeSettings({ rhythm: 'loose' }).rhythm.toleranceMs).toBe(150)
   })
 
   it('falls back per field for wrong types and unknown enum values', () => {

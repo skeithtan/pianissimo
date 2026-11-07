@@ -144,6 +144,14 @@
   background: var(--accent-fg);
   transform: translateX(22px);
 }
+.toggleRow[data-disabled='true'] {
+  color: var(--fg-muted);
+  cursor: default;
+}
+.toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 
 .field {
   display: flex;

@@ -23,6 +23,8 @@ function open(features = ALL_FEATURES) {
   return opened.root
 }
 
+const DEFAULT_HINTS = settings.peek().hints
+
 const example = (panel: HTMLElement, id: string) => $(panel, `[data-testid="example-${id}"]`)?.textContent
 
 describe('Note names', () => {
@@ -181,6 +183,29 @@ describe('Hints', () => {
     expect(settings.value.hints.autoThreshold).toBe(1) // nothing else changes
     click(toggle(panel, 'Red flash on a wrong note'))
     expect(settings.value.hints.damageFlash).toBe(true)
+  })
+})
+
+describe('Keep time', () => {
+  it('chooses the timing window: Tight, Normal (the default) or Loose', () => {
+    const panel = openTab(open(), 'Hints')
+    expect(panel.textContent).toContain('Keep time')
+    expect(radio(panel, 'Keep time window', 'Normal ±150 ms').getAttribute('aria-checked')).toBe('true')
+    click(radio(panel, 'Keep time window', 'Tight ±80 ms'))
+    expect(settings.value.rhythm.toleranceMs).toBe(80)
+    expect(radio(panel, 'Keep time window', 'Tight ±80 ms').getAttribute('aria-checked')).toBe('true')
+    click(radio(panel, 'Keep time window', 'Loose ±250 ms'))
+    expect(settings.value.rhythm.toleranceMs).toBe(250)
+    expect(settings.value.hints).toEqual(DEFAULT_HINTS) // nothing else changes
+  })
+
+  it('shows a stored window that is not a preset in words, with no choice selected', () => {
+    updateSettings({ rhythm: { toleranceMs: 120 } })
+    const panel = openTab(open(), 'Hints')
+    for (const label of ['Tight ±80 ms', 'Normal ±150 ms', 'Loose ±250 ms']) {
+      expect(radio(panel, 'Keep time window', label).getAttribute('aria-checked')).toBe('false')
+    }
+    expect(panel.textContent).toContain('Now ±120 ms.')
   })
 })
 

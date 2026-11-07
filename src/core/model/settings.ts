@@ -119,6 +119,19 @@ export interface MetronomeSettings {
   readonly volume: number
 }
 
+/**
+ * Keep time (rhythm mode, DECISIONS P13): a group completed within ±`toleranceMs` of its
+ * scheduled time is on time. Must equal the engine's `DEFAULT_RHYTHM_TOLERANCE_MS` by default
+ * (checked by a test; `core/model` does not import the engine).
+ */
+export interface RhythmSettings {
+  /** Milliseconds, in [MIN_RHYTHM_TOLERANCE_MS, MAX_RHYTHM_TOLERANCE_MS]. */
+  readonly toleranceMs: number
+}
+
+export const MIN_RHYTHM_TOLERANCE_MS = 40
+export const MAX_RHYTHM_TOLERANCE_MS = 500
+
 export interface ViewSettings {
   /** Notation scale factor (pinch zoom) of the landscape strip. */
   readonly zoom: number
@@ -145,6 +158,8 @@ export interface AppSettings {
   readonly route: MidiRouteSettings
   readonly sound: SoundSettings
   readonly metronome: MetronomeSettings
+  /** Keep time (rhythm mode). Absent in older stored settings: normalized to the default. */
+  readonly rhythm: RhythmSettings
   readonly view: ViewSettings
   readonly suggestions: SuggestionSettings
 }
@@ -194,6 +209,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   sound: { destination: 'auto', browserVolume: 0.8, monitorInput: false },
   metronome: { enabled: false, volume: 0.6 },
+  rhythm: { toleranceMs: 150 },
   view: { zoom: 1, pageZoom: 1, theme: 'system', scorePaper: 'theme' },
   suggestions: { enabled: true },
 }

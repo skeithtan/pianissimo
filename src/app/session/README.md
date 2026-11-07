@@ -13,7 +13,8 @@ practice", "Execution and rendering architecture", "Storage and recovery" (resum
 
 | Export | Purpose |
 | --- | --- |
-| `new PracticeSession({pieceId, model, selection, settings, startPosition?, repeatTarget?}, deps)` | One session per opened piece. |
+| `new PracticeSession({pieceId, model, selection, settings, startPosition?, repeatTarget?, ladder?, rhythm?}, deps)` | One session per opened piece (`rhythm`: the piece's saved Keep time choice). |
+| `LADDER_DEFAULT_TARGET`, `LADDER_DROP_AFTER`, `LADDER_STEP` | Speed ladder constants (3 passes per rung without a Repeat target, 2 failures per drop, the 5% step the screen sets). |
 | `practiceModel(model, userTempo)` | Applies a user-supplied tempo (`withUserTempo`) when the score has none. |
 | `selectionTimeline`, `startPlan`, `passageSummary`, `rangeText`, `tempoText`, `clampPassage`, `HAND_TEXT` | Selection helpers (timeline, plain-language blockers, "Right hand · Bars 5–8 · 80% (♩ = 58)"). |
 | `PersistentLabels`, `labelSnapshot`, `mergeOpacity` | Persistent label texts, eligibility and fades; engine label snapshot (`rulesJson = JSON.stringify(labels.rules)`). |
@@ -36,7 +37,7 @@ one-bar loop), `repeatAtCursor(occ?)` (the cursor's repeat button: pauses what p
 Repeat at the bar the button was over: `occ` when the view reports one, the strip's bar under its
 fixed cursor line while browsing, else the cursor's bar), `setChromeRevealed(bool)` (the view's chrome is revealed, not in
 focus mode; default true), `setInputAvailable(bool)` (no piano input: the hands
-are held in Listen without saving `lastHands`, U27), `setRepeatTarget(n)`, `dismissResult()`,
+are held in Listen without saving `lastHands`, U27), `setRepeatTarget(n)`, `setLadder(ladder | null)` (speed ladder, below), `setRhythmMode(on)` (Keep time, below), `dismissResult()`,
 `setSelection({hands?, range?, multiplier?})`, `updateSettings(settings)`,
 `beforeApplyLabels(next)` (register with `onBeforeApplyLabels`), `layoutChanging()`
 (re-prepare), `viewChanged()` (zoom / orientation; never interrupts, P5 revised), `suspend()` (save progress when hidden without pausing), `dispose()`.
@@ -114,7 +115,7 @@ Stores (subscribe from the view):
 
 | Store | Changes | Consumers |
 | --- | --- | --- |
-| `ui: SessionUi` | phase/selection/coarse status only (published from the frame, shallow-compared) | the screen |
+| `ui: SessionUi` | phase/selection/coarse status only (published from the frame, shallow-compared; `countIn` once per count-in beat) | the screen |
 | `progress: {position, occ}` | ≤ once per frame | `ScoreOverview`, `LoopSteppers` |
 | `feedback: {visible, reason, pulse, cue}` | ≤ once per frame | `StageCue` at the cursor: `{kind: 'octave', direction}` or `{kind: 'accidental', text, accidental}` (U30 revised) |
 | `guide: {keys, rollDirection}` | ≤ once per frame while the guide is visible, only when a key changed (`guide.ts`) | `KeyboardGuide` |
@@ -171,7 +172,7 @@ Stores (subscribe from the view):
   owner), leaving the view (`user-stop`). Reading interruptions offer Resume / Restart. Hiding
   the page only saves progress: it does not pause practice, Listen, or their transports.
 - **Persistence.** `lastHands/lastPassage/lastMultiplier` on selection change (debounced),
-  `repeatTarget`, `resume` on pause/seek/hide/dispose and every ≥ 5 s of reading (from the
+  `repeatTarget`, `ladder`, `rhythm` (Keep time), `resume` on pause/seek/hide/dispose and every ≥ 5 s of reading (from the
   frame, never per event); cleared at the end of the piece.
 - **Sound** (DECISIONS S4). `playbackDestination(settings, output, browserSound)`: Auto (the
   default) → the MIDI output when there is one, else browser sound; Connected piano → MIDI only;
@@ -181,6 +182,84 @@ Stores (subscribe from the view):
   imports the bank (Playwright-checked). Under Auto a piano connecting while the device plays
   stops playback cleanly (the next Start uses the piano); a piano disconnecting interrupts and
   the next Start continues through the device. The metronome is separate (Web Audio).
+
+## Speed ladder (Repeat mode)
+
+The metronome-ladder technique, automated (`ladder.ts` holds the pure rules, the session applies
+them). `SessionOptions.ladder` / `setLadder(LadderSettings | null)` set it (`{ goal, step }`,
+speed multipliers; saved on the piece as `ladder` through the piece saver, like `repeatTarget`).
+`ui.ladder: LadderUi | null` = `{ goal, step, start, failures, done }`: `start` is the speed when
+the ladder was switched on (or the opening speed) and the floor for drops. New settings for a
+ladder already on keep its `start` and `failures`. It acts only while Repeat mode is open;
+closing Repeat keeps the setting.
+
+In `#onRecord`, for a completed scored attempt (target = `repeatTarget ?? LADDER_DEFAULT_TARGET`):
+a pass with streak ≥ target climbs to `min(goal, speed + step)` on the 5% grid
+(`offsetOnGrid` in `ui/speed.ts`), or sets `done` at the goal; a failure counts, and
+`LADDER_DROP_AFTER` (2) failures in a row drop to `max(start, speed − step)` (a no-op at the
+floor). Any pass resets the failures; a finished ladder (`done`) does nothing more. A manual speed
+change (`setSelection({ multiplier })`) resets the failures, lowers `start` below it and sets
+`done` exactly when the new speed is at or above the goal. `lastResult.ladder` says what happened
+(`climbedTo` / `droppedTo` / `done`); a climb keeps Repeat going (`targetReached` false).
+
+The new speed waits for the Repeat reset (`#ladderNext`): the music finishes the passage at the
+old speed, then `#ladderStep` changes the speed through `#select` (the `setSelection` path: saved
+as `lastMultiplier`, new comparison context, the streak starts over) with the `ladder` flag, which
+keeps the result card and its marks and prepares a fresh attempt at the new speed even though the
+last one is `completed`; the strip wraps to the loop start. Any selection change before the reset
+cancels the pending speed. Tests: `ladder.test.ts`, `PracticeSession.ladder.test.ts`.
+
+## Keep time (rhythm mode, DECISIONS P13)
+
+`setRhythmMode(on)` (saved on the piece as `rhythm` through the piece saver; `SessionOptions.rhythm`
+opens with it) turns on Keep time: `ui.rhythm` true, `startAction` always `'scored'`
+(`startPlan(…, { rhythm: true })`: over the loop in Repeat mode, else the whole piece from its
+start; ordinary reading is not available). It needs a hand and a numerical tempo (refused
+otherwise; with the hands off the setting stays and Start is Listen). Exclusive with play-through:
+switching one on switches the other off. Switching either way ends an attempt in progress
+('mode-change') and leaves the engine in ordinary reading, paused (off: at the attempt's current
+position); the transport is rebuilt by the next Start.
+
+Every scored attempt is then `transport: 'strict'` with `rhythm: { toleranceMs }` from
+`settings.rhythm` (`#scoredKind`, also for Restart, Repeat resets, ladder steps and selection
+changes that prepare a fresh attempt). The transport is the gated one of practice (silent with
+both hands, the other hand automatic with one, metronome per the setting).
+
+- **Count-in.** When the engine reaches Ready, `#beginCountIn` counts one bar (`countIn.ts`:
+  the meter numerator at the passage start, compound numerators above 4 divisible by 3 in dotted
+  beats, 4 beats without a meter; the beat from the tempo segment there ÷ speed). All clicks go to
+  the metronome sink at once (accent first); Start loads the metronome for it even when the
+  Metronome setting is off (the attempt's own clicks keep following the setting). `ui.countIn`
+  counts the beats left (one timer per beat). At the end (`#endCountIn`) the engine's
+  `startRunning(t)` and `transport.play(t)` get the same timestamp. Presses meanwhile are not judged
+  (the engine ignores them in Ready). Leaving Ready (pause, seek, selection change, interruption,
+  a new attempt) cancels it: the timer goes and the sink's `cancel(now)` drops its clicks.
+- **Gates.** The music never waits. At the count-in's end every gate is released before
+  `play`, so the transport never holds (releasing on arrival would re-anchor the music at each
+  timer wake-up and let jitter accumulate); `onGateReached(i)` still reports
+  `transportArrived(i, now)` and calls `releaseGate(i)` again, a harmless no-op. `input-complete`
+  never releases a gate in strict mode (it would move the music ahead).
+- **Feedback.** `missed` → the soft wash (`flash.hit(now, now + DEFAULT_WRONG_FEEDBACK_MS,
+  { soft: true })`, with the damage-flash setting), no pulse, marker or cue. `wrong` with reason
+  `'late'` → the amber marker (`setEarlyMarker`) for `DEFAULT_WRONG_FEEDBACK_MS` (the engine records
+  nothing for it, so the session times it; a tick clears it). Nothing else new while playing; after
+  the attempt the corrections (missed / late marks) and the result card show what happened.
+  `lastResult.timing` = `{ groups, onTime, early, late, missed }` from `timingAccuracy(record)`.
+- **Lifecycle.** Pause interrupts (scored); Start afterwards is a fresh attempt from the passage
+  start with a count-in. Seeks interrupt, also during the count-in. Speed, hands and range changes
+  prepare a fresh attempt as for gated attempts, so one in progress counts in again. Repeat: every
+  pass (Repeat reset, Restart, Start, a ladder step) goes Preparing → Ready → count-in → running;
+  the consecutive-pass target and the ladder read `record.passed` unchanged. Lead-ins (U38) are
+  off: a seek in Repeat mode never sets one up; it interrupts an attempt, or while idle only moves
+  the reading cursor, and the next Start begins at the loop start with a count-in. The playhead is
+  not draggable while Keep time is on.
+- **Settings.** A changed `settings.rhythm.toleranceMs` goes to the engine
+  (`updateSettings({ rhythm })`), which interrupts an active strict attempt ('setting-change'); the
+  interruption then reads "The Keep time tolerance changed, so the attempt stopped."
+  `SessionSettings.rhythm` is optional (Consult has no Keep time; absent = the engine default).
+
+Tests: `PracticeSession.rhythm.test.ts` (manual clock, a recording metronome module),
+`countIn.test.ts`, `selection.test.ts`.
 
 ## Play-through (DECISIONS P12)
 

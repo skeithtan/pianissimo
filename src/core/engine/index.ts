@@ -5,7 +5,9 @@ export {
   PracticeEngine,
   defaultTransport,
   matchingRulesFor,
+  rhythmMatchingRulesFor,
   DEFAULT_PEDAL_DOWN_THRESHOLD,
+  DEFAULT_RHYTHM_TOLERANCE_MS,
   DEFAULT_WRONG_FEEDBACK_MS,
   EARLY_PRESS_GRACE_MS,
 } from './engine'
@@ -39,7 +41,7 @@ export {
 export { easeInOut, fadeOutOpacity } from './fade'
 export { buildAttemptRecord, comparisonContextOf, READING_UNTIMED } from './attempt'
 export type { HintSource } from './hints'
-export type { GroupOutcome } from '../model/practice'
+export type { GroupOutcome, RhythmParams } from '../model/practice'
 export type {
   AttemptStartOptions,
   EngineConfig,
@@ -54,6 +56,7 @@ export type {
   PracticeMode,
   ReadyBlocker,
   TransportEta,
+  TransportKind,
   TransportMode,
   WrongReason,
 } from './types'

@@ -2,6 +2,7 @@
  * Practice session coordinator (WP10). Framework-free; see README.md.
  */
 export { PracticeSession, REVEAL_FALLBACK_S, occAt, type SessionOptions } from './PracticeSession'
+export { LADDER_DEFAULT_TARGET, LADDER_DROP_AFTER, LADDER_STEP } from './ladder'
 export { PersistentLabels, labelSnapshot, mergeOpacity } from './labels'
 export { accompanimentAllowed, hasSoundOutput } from './output'
 export { createPieceSaver, type PieceSaver } from './persistence'

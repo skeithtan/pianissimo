@@ -4,7 +4,7 @@
  * incomplete attempts are diagnostics outside every ranking.
  */
 import { useId, useState } from 'preact/hooks'
-import { formatSeconds } from '../../core/history'
+import { formatSeconds, timingAccuracy } from '../../core/history'
 import type { ContextResults } from '../../core/history'
 import type { AttemptRecord } from '../../core/model/practice'
 import { Button } from '../../ui/controls'
@@ -146,8 +146,8 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
         </div>
       </header>
       <p class={styles.note}>
-        Only attempts with the same score version, passage, hands, speed, accompaniment mode and matching rules are
-        compared here. Change any of them and a separate history starts.
+        Only attempts with the same score version, passage, hands, speed, accompaniment or keep-time mode (and its
+        timing window) and matching rules are compared here. Change any of them and a separate history starts.
       </p>
 
       <div class={styles.bestRow}>
@@ -156,13 +156,21 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
           {best ? (
             <>
               <p class={styles.bestValue}>
-                {best.completionTimeSec === undefined ? '—' : formatSeconds(best.completionTimeSec)}
+                {best.context.transport === 'strict'
+                  ? `±${Math.round(timingAccuracy(best)?.meanAbsOffsetMs ?? 0)} ms`
+                  : best.completionTimeSec === undefined
+                    ? '—'
+                    : formatSeconds(best.completionTimeSec)}
               </p>
               <p class={styles.muted}>
                 {signedTime(best) !== null ? `${signedTime(best)} from expected · ` : ''}
                 {whenText(best.createdAt, now)}
               </p>
-              <p class={styles.muted}>Closest to the expected time, because faster is not automatically better.</p>
+              <p class={styles.muted}>
+                {best.context.transport === 'strict'
+                  ? 'Smallest average offset from the music, over all groups.'
+                  : 'Closest to the expected time, because faster is not automatically better.'}
+              </p>
             </>
           ) : (
             <p class={styles.muted}>No completion with zero wrong notes and no assistance yet in this setting.</p>
@@ -177,7 +185,11 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
 
       <Group
         title="Clean and unassisted"
-        note="Ranked by closeness to the expected time."
+        note={
+          history.cleanRanking.some((a) => a.context.transport === 'strict')
+            ? 'Ranked by average offset from the music.'
+            : 'Ranked by closeness to the expected time.'
+        }
         kind="clean"
         attempts={history.cleanRanking}
         selectedId={selectedId}

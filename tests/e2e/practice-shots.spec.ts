@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
-import { installFakeMidi, playWhenDue, seedPiece, waitForOnset } from './practice-helpers'
+import { installFakeMidi, playWhenDue, seedPiece, setShowKeys, waitForOnset } from './practice-helpers'
 
 const SHOTS = process.env['PRACTICE_SHOTS']
 const SIZES = [
@@ -63,7 +63,7 @@ test.describe('practice screenshots', () => {
         await shot('repeat')
         await page.getByTestId('repeat-controls').getByRole('button', { name: 'Clear loop', exact: true }).click()
 
-        await page.getByRole('button', { name: 'Show keys' }).click()
+        await setShowKeys(page)
         await page.getByRole('button', { name: 'Start', exact: true }).click()
         await playWhenDue(page, 60, 48)
         await waitForOnset(page, 62)

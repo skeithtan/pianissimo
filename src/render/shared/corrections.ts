@@ -13,13 +13,13 @@ import type { Box, PreparedLayout, StaffGeometry } from '../types'
 /**
  * A teacher's correction after an attempt: a red-pen ring around `notes` (performed-note indices,
  * the view's note ids) with a short text in a band beyond the staves ("Wrong note", "F♯, not F",
- * "Wrong octave ↑", "Together", "Tied, hold it", "Too soon", "Too late"). Every kind is drawn in
+ * "Wrong octave ↑", "Together", "Tied, hold it", "Too soon", "Too late", "Missed"). Every kind is drawn in
  * the same red pen and named by a class (`pn-corr-<kind>`); a `'spread'` mark across staves also
  * joins its rings.
  */
 export interface CorrectionMark {
   readonly notes: readonly number[]
-  readonly kind: 'wrong' | 'early' | 'late' | 'accidental' | 'octave' | 'spread' | 'tie'
+  readonly kind: 'wrong' | 'early' | 'late' | 'accidental' | 'octave' | 'spread' | 'tie' | 'missed'
   readonly text: string
 }
 

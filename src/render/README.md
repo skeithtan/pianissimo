@@ -32,7 +32,7 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   while hidden; no pressed state; it sits dead center in the gap between the staves,
   `shared/cursorAction.ts`), `setCorrections(marks: CorrectionMark[])` (teacher's red-pen
   marks after an attempt, `{ notes, kind, text }` with kind `'wrong'|'early'|'late'|'accidental'|
-  'octave'|'spread'|'tie'|'pedal'`; `[]` clears them),
+  'octave'|'spread'|'tie'|'pedal'|'missed'`; `[]` clears them),
   `setBrowseEnabled(bool)`, `returnToCurrent()`, `isBrowsing()`, `browsedPosition()`, `setZoom(s)`, `zoom()`,
   `occAt(clientX)`, `visibleLabels()`, `stats()`, `flushNow()` (tests), `destroy()`,
   `respaceSnapshot(nextLayout)` / `respaceFrom(snapshot)` / `whenRespaced()` / `holdLabels(on)`

@@ -5,7 +5,15 @@
 import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 import { idbAll, sheet, storedSettings } from './app-helpers'
-import { installFakeMidi, loopWholePiece, openSeededPractice, play, playWhenDue, seedPiece } from './practice-helpers'
+import {
+  installFakeMidi,
+  loopWholePiece,
+  openFooterMenu,
+  openSeededPractice,
+  play,
+  playWhenDue,
+  seedPiece,
+} from './practice-helpers'
 
 /** Settings → Backup (export and restore are not on the Library page). */
 async function openBackup(page: Page): Promise<void> {
@@ -162,6 +170,7 @@ test.describe('settings survive a reload', () => {
     await installFakeMidi(page)
     await seedPiece(page)
     await openSeededPractice(page)
+    await openFooterMenu(page)
     const all = page.getByRole('radiogroup', { name: 'Note names on the score' }).getByRole('radio', { name: 'All' })
     await all.click()
     await expect(all).toHaveAttribute('aria-checked', 'true')
@@ -171,6 +180,7 @@ test.describe('settings survive a reload', () => {
     await expect(page.locator('h1', { hasText: 'Two Hands' })).toBeVisible({ timeout: 60_000 })
     await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText(/Preparing the score/)).toHaveCount(0, { timeout: 60_000 })
+    await openFooterMenu(page)
     await expect(
       page.getByRole('radiogroup', { name: 'Note names on the score' }).getByRole('radio', { name: 'All' }),
     ).toHaveAttribute('aria-checked', 'true')

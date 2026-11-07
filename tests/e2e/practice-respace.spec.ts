@@ -5,7 +5,7 @@
  */
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { SHOT_DIR, installFakeMidi, openSeededPractice, seedPiece } from './practice-helpers'
+import { SHOT_DIR, installFakeMidi, openFooterMenu, openSeededPractice, seedPiece } from './practice-helpers'
 
 /** Screen x of every notehead, left to right (first engraving of each note only). */
 async function headXs(page: Page): Promise<number[]> {
@@ -83,11 +83,25 @@ async function watchGlides(page: Page): Promise<void> {
 const glides = (page: Page): Promise<Glide[]> => page.evaluate(() => window.__glides)
 const engravings = (page: Page): Promise<number> => page.evaluate(() => window.__engravings)
 
+/**
+ * Note names live in the footer menu (U76), which closes when the chrome recedes. During Listen
+ * the receded tools are inert, so the menu is opened the way the labels are chosen here: a
+ * programmatic click.
+ */
+async function openMenuDirectly(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const menu = document.querySelector<HTMLElement>('footer button[aria-label="Menu"]')!
+    if (menu.getAttribute('aria-expanded') !== 'true') menu.click()
+  })
+  await page.waitForFunction(() => document.querySelector('[role="radiogroup"][aria-label="Note names on the score"]'))
+}
+
 /** The last animated note and the real note on the first frame after the overlay disappears. */
 async function playbackSeam(
   page: Page,
   label: string,
 ): Promise<{ distance: number; playbackDistance: number; elapsed: number; frames: number }> {
+  await openMenuDirectly(page)
   return page.evaluate(async (name) => {
     const group = document.querySelector('[role="radiogroup"][aria-label="Note names on the score"]')!
     const control = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
@@ -161,6 +175,7 @@ test.describe('respacing between Labels Off and All', () => {
     await page.setViewportSize({ width: 1180, height: 820 })
     await seedPiece(page)
     await openSeededPractice(page)
+    await openFooterMenu(page)
     const group = page.getByRole('radiogroup', { name: 'Note names on the score' })
     const tight = await headXs(page)
     expect(tight.length).toBeGreaterThan(4)
@@ -210,6 +225,7 @@ test.describe('respacing between Labels Off and All', () => {
     const before = await engravings(page)
     // Seen being engraved in the background (a fresh browser context has nothing stored).
     expect(before).toBe(1)
+    await openFooterMenu(page)
     await page.getByRole('radiogroup', { name: 'Note names on the score' }).getByRole('radio', { name: 'All' }).click()
     await expect.poll(() => glides(page)).toHaveLength(1)
     await expect(page.locator('.pn-respace')).toHaveCount(0)
@@ -241,6 +257,7 @@ test.describe('respacing between Labels Off and All', () => {
           // The two visible-name modes share spacing, so neither switch replaces the score.
           // Address the controls directly while focus mode makes their row inert.
           for (const sameRoom of ['All', 'Conditional']) {
+            await openMenuDirectly(page)
             await page
               .locator('[role="radio"]')
               .filter({ hasText: new RegExp(`^${sameRoom}$`) })
@@ -262,6 +279,7 @@ test.describe('respacing between Labels Off and All', () => {
     await page.getByRole('button', { name: 'Right hand', exact: true }).click()
     await page.getByRole('button', { name: 'Listen', exact: true }).click()
     await watchGlides(page)
+    await openFooterMenu(page)
     const group = page.getByRole('radiogroup', { name: 'Note names on the score' })
     await group.getByRole('radio', { name: 'All' }).click()
     await expect(page.locator('.pn-respace')).toHaveCount(1)
@@ -303,11 +321,14 @@ test.describe('respacing between Labels Off and All', () => {
       }
       for (const mode of ['All', 'Off', 'Conditional', 'All', 'Conditional']) {
         sample(mode)
-        // Direct activation keeps the test focused on playback, even with receded controls.
-        const button = [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
-          (el) => el.textContent === mode,
-        )!
-        button.click()
+        // Direct activation keeps the test focused on playback, even with receded controls. Note
+        // names live in the footer menu (U76), which closes when the chrome recedes: reopen it.
+        const radio = () =>
+          [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((el) => el.textContent === mode)
+        const menu = document.querySelector<HTMLElement>('footer button[aria-label="Menu"]')!
+        if (menu.getAttribute('aria-expanded') !== 'true') menu.click()
+        while (!radio()) await new Promise((resolve) => requestAnimationFrame(resolve))
+        radio()!.click()
         await new Promise<void>((resolve) => {
           const started = performance.now()
           const frame = () => {

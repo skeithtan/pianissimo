@@ -15,6 +15,7 @@ import type {
   LabelSettingsSnapshot,
   MeasureTraversal,
   OnsetTimestamp,
+  RhythmParams,
 } from '../model/practice'
 import { contextKey, measureContextKey } from '../model/practice'
 import type { Timeline, TimelineMeasure } from './timeline'
@@ -24,6 +25,8 @@ interface MeasureAcc {
   wrongExcludingBoundary: number
   readonly errorGroups: Set<number>
   completed: number
+  /** Strict transport: groups of the bar closed by the clock (they count as traversed). */
+  missed: number
   tempHint: boolean
   keyboard: boolean
 }
@@ -35,6 +38,9 @@ interface GroupAcc {
   readonly wrongPitches: number[]
   spreadMs: number
   tieEnd: number
+  /** Strict transport: completion − scheduled arrival (whole ms); null when not completed or not strict. */
+  offsetMs: number | null
+  missed: boolean
 }
 
 /** How a group's completion went besides first-pass (all default to 0). */
@@ -43,6 +49,8 @@ export interface GroupCompletion {
   readonly lateMs?: number
   /** Whole ms between the group's first and last accepted attack. */
   readonly spreadMs?: number
+  /** Strict transport: whole ms from the scheduled arrival to completion (negative = early). */
+  readonly offsetMs?: number
 }
 
 export const READING_UNTIMED = 'Ordinary reading is not timed.'
@@ -59,6 +67,8 @@ export class AttemptLog {
   /** Wrong attacks that were right pitches pressed too early (reason `'early'`, E12). */
   earlyAttacks = 0
   groupsFirstPass = 0
+  /** Strict transport: groups closed by the clock before they were complete. */
+  missedGroups = 0
   hintRequests = 0
   autoHints = 0
   keyboardShown = false
@@ -86,6 +96,7 @@ export class AttemptLog {
         wrongExcludingBoundary: 0,
         errorGroups: new Set(),
         completed: 0,
+        missed: 0,
         tempHint: false,
         keyboard: false,
       }
@@ -102,7 +113,7 @@ export class AttemptLog {
   #group(group: number): GroupAcc {
     let g = this.#groups.get(group)
     if (!g) {
-      g = { wrong: 0, early: 0, lateMs: 0, wrongPitches: [], spreadMs: 0, tieEnd: 0 }
+      g = { wrong: 0, early: 0, lateMs: 0, wrongPitches: [], spreadMs: 0, tieEnd: 0, offsetMs: null, missed: false }
       this.#groups.set(group, g)
     }
     return g
@@ -150,9 +161,31 @@ export class AttemptLog {
     const g = this.#group(group)
     g.lateMs = detail.lateMs ?? 0
     g.spreadMs = detail.spreadMs ?? 0
+    if (detail.offsetMs !== undefined) g.offsetMs = detail.offsetMs
     this.#measure(occ).completed++
     if (firstPass) this.groupsFirstPass++
     if (this.clockStart !== null) this.onsets.push({ group, t: (time - this.clockStart) / 1000 })
+  }
+
+  /**
+   * Strict transport: the clock closed the group before it was complete. It counts as a group
+   * with errors of its bar and as traversed (the bar can still be complete).
+   */
+  groupMissed(group: number, occ: number): void {
+    if (this.#completedGroups.has(group)) return
+    const g = this.#group(group)
+    if (g.missed) return
+    g.missed = true
+    this.missedGroups++
+    const m = this.#measure(occ)
+    m.missed++
+    m.errorGroups.add(group)
+  }
+
+  /** Strict transport: every completed group's offset is within ±`toleranceMs`. */
+  offsetsWithin(toleranceMs: number): boolean {
+    for (const g of this.#groups.values()) if (g.offsetMs !== null && Math.abs(g.offsetMs) > toleranceMs) return false
+    return true
   }
 
   /** A temporary hint revealed this group's names. */
@@ -189,11 +222,14 @@ export class AttemptLog {
     const persistentLabel = m.groups.some((g) => this.exposedGroups.has(g))
     if (!acc && !persistentLabel) return null
     const completed = acc?.completed ?? 0
+    const missed = acc?.missed ?? 0
     // A bar a note-level loop cuts is never complete (partial, H7): only some of its notes ran.
-    const complete = !m.partial && m.groups.length > 0 && completed === m.groups.length
+    // Strict transport: groups closed by the clock count as traversed (they are errors instead).
+    const complete = !m.partial && m.groups.length > 0 && completed + missed === m.groups.length
     const evidence =
       complete ||
       completed > 0 ||
+      missed > 0 ||
       (acc?.wrong ?? 0) > 0 ||
       acc?.tempHint === true ||
       acc?.keyboard === true ||
@@ -226,6 +262,8 @@ export class AttemptLog {
         wrongPitches: [...g.wrongPitches],
         spreadMs: g.spreadMs,
         tieEndPresses: g.tieEnd,
+        ...(g.offsetMs !== null ? { offsetMs: g.offsetMs } : {}),
+        ...(g.missed ? { missed: true } : {}),
       }))
   }
 
@@ -265,6 +303,8 @@ export interface RecordInput {
   readonly timeTolerance: number | null
   /** Matching-rules id when it differs from the timeline's (e.g. a non-default grace). */
   readonly matchingRules?: string
+  /** Strict transport: the rhythm parameters (required for strict records; ignored otherwise). */
+  readonly rhythm?: RhythmParams | null
 }
 
 export function comparisonContextOf(
@@ -282,6 +322,11 @@ export function comparisonContextOf(
  * keyboard), plus the optional total-time tolerance. Interrupted and abandoned attempts never
  * pass and carry no completion time. Ordinary-reading traversals ('reading') carry their
  * mistakes, assistance and measure traversals for suggested practice but are not timed.
+ *
+ * Strict transport (rhythm mode): the clock starts at the end of the count-in, the final group's
+ * completion or close ends it; passed = completed, zero wrong attacks, no assistance, no missed
+ * group and every completed group within ±`rhythm.toleranceMs` of its scheduled time (the total
+ * time tolerance does not apply). The record carries `rhythm` and `missedGroups`.
  */
 export function buildAttemptRecord(input: RecordInput): AttemptRecord {
   const { log, timeline, completion, kind } = input
@@ -294,12 +339,16 @@ export function buildAttemptRecord(input: RecordInput): AttemptRecord {
       : null
   const expected = scored ? timeline.expectedSpanSec : null
   const unscoredReason = scored ? timeline.timingUnscoredReason : READING_UNTIMED
+  const strict = input.transport === 'strict' ? (input.rhythm ?? null) : null
+  if (input.transport === 'strict' && strict === null) throw new RangeError('Strict records need rhythm parameters')
   const tolerance = input.timeTolerance
   const withinTolerance =
-    tolerance === null ||
-    expected === null ||
-    expected === 0 ||
-    (completionTimeSec !== null && Math.abs(completionTimeSec - expected) <= tolerance * expected)
+    strict !== null
+      ? log.missedGroups === 0 && log.offsetsWithin(strict.toleranceMs)
+      : tolerance === null ||
+        expected === null ||
+        expected === 0 ||
+        (completionTimeSec !== null && Math.abs(completionTimeSec - expected) <= tolerance * expected)
   return {
     id: log.id,
     pieceId: input.pieceId,
@@ -323,6 +372,7 @@ export function buildAttemptRecord(input: RecordInput): AttemptRecord {
     onsets: [...log.onsets],
     measures: [...log.measures],
     ...(scored ? { groups: log.groupOutcomes() } : {}),
+    ...(strict !== null ? { rhythm: { toleranceMs: strict.toleranceMs }, missedGroups: log.missedGroups } : {}),
   }
 }
 

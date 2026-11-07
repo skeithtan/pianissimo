@@ -2,14 +2,16 @@
  * Hints (spec "Mistake feedback and hints"): when names appear automatically (1, 2, 3, a custom
  * positive number of wrong attacks, or off), how long a temporary hint lasts (10 / 20 / 30 /
  * 60 s, custom or until the group is correct), how long hidden labels take to fade out, and
- * whether a wrong note flashes the screen edges red (DECISIONS S5). Changes apply immediately;
- * they never interrupt practice.
+ * whether a wrong note flashes the screen edges red (DECISIONS S5) and the Keep time window
+ * (`KeepTimeGroup`, P13). Changes apply immediately; only a new Keep time window stops a Keep time
+ * attempt in progress.
  */
 import { useState } from 'preact/hooks'
 import { settings, updateSettings } from '../../app/state'
 import { Segmented, Slider, Toggle } from '../../ui/controls'
 import { Group, Help, Setting } from './parts'
 import { MIN_HINT_LIFETIME_SECONDS, parsePositive } from './numbers'
+import { KeepTimeGroup } from './KeepTimeGroup'
 import styles from './settings.module.css'
 
 type ThresholdChoice = '1' | '2' | '3' | 'custom' | 'off'
@@ -193,6 +195,8 @@ export function HintsSection() {
           onChange={(damageFlash) => updateSettings({ hints: { damageFlash } })}
         />
       </Group>
+
+      <KeepTimeGroup />
     </>
   )
 }

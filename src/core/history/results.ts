@@ -21,7 +21,68 @@ export function isAssistedAttempt(a: AttemptRecord): boolean {
 
 /** Completed scored attempt with zero wrong attacks and no assistance. */
 export function isCleanUnassistedCompletion(a: AttemptRecord): boolean {
-  return a.kind === 'scored' && a.completion === 'completed' && a.wrongAttacks === 0 && !isAssistedAttempt(a)
+  return (
+    a.kind === 'scored' &&
+    a.completion === 'completed' &&
+    a.wrongAttacks === 0 &&
+    (a.missedGroups ?? 0) === 0 &&
+    !isAssistedAttempt(a)
+  )
+}
+
+/** How a strict (rhythm mode) attempt kept time; see `timingAccuracy`. */
+export interface TimingAccuracy {
+  /** Groups judged: completed ones plus missed ones. */
+  readonly groups: number
+  /** Completed within ±tolerance of their scheduled time. */
+  readonly onTime: number
+  /** Completed more than the tolerance before their scheduled time. */
+  readonly early: number
+  /** Completed more than the tolerance after their scheduled time. */
+  readonly late: number
+  /** Groups the music passed before they were complete. */
+  readonly missed: number
+  /** Mean signed offset over completed groups in ms (negative = rushing); 0 with none. */
+  readonly meanOffsetMs: number
+  /** Mean absolute offset over completed groups in ms; 0 with none. */
+  readonly meanAbsOffsetMs: number
+}
+
+/**
+ * Timing accuracy of a strict-transport attempt from its per-group outcomes; null for gated and
+ * free attempts and for records without per-group outcomes. Early and late mean beyond
+ * `rhythm.toleranceMs`.
+ */
+export function timingAccuracy(a: AttemptRecord): TimingAccuracy | null {
+  if (a.context.transport !== 'strict' || a.rhythm === undefined || a.groups === undefined) return null
+  const tolerance = a.rhythm.toleranceMs
+  let onTime = 0
+  let early = 0
+  let late = 0
+  let missed = 0
+  let sum = 0
+  let sumAbs = 0
+  for (const g of a.groups) {
+    if (g.offsetMs !== undefined) {
+      sum += g.offsetMs
+      sumAbs += Math.abs(g.offsetMs)
+      if (g.offsetMs < -tolerance) early++
+      else if (g.offsetMs > tolerance) late++
+      else onTime++
+    } else if (g.missed === true) {
+      missed++
+    }
+  }
+  const completed = onTime + early + late
+  return {
+    groups: completed + missed,
+    onTime,
+    early,
+    late,
+    missed,
+    meanOffsetMs: completed > 0 ? sum / completed : 0,
+    meanAbsOffsetMs: completed > 0 ? sumAbs / completed : 0,
+  }
 }
 
 /**
@@ -38,9 +99,17 @@ export function timeDifferenceSec(a: AttemptRecord): number | null {
  * Ordering for "best clean unassisted performance": the smallest absolute time difference
  * wins (a faster result is not automatically better; rushing can cancel hesitation), ties
  * go to the more recent attempt. Attempts without scored timing rank after timed ones,
- * most recent first.
+ * most recent first. Two strict (rhythm mode) attempts rank by mean absolute offset from the
+ * scheduled times instead, fewest first.
  */
 export function compareCleanRuns(a: AttemptRecord, b: AttemptRecord): number {
+  const ta = timingAccuracy(a)
+  const tb = timingAccuracy(b)
+  if (ta !== null && tb !== null) {
+    const byOffset = ta.meanAbsOffsetMs - tb.meanAbsOffsetMs
+    if (byOffset !== 0) return byOffset
+    return b.createdAt - a.createdAt
+  }
   const da = timeDifferenceSec(a)
   const db = timeDifferenceSec(b)
   if (da !== null && db !== null) {

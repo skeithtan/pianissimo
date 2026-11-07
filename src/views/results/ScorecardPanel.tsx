@@ -6,7 +6,7 @@
 import type { ComponentChildren } from 'preact'
 import { useId } from 'preact/hooks'
 import { COMPLETION_TIME_DEFINITION, formatSeconds } from '../../core/history'
-import type { Scorecard } from '../../core/history'
+import type { Scorecard, ScorecardRowId } from '../../core/history'
 import type { AttemptRecord } from '../../core/model/practice'
 import { describeRule } from '../../core/naming'
 import type { ClefKey } from '../../core/model/score'
@@ -22,8 +22,19 @@ const PASS_TEXT: Readonly<Record<PassReason, string>> = {
   'wrong-notes': 'Not a pass: wrong-note attacks',
   assistance: 'Not a pass: assistance was used',
   timing: 'Not a pass: outside the timing tolerance',
+  missed: 'Not a pass: some groups were missed',
   incomplete: 'Incomplete: not counted as a pass or a fail',
 }
+
+/** The rhythm mode (strict transport) timing rows, in order; the music set the pace. */
+const RHYTHM_TILES: readonly { id: ScorecardRowId; label: string; detail?: string }[] = [
+  { id: 'on-time', label: 'On-time groups', detail: 'Completed within the timing window' },
+  { id: 'early', label: 'Early groups' },
+  { id: 'late', label: 'Late groups' },
+  { id: 'missed', label: 'Missed groups', detail: 'The music moved on before the group was complete' },
+  { id: 'offset', label: 'Average offset', detail: 'Neutral: negative is ahead of the music, positive behind' },
+  { id: 'tolerance', label: 'Timing window' },
+]
 
 function Tile({
   label,
@@ -196,7 +207,16 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: Scor
           detail={`${attempt.groupsFirstPass} of ${attempt.groupsTotal} onset groups without a wrong attack`}
         />
 
-        {timing === 'scored' || timing === 'ungraded' ? (
+        {timing === 'rhythm' ? (
+          <>
+            {RHYTHM_TILES.map(({ id, label, detail }) => {
+              const row = rows.get(id)
+              return row ? (
+                <Tile key={id} testId={id} label={label} value={row.value} detail={row.detail ?? detail} />
+              ) : null
+            })}
+          </>
+        ) : attempt.context.transport === 'strict' ? null : timing === 'scored' || timing === 'ungraded' ? (
           <Tile
             testId="completion-time"
             label={timing === 'ungraded' ? 'Time to solve' : 'Completion time'}
@@ -267,7 +287,7 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: Scor
         </Tile>
       </dl>
 
-      {timing === 'scored' || timing === 'ungraded' ? (
+      {(timing === 'scored' || timing === 'ungraded') && attempt.context.transport !== 'strict' ? (
         <details class={styles.details}>
           <summary>How completion time is measured</summary>
           <p>{COMPLETION_TIME_DEFINITION}</p>

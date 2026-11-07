@@ -19,6 +19,14 @@ history + other settings right).
 | Other settings | `ResultsView.tsx` | Other comparison contexts of the same score version, each with attempts, best clean time and **View latest**. They are never merged. |
 | Suggested practice | `views/shared/suggestions` | The shared list (see its README) wired to `openPractice`, session dismissals and the per-piece switch. |
 
+## Rhythm mode
+
+A strict context reads "Keep time · ±150 ms" (`format.ts` `transportText`, tolerance parsed from
+`matchingRules`) in the context bar. Its scorecard replaces the completion time tiles with the
+timing rows (on-time, early, late, missed groups, average offset, timing window; neutral, no
+coloring), "Not a pass: some groups were missed" is a pass reason, history rows read "38 of 42 on
+time", and the best clean card shows the smallest average offset instead of a time.
+
 ## Data flow
 
 `ResultsView` (reads `resultsRequest`) → `loadResultsData(storage, request, sessionDismissals)`

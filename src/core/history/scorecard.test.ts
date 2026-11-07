@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { AttemptRecord } from '../model/practice'
+import type { AttemptRecord, GroupOutcome } from '../model/practice'
 import { COMPLETION_TIME_DEFINITION, buildScorecard, formatSeconds } from './scorecard'
-import { attemptRecord, noAssistance } from './testkit'
+import { attemptRecord, comparisonContext, noAssistance } from './testkit'
 
 const row = (card: ReturnType<typeof buildScorecard>, id: string) => card.rows.find((r) => r.id === id)
 
@@ -142,5 +142,63 @@ describe('formatSeconds', () => {
     expect(formatSeconds(-0.04)).toBe('0.0 s')
     expect(formatSeconds(0)).toBe('0.0 s')
     expect(formatSeconds(3599.96)).toBe('60:00.0')
+  })
+})
+
+describe('rhythm mode scorecard', () => {
+  const ctx = comparisonContext({ transport: 'strict', matchingRules: 'strict-v1-tol-150ms' })
+  const g = (group: number, extra: Partial<GroupOutcome> = {}): GroupOutcome => ({
+    group,
+    wrongAttacks: 0,
+    earlyAttacks: 0,
+    lateMs: 0,
+    ...extra,
+  })
+  const strict = (groups: GroupOutcome[], over: Partial<AttemptRecord> = {}) =>
+    attemptRecord({ context: ctx, rhythm: { toleranceMs: 150 }, groups, groupsTotal: groups.length, ...over })
+
+  it('shows the timing rows in order and hides completion time rows', () => {
+    const groups = [
+      ...Array.from({ length: 8 }, (_, i) => g(i, { offsetMs: 30 })),
+      g(8, { offsetMs: -200 }),
+      g(9, { missed: true }),
+    ]
+    const card = buildScorecard(strict(groups, { missedGroups: 1, passed: false }), { current: 0, best: 2 })
+    expect(card.timing).toBe('rhythm')
+    expect(card.rows.map((r) => r.id)).toEqual([
+      'completion',
+      'wrong-attacks',
+      'first-pass',
+      'on-time',
+      'early',
+      'late',
+      'missed',
+      'offset',
+      'tolerance',
+      'assistance',
+      'streak',
+    ])
+    expect(row(card, 'on-time')?.value).toBe('8 of 10 (80%)')
+    expect(row(card, 'early')?.value).toBe('1')
+    expect(row(card, 'late')?.value).toBe('0')
+    expect(row(card, 'missed')?.value).toBe('1')
+    expect(row(card, 'tolerance')?.value).toBe('within ±150 ms')
+    expect(card.passed).toBe(false)
+  })
+
+  it('names dragging and rushing only beyond a third of the tolerance', () => {
+    const offset = (ms: number) => row(buildScorecard(strict([g(0, { offsetMs: ms })])), 'offset')?.value
+    expect(offset(23)).toBe('+23 ms')
+    expect(offset(50)).toBe('+50 ms')
+    expect(offset(51)).toBe('+51 ms, dragging')
+    expect(offset(-18)).toBe('−18 ms')
+    expect(offset(-90)).toBe('−90 ms, rushing')
+    expect(offset(0)).toBe('0 ms')
+  })
+
+  it('an incomplete strict attempt shows no timing at all', () => {
+    const card = buildScorecard(strict([g(0, { offsetMs: 10 })], { completion: 'abandoned', completionTimeSec: 3 }))
+    expect(card.timing).toBe('none')
+    expect(card.rows.map((r) => r.id)).toEqual(['completion', 'wrong-attacks', 'first-pass', 'assistance'])
   })
 })

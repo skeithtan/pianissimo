@@ -98,6 +98,34 @@ MIDI events and `now` (performance.now() timebase). Details and state diagram:
   gates released in order), or `patienceMs(timeline, i)` (onset-to-next-onset time clamped to
   300–2000 ms, 1000 ms for the last group) after both the arrival and a press. Records nothing.
 
+Strict transport (rhythm mode, P13): `transport: 'strict'` with `rhythm.toleranceMs` (default
+`DEFAULT_RHYTHM_TOLERANCE_MS` = 150 ms, real time). The session starts the attempt clock with
+`engine.startRunning(t0)` at the end of its count-in, releases every transport gate the moment
+the transport reaches it and reports `transportArrived(i, at)`; the engine judges each onset
+group against that scheduled time: presses more than the tolerance before arrival are `'early'`
+wrong attacks; completed groups advance at once and record `offsetMs` (completion − arrival,
+negative = early); incomplete groups close at arrival + tolerance with a `missed` event and the
+next group becomes current; a press of the just-missed group within the tolerance is a gentle
+`'late'` slip, not a wrong attack. Strict records use `matchingRules` `strict-v1-tol-<n>ms` and
+carry `rhythm`, `missedGroups` and per-group `offsetMs` / `missed`; they pass only with no wrong
+attack, no assistance, no missed group and every group within the tolerance. Close times come
+from injected arrivals and surface through `nextDeadline()`; `input-complete` is still emitted
+but must not release gates in strict.
+
+### core/audio (spike, worker-safe)
+An audio score follower for Play-through on an acoustic piano (DECISIONS P14; branch
+`mic-follower-spike`, not wired into the app). `features.ts` turns mono samples into one feature
+vector per 10 ms (log-spectral energy per piano semitone plus a per-semitone onset rise; in-repo
+radix-2 FFT), `reference.ts` builds the expected sequence from a `ScoreModel` and tempo map with
+harmonic templates (no synthesis), `oltw.ts` aligns live frames to it by windowed online time
+warping, and `index.ts` exposes `createAudioFollower(model, tempo, multiplier)` (`push(samples,
+sampleRate, time)` → position in whole notes and a confidence; `reset(position)`) plus
+`groupReached(timeline, position)` for the session to turn positions into
+`PlayFollower.transportArrived` calls. `evaluate.ts` and `testkit.ts` are test support (a synthetic
+performance renderer and the onset-reaching metric). Pure: no DOM, no Web Audio; meant to run in
+an `AudioWorklet` + worker.
+
+
 ### core/naming
 `labelFor(note, naming)` → `{name, accidental, octave, text}` from the resolved sounding pitch
 (ottava applied once); `labelForMidi` for bare keys; `maxLabelWidthChars` sizes reserved label
@@ -150,6 +178,16 @@ history in one transaction. Views call `loadSuggestions(pieceId, sessionDismissa
 imported): manifest + one JSON per store + sources/*.bin + packages/*.json, layout cache
 excluded; restore validates everything first (`BackupError`, nothing written on failure) and
 merges by id in one transaction. Details: `src/core/storage/README.md`.
+
+Rhythm mode results (core/history, views/results, app/session/corrections): `timingAccuracy(record)`
+summarizes a strict record's per-group `offsetMs` / `missed` against `rhythm.toleranceMs` (on
+time, early, late, missed, mean and mean absolute offset). A clean unassisted completion needs
+zero missed groups in every context, and strict clean runs rank by mean absolute offset.
+`buildScorecard` gives completed strict records `timing: 'rhythm'` and timing rows (on-time
+groups, early, late, missed, average offset, timing window) instead of completion, expected and
+difference rows. The Results view names a strict context "Keep time · ±N ms". Teacher
+corrections add a `'missed'` mark (`CorrectionMark.kind`) and judge lateness against the
+record's tolerance for strict records.
 
 ### render/
 `OsmdRenderer.prepare(RenderInput, {labels: {maxChars, room}})` → `PreparedLayout` (plain JSON,
@@ -268,6 +306,26 @@ follower instead of the engine (`#onMidi`), follower `release` events release tr
 transport position, the amber tint for wrong presses and the guide. `ui.activity` is
 `'playing'`, `ui.playThrough` true, `startAction` `'play'`; the engine records nothing while the
 mode is on and resumes reading at the follower's group when it is switched off.
+Speed ladder (U77): the piece's `ladder` (`LadderSettings { goal, step }`, null = off) is stored on
+`PieceRecord` and opened into `PracticeSession`, which publishes `ui.ladder` (`{ goal, step,
+start, failures, done }`); the pure rules are `app/session/ladder.ts`. After each completed
+scored attempt while Repeat is open, meeting the consecutive-pass target (`repeatTarget ?? 3`)
+climbs one step on the 5% grid toward the goal (or ends the climb at the goal); two failures in
+a row drop one step, never below the start speed; manual speed changes reset the failures and
+can lower the floor. The new speed takes effect at the Repeat reset through the ordinary
+speed-change path, and `AttemptSummary.ladder` tells the result card what happened.
+Keep time (rhythm mode, P13, U78): `PracticeSession.setRhythmMode` (saved per piece as
+`PieceRecord.rhythm`) turns every Start into a scored attempt on the engine's strict transport,
+with `rhythm.toleranceMs` from `AppSettings.rhythm`, over the Repeat loop or else the whole
+piece. When the engine is Ready the session counts in one bar (`countIn.ts`) through the
+metronome sink and publishes `ui.countIn`; at the end it calls `engine.startRunning(t)` and
+`transport.play(t)` with one timestamp after releasing every gate, so the music never holds. The
+transport reports each arrival (`transportArrived`); the engine judges, closes missed groups and
+builds the record. The session renders only gentle feedback (soft wash for `missed`, amber
+marker for `'late'`) and the result card's timing row (`timingAccuracy`). Keep time is exclusive
+with play-through and disables Repeat lead-ins. The view adds a footer-menu switch with a badge
+on the Menu button, the `CountIn` overlay on the stage and the tolerance choice in Settings →
+Hints (`KeepTimeGroup`).
 `views/practice/`: `PracticeView` reads `practiceRequest`, loads piece and package, builds the
 session and `StripView` (`prepareLayout` + IndexedDB layout cache; re-prepared when
 `maxLabelWidthChars` changes). The `PracticeEnv` seam is injectable for tests.
@@ -305,8 +363,10 @@ Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `prac
   (`ui/overviewMath.ts`) gives `ScoreOverview` `{start, duration, seconds?, section?}` per bar (U16).
 - `render/strip/cursorPath.ts` maps positions to x along onset knots (R12); the cursor and its
   action button live in a screen-space layer (R13). Label font is loaded before metrics (R14).
-- Practice: no PassageBar; `views/practice` footer holds Repeat, Speed, hand toggles + play,
-  Note names, Hint, Show keys; a Repeat panel floats over the Stage in Repeat mode (U12–U14).
+- Practice: no PassageBar; `views/practice` footer holds Speed on the start side, the hand
+  toggles + play in the middle, and a Menu button on the end side (an anchored popover,
+  `FooterMenu.tsx`, with Note names, Play through and Show keys, U76); a Repeat panel floats over the Stage in
+  Repeat mode (U12–U14).
   `render/keyboard` draws all 88 keys (U15). `app/session/output.ts` resolves Auto (S4).
 - Routing: `app/routes.ts` (parse/format) and `app/router.ts` (signal ⇄ URL sync, started in
   `boot.ts`) (A10). Connection setup is `views/connection/ConnectionModal.tsx` over any view (C8).

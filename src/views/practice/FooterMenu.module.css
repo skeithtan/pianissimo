@@ -1,0 +1,84 @@
+/* The Practice footer menu (DECISIONS U76): an anchored popover above the Menu button, with the
+   tempo popover's surface, radius and hairline edge, and the Consult menu's label / control rows. */
+.root {
+  position: relative;
+  display: inline-flex;
+}
+
+.popover {
+  position: absolute;
+  z-index: calc(var(--z-bar) + 4);
+  top: calc(100% + var(--space-2));
+  left: 0;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  /* No overflow here: the Speed presets popover opens on top of the menu. Placement sets a
+     max-height (and scrolling) only when the menu cannot fit. */
+  overscroll-behavior: contain;
+  border-radius: var(--radius-l);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+  text-align: start;
+  animation: menu-in var(--dur-base) var(--ease-out) both;
+}
+.popover:focus {
+  outline: none;
+}
+.up {
+  top: auto;
+  bottom: calc(100% + var(--space-2));
+}
+@keyframes menu-in {
+  from {
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-6);
+  min-height: var(--touch);
+}
+.row + .row {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-1);
+}
+.label,
+.toggle > span {
+  font-size: var(--text-s);
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.menuButton {
+  position: relative;
+}
+
+/* Keep time is on: a small metronome on the Menu button's corner (tokens only). */
+.badge {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg-elevated);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover {
+    animation: none;
+  }
+}

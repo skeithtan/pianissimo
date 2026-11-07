@@ -5,6 +5,7 @@ import {
   canStepMultiplier,
   formatBpm,
   formatSpeedPercent,
+  offsetOnGrid,
   parseSpeedInput,
   stepMultiplier,
 } from './speed'
@@ -50,6 +51,22 @@ describe('stepMultiplier', () => {
     expect(m).toBe(MIN_MULTIPLIER)
     for (let i = 0; i < 79; i++) m = stepMultiplier(m, 1)
     expect(m).toBe(MAX_STEP_MULTIPLIER)
+  })
+})
+
+describe('offsetOnGrid', () => {
+  it('adds or takes away a step and lands on the 5% grid', () => {
+    expect(offsetOnGrid(0.6, 0.05)).toBe(0.65)
+    expect(offsetOnGrid(0.65, -0.05)).toBe(0.6)
+    expect(offsetOnGrid(0.7, 0.1)).toBe(0.8)
+    // Off-grid speeds and steps land on the nearest grid value.
+    expect(offsetOnGrid(0.62, 0.05)).toBe(0.65)
+    expect(offsetOnGrid(0.6, 0.07)).toBe(0.65)
+  })
+
+  it('stays within 5%..1000%', () => {
+    expect(offsetOnGrid(0.05, -0.05)).toBe(MIN_MULTIPLIER)
+    expect(offsetOnGrid(10, 0.5)).toBe(10)
   })
 })
 

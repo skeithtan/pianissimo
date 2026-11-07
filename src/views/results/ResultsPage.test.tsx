@@ -114,6 +114,50 @@ describe('scorecard', () => {
     expect(details?.textContent).toContain('not proof of rhythm accuracy')
   })
 
+  it('shows the rhythm mode rows instead of the completion time', () => {
+    const S = comparisonContext({ transport: 'strict', matchingRules: 'strict-v1-tol-150ms' })
+    const a = attempt(S, NOW - 1000, {
+      rhythm: { toleranceMs: 150 },
+      groupsTotal: 3,
+      groupsFirstPass: 3,
+      passed: false,
+      missedGroups: 1,
+      groups: [
+        { group: 0, wrongAttacks: 0, earlyAttacks: 0, lateMs: 0, offsetMs: 60 },
+        { group: 1, wrongAttacks: 0, earlyAttacks: 0, lateMs: 0, offsetMs: 100 },
+        { group: 2, wrongAttacks: 0, earlyAttacks: 0, lateMs: 0, missed: true },
+      ],
+    })
+    const root = show(data([a]))
+    expect(dd(root, 'on-time')).toContain('2 of 3 (67%)')
+    expect(dd(root, 'missed')).toContain('1')
+    expect(dd(root, 'offset')).toContain('+80 ms, dragging')
+    expect(dd(root, 'tolerance')).toContain('within ±150 ms')
+    expect($(root, '[data-row="completion-time"]')).toBeNull()
+    expect($(root, '[data-row="expected-time"]')).toBeNull()
+    expect(root.textContent).toContain('Not a pass: some groups were missed')
+    expect($(root, '[data-row="context"]')?.textContent).toContain('Keep time · ±150 ms')
+    expect($(root, '[data-row="best-clean"]')?.textContent).toContain('No completion')
+  })
+
+  it('summarizes a clean rhythm mode history by on-time groups and offset', () => {
+    const S = comparisonContext({ transport: 'strict', matchingRules: 'strict-v1-tol-150ms' })
+    const a = attempt(S, NOW - 1000, {
+      rhythm: { toleranceMs: 150 },
+      groupsTotal: 2,
+      groups: [
+        { group: 0, wrongAttacks: 0, earlyAttacks: 0, lateMs: 0, offsetMs: -20 },
+        { group: 1, wrongAttacks: 0, earlyAttacks: 0, lateMs: 0, offsetMs: 40 },
+      ],
+    })
+    const root = show(data([a]))
+    const best = $(root, '[data-row="best-clean"]')?.textContent ?? ''
+    expect(best).toContain('±30 ms')
+    expect(best).toContain('Smallest average offset')
+    expect(root.textContent).toContain('2 of 2 on time')
+    expect(root.textContent).toContain('Ranked by average offset from the music.')
+  })
+
   it('breaks wrong attacks down by "too early" when the record carries the count', () => {
     const a = { ...attempt(A, NOW - 1000, { wrongAttacks: 4, passed: false }), earlyAttacks: 3 } as AttemptRecord
     expect(dd(show(data([a])), 'wrong-attacks')).toContain('3 of them too early')

@@ -74,6 +74,7 @@ describe('pieces', () => {
       resume: null,
       lastPassage: null,
       repeatTarget: null,
+      ladder: null,
     })
     const updated = await s.updatePiece(piece.id, {
       lastMultiplier: 0.75,
@@ -82,8 +83,10 @@ describe('pieces', () => {
       resume: { occ: 12, position: { n: 25, d: 2 }, group: 7, hands: 'left', multiplier: 0.75, savedAt: 5 },
       lastPassage: { fromOcc: 8, toOcc: 15 },
       repeatTarget: 3,
+      ladder: { goal: 1, step: 0.05 },
     })
     expect(updated?.lastMultiplier).toBe(0.75)
+    expect(updated?.ladder).toEqual({ goal: 1, step: 0.05 })
     expect(await s.getPiece(piece.id)).toEqual(updated)
   })
 

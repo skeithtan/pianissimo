@@ -16,7 +16,8 @@ import type { AttemptSummary, SessionUi } from '../../app/session'
 import { Button } from '../../ui/controls'
 import { useFadePresence, type FadePhase } from '../../ui/fade'
 import { Icon } from '../../ui/icons'
-import { assistanceText, firstPassText, timeLine, wrongText } from './format'
+import { formatSpeedPercent } from '../../ui/speed'
+import { assistanceText, firstPassText, timeLine, timingText, wrongText } from './format'
 import styles from './practice.module.css'
 
 /** The result card fades and rises in, fades and sinks out (CSS `.result[data-phase]` mirrors it). */
@@ -80,7 +81,8 @@ export function Banners(p: BannersProps) {
           <span>{ui.waiting}</span>
         </div>
       ) : null}
-      {ui.phase === 'ready' && ui.activity === 'scored' && !r ? (
+      {/* Keep time counts in instead (`CountIn` over the stage): its clock never waits for a note. */}
+      {ui.phase === 'ready' && ui.activity === 'scored' && !r && !ui.rhythm ? (
         <div class={`${styles.banner} ${styles.bannerReady}`} role="status" data-testid="ready">
           <Icon name="target" size={20} />
           <span>Ready. The clock starts with your first note.</span>
@@ -91,6 +93,7 @@ export function Banners(p: BannersProps) {
           r={shown}
           phase={presence.phase}
           corrections={ui.corrections}
+          multiplier={ui.multiplier}
           showAgain={!ui.repeat || shown.targetReached}
           onResults={p.onResults}
           onRestart={p.onRestart}
@@ -102,6 +105,19 @@ export function Banners(p: BannersProps) {
 }
 
 /**
+ * What the speed ladder did after an attempt, in one line ("Speed up: next at 65%", "Back to
+ * 55%", "Goal reached: 100%"), or null. `multiplier` is the current speed (the goal when done).
+ */
+export function ladderResultText(r: AttemptSummary, multiplier: number): string | null {
+  const l = r.ladder
+  if (!l) return null
+  if (l.climbedTo !== undefined) return `Speed up: next at ${formatSpeedPercent(l.climbedTo)}`
+  if (l.droppedTo !== undefined) return `Back to ${formatSpeedPercent(l.droppedTo)}`
+  if (l.done) return `Goal reached: ${formatSpeedPercent(multiplier)}`
+  return null
+}
+
+/**
  * The compact attempt result: a card with a status rail (success for a clean pass), the outcome
  * as its title, the streak under it, the facts as a label / value grid, actions at the end.
  */
@@ -109,6 +125,7 @@ function ResultCard({
   r,
   phase,
   corrections,
+  multiplier,
   showAgain,
   onResults,
   onRestart,
@@ -118,13 +135,17 @@ function ResultCard({
   phase: FadePhase
   /** Teacher corrections drawn on the score (U39). */
   corrections: number
+  multiplier: number
   showAgain: boolean
   onResults: (attemptId: string) => void
   onRestart: () => void
   onDismiss: () => void
 }) {
-  const time = timeLine(r)
+  // A Keep time attempt shows how it kept time in place of its completion time.
+  const timing = r.timing ? timingText(r.timing) : null
+  const time = timing ? null : timeLine(r)
   const firstPass = firstPassText(r)
+  const ladder = ladderResultText(r, multiplier)
   return (
     <div class={styles.result} role="status" data-testid="attempt-result" data-passed={r.passed} data-phase={phase}>
       <div class={styles.resultHead}>
@@ -144,6 +165,12 @@ function ResultCard({
           <dt>Mistakes</dt>
           <dd>{wrongText(r.wrongAttacks)}</dd>
         </div>
+        {timing ? (
+          <div>
+            <dt>Timing</dt>
+            <dd data-testid="timing-result">{timing}</dd>
+          </div>
+        ) : null}
         {time ? (
           <div>
             <dt>Time</dt>
@@ -167,6 +194,11 @@ function ResultCard({
           </div>
         ) : null}
       </dl>
+      {ladder ? (
+        <p class={styles.resultNote} data-testid="ladder-result">
+          {ladder}
+        </p>
+      ) : null}
       {r.targetReached ? <p class={styles.resultNote}>Target reached. Repeat is off.</p> : null}
       <div class={styles.resultActions}>
         <Button icon="chart" onClick={() => onResults(r.id)}>

@@ -1,5 +1,5 @@
 /** Display text for the Results view. Pure; locale-dependent only in `whenText`. */
-import { formatSeconds, timeDifferenceSec } from '../../core/history'
+import { formatSeconds, timeDifferenceSec, timingAccuracy } from '../../core/history'
 import type { AttemptRecord, ComparisonContext, InterruptReason } from '../../core/model/practice'
 import type { PersistentLabelMode } from '../../core/model/settings'
 
@@ -49,13 +49,16 @@ export function plural(n: number, one: string, many = `${one}s`): string {
 
 /** "+1.2 s" / "-0.4 s" for an attempt with scored timing, otherwise null. */
 export function signedTime(a: AttemptRecord): string | null {
+  if (a.context.transport === 'strict') return null
   const diff = timeDifferenceSec(a)
   if (diff === null) return null
   return `${diff >= 0 ? '+' : '-'}${formatSeconds(Math.abs(diff))}`
 }
 
-/** The compact timing text of a history row: "8.4 s (+0.4 s)", "8.4 s" (ungraded) or "—". */
+/** The compact timing text (rhythm mode: on-time groups) of a history row: "8.4 s (+0.4 s)", "8.4 s" (ungraded) or "—". */
 export function timeText(a: AttemptRecord): string {
+  const rhythm = timingAccuracy(a)
+  if (rhythm !== null) return `${rhythm.onTime} of ${rhythm.groups} on time`
   if (a.completionTimeSec === undefined) return '—'
   const base = formatSeconds(a.completionTimeSec)
   const diff = signedTime(a)
@@ -68,8 +71,21 @@ export function speedText(multiplier: number): string {
 
 const HANDS = { both: 'Both hands', right: 'Right hand', left: 'Left hand', none: 'Preview' } as const
 
+/** The tolerance of a strict context, from its matching rules (`strict-v1-tol-150ms`). */
+export function strictToleranceMs(c: ComparisonContext): number | null {
+  const m = /^strict-v1-tol-(\d+)ms$/.exec(c.matchingRules)
+  return m ? Number(m[1]) : null
+}
+
+/** "Keep time · ±150 ms" for a rhythm mode context. */
+export function rhythmText(c: ComparisonContext): string {
+  const tol = strictToleranceMs(c)
+  return tol === null ? 'Keep time' : `Keep time · ±${tol} ms`
+}
+
 /** What the piano does for the other hand in this context. */
 export function transportText(c: ComparisonContext): string | null {
+  if (c.transport === 'strict') return rhythmText(c)
   if (c.transport !== 'accompaniment') return null
   return c.hands === 'right'
     ? 'Piano plays the left hand'

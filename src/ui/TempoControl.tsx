@@ -5,14 +5,13 @@
  * original tempo. Changing the speed during a scored attempt interrupts it; that decision belongs
  * to the Practice view, which receives every change through `onChange`.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Rational } from '../core/music/rational'
 import { beatUnitName } from '../core/music/tempo'
 import { BeatUnitIcon } from './BeatUnitIcon'
 import { Button, Segmented, Slider } from './controls'
 import { useFadePresence } from './fade'
 import { Icon } from './icons'
-import { placePopover, type PopoverPlacement } from './popoverPlacement'
 import {
   SPEED_PRESETS_PERCENT,
   canStepMultiplier,
@@ -21,6 +20,7 @@ import {
   parseSpeedInput,
   stepMultiplier,
 } from './speed'
+import { usePopoverPlacement } from './usePopoverPlacement'
 import styles from './TempoControl.module.css'
 
 export interface TempoControlProps {
@@ -44,45 +44,6 @@ export interface TempoControlProps {
 
 const HOLD_DELAY_MS = 400
 
-/**
- * Keeps the popover fully inside the viewport: measures the control and the panel's natural size
- * before paint, on open and on resize / orientation change.
- */
-function usePopoverPlacement(
-  mounted: boolean,
-  preferred: 'down' | 'up',
-  anchor: { current: HTMLElement | null },
-  panel: { current: HTMLElement | null },
-): PopoverPlacement | null {
-  const [placement, setPlacement] = useState<PopoverPlacement | null>(null)
-  useLayoutEffect(() => {
-    if (!mounted) {
-      setPlacement(null)
-      return
-    }
-    const measure = () => {
-      const root = anchor.current
-      const el = panel.current
-      if (!root || !el) return
-      const doc = document.documentElement
-      const next = placePopover({
-        anchor: root.getBoundingClientRect(),
-        size: { width: el.offsetWidth, height: el.scrollHeight },
-        viewport: { width: doc.clientWidth || window.innerWidth, height: window.innerHeight },
-        preferred,
-      })
-      setPlacement((prev) =>
-        prev && prev.side === next.side && Math.abs(prev.left - next.left) < 0.5 && prev.maxHeight === next.maxHeight
-          ? prev
-          : next,
-      )
-    }
-    measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [mounted, preferred, anchor, panel])
-  return placement
-}
 const REPEAT_MS = 90
 
 /** Press-and-hold repeat. `step` returns false when it changed nothing, which ends the repeat. */

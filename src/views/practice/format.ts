@@ -1,5 +1,5 @@
 /** Plain-language text for the practice screen (no framework). */
-import type { AttemptSummary } from '../../app/session'
+import type { AttemptSummary, AttemptTiming } from '../../app/session'
 
 export function seconds(s: number): string {
   return `${s < 10 ? s.toFixed(1) : Math.round(s * 10) / 10} s`
@@ -13,6 +13,15 @@ export function timeLine(r: AttemptSummary): string | null {
   const sign = diff >= 0 ? '+' : '−'
   const pct = r.expectedTimeSec > 0 ? `, ${sign}${Math.abs(Math.round((diff / r.expectedTimeSec) * 100))}%` : ''
   return `${seconds(r.completionTimeSec)} · expected ${seconds(r.expectedTimeSec)} (${sign}${seconds(Math.abs(diff))}${pct})`
+}
+
+/** "On time 38 of 42 · 3 late · 1 missed": a Keep time attempt's timing (zero counts left out). */
+export function timingText(t: AttemptTiming): string {
+  const parts = [`On time ${t.onTime} of ${t.groups}`]
+  if (t.early > 0) parts.push(`${t.early} early`)
+  if (t.late > 0) parts.push(`${t.late} late`)
+  if (t.missed > 0) parts.push(`${t.missed} missed`)
+  return parts.join(' · ')
 }
 
 export function assistanceText(r: AttemptSummary): string {

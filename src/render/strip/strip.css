@@ -493,7 +493,7 @@
 /* Teacher's corrections after an attempt (StripView.setCorrections): red-pen rings around notes
    with a short note in a band above the top staff (below the bottom staff) joined to its ring by a
    leader, in layout px inside the content so they scroll and zoom with the notation. Every kind
-   (pn-corr-wrong, -accidental, -octave, -spread, -tie, -pedal, -early, -late) uses the same pen.
+   (pn-corr-wrong, -accidental, -octave, -spread, -tie, -pedal, -early, -late, -missed) uses the same pen.
    Each fades in (staggered left to right by an inline animation-delay) and fades out on
    pn-corr-leave; StripView removes it on animationend. Never interactive. */
 .pn-corrs {

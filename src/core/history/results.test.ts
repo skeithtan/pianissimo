@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { contextKey } from '../model/practice'
-import type { AssistanceRecord, AttemptRecord, ComparisonContext } from '../model/practice'
+import type { AssistanceRecord, AttemptRecord, ComparisonContext, GroupOutcome } from '../model/practice'
 import {
   compareCleanRuns,
   isAssistedAttempt,
@@ -9,6 +9,7 @@ import {
   summarizeByContext,
   summarizeContext,
   timeDifferenceSec,
+  timingAccuracy,
 } from './results'
 import { attemptRecord, comparisonContext, noAssistance } from './testkit'
 
@@ -203,5 +204,70 @@ describe('practice streak', () => {
   it('a clean but out-of-tolerance completion does not extend the streak', () => {
     const list = [passed(), attempt({ passed: false, completionTimeSec: 30 }), passed()]
     expect(practiceStreak(list)).toEqual({ current: 1, best: 1 })
+  })
+})
+
+const STRICT = comparisonContext({ transport: 'strict', matchingRules: 'strict-v1-tol-150ms' })
+const g = (group: number, extra: Partial<GroupOutcome> = {}): GroupOutcome => ({
+  group,
+  wrongAttacks: 0,
+  earlyAttacks: 0,
+  lateMs: 0,
+  ...extra,
+})
+function strict(groups: GroupOutcome[], over: Partial<AttemptRecord> = {}): AttemptRecord {
+  return attempt({ context: STRICT, rhythm: { toleranceMs: 150 }, groups, ...over })
+}
+
+describe('rhythm mode results', () => {
+  it('a clean completion needs no missed groups, in any context', () => {
+    expect(isCleanUnassistedCompletion(attempt())).toBe(true)
+    expect(isCleanUnassistedCompletion(attempt({ missedGroups: 0 }))).toBe(true)
+    expect(isCleanUnassistedCompletion(attempt({ missedGroups: 1 }))).toBe(false)
+  })
+
+  it('timingAccuracy is null for gated and free records', () => {
+    expect(timingAccuracy(attempt())).toBeNull()
+    expect(timingAccuracy(attempt({ context: comparisonContext({ transport: 'accompaniment' }) }))).toBeNull()
+  })
+
+  it('classifies groups against the tolerance and averages offsets', () => {
+    const acc = timingAccuracy(
+      strict([
+        g(0, { offsetMs: 0 }),
+        g(1, { offsetMs: 150 }), // exactly the tolerance is on time
+        g(2, { offsetMs: -151 }),
+        g(3, { offsetMs: 300 }),
+        g(4, { missed: true }),
+      ]),
+    )
+    expect(acc).toEqual({
+      groups: 5,
+      onTime: 2,
+      early: 1,
+      late: 1,
+      missed: 1,
+      meanOffsetMs: (0 + 150 - 151 + 300) / 4,
+      meanAbsOffsetMs: (0 + 150 + 151 + 300) / 4,
+    })
+  })
+
+  it('has zero means when nothing was completed', () => {
+    const acc = timingAccuracy(strict([g(0, { missed: true })]))
+    expect(acc).toMatchObject({ groups: 1, missed: 1, meanOffsetMs: 0, meanAbsOffsetMs: 0 })
+  })
+
+  it('ranks strict clean runs by mean absolute offset, then recency', () => {
+    const rushing = strict([g(0, { offsetMs: -100 }), g(1, { offsetMs: -100 })])
+    const tight = strict([g(0, { offsetMs: -20 }), g(1, { offsetMs: 40 })]) // signed mean ~10, abs 30
+    const tightLater = strict([g(0, { offsetMs: 30 }), g(1, { offsetMs: -30 })])
+    const ranked = [rushing, tightLater, tight].sort(compareCleanRuns)
+    expect(ranked).toEqual([tightLater, tight, rushing])
+  })
+
+  it('a record with a missed group is not the best clean run', () => {
+    const missed = strict([g(0, { offsetMs: 0 }), g(1, { missed: true })], { missedGroups: 1, passed: false })
+    const ok = strict([g(0, { offsetMs: 100 })])
+    expect(summarizeContext([missed, ok], contextKey(STRICT))?.bestClean).toBe(ok)
   })
 })
