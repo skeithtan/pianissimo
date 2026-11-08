@@ -214,6 +214,7 @@ export function Sheet({
   tall,
   flush,
   untitled,
+  floating,
 }: {
   title: string
   open: boolean
@@ -227,6 +228,8 @@ export function Sheet({
   /** No visible title and no divider, only the close button (the phone menus): the title is
    *  still the dialog's accessible name. */
   untitled?: boolean
+  /** Stay a window on a phone too (the phone menus); other sheets fill a phone's screen. */
+  floating?: boolean
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const opener = useRef<Element | null>(null)
@@ -248,7 +251,9 @@ export function Sheet({
   return (
     <dialog
       ref={ref}
-      class={[styles.sheet, wide ? styles.wide : '', tall ? styles.tall : ''].join(' ')}
+      class={[styles.sheet, wide && styles.wide, tall && styles.tall, floating && styles.floating]
+        .filter(Boolean)
+        .join(' ')}
       data-leaving={presence.phase === 'leaving' ? '' : undefined}
       onClose={onClose}
       onCancel={(e) => {

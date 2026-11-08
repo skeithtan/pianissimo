@@ -27,9 +27,11 @@ import {
 
 /**
  * Strip options, incl. the cursor action (round repeat button on the cursor line, U14) and the
- * page's width fit (`fitWidth`, a phone, R17; the strip ignores it).
+ * page's width fit (`fitWidth`, a phone, R17) and its image zoom (`imageZoom`, U83); the strip
+ * ignores both.
  */
-export type PracticeStripOptions = StripOptions & Pick<PageOptions, 'fitWidth'>
+export type PracticeStripOptions = StripOptions &
+  Pick<PageOptions, 'fitWidth' | 'imageZoom' | 'initialMagnify' | 'onMagnify'>
 
 /** The strip as the view drives it (session part + view-only controls). */
 export interface StripHandle extends StripSink {

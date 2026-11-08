@@ -232,6 +232,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const sideways = usePhoneLandscape()
   const host = useRef<HTMLDivElement>(null)
   const stripRef = useRef<StripHandle | null>(null)
+  /** The page's image-zoom magnification (U83), kept across re-engravings, not saved. */
+  const magnifyRef = useRef(1)
   const autoStarted = useRef(false)
   const maxChars = maxLabelWidthChars(appSettings.naming)
   // Labels Off engraves tight, with room for hints only; a mode showing names leaves room for all
@@ -265,9 +267,12 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   // page mode"). The page is engraved for the stage width at its own zoom (`view.pageZoom`).
   const mode = useOrientation() === 'portrait' ? 'page' : 'strip'
   const stageWidth = useStageWidth(host)
-  const pageWidth = mode === 'page' && stageWidth > 0 ? pageWidthFor(stageWidth, appSettings.view.pageZoom) : 0
-  // A phone's page never scrolls sideways: capped at the stage's width and fitted to it (R17).
+  // A phone's page opens fitted to the stage's width, never scrolling sideways (R17), and a
+  // pinch magnifies it like a photo without re-engraving (U83), so it is always engraved at
+  // zoom 1: a page zoom saved before U83 (or on a wider screen) does not apply.
   const fit = phone && mode === 'page'
+  const pageZoom = fit ? 1 : appSettings.view.pageZoom
+  const pageWidth = mode === 'page' && stageWidth > 0 ? pageWidthFor(stageWidth, pageZoom) : 0
   // The chrome recedes while something plays; an interruption or pause brings it back (U13).
   // The phone's menu sheet is modal: it closes when playback starts, and with the layout it
   // belongs to.
@@ -362,12 +367,21 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         if (!live) return
         const snapshot = respace ? (old?.respaceSnapshot?.(layout) ?? null) : null
         old?.destroy()
+        // Turned sideways (or a wider stage): the next phone page starts fitted again.
+        if (!fit) magnifyRef.current = 1
         const strip = env.createStrip(
           el,
           layout,
           {
-            initialZoom: mode === 'page' ? settings.peek().view.pageZoom : settings.peek().view.zoom,
+            initialZoom: mode === 'page' ? (fit ? 1 : settings.peek().view.pageZoom) : settings.peek().view.zoom,
             fitWidth: fit,
+            // A phone's page zooms like a photo (U83); a re-engraved page keeps the magnification,
+            // a rotation or a new visit starts fitted again.
+            imageZoom: fit,
+            initialMagnify: fit ? magnifyRef.current : 1,
+            onMagnify: (m) => {
+              magnifyRef.current = m
+            },
             returnLabel: 'Return to current position',
             // Browsing while something plays stops it and drops that attempt (U41).
             onBrowse: (browsing) => {
@@ -655,7 +669,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         />
       )}
 
-      <Sheet title="Menu" untitled open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
+      <Sheet title="Menu" untitled floating open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
         <div class={styles.menu}>
           <div class={styles.menuRow}>
             <span class={styles.menuLabel}>Speed</span>

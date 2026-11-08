@@ -21,6 +21,7 @@ The shell the four main views plug into. Spec: "Main user journey", "Practice sc
 | `boot.ts` | `startShell()` from `main.tsx`: theme sync, initial MIDI status from detection, settings flush on `pagehide`/hidden, preload first view. |
 | `AppBar`, `NoticeArea`, `CapabilityBanner` | Shell chrome. `ConnectionChip` lives in `views/shared` so Practice can reuse it. |
 | `version.ts` | `APP_VERSION` from `package.json` (tree-shaken). |
+| `pwa.ts` | `startPwa()` from `main.tsx` (production only): registers the service worker (`workers/sw.ts`, DECISIONS U84), asks for updates at launch, on `online` and when shown again, and reloads a page left on an older build only off the Practice and Study screens with no sheet open (`createReloader`). The installed app asks for persistent storage. |
 
 The non-practice app bar uses the Olive page surface, a compact lowercase wordmark, and the
 existing MIDI/Settings actions (U49). On narrow phones the music icon replaces the visible wordmark.

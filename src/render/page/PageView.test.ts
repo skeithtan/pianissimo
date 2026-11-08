@@ -695,6 +695,85 @@ describe('PageView', () => {
     expect(root.classList.contains('pn-page-wide')).toBe(true)
   })
 
+  describe('image zoom (U83)', () => {
+    const narrowHost = () =>
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        width: 400,
+        height: VIEW_H,
+        right: 400,
+        bottom: VIEW_H,
+        toJSON: () => ({}),
+      } as DOMRect)
+    const fit = (400 - 32) / 740
+
+    it('magnifies the page as engraved, 1× to 4× of the fit, and never asks for a new engraving', () => {
+      vi.useFakeTimers()
+      narrowHost()
+      const zooms: number[] = []
+      const mags: number[] = []
+      const { v, root } = view(24, {
+        fitWidth: true,
+        imageZoom: true,
+        onZoomChange: (z) => zooms.push(z),
+        onMagnify: (m) => mags.push(m),
+      })
+      expect(v.zoom()).toBeCloseTo(fit, 5)
+      v.setZoom(fit * 2)
+      v.flushNow()
+      expect(v.zoom()).toBeCloseTo(fit * 2, 5)
+      expect(root.classList.contains('pn-page-wide')).toBe(true)
+      expect(root.querySelector<HTMLElement>('.pn-page-content')!.style.transform).toContain(`scale(${fit * 2}`)
+      vi.advanceTimersByTime(260)
+      expect(mags).toHaveLength(1)
+      expect(mags[0]).toBeCloseTo(2, 5)
+      // Never smaller than the fit, never past four times it.
+      v.setZoom(0.1)
+      v.flushNow()
+      expect(v.zoom()).toBeCloseTo(fit, 5)
+      expect(root.classList.contains('pn-page-wide')).toBe(false)
+      v.setZoom(100)
+      v.flushNow()
+      expect(v.zoom()).toBeCloseTo(fit * 4, 5)
+      vi.advanceTimersByTime(260)
+      expect(zooms).toEqual([])
+    })
+
+    it('opens at the magnification it is handed', () => {
+      narrowHost()
+      const { v } = view(24, { fitWidth: true, imageZoom: true, initialMagnify: 3 })
+      expect(v.zoom()).toBeCloseTo(fit * 3, 5)
+    })
+
+    it('ctrl-wheel keeps the page point under the pointer in place, without browsing', () => {
+      narrowHost()
+      const browse: boolean[] = []
+      const { v, root } = view(24, { fitWidth: true, imageZoom: true, onBrowse: (b) => browse.push(b) })
+      v.setBrowseEnabled(true)
+      v.flushNow()
+      const sc = scroller(root)
+      const before = { x: sc.scrollLeft, y: sc.scrollTop }
+      const s0 = v.zoom()
+      const gutter0 = (400 - 740 * s0) / 2
+      const px = (before.x + 300 - gutter0) / s0
+      const py = (before.y + 200 - PAGE_PAD_TOP) / s0
+      // happy-dom's WheelEvent drops the modifier and pointer fields: set them on the event.
+      const wheel = new WheelEvent('wheel', { deltaY: -200, bubbles: true, cancelable: true })
+      Object.defineProperties(wheel, { ctrlKey: { value: true }, clientX: { value: 300 }, clientY: { value: 200 } })
+      sc.dispatchEvent(wheel)
+      const s1 = v.zoom()
+      expect(s1).toBeGreaterThan(s0)
+      // The same page point is still under (300, 200); the page is wider than the host now.
+      expect(sc.scrollLeft + 300).toBeCloseTo(px * s1, 0)
+      expect(sc.scrollTop + 200).toBeCloseTo(PAGE_PAD_TOP + py * s1, 0)
+      sc.dispatchEvent(new Event('scroll'))
+      expect(browse).toEqual([])
+    })
+  })
+
   it('has no repeat button on the cursor without a handler (Study mode, U72)', () => {
     const { root } = view(24)
     expect(root.querySelector('.pn-cursor .pn-cursor-action')).toBeNull()

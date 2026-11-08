@@ -2,7 +2,10 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["node", "vite/client"]
+    "types": ["node", "vite/client"],
+    // vite.config.ts imports scripts/pwa.ts with its extension (Vite's native config loader needs it).
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "vite.config.ts", "playwright.config.ts", "scripts/**/*.ts"],
   "exclude": ["src/workers/**"]

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
 import preact from '@preact/preset-vite'
+import { pwa } from './scripts/pwa.ts'
 
 // GitHub Pages project path. Override with PAGES_BASE=/other/ for a different repository name.
 const pagesBase = process.env['PAGES_BASE'] ?? '/pianissimo/'
@@ -7,7 +8,8 @@ const pagesBase = process.env['PAGES_BASE'] ?? '/pianissimo/'
 // `vite preview` serves the build, so it needs the same base (Playwright runs against it).
 export default defineConfig(({ command, isPreview }) => ({
   base: command === 'build' || isPreview === true ? pagesBase : '/',
-  plugins: [preact()],
+  // pwa(): after a production build, writes dist/sw.js and stamps index.html (DECISIONS U84).
+  plugins: [preact(), pwa()],
   worker: { format: 'es' },
   build: {
     // Syntax baseline from the spec (Safari 16.4, Chrome 111); never ship esnext. The runtime

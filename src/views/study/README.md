@@ -53,7 +53,9 @@ Safari on iPhone has no Web MIDI, so the Library shows the capability banner and
 view plays through browser sound (the Salamander samples load on the first Play, a user
 gesture). `viewport-fit=cover` plus the `--safe-*` tokens keep the footer above the home
 indicator. The portrait page engraves systems for the stage width (`pageWidthFor`, minimum
-240 layout px) at `view.pageZoom`; pinch zoom changes the page width and re-prepares. The screen
+240 layout px) at `view.pageZoom`; pinch zoom changes the page width and re-prepares. On a phone
+held upright the page is engraved at zoom 1 and fitted (R17), and a pinch magnifies it like a
+photo instead, without re-preparing or saving anything (U83). The screen
 stays awake while the view is shown (`app/App.tsx` wake lock), as in Practice.
 
 ## Tests

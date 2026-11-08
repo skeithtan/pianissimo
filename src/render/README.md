@@ -243,6 +243,10 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   the key gains `|max<w>`. `PageOptions.fitWidth` shows the page at min(requested zoom,
   (host − 2 × 16) / canvas width), so it never scrolls sideways; the requested zoom is kept,
   re-fitted on resize and reported as is (a pinch in past the fit still asks for a narrower page).
+  **Image zoom** (U83, a phone upright): `PageOptions.imageZoom` makes a pinch / ctrl-wheel /
+  `setZoom` magnify the page as engraved, 1× (fitted) to `MAX_MAGNIFY` (4×), anchored at the
+  fingers (two fingers pan too; iOS pinches come from touch events), with no `onZoomChange`; the
+  owner keeps the magnification across re-engravings through `initialMagnify` / `onMagnify`.
 - Reference piece at 565 px requested width: three engravings produce an 1180 px canvas,
   with complete mapping. The dense reference bar expands from 530 to 1145 px and its stacked
   or callout labels drop from 23 to 5. Real reference-tablet timing still needs measurement.

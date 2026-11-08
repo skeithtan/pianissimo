@@ -1,5 +1,5 @@
 /**
- * Consult mode (DECISIONS U72): names revealed at the cursor on request, outside any attempt,
+ * Study mode (DECISIONS U72): names revealed at the cursor on request, outside any attempt,
  * and a session without the cursor's repeat button.
  */
 import { describe, expect, it } from 'vitest'
@@ -25,7 +25,7 @@ const chords = buildScore({
 
 const FADE = DEFAULT_SETTINGS.hints.fadeMs
 
-describe('revealAtCursor (Consult mode)', () => {
+describe('revealAtCursor (Study mode)', () => {
   it('names every note of the group at the cursor, in Listen, with no attempt running', () => {
     const h = harness(chords, { hands: 'none' })
     expect(h.session.ui.get().activity).toBe('idle')

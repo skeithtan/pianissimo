@@ -1,11 +1,13 @@
 import { render } from 'preact'
 import { App } from './app/App'
 import { startShell } from './app/boot'
+import { startPwa } from './app/pwa'
 import './ui/global.css'
 
 function start(): void {
   startShell()
   render(<App />, document.getElementById('app')!)
+  startPwa()
 }
 
 if (import.meta.env.DEV) {

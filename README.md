@@ -28,6 +28,10 @@ Live: <https://skeithtan.github.io/pianissimo/>
   note names on request and no practice involved.
 - Listen mode, practice history and suggested passages, backup and restore, light and dark
   themes, a portrait page layout and a landscape strip.
+- Installable and offline: add it to the Home Screen on an iPhone or iPad, or install it from
+  Chrome. After one online visit it opens without a network; online it always runs the latest
+  version. On iPhone and iPad the installed app keeps its own library, separate from Safari's:
+  move it once with Settings → Backup.
 
 ## Requirements
 

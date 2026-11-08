@@ -350,7 +350,9 @@ hands' notes at the cursor for the hint lifetime, a third label-opacity source m
 persistent and temporary ones) and the keyboard guide, on any device including a phone; nothing
 of practice is offered or recorded. On phone-size screens (`views/shared/usePhone`) both Practice
 and Study trade their header and footer for one top bar and a menu sheet (U74, U80), and the
-portrait page is capped at the stage's width and fitted to it (`pageMaxWidth`, `fitWidth`, R17).
+portrait page is capped at the stage's width and fitted to it (`pageMaxWidth`, `fitWidth`, R17);
+there a pinch magnifies the page as engraved (`imageZoom`, 1× to 4×, never saved, U83) and the
+app itself never zooms (`gesture*` events canceled in `app/boot.ts`, `touch-action` on the root).
 `views/results`: `ResultsView` reads `resultsRequest` and calls `loadResultsData(storage,
 request, sessionDismissals)` (flush the history writer, read the piece, its attempts for one
 score version, the package occurrences, `loadSuggestions`). `deriveResults` (pure) picks the
@@ -445,3 +447,22 @@ Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `prac
 - MIDI/app: `rememberRoute` resets the echo result when the input changes; `selectedInfo` falls
   back to a lost port only while it is lost; the hint-pedal learner takes a baseline snapshot at
   start; `startShell` sets `settingsLoading` before the theme sync.
+
+### Installed app and offline (U84)
+- `public/manifest.webmanifest` + `public/icons/` (rendered from the favicon by
+  `scripts/render-icons.mjs`) + iOS head tags in `index.html` make the app installable.
+- `scripts/pwa.ts` (Vite plugin, `writeBundle`): lists every file of `dist/` with its SHA-256
+  (no `*.map`, no `.vite/`), stamps `index.html` with the build hash
+  (`<meta name="pianissimo-build">`) and writes `dist/sw.js` = the type-stripped
+  `src/workers/sw.ts` (a classic script) prefixed with `BUILD` and `ASSETS`.
+- `src/workers/sw.ts`: precache per build (cache `pianissimo:<scope>:<build>`, unchanged files
+  copied from older caches by hash, downloads checked with `integrity`), `skipWaiting` +
+  `clients.claim`; navigations network first with a 3 s timeout, then the cached `index.html`;
+  other in-scope GETs cache first (own build, then any build), else network (hashed `assets/`
+  kept). Pages report their build (`pn-hello` over a `MessageChannel`); an older cache is
+  deleted only when no open page runs it.
+- `src/app/pwa.ts` (`startPwa()` from `main.tsx`, production only): registers `sw.js` with
+  `updateViaCache: 'none'` after `load`, calls `registration.update()` at launch, on `online`
+  and when shown again; on `controllerchange` asks the new worker whether this page's build is
+  its own and, if not, reloads through `createReloader` only when not on Practice or Study and
+  no `dialog` is open, after flushing settings and the history writer.

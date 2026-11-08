@@ -193,6 +193,10 @@
   box-sizing: border-box;
 }
 
+/* No page zoom (U83): pinch and double-tap never scale the app; the score zooms itself. */
+html {
+  touch-action: pan-x pan-y;
+}
 html,
 body {
   margin: 0;

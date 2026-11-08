@@ -16,3 +16,8 @@ memory is returned. Typechecked by `tsconfig.worker.json` (WebWorker libs only).
   `app/audio/micFollower.ts` on the first Start of a play-through that follows the microphone,
   fed 512-sample blocks from the AudioWorklet `public/mic-processor.js` (relayed by the main
   thread), terminated when the microphone closes.
+
+- `sw.ts` — the service worker (DECISIONS U84): offline precache, network-first pages, staying
+  on the latest deploy. Not bundled by Vite: `scripts/pwa.ts` strips its types after each build
+  and writes `dist/sw.js` with the build's file list prepended (`BUILD`, `ASSETS`), so it must
+  stay a classic script without imports. Registered by `app/pwa.ts`.

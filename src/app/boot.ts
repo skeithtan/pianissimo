@@ -33,6 +33,12 @@ export function startShell(): void {
     if (document.visibilityState === 'hidden') void flushSettings()
   })
 
+  // No page zoom (U83): Safari's own pinch (iPhone, iPad, a Mac trackpad) would scale the whole
+  // app; only the score zooms, through its own handlers. touch-action on the root (global.css)
+  // covers other browsers and double-tap zoom.
+  for (const type of ['gesturestart', 'gesturechange', 'gestureend'])
+    document.addEventListener(type, (e) => e.preventDefault(), { passive: false })
+
   void preloadView(currentView.value).catch(() => undefined)
   void startServices()
 }

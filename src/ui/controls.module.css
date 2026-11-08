@@ -248,6 +248,38 @@
 .untitled + .sheetBody {
   padding-top: 0;
 }
+
+/* Phone-size screens (PHONE_QUERY in views/shared/usePhone.ts, U74): every sheet but a floating
+   one (the phone menus) fills the screen, no margins, no rounded window; the notch, the rounded
+   corners on its side and the home indicator stay clear through the safe-area insets. */
+@media (max-width: 520px), (orientation: landscape) and (max-height: 520px) {
+  .sheet:not(.floating) {
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .sheet:not(.floating) .sheetHeader {
+    padding-top: calc(var(--space-2) + env(safe-area-inset-top, 0px));
+    padding-left: calc(var(--space-5) + var(--safe-l));
+    padding-right: calc(var(--space-2) + var(--safe-r));
+  }
+  .sheet:not(.floating) .untitled {
+    padding-left: calc(var(--space-2) + var(--safe-l));
+  }
+  .sheet:not(.floating) .sheetBody {
+    padding-left: calc(var(--space-5) + var(--safe-l));
+    padding-right: calc(var(--space-5) + var(--safe-r));
+    padding-bottom: calc(var(--space-5) + var(--safe-b));
+  }
+  .sheet:not(.floating) .flush {
+    padding: 0 var(--safe-r) var(--safe-b) var(--safe-l);
+  }
+}
 .sheetBody {
   /* `1 1 auto`, not `flex: 1`: WebKit resolves a 0% basis against the dialog's auto height as
      zero and collapses the body to its header (seen on the iPad, 2026-10-31). */

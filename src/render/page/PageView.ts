@@ -18,7 +18,8 @@
  *   semantics (strip.css styles them; page.css adds the page structure).
  * - Zoom changes the page width: a pinch / ctrl-wheel / `setZoom` previews the scale at once and,
  *   250 ms after it settles, reports `onZoomChange(scale)`; the owner re-prepares the layout at
- *   `pageWidthFor(stage, scale)` and opens a new view at that zoom.
+ *   `pageWidthFor(stage, scale)` and opens a new view at that zoom. With `imageZoom` (a phone
+ *   upright, U83) they magnify the page as engraved instead, like a photo: nothing is reported.
  * - A new engraving with other spacing (Labels Off ↔ on) keeps the cursor's line where it was on
  *   screen and glides the notes in from the previous view's columns (`respaceFrom`).
  */
@@ -71,11 +72,25 @@ export interface PageOptions extends StripOptions {
   readonly zoomDebounceMs?: number
   /**
    * Fit the page to the host's width (R17, a phone): the shown scale never exceeds what puts the
-   * whole canvas between the side gutters, so the page never scrolls sideways. The zoom asked for
-   * is kept (and reported) as the preference; a wider host shows it again.
+   * whole canvas between the side gutters, so the fitted page never scrolls sideways (only an
+   * `imageZoom` magnification does). The zoom asked for is kept (and reported) as the preference;
+   * a wider host shows it again.
    */
   readonly fitWidth?: boolean
+  /**
+   * Zoom like an image (U83): a pinch / ctrl-wheel / `setZoom` magnifies the page as engraved,
+   * from the fitted size (1×) up to `MAX_MAGNIFY`, keeping the point under the fingers in place
+   * (two fingers also pan), and never reports `onZoomChange`: nothing is re-engraved.
+   */
+  readonly imageZoom?: boolean
+  /** The magnification to open at with `imageZoom` (a replaced view passes its predecessor's). */
+  readonly initialMagnify?: number
+  /** Reports the magnification after an `imageZoom` change (the owner hands it to the next view). */
+  readonly onMagnify?: (magnify: number) => void
 }
+
+/** The largest `imageZoom` magnification over the fitted page. */
+export const MAX_MAGNIFY = 4
 
 export type PageStats = StripStats
 
@@ -92,6 +107,9 @@ const FLAG_CLASSES: readonly [number, string][] = [
   [PLAY, 'pn-play'],
 ]
 const TAP_SLOP = 8
+/** Touch events exist (iOS, Android): touch pinches of an image-zoomed page come from them. */
+const TOUCH_EVENTS = typeof window !== 'undefined' && 'ontouchstart' in window
+const clampMagnify = (m: number): number => Math.max(1, Math.min(MAX_MAGNIFY, Number.isFinite(m) ? m : 1))
 /** Space above the first system (screen px). */
 export const PAGE_PAD_TOP = 16
 /** The page's follow scroll (`--dur-slow`), ms. */
@@ -233,6 +251,10 @@ export class PageView {
     moved: boolean
   } | null = null
   private pinch: { dist: number; scale: number } | null = null
+  /** `imageZoom`: the magnification over the fitted scale (1 = fitted). */
+  private magnify = 1
+  /** `imageZoom`: a two-finger touch pinch, anchored at the page point under its first center. */
+  private touchPinch: { dist: number; magnify: number; px: number; py: number } | null = null
   private handleDrag: {
     pointerId: number
     which: 'start' | 'end'
@@ -295,7 +317,8 @@ export class PageView {
     this.flags = new Uint8Array(layout.notes.length)
     this.noteOpacity = new Float32Array(layout.notes.length)
     this.requestedZoom = this.clampZoom(opts.initialZoom ?? 1)
-    this.scale = this.requestedZoom
+    this.magnify = opts.imageZoom ? clampMagnify(opts.initialMagnify ?? 1) : 1
+    this.scale = this.requestedZoom * this.magnify
     this.cursorPos = layout.occurrences[0]?.start ?? 0
     this.cursor = this.geo.cursorAt(this.cursorPos)
     this.globalLoopKnots = buildLoopKnots(layout.occurrences, null)
@@ -598,7 +621,8 @@ export class PageView {
    * owner re-prepares the page at the new width (zoom in = fewer bars per system).
    */
   setZoom(scale: number): void {
-    this.userZoom(scale)
+    if (this.opts.imageZoom) this.magnifyTo(scale / this.fitted(this.requestedZoom))
+    else this.userZoom(scale)
   }
 
   zoom(): number {
@@ -885,7 +909,55 @@ export class PageView {
     const r = this.root.getBoundingClientRect()
     this.hostW = r.width || this.root.clientWidth || 0
     this.hostH = r.height || this.root.clientHeight || 0
-    this.applyZoom(this.fitted(this.requestedZoom))
+    this.applyZoom(this.fitted(this.requestedZoom) * this.magnify)
+  }
+
+  /**
+   * `imageZoom`: magnifies the page as engraved, keeping the page point under (`fx`, `fy`)
+   * (viewport px relative to the view; default its center) at that spot, or at (`tx`, `ty`) when
+   * given (two fingers pan while they pinch). The scroll is this view's own write: not browsing.
+   */
+  private magnifyTo(m: number, fx?: number, fy?: number, anchor?: { px: number; py: number }): void {
+    const next = clampMagnify(m)
+    const fxv = fx ?? this.hostW / 2
+    const fyv = fy ?? this.hostH / 2
+    const p = anchor ?? this.pagePointAt(fxv, fyv)
+    if (next !== this.magnify || anchor) {
+      this.magnify = next
+      const scale = this.fitted(this.requestedZoom) * next
+      if (scale !== this.scale) {
+        this.scale = scale
+        this.instant = true
+        this.root.style.setProperty('--pn-zoom', String(scale))
+      }
+      // No follow jump: the page stays where the fingers hold it.
+      this.followRequest = null
+      this.followXRequest = false
+      this.glideAnim?.cancel()
+      this.glideAnim = null
+      this.glide = null
+      this.flushNow()
+      const x = this.clampScrollX(this.gutter() + p.px * this.scale - fxv)
+      const y = Math.max(
+        0,
+        Math.min(this.sheetHeight() - this.hostH, PAGE_PAD_TOP + (p.py - this.layout.top) * this.scale - fyv),
+      )
+      this.scrollTo(y, false, x)
+      this.schedule()
+    }
+    if (this.zoomTimer) clearTimeout(this.zoomTimer)
+    this.zoomTimer = setTimeout(() => {
+      this.zoomTimer = null
+      if (!this.destroyed) this.opts.onMagnify?.(this.magnify)
+    }, this.opts.zoomDebounceMs ?? 250)
+  }
+
+  /** The page point (layout units) under a viewport point relative to the view. */
+  private pagePointAt(fx: number, fy: number): { px: number; py: number } {
+    return {
+      px: (this.scrollX + fx - this.gutter()) / this.scale,
+      py: (this.scrollY + fy - PAGE_PAD_TOP) / this.scale + this.layout.top,
+    }
   }
 
   /** Left gutter (screen px): the page centered, at least `PAGE_GUTTER` when it fits. */
@@ -1443,6 +1515,12 @@ export class PageView {
     this.on(this.scroller, 'pointerup', (e) => this.pointerUp(e))
     this.on(this.scroller, 'pointercancel', (e) => this.pointerUp(e, true))
     this.on(this.scroller, 'wheel', (e) => this.wheel(e), { passive: false })
+    if (this.opts.imageZoom && TOUCH_EVENTS) {
+      this.on(this.scroller, 'touchstart', (e) => this.touchPinchStart(e), { passive: true })
+      this.on(this.scroller, 'touchmove', (e) => this.touchPinchMove(e), { passive: false })
+      this.on(this.scroller, 'touchend', (e) => this.touchPinchEnd(e))
+      this.on(this.scroller, 'touchcancel', (e) => this.touchPinchEnd(e))
+    }
     for (const [el, which] of [
       [this.startHandle, 'start'],
       [this.endHandle, 'end'],
@@ -1527,9 +1605,12 @@ export class PageView {
       return
     }
     if (this.pointers.size === 2) {
+      this.gesture = null
+      // Touch pinches of an image-zoomed page come from touch events (`touchPinchStart`): iOS
+      // cancels the pointers once the native scroll takes them.
+      if (this.opts.imageZoom && e.pointerType === 'touch' && TOUCH_EVENTS) return
       const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }]
       this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, scale: this.scale }
-      this.gesture = null
       return
     }
     if (this.pointers.size === 1) {
@@ -1564,9 +1645,14 @@ export class PageView {
     }
     if (this.pinch && this.pointers.size >= 2) {
       const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }]
-      this.userZoom((this.pinch.scale * Math.hypot(a.x - b.x, a.y - b.y)) / this.pinch.dist)
+      const scale = (this.pinch.scale * Math.hypot(a.x - b.x, a.y - b.y)) / this.pinch.dist
+      if (this.opts.imageZoom) {
+        const r = this.root.getBoundingClientRect()
+        this.magnifyTo(scale / this.fitted(this.requestedZoom), (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top)
+      } else this.userZoom(scale)
       return
     }
+    if (this.touchPinch) return
     const g = this.gesture
     if (g && !g.moved && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) > TAP_SLOP) g.moved = true
     if (g?.mouse && g.moved && this.browseEnabled) {
@@ -1729,8 +1815,47 @@ export class PageView {
   private wheel(e: WheelEvent): void {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault()
-      this.userZoom(this.scale * Math.exp(-e.deltaY * 0.004))
+      const scale = this.scale * Math.exp(-e.deltaY * 0.004)
+      if (this.opts.imageZoom) {
+        const r = this.root.getBoundingClientRect()
+        this.magnifyTo(scale / this.fitted(this.requestedZoom), e.clientX - r.left, e.clientY - r.top)
+      } else this.userZoom(scale)
     }
+  }
+
+  /** `imageZoom`: two fingers down start a pinch anchored at the page point under their center. */
+  private touchPinchStart(e: TouchEvent): void {
+    if (!this.opts.imageZoom || e.touches.length !== 2) return
+    const [a, b] = [e.touches[0]!, e.touches[1]!]
+    const r = this.root.getBoundingClientRect()
+    const p = this.pagePointAt((a.clientX + b.clientX) / 2 - r.left, (a.clientY + b.clientY) / 2 - r.top)
+    this.touchPinch = {
+      dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1,
+      magnify: this.magnify,
+      ...p,
+    }
+    this.gesture = null
+    this.pinch = null
+  }
+
+  /** Two fingers move: magnify, and keep the anchored page point under their center (a pan). */
+  private touchPinchMove(e: TouchEvent): void {
+    const t = this.touchPinch
+    if (!t || e.touches.length < 2) return
+    if (e.cancelable) e.preventDefault()
+    const [a, b] = [e.touches[0]!, e.touches[1]!]
+    const r = this.root.getBoundingClientRect()
+    const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+    this.magnifyTo(
+      (t.magnify * dist) / t.dist,
+      (a.clientX + b.clientX) / 2 - r.left,
+      (a.clientY + b.clientY) / 2 - r.top,
+      t,
+    )
+  }
+
+  private touchPinchEnd(e: TouchEvent): void {
+    if (this.touchPinch && e.touches.length < 2) this.touchPinch = null
   }
 
   // COPIED from StripView.withEdge.
