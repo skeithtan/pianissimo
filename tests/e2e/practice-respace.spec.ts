@@ -88,12 +88,22 @@ const engravings = (page: Page): Promise<number> => page.evaluate(() => window._
  * the receded tools are inert, so the menu is opened the way the labels are chosen here: a
  * programmatic click.
  */
+/** The footer's Menu button, or the phone top bar's (U80), which opens the same rows in a sheet. */
+const MENU_BUTTON = 'footer button[aria-label="Menu"], [data-testid="practice-bar"] button[aria-label="Menu"]'
+
 async function openMenuDirectly(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const menu = document.querySelector<HTMLElement>('footer button[aria-label="Menu"]')!
-    if (menu.getAttribute('aria-expanded') !== 'true') menu.click()
-  })
-  await page.waitForFunction(() => document.querySelector('[role="radiogroup"][aria-label="Note names on the score"]'))
+  // Playback starting closes the menu (U76), and `ui.playing` can still settle right after
+  // Listen: keep asking until the rows are there.
+  await page.waitForFunction(
+    (selector) => {
+      if (document.querySelector('[role="radiogroup"][aria-label="Note names on the score"]')) return true
+      const menu = document.querySelector<HTMLElement>(selector)!
+      if (menu.getAttribute('aria-expanded') !== 'true') menu.click()
+      return false
+    },
+    MENU_BUTTON,
+    { polling: 100 },
+  )
 }
 
 /** The last animated note and the real note on the first frame after the overlay disappears. */
@@ -304,7 +314,7 @@ test.describe('respacing between Labels Off and All', () => {
     await page.getByRole('button', { name: 'Left hand', exact: true }).click()
     await page.getByRole('button', { name: 'Right hand', exact: true }).click()
     await page.getByRole('button', { name: 'Listen', exact: true }).click()
-    const samples = await page.evaluate(async () => {
+    const samples = await page.evaluate(async (menuButton) => {
       const points: { t: number; x: number; y: number; lag: number; mode: string }[] = []
       const sample = (mode: string) => {
         const cursor = document.querySelector<HTMLElement>('.pn-page .pn-cursor')!
@@ -322,12 +332,15 @@ test.describe('respacing between Labels Off and All', () => {
       for (const mode of ['All', 'Off', 'Conditional', 'All', 'Conditional']) {
         sample(mode)
         // Direct activation keeps the test focused on playback, even with receded controls. Note
-        // names live in the footer menu (U76), which closes when the chrome recedes: reopen it.
+        // names live in the footer menu (U76), which closes when the chrome recedes, or on a
+        // phone in the top bar's menu sheet (U80): reopen it.
         const radio = () =>
           [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((el) => el.textContent === mode)
-        const menu = document.querySelector<HTMLElement>('footer button[aria-label="Menu"]')!
-        if (menu.getAttribute('aria-expanded') !== 'true') menu.click()
-        while (!radio()) await new Promise((resolve) => requestAnimationFrame(resolve))
+        const menu = document.querySelector<HTMLElement>(menuButton)!
+        while (!radio()) {
+          if (menu.getAttribute('aria-expanded') !== 'true') menu.click()
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
         radio()!.click()
         await new Promise<void>((resolve) => {
           const started = performance.now()
@@ -340,7 +353,7 @@ test.describe('respacing between Labels Off and All', () => {
         })
       }
       return points
-    })
+    }, MENU_BUTTON)
     expect(samples.length).toBeGreaterThan(30)
     let worstStep = 0
     for (let i = 1; i < samples.length; i++) {
