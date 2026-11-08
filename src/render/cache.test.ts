@@ -89,6 +89,24 @@ describe('layoutKey', () => {
     expect(layoutKey({ ...base, scoreVersionId: 't' })).not.toBe(k)
     expect(layoutKey(base)).toBe(k)
   })
+
+  it('keys a page layout by its requested width and, when set, its canvas cap (R17)', () => {
+    const page = {
+      scoreVersionId: 's',
+      renderer: { name: 'osmd', version: '1' },
+      labelChars: 3,
+      labelFontPx: 12,
+      segmentWidth: 1600,
+      mode: 'page' as const,
+      pageWidth: 360,
+    }
+    const k = layoutKey(page)
+    expect(k).toContain('page360')
+    expect(layoutKey({ ...page, pageWidth: 368 })).not.toBe(k)
+    expect(layoutKey({ ...page, pageMaxWidth: 360 })).not.toBe(k)
+    expect(layoutKey({ ...page, pageMaxWidth: 360 })).toContain('max360')
+    expect(layoutKey({ ...page, mode: 'strip' as const })).not.toContain('page')
+  })
 })
 
 describe('MemoryLayoutCache', () => {

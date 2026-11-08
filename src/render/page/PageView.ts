@@ -69,6 +69,12 @@ export interface PageOptions extends StripOptions {
   readonly followOffset?: number
   /** Debounce before a zoom change is reported (`onZoomChange`), ms (default 250). */
   readonly zoomDebounceMs?: number
+  /**
+   * Fit the page to the host's width (R17, a phone): the shown scale never exceeds what puts the
+   * whole canvas between the side gutters, so the page never scrolls sideways. The zoom asked for
+   * is kept (and reported) as the preference; a wider host shows it again.
+   */
+  readonly fitWidth?: boolean
 }
 
 export type PageStats = StripStats
@@ -166,7 +172,10 @@ export class PageView {
     typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
   private readonly ease: string
 
+  /** The scale shown: `requestedZoom`, or less when `fitWidth` needs it (`fitted`). */
   private scale: number
+  /** The zoom asked for (option, `setZoom`, pinch, ctrl-wheel), the one reported and saved. */
+  private requestedZoom: number
   private hostW = 0
   private hostH = 0
   /** Last scroll offset read or written (scroll events update it; no reads in the frame). */
@@ -285,7 +294,8 @@ export class PageView {
     this.geo = new PageGeometry(layout)
     this.flags = new Uint8Array(layout.notes.length)
     this.noteOpacity = new Float32Array(layout.notes.length)
-    this.scale = this.clampZoom(opts.initialZoom ?? 1)
+    this.requestedZoom = this.clampZoom(opts.initialZoom ?? 1)
+    this.scale = this.requestedZoom
     this.cursorPos = layout.occurrences[0]?.start ?? 0
     this.cursor = this.geo.cursorAt(this.cursorPos)
     this.globalLoopKnots = buildLoopKnots(layout.occurrences, null)
@@ -327,7 +337,7 @@ export class PageView {
     this.readoutEl.setAttribute('aria-hidden', 'true')
     this.cursorBtn = this.button('pn-cursor-action', icon.repeat, opts.cursorActionLabel ?? 'Repeat from here')
     this.cursorBtn.toggleAttribute('inert', true)
-    // Without a handler (Consult mode, U72) the button is never shown, so it is not in the DOM.
+    // Without a handler (Study mode, U72) the button is never shown, so it is not in the DOM.
     this.cursorEl.append(bar, grip, this.readoutEl)
     if (opts.onCursorAction) this.cursorEl.append(this.cursorBtn)
     this.startHandle = this.button(
@@ -588,7 +598,7 @@ export class PageView {
    * owner re-prepares the page at the new width (zoom in = fewer bars per system).
    */
   setZoom(scale: number): void {
-    this.applyZoom(this.clampZoom(scale), true)
+    this.userZoom(scale)
   }
 
   zoom(): number {
@@ -835,27 +845,47 @@ export class PageView {
     return Math.max(min, Math.min(max, Number.isFinite(s) && s > 0 ? s : 1))
   }
 
-  private applyZoom(scale: number, notify: boolean): void {
+  /** The scale shown for a requested zoom: capped to the host's width with `fitWidth` (R17). */
+  private fitted(zoom: number): number {
+    if (!this.opts.fitWidth || !(this.hostW > 0) || !(this.layout.width > 0)) return zoom
+    return Math.min(zoom, Math.max(0.05, (this.hostW - 2 * PAGE_GUTTER) / this.layout.width))
+  }
+
+  /**
+   * A zoom the user (or the owner) asked for: remembered, shown fitted, and reported after the
+   * debounce so the owner re-prepares the page at the width that zoom means. A request beyond
+   * the fit changes nothing on screen until that narrower page arrives, so it is still reported.
+   */
+  private userZoom(scale: number): void {
+    const z = this.clampZoom(scale)
+    const shown = this.fitted(z)
+    const changed = z !== this.requestedZoom || shown !== this.scale
+    this.requestedZoom = z
+    this.applyZoom(shown)
+    if (!changed || !this.opts.onZoomChange) return
+    if (this.zoomTimer) clearTimeout(this.zoomTimer)
+    this.zoomTimer = setTimeout(() => {
+      this.zoomTimer = null
+      if (!this.destroyed) this.opts.onZoomChange?.(this.requestedZoom)
+    }, this.opts.zoomDebounceMs ?? 250)
+  }
+
+  private applyZoom(scale: number): void {
     if (scale === this.scale) return
     this.scale = scale
     this.instant = true
     this.followRequest = this.browsing ? null : 'instant'
     this.followXRequest = !this.browsing
     this.root.style.setProperty('--pn-zoom', String(scale))
-    if (notify && this.opts.onZoomChange) {
-      if (this.zoomTimer) clearTimeout(this.zoomTimer)
-      this.zoomTimer = setTimeout(() => {
-        this.zoomTimer = null
-        if (!this.destroyed) this.opts.onZoomChange?.(this.scale)
-      }, this.opts.zoomDebounceMs ?? 250)
-    }
     this.schedule()
   }
 
+  /** Measures the host and re-fits the shown scale from the requested zoom (`fitWidth`). */
   private measureHost(): void {
     const r = this.root.getBoundingClientRect()
     this.hostW = r.width || this.root.clientWidth || 0
     this.hostH = r.height || this.root.clientHeight || 0
+    this.applyZoom(this.fitted(this.requestedZoom))
   }
 
   /** Left gutter (screen px): the page centered, at least `PAGE_GUTTER` when it fits. */
@@ -1534,7 +1564,7 @@ export class PageView {
     }
     if (this.pinch && this.pointers.size >= 2) {
       const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }]
-      this.applyZoom(this.clampZoom((this.pinch.scale * Math.hypot(a.x - b.x, a.y - b.y)) / this.pinch.dist), true)
+      this.userZoom((this.pinch.scale * Math.hypot(a.x - b.x, a.y - b.y)) / this.pinch.dist)
       return
     }
     const g = this.gesture
@@ -1699,7 +1729,7 @@ export class PageView {
   private wheel(e: WheelEvent): void {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault()
-      this.applyZoom(this.clampZoom(this.scale * Math.exp(-e.deltaY * 0.004)), true)
+      this.userZoom(this.scale * Math.exp(-e.deltaY * 0.004))
     }
   }
 

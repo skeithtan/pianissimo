@@ -34,6 +34,68 @@ export interface FooterMenuProps {
   readonly hasTempo: boolean
 }
 
+/**
+ * The menu's rows: Note names, Play through, Keep time and (unless `showKeys` is false: a phone
+ * on its side has no keyboard guide, U80) Show keys. The footer popover and the phone's menu
+ * sheet (`PracticeScreen`, U80) share them; the classes come from the host.
+ */
+export function PracticeMenuItems({
+  ui,
+  session,
+  labels,
+  onLabels,
+  hasTempo,
+  showKeys = true,
+  rowClass,
+  labelClass,
+  toggleClass,
+}: Pick<FooterMenuProps, 'ui' | 'session' | 'labels' | 'onLabels' | 'hasTempo'> & {
+  readonly showKeys?: boolean
+  readonly rowClass: string | undefined
+  readonly labelClass: string | undefined
+  readonly toggleClass: string | undefined
+}) {
+  const toggleRow = [rowClass, toggleClass].filter(Boolean).join(' ')
+  return (
+    <>
+      <div class={rowClass}>
+        <span class={labelClass} aria-hidden="true">
+          Note names
+        </span>
+        <Segmented<PersistentLabelMode>
+          label="Note names on the score"
+          value={labels}
+          options={LABEL_OPTIONS}
+          onChange={onLabels}
+          compact
+        />
+      </div>
+      <Toggle
+        class={toggleRow}
+        label="Play through"
+        checked={ui.playThrough}
+        disabled={!ui.handsAvailable || ui.hands === 'none'}
+        onChange={(on) => session.setPlayThrough(on)}
+      />
+      <Toggle
+        class={toggleRow}
+        label="Keep time"
+        checked={ui.rhythm}
+        disabled={!ui.handsAvailable || ui.hands === 'none' || !hasTempo}
+        onChange={(on) => session.setRhythmMode(on)}
+      />
+      {showKeys ? (
+        <Toggle
+          class={toggleRow}
+          label="Show keys"
+          checked={ui.keyboardVisible}
+          onChange={(on) => session.setKeyboardVisible(on)}
+        />
+      ) : null}
+    </>
+  )
+}
+
 export function FooterMenu({ ui, session, receded, labels, onLabels, hasTempo }: FooterMenuProps) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -108,37 +170,15 @@ export function FooterMenu({ ui, session, receded, labels, onLabels, hasTempo }:
             ...(fit?.maxHeight != null ? { maxHeight: `${fit.maxHeight}px`, overflowY: 'auto' } : {}),
           }}
         >
-          <div class={menuStyles.row}>
-            <span class={menuStyles.label} aria-hidden="true">
-              Note names
-            </span>
-            <Segmented<PersistentLabelMode>
-              label="Note names on the score"
-              value={labels}
-              options={LABEL_OPTIONS}
-              onChange={onLabels}
-              compact
-            />
-          </div>
-          <Toggle
-            class={`${menuStyles.row} ${menuStyles.toggle}`}
-            label="Play through"
-            checked={ui.playThrough}
-            disabled={!ui.handsAvailable || ui.hands === 'none'}
-            onChange={(on) => session.setPlayThrough(on)}
-          />
-          <Toggle
-            class={`${menuStyles.row} ${menuStyles.toggle}`}
-            label="Keep time"
-            checked={ui.rhythm}
-            disabled={!ui.handsAvailable || ui.hands === 'none' || !hasTempo}
-            onChange={(on) => session.setRhythmMode(on)}
-          />
-          <Toggle
-            class={`${menuStyles.row} ${menuStyles.toggle}`}
-            label="Show keys"
-            checked={ui.keyboardVisible}
-            onChange={(on) => session.setKeyboardVisible(on)}
+          <PracticeMenuItems
+            ui={ui}
+            session={session}
+            labels={labels}
+            onLabels={onLabels}
+            hasTempo={hasTempo}
+            rowClass={menuStyles.row}
+            labelClass={menuStyles.label}
+            toggleClass={menuStyles.toggle}
           />
         </div>
       ) : null}

@@ -11,7 +11,7 @@ import type { NamingSettings } from '../../core/model/settings'
 import { DOUBLE_FLAT, DOUBLE_SHARP, FLAT, NATURAL, SHARP } from '../../core/naming'
 import { KeyboardGuide } from '../../render/keyboard'
 import { useFadePresence } from '../../ui/fade'
-import { usePhone } from '../shared/usePhone'
+import { usePhone, usePhoneLandscape } from '../shared/usePhone'
 import { overviewMeasures } from '../../ui/overviewMath'
 import { ScoreOverview, type OverviewPositionSource } from '../../ui/ScoreOverview'
 import type { StripHandle } from './env'
@@ -28,11 +28,14 @@ export function OverviewBar({
   model,
   range,
   view,
+  inline = false,
 }: {
   session: PracticeSession
   model: ScoreModel
   range: PassageRange | null
   view: { readonly current: StripHandle | null }
+  /** Inside a phone's top bar (U80), between its buttons, instead of a row of its own. */
+  inline?: boolean
 }) {
   const measures = useMemo(() => overviewMeasures(model), [model])
   // The session publishes progress every frame while playing: the overview follows it without
@@ -45,7 +48,7 @@ export function OverviewBar({
     [session],
   )
   return (
-    <div class={styles.overview}>
+    <div class={inline ? styles.overviewInline : styles.overview}>
       <ScoreOverview
         measures={measures}
         follow={follow}
@@ -129,7 +132,8 @@ export function StageCue({ session }: { session: PracticeSession }) {
  * The keyboard guide in a slot that slides open and closed (its grid row animates 0fr ↔ 1fr), so
  * the stage above follows smoothly. The guide stays mounted while the slot closes and fades out
  * at the same time (`useFadePresence`); a closed slot holds nothing. On a phone-size screen the
- * guide is the keys and their highlights alone, no note names (DECISIONS U75).
+ * guide is the keys and their highlights alone, no note names (DECISIONS U75); a phone on its
+ * side has no guide at all, whatever the setting: the score gets every pixel of height (U80).
  */
 export function GuidePanel({
   session,
@@ -142,17 +146,19 @@ export function GuidePanel({
 }) {
   const ui = useStore(session.ui)
   const guide = useStore(session.guide)
-  const presence = useFadePresence(ui.keyboardVisible, fadeMs)
   const phone = usePhone()
+  const sideways = usePhoneLandscape()
+  const open = ui.keyboardVisible && !sideways
+  const presence = useFadePresence(open, fadeMs)
   return (
-    <div class={styles.guideSlot} data-open={ui.keyboardVisible ? 'true' : 'false'} data-testid="guide-slot">
+    <div class={styles.guideSlot} data-open={open ? 'true' : 'false'} data-testid="guide-slot">
       <div class={styles.guideSlotInner}>
         {presence.mounted ? (
           <section class={styles.guide} aria-label="Keyboard guide" data-compact={phone ? 'true' : undefined}>
             <KeyboardGuide
               keys={guide.keys}
               rollDirection={guide.rollDirection}
-              visible={ui.keyboardVisible}
+              visible={open}
               fadeMs={fadeMs}
               naming={naming}
               labels={!phone}

@@ -49,6 +49,8 @@ export interface HandTogglesProps {
   readonly playDisabled?: boolean
   /** Extra class on the two hand toggles (the Practice view fades them while playing). */
   readonly handClass?: string | undefined
+  /** A phone's top bar (U80): 40 px hands (44 px hit area) around a 44 px button, not 58 and 68. */
+  readonly compact?: boolean
 }
 
 function HandToggle({
@@ -57,6 +59,7 @@ function HandToggle({
   disabled,
   unavailable,
   extraClass,
+  compact,
   onToggle,
   onUnavailable,
 }: {
@@ -65,6 +68,7 @@ function HandToggle({
   disabled: boolean | undefined
   unavailable: string | undefined
   extraClass: string | undefined
+  compact: boolean
   onToggle: () => void
   onUnavailable: (() => void) | undefined
 }) {
@@ -81,7 +85,7 @@ function HandToggle({
       disabled={disabled}
       onClick={blocked ? onUnavailable : onToggle}
     >
-      <Icon name={hand === 'left' ? 'handLeft' : 'hand'} size={30} />
+      <Icon name={hand === 'left' ? 'handLeft' : 'hand'} size={compact ? 22 : 30} />
       <span class={styles.letter} aria-hidden="true">
         {hand === 'left' ? 'L' : 'R'}
       </span>
@@ -101,18 +105,20 @@ export function HandToggles({
   onHandsUnavailable,
   playDisabled,
   handClass,
+  compact = false,
 }: HandTogglesProps) {
   const left = handIsOn(hands, 'left')
   const right = handIsOn(hands, 'right')
   const label = playLabel ?? playButtonLabel(hands, playing)
   return (
-    <div class={styles.row}>
+    <div class={compact ? `${styles.row} ${styles.compact}` : styles.row}>
       <HandToggle
         hand="left"
         on={left}
         disabled={handsDisabled}
         unavailable={handsUnavailable}
         extraClass={handClass}
+        compact={compact}
         onToggle={() => onHandsChange(handsFromToggles(!left, right))}
         onUnavailable={onHandsUnavailable}
       />
@@ -124,7 +130,7 @@ export function HandToggles({
         disabled={playDisabled}
         onClick={onPlayPause}
       >
-        <Icon name={playing ? 'pause' : 'play'} size={32} />
+        <Icon name={playing ? 'pause' : 'play'} size={compact ? 24 : 32} />
       </button>
       <HandToggle
         hand="right"
@@ -132,6 +138,7 @@ export function HandToggles({
         disabled={handsDisabled}
         unavailable={handsUnavailable}
         extraClass={handClass}
+        compact={compact}
         onToggle={() => onHandsChange(handsFromToggles(left, !right))}
         onUnavailable={onHandsUnavailable}
       />

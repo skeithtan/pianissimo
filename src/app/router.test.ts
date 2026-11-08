@@ -3,11 +3,11 @@ import {
   closeConnection,
   closeSettings,
   connectionOpen,
-  consultRequest,
+  studyRequest,
   currentView,
   navigate,
   openConnection,
-  openConsult,
+  openStudy,
   openPractice,
   openResults,
   openSettings,
@@ -122,7 +122,7 @@ function reset(): void {
   connectionOpen.value = false
   practiceRequest.value = null
   resultsRequest.value = null
-  consultRequest.value = null
+  studyRequest.value = null
 }
 
 function start(hash = '', state: unknown = null): FakeBrowser {
@@ -163,16 +163,16 @@ describe('opening a URL', () => {
     expect(resultsRequest.value).toEqual({ pieceId: 'p1', attemptId: 'a2' })
   })
 
-  it('reopens a deep-linked piece in Consult, and its empty state without a piece (U72)', () => {
-    start('#/consult/p1')
-    expect(currentView.value).toBe('consult')
-    expect(consultRequest.value).toEqual({ pieceId: 'p1' })
+  it('reopens a deep-linked piece in Study, and its empty state without a piece (U72)', () => {
+    start('#/study/p1')
+    expect(currentView.value).toBe('study')
+    expect(studyRequest.value).toEqual({ pieceId: 'p1' })
     expect(practiceRequest.value).toBeNull()
     stop?.()
     reset()
-    start('#/consult')
-    expect(currentView.value).toBe('consult')
-    expect(consultRequest.value).toBeNull()
+    start('#/study')
+    expect(currentView.value).toBe('study')
+    expect(studyRequest.value).toBeNull()
   })
 
   it('takes a Practice preset from history.state (what a reload keeps)', () => {
@@ -258,14 +258,14 @@ describe('navigation → URL', () => {
     expect(b.hashes()).toEqual(['#/practice/p1', '#/practice/p2'])
   })
 
-  it('Consult is its own page: opening it from the Library pushes, Settings over it is one entry', async () => {
+  it('Study is its own page: opening it from the Library pushes, Settings over it is one entry', async () => {
     const b = start()
-    openConsult({ pieceId: 'p1' })
+    openStudy({ pieceId: 'p1' })
     await b.settle()
-    expect(b.hashes()).toEqual(['', '#/consult/p1'])
+    expect(b.hashes()).toEqual(['', '#/study/p1'])
     openSettings()
     await b.settle()
-    expect(b.hashes()).toEqual(['', '#/consult/p1', '#/consult/p1?settings'])
+    expect(b.hashes()).toEqual(['', '#/study/p1', '#/study/p1?settings'])
     navigate('library')
     await b.settle()
     expect(currentView.value).toBe('library')

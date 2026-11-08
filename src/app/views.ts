@@ -43,10 +43,10 @@ export const views: Readonly<Record<ViewName, ViewEntry>> = {
     chrome: 'bar',
     load: () => import('../views/results/ResultsView').then((m) => ({ default: m.ResultsView })),
   },
-  consult: {
-    title: 'Consult',
+  study: {
+    title: 'Study',
     chrome: 'none',
-    load: () => import('../views/consult/ConsultView').then((m) => ({ default: m.ConsultView })),
+    load: () => import('../views/study/StudyView').then((m) => ({ default: m.StudyView })),
   },
 }
 

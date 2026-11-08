@@ -310,6 +310,6 @@ export type SessionSettings = Pick<
   AppSettings,
   'naming' | 'labels' | 'hints' | 'pedal' | 'route' | 'sound' | 'metronome'
 > & {
-  /** Keep time tolerance; absent (Consult, which has no Keep time) = the engine default. */
+  /** Keep time tolerance; absent (Study, which has no Keep time) = the engine default. */
   readonly rhythm?: AppSettings['rhythm']
 }

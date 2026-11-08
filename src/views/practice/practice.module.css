@@ -710,6 +710,118 @@
   }
 }
 
+/* ── Phone-size screens (`data-compact`, usePhone, U80) ──────────────────── */
+/* No header and no footer: one top bar (Back, the title or, on its side, the overview, the hand
+   toggles around Start, Menu) and a menu sheet for the rest (the connection status too). The bar is
+   as short as its touch targets allow; nothing in it collapses while playing (the overview and
+   Start / Pause live here), the other controls dim with the chrome. */
+.bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 52px;
+  padding: 4px calc(4px + var(--safe-r)) 4px calc(4px + var(--safe-l));
+}
+.bar .titleText {
+  flex: 1 1 auto;
+}
+.bar .title {
+  font-size: 0.9375rem;
+}
+.bar .subtitle {
+  font-size: 0.6875rem;
+}
+/* The overview between the bar's buttons (a phone on its side), instead of a row of its own. */
+.overviewInline {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 var(--space-1);
+}
+.menuButton {
+  position: relative;
+}
+/* Keep time is on: a small metronome on the Menu button's corner (as the footer's, U78). */
+.menuBadge {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.screen[data-compact='true'] .stage {
+  min-height: 120px;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* Why Start is unavailable: a pill over the bottom of the score, so the layout never shifts. */
+.stageNote {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-2);
+  transform: translateX(-50%);
+  max-width: calc(100% - 2 * var(--space-3));
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font-size: var(--text-xs);
+  text-align: center;
+  z-index: 4;
+}
+/* The home indicator's strip, on the keyboard guide's surface. */
+.safeBottom {
+  flex: none;
+  height: var(--safe-b);
+  background: var(--practice-surface);
+}
+/* The menu sheet's content: labeled rows, then full-width actions. */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.menuRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--touch);
+}
+.menuLabel {
+  font-size: var(--text-s);
+  font-weight: 550;
+}
+.menuToggle {
+  flex-wrap: nowrap;
+}
+.menuActions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+.menuActions > button {
+  justify-content: flex-start;
+}
+
 /* Keep time count-in (P13): the beats left, centered over the stage, under the banners. */
 .countIn {
   position: absolute;

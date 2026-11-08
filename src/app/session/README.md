@@ -24,7 +24,7 @@ practice", "Execution and rendering architecture", "Storage and recovery" (resum
 
 ### `PracticeSession`
 
-Consult mode (U72): `SessionOptions.cursorAction: false` keeps the cursor's repeat button off
+Study mode (U72): `SessionOptions.cursorAction: false` keeps the cursor's repeat button off
 for good, and `revealAtCursor()` names both hands' notes at the cursor for the hint lifetime
 (`REVEAL_FALLBACK_S` when hints last until the correct note), fading over `hints.fadeMs`; it is
 a third label-opacity source merged with the persistent and temporary ones, independent of any
@@ -256,7 +256,7 @@ both hands, the other hand automatic with one, metronome per the setting).
 - **Settings.** A changed `settings.rhythm.toleranceMs` goes to the engine
   (`updateSettings({ rhythm })`), which interrupts an active strict attempt ('setting-change'); the
   interruption then reads "The Keep time tolerance changed, so the attempt stopped."
-  `SessionSettings.rhythm` is optional (Consult has no Keep time; absent = the engine default).
+  `SessionSettings.rhythm` is optional (Study has no Keep time; absent = the engine default).
 
 Tests: `PracticeSession.rhythm.test.ts` (manual clock, a recording metronome module),
 `countIn.test.ts`, `selection.test.ts`.

@@ -4,7 +4,7 @@
  */
 import { layoutKey, type LayoutCache } from './cache'
 import { LABEL_FONT_PX } from './labels/metrics'
-import { pageWidthOf } from './osmd/page'
+import { pageMaxWidthOf, pageWidthOf } from './osmd/page'
 import { DEFAULT_SEGMENT_WIDTH } from './partition'
 import type { PreparedLayout, PrepareOptions, RenderInput, RendererAdapter } from './types'
 
@@ -22,7 +22,9 @@ export async function prepareLayout(
     labelFontPx: options.labels.fontPx ?? LABEL_FONT_PX,
     labelRoom: options.labels.room ?? 'all',
     segmentWidth: options.segmentWidth ?? DEFAULT_SEGMENT_WIDTH,
-    ...(options.mode === 'page' ? { mode: 'page' as const, pageWidth: pageWidthOf(options) } : {}),
+    ...(options.mode === 'page'
+      ? { mode: 'page' as const, pageWidth: pageWidthOf(options), ...pageMaxWidthOf(options) }
+      : {}),
   })
   const hit = cache ? await cache.get(key).catch(() => undefined) : undefined
   if (hit) {

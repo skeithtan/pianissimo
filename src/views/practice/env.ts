@@ -11,6 +11,7 @@ import type { BrowserAudioModule, MetronomeModule } from '../../core/playback'
 import type { PianissimoStorage } from '../../core/storage'
 import {
   OsmdRenderer,
+  type PageOptions,
   PageView,
   StripView,
   prepareLayout,
@@ -24,8 +25,11 @@ import {
   type StripOptions,
 } from '../../render'
 
-/** Strip options, incl. the cursor action (round repeat button on the cursor line, U14). */
-export type PracticeStripOptions = StripOptions
+/**
+ * Strip options, incl. the cursor action (round repeat button on the cursor line, U14) and the
+ * page's width fit (`fitWidth`, a phone, R17; the strip ignores it).
+ */
+export type PracticeStripOptions = StripOptions & Pick<PageOptions, 'fitWidth'>
 
 /** The strip as the view drives it (session part + view-only controls). */
 export interface StripHandle extends StripSink {

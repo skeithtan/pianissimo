@@ -32,7 +32,6 @@ async function reveal(page: Page): Promise<void> {
 for (const size of [
   { name: 'portrait', width: 586, height: 846, colorScheme: 'light', reducedMotion: 'no-preference' },
   { name: 'tablet', width: 820, height: 1180, colorScheme: 'dark', reducedMotion: 'no-preference' },
-  { name: 'phone', width: 390, height: 844, colorScheme: 'dark', reducedMotion: 'reduce' },
 ] as const) {
   test(`${size.name}: focus releases header and tool-row space, and restores usable speed controls`, async ({
     page,
@@ -91,6 +90,82 @@ for (const size of [
     await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
     await expect.poll(() => height(header(page))).toBeGreaterThan(50)
     await expect.poll(() => height(tools(page))).toBeGreaterThan(40)
+  })
+}
+
+/**
+ * A phone-size screen (U80) has one top bar instead of the header and footer, and nothing in it
+ * collapses: Start / Pause and (on its side) the overview live there. The other controls dim.
+ */
+for (const size of [
+  { name: 'phone upright', width: 390, height: 844, sideways: false },
+  { name: 'phone on its side', width: 844, height: 390, sideways: true },
+]) {
+  test(`${size.name}: the top bar stays while playing, the score keeps its height, the menu holds the tools`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: size.width, height: size.height })
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
+    await open(page)
+    await expect(screen(page)).toHaveAttribute('data-compact', 'true')
+    await expect(page.locator('footer')).toHaveCount(0)
+    await expect(header(page)).toHaveCount(0)
+    const bar = page.getByTestId('practice-bar')
+    for (const name of ['Back to Library', 'Left hand', 'Start', 'Right hand', 'Menu']) {
+      const box = (await bar.getByRole('button', { name, exact: true }).boundingBox())!
+      expect(box, name).not.toBeNull()
+      // The hands are drawn at 40 px with a 44 px hit area around them (a pseudo-element).
+      expect(Math.min(box.width, box.height), name).toBeGreaterThanOrEqual(name.endsWith('hand') ? 40 : 44)
+    }
+    const overview = page.getByRole('slider', { name: 'Piece overview' })
+    await expect(overview).toBeVisible()
+    if (size.sideways) {
+      // The overview sits in the bar, in the title's place; no keyboard guide.
+      await expect(bar.getByRole('slider', { name: 'Piece overview' })).toBeVisible()
+      await expect(page.getByTestId('guide-slot')).toHaveAttribute('data-open', 'false')
+    }
+    const stageBefore = await height(stage(page))
+    expect(stageBefore).toBeGreaterThanOrEqual(size.height - 150)
+    const playBefore = (await page.getByRole('button', { name: 'Start', exact: true }).boundingBox())!
+
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    await expect(screen(page)).toHaveAttribute('data-recede', 'true')
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+    expect(Math.abs((await height(stage(page))) - stageBefore)).toBeLessThan(2)
+    const pause = (await page.getByRole('button', { name: 'Pause', exact: true }).boundingBox())!
+    expect(Math.abs(pause.y - playBefore.y)).toBeLessThan(2)
+    await expect(overview).toBeVisible()
+    await expect(bar.getByRole('button', { name: 'Menu', exact: true })).toHaveCSS('opacity', '0.12')
+
+    // A tap on the bar brings the dimmed controls back; the menu sheet holds Speed and the rest.
+    await bar.click({ position: { x: 2, y: 2 } })
+    await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
+    await page.getByRole('button', { name: 'Pause', exact: true }).click()
+    await bar.getByRole('button', { name: 'Menu', exact: true }).click()
+    const menu = page.getByRole('dialog', { name: 'Menu' })
+    await expect(menu).toBeVisible()
+    await expect(menu.getByText('Speed')).toBeVisible()
+    for (const name of ['Play through', 'Keep time']) await expect(menu.getByRole('switch', { name })).toBeVisible()
+    await expect(menu.getByRole('switch', { name: 'Show keys' })).toHaveCount(size.sideways ? 0 : 1)
+    await expect(menu.getByRole('radiogroup', { name: 'Note names on the score' })).toBeVisible()
+    await menu.getByRole('button', { name: /Open speed options/ }).click()
+    const speed = page.getByRole('dialog', { name: 'Playback speed' })
+    await expect(speed).toBeVisible()
+    const input = speed.getByRole('textbox', { name: 'Custom speed' })
+    await input.click()
+    await input.fill('80%')
+    await expect(input).toHaveValue('80%')
+    const box = (await input.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.y).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(size.width)
+    expect(box.y + box.height).toBeLessThanOrEqual(size.height)
+    await input.press('Escape')
+    await expect(speed).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+    // Paused mid-piece, the main button reads Resume.
+    await expect(bar.getByRole('button', { name: /^(Start|Resume)$/ })).toBeVisible()
   })
 }
 

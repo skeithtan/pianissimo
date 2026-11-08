@@ -25,6 +25,8 @@ export interface LayoutKeyParts {
   readonly mode?: LayoutMode
   /** Page mode: requested wrapping width (layout px), before label-aware expansion. */
   readonly pageWidth?: number
+  /** Page mode: the expansion cap (`PrepareOptions.pageMaxWidth`), when one was set. */
+  readonly pageMaxWidth?: number
 }
 
 export function layoutKey(p: LayoutKeyParts): string {
@@ -37,6 +39,7 @@ export function layoutKey(p: LayoutKeyParts): string {
   ]
   if (p.labelRoom === 'hints') parts.push('hints')
   if (p.mode === 'page') parts.push(`page${p.pageWidth ?? 0}`)
+  if (p.mode === 'page' && p.pageMaxWidth !== undefined) parts.push(`max${p.pageMaxWidth}`)
   return parts.join('|')
 }
 

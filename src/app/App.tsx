@@ -24,9 +24,9 @@ export function App({ features = getFeatures() }: { features?: FeatureReport }) 
   const first = useRef(true)
 
   // A piano never touches the screen, so keep it awake while practicing, or while a piece plays
-  // on a phone propped on the music stand (Consult, U72).
+  // on a phone propped on the music stand (Study, U72).
   useEffect(() => {
-    if (view !== 'practice' && view !== 'consult') return
+    if (view !== 'practice' && view !== 'study') return
     const owner = `view:${view}`
     wakeLock.hold(owner)
     return () => wakeLock.drop(owner)

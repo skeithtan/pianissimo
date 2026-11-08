@@ -43,6 +43,46 @@ test.describe('portrait note-name spacing', () => {
     expect(result.off.params.iterations).toBe(1)
   })
 
+  test('a capped canvas never grows past the cap and the page fits a phone-wide host (R17)', async ({ page }) => {
+    test.skip(!referencePresent, 'private reference-piece fixture absent')
+    const result = await page.evaluate(async (name) => {
+      const free = await window.harness.prepare(name, 3, { mode: 'page', pageWidth: 360 })
+      const freeWidth = window.harness.layout()!.width
+      const freeSystems = window.harness.layout()!.systems!.length
+      const capped = await window.harness.prepare(name, 3, { mode: 'page', pageWidth: 360, pageMaxWidth: 360 })
+      const layout = window.harness.layout()!
+      window.harness.mount({ width: 393, height: 700 }, { fitWidth: true })
+      window.harness.showAllLabels()
+      window.harness.strip()!.setCursor(layout.occurrences[10]!.start, { smooth: false })
+      window.harness.strip()!.flushNow()
+      const scroller = document.querySelector<HTMLElement>('.pn-page-scroll')!
+      return {
+        free,
+        freeWidth,
+        freeSystems,
+        capped,
+        width: layout.width,
+        systems: layout.systems!.length,
+        wide: !!document.querySelector('.pn-page-wide'),
+        scrollWidth: scroller.scrollWidth,
+        clientWidth: scroller.clientWidth,
+        zoom: window.harness.strip()!.zoom(),
+      }
+    }, REFERENCE_PIECE)
+    // Unconstrained, one dense bar makes the whole page about three times the request.
+    expect(result.freeWidth).toBeGreaterThan(900)
+    expect(result.free.params.pageWidth).toBeGreaterThan(900)
+    // Capped: the request is the canvas, the dense bar keeps its stacked labels, and the page
+    // is shown fitted between the gutters, with nothing to scroll sideways.
+    expect(result.capped.params.pageWidth).toBe(360)
+    expect(result.width).toBeLessThanOrEqual(360 + 40)
+    expect(result.systems).toBeGreaterThan(result.freeSystems)
+    expect(result.capped.report.unmappedNotes).toEqual([])
+    expect(result.wide).toBe(false)
+    expect(result.scrollWidth).toBeLessThanOrEqual(result.clientWidth)
+    expect(result.zoom).toBeLessThanOrEqual(1)
+  })
+
   test('reference dense bar stays readable and reachable across the wider system', async ({ page }, info) => {
     test.skip(!referencePresent, 'private reference-piece fixture absent')
     const result = await page.evaluate(async (name) => {

@@ -1,4 +1,4 @@
-/* Consult view (DECISIONS U72). Theme tokens only (U8); touch targets ≥ 44 px; motion tokens.
+/* Study view (DECISIONS U72). Theme tokens only (U8); touch targets ≥ 44 px; motion tokens.
    Header / overview / stage (flex, full width) / keyboard guide / footer. The footer stacks the
    reading aids (Note names, Hint, Keys) over the transport row (Speed, Go to the start, Play).
    A phone-size screen has no footer: see `data-compact` below. Nothing recedes: a phone on a
@@ -225,9 +225,9 @@
    menu sheet, and the score and keyboard guide take the height. The header is as short as its
    touch targets allow. */
 .screen[data-compact='true'] .header {
-  min-height: 48px;
-  padding-top: 0;
-  padding-bottom: 0;
+  min-height: 52px;
+  padding-top: 4px;
+  padding-bottom: 4px;
   padding-left: calc(4px + var(--safe-l));
   padding-right: calc(4px + var(--safe-r));
 }
@@ -287,6 +287,18 @@
   font-size: var(--text-xs);
   text-align: center;
   z-index: 4;
+}
+/* A phone on its side (U80): the overview takes the title's place in the header. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 /* The home indicator's strip, on the keyboard guide's surface. */
 .safeBottom {

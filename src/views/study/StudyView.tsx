@@ -1,18 +1,18 @@
 /**
- * Consult view entry (lazily loaded from `app/views.ts`; DECISIONS U72): reads `consultRequest`,
- * loads the piece and its score package from storage, and hands them to `ConsultScreen`. It is
+ * Study view entry (lazily loaded from `app/views.ts`; DECISIONS U72): reads `studyRequest`,
+ * loads the piece and its score package from storage, and hands them to `StudyScreen`. It is
  * the Practice view's reading-only sibling: playback and the score on any device, including a
  * phone, with no practice, grading or history. Without a request it shows an empty state that
  * leads back to the Library (plus recent pieces).
  */
 import { useEffect, useState } from 'preact/hooks'
-import { consultRequest, navigate, openConsult, type ConsultRequest } from '../../app/navigation'
+import { studyRequest, navigate, openStudy, type StudyRequest } from '../../app/navigation'
 import type { ScorePackage } from '../../core/model/score'
 import type { PieceRecord, UserTempo } from '../../core/storage/records'
 import { Button } from '../../ui/controls'
 import { defaultPracticeEnv, type PracticeEnv } from '../practice/env'
-import { ConsultScreen } from './ConsultScreen'
-import styles from './consult.module.css'
+import { StudyScreen } from './StudyScreen'
+import styles from './study.module.css'
 
 type Load =
   | { readonly state: 'loading' }
@@ -20,19 +20,19 @@ type Load =
   | { readonly state: 'ready'; readonly piece: PieceRecord; readonly pkg: ScorePackage }
 
 /** Registered in `app/views.ts` (no props). */
-export function ConsultView() {
-  return <ConsultViewWith />
+export function StudyView() {
+  return <StudyViewWith />
 }
 
 /** The view with an injectable environment (tests). */
-export function ConsultViewWith({ env: injected }: { env?: PracticeEnv | undefined }) {
+export function StudyViewWith({ env: injected }: { env?: PracticeEnv | undefined }) {
   const [env] = useState(() => injected ?? defaultPracticeEnv())
-  const request = consultRequest.value
+  const request = studyRequest.value
   if (!request) return <EmptyState env={env} />
   return <Loaded key={request.pieceId} env={env} request={request} />
 }
 
-function Loaded({ env, request }: { env: PracticeEnv; request: ConsultRequest }) {
+function Loaded({ env, request }: { env: PracticeEnv; request: StudyRequest }) {
   const [load, setLoad] = useState<Load>({ state: 'loading' })
 
   useEffect(() => {
@@ -80,7 +80,7 @@ function Loaded({ env, request }: { env: PracticeEnv; request: ConsultRequest })
     if (piece) setLoad({ ...load, piece })
   }
   return (
-    <ConsultScreen
+    <StudyScreen
       key={load.piece.userTempo ? `${load.piece.userTempo.beatBpm}` : 'no-tempo'}
       env={env}
       piece={load.piece}
@@ -105,8 +105,8 @@ function EmptyState({ env }: { env: PracticeEnv }) {
   }, [env])
   return (
     <section class={styles.center}>
-      <span class={styles.eyebrow}>Consult</span>
-      <h1 class={styles.emptyTitle}>Choose a piece to consult</h1>
+      <span class={styles.eyebrow}>Study</span>
+      <h1 class={styles.emptyTitle}>Choose a piece to study</h1>
       <p class={styles.muted}>Pick a score in the Library to listen to it and read it here.</p>
       <Button variant="primary" icon="back" onClick={() => navigate('library')}>
         Back to Library
@@ -117,7 +117,7 @@ function EmptyState({ env }: { env: PracticeEnv }) {
           <ul>
             {recent.map((p) => (
               <li key={p.id}>
-                <Button icon="music" onClick={() => openConsult({ pieceId: p.id })}>
+                <Button icon="music" onClick={() => openStudy({ pieceId: p.id })}>
                   {p.title}
                 </Button>
               </li>

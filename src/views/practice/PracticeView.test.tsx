@@ -15,6 +15,7 @@ import { $, $$, byLabel, byText, click, mount, press, type Mounted } from '../sh
 import type { PracticeEnv, PracticeStripOptions, StripHandle } from './env'
 import type { RespaceSnapshot } from '../../render'
 import { PREPARE_AHEAD_MS, REPEAT_PANEL_FADE_MS } from './PracticeScreen'
+import { PHONE_LANDSCAPE_QUERY, PHONE_QUERY } from '../shared/usePhone'
 import { PracticeViewWith } from './PracticeView'
 import { RECEDE_DELAY_MS, REVEAL_MS } from './recede'
 
@@ -1036,6 +1037,137 @@ describe('PracticeView', () => {
       expect(r.modes).toEqual(['page', 'page'])
       expect(r.prepared.at(-1)!.pageWidth!).toBeLessThan(width)
       expect(r.strips.at(-1)!.options.initialZoom).toBe(2)
+    })
+  })
+
+  describe('phone-size screens (U80)', () => {
+    let sideways = false
+    const original = window.matchMedia
+
+    beforeEach(() => {
+      sideways = false
+      window.matchMedia = ((query: string) => ({
+        get matches() {
+          if (query === PHONE_QUERY) return true
+          if (query === PHONE_LANDSCAPE_QUERY) return sideways
+          return query.includes('portrait') ? !sideways : false
+        },
+        media: query,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      })) as unknown as typeof window.matchMedia
+    })
+
+    afterEach(() => {
+      window.matchMedia = original
+    })
+
+    /** A rig recording each preparation's page options. */
+    async function phoneRig() {
+      const r = await rig()
+      const prepared: { mode?: string; pageWidth?: number; pageMaxWidth?: number }[] = []
+      const env: PracticeEnv = {
+        ...r.env,
+        prepare: async (_s, _i, options) => {
+          prepared.push({
+            ...(options.mode ? { mode: options.mode } : {}),
+            ...(options.pageWidth ? { pageWidth: options.pageWidth } : {}),
+            ...(options.pageMaxWidth ? { pageMaxWidth: options.pageMaxWidth } : {}),
+          })
+          return { key: 'fake' } as unknown as PreparedLayout
+        },
+      }
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={env} />)
+      await settle(r)
+      return { ...r, env, prepared, root: view.container }
+    }
+    const dialog = () => document.querySelector<HTMLDialogElement>('dialog[open]')
+    const bar = (root: HTMLElement) => $(root, '[data-testid="practice-bar"]')!
+
+    it('upright: one top bar instead of the header and footer; the menu sheet holds the tools', async () => {
+      const r = await phoneRig()
+      const root = r.root
+      expect($(root, '[data-activity]')?.dataset['compact']).toBe('true')
+      expect($(root, 'footer')).toBeNull()
+      expect($(root, '[data-testid="practice-header-slot"]')).toBeNull()
+      expect($(bar(root), 'h1')?.textContent).toBe('Two Hands')
+      for (const name of ['Back to Library', 'Left hand', 'Start', 'Right hand', 'Menu'])
+        expect(byLabel(bar(root), name), name).not.toBeNull()
+      expect(byLabel(bar(root), 'Piece overview'), 'the overview has its own row upright').toBeNull()
+      expect($$(root, '[aria-label="Piece overview"]')).toHaveLength(1)
+      expect($(bar(root), '[data-state="connected"]'), 'no connection chip in the bar: it is in the menu').toBeNull()
+      // The page is engraved to the stage width, capped there, and fitted (R17).
+      expect(r.prepared.at(-1)?.mode).toBe('page')
+      expect(r.prepared.at(-1)?.pageMaxWidth).toBe(r.prepared.at(-1)?.pageWidth)
+      expect(r.strips.at(-1)!.options.fitWidth).toBe(true)
+      // Nothing of the footer is on screen until the menu opens.
+      expect(byLabel(root, 'Open speed options')).toBeNull()
+      expect(byLabel(root, 'Note names on the score')).toBeNull()
+      expect(dialog()).toBeNull()
+
+      click(byLabel(bar(root), 'Menu'))
+      await settle(r, 1)
+      const menu = dialog()!
+      expect(menu.getAttribute('aria-label')).toBe('Menu')
+      expect(menu.textContent).toContain('Speed')
+      expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
+      const switches = $$(menu, 'input[role="switch"]').map((el) => el.closest('label')?.textContent?.trim())
+      expect(switches).toEqual(['Play through', 'Keep time', 'Show keys'])
+      expect(menu.textContent).toContain('Connected · Test piano')
+      expect(byLabel(menu, 'Settings')).not.toBeNull()
+      // Show keys opens the guide slot from the sheet.
+      const keys = $$(menu, 'input[role="switch"]')[2]!
+      click(keys)
+      await settle(r, 1)
+      expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('true')
+      click(byLabel(menu, 'Settings'))
+      expect(settingsOpen.value).toBe(true)
+      expect(byLabel(bar(root), 'Menu')?.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    it('on its side: the overview and the hands share the bar, no guide, no Show keys', async () => {
+      sideways = true
+      const r = await phoneRig()
+      const root = r.root
+      expect($(root, '[data-activity]')?.dataset['sideways']).toBe('true')
+      expect(r.prepared.at(-1)?.mode).toBeUndefined()
+      expect(r.strips.at(-1)!.options.fitWidth).toBe(false)
+      expect($(bar(root), 'h1')?.textContent).toBe('Two Hands')
+      expect(byLabel(bar(root), 'Piece overview'), 'the overview in the bar').not.toBeNull()
+      expect($$(root, '[aria-label="Piece overview"]')).toHaveLength(1)
+      for (const name of ['Left hand', 'Start', 'Right hand', 'Menu'])
+        expect(byLabel(bar(root), name), name).not.toBeNull()
+      click(byLabel(bar(root), 'Menu'))
+      await settle(r, 1)
+      const menu = dialog()!
+      const switches = $$(menu, 'input[role="switch"]').map((el) => el.closest('label')?.textContent?.trim())
+      expect(switches).toEqual(['Play through', 'Keep time'])
+      expect(menu.textContent).toContain('Connected · Test piano')
+      expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('false')
+    })
+
+    it('playing closes the menu and dims the bar controls, but Pause and the overview stay', async () => {
+      sideways = true
+      const r = await phoneRig()
+      const root = r.root
+      click(byLabel(bar(root), 'Menu'))
+      await settle(r, 1)
+      expect(dialog()).not.toBeNull()
+      click(byLabel(bar(root), 'Start'))
+      await settle(r)
+      act(() => r.clock.advance(RECEDE_DELAY_MS))
+      await settle(r, 1)
+      expect($(root, '[data-activity]')?.dataset['recede']).toBe('true')
+      expect(byLabel(bar(root), 'Pause')).not.toBeNull()
+      expect(byLabel(bar(root), 'Piece overview')).not.toBeNull()
+      expect(byLabel(bar(root), 'Menu')?.getAttribute('aria-expanded')).toBe('false')
+      // A tap on the bar brings its controls back (U13).
+      act(() => {
+        bar(root).dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      })
+      await settle(r, 1)
+      expect($(root, '[data-activity]')?.dataset['recede']).toBeUndefined()
     })
   })
 })

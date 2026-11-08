@@ -10,9 +10,12 @@ describe('parseHash', () => {
     expect(parseHash('#/practice')).toEqual({ view: 'practice', overlay: null })
     expect(parseHash('#/results/p1')).toEqual({ view: 'results', pieceId: 'p1', overlay: null })
     expect(parseHash('#/results/p1/a9')).toEqual({ view: 'results', pieceId: 'p1', attemptId: 'a9', overlay: null })
-    expect(parseHash('#/consult/p1')).toEqual({ view: 'consult', pieceId: 'p1', overlay: null })
-    expect(parseHash('#/consult')).toEqual({ view: 'consult', overlay: null })
-    expect(parseHash('#/consult/p1?settings')).toEqual({ view: 'consult', pieceId: 'p1', overlay: 'settings' })
+    expect(parseHash('#/study/p1')).toEqual({ view: 'study', pieceId: 'p1', overlay: null })
+    expect(parseHash('#/study')).toEqual({ view: 'study', overlay: null })
+    expect(parseHash('#/study/p1?settings')).toEqual({ view: 'study', pieceId: 'p1', overlay: 'settings' })
+    // The view was called Consult until 7 November 2026 (U79): old links still open it.
+    expect(parseHash('#/consult/p1')).toEqual({ view: 'study', pieceId: 'p1', overlay: null })
+    expect(parseHash('#/consult')).toEqual({ view: 'study', overlay: null })
   })
 
   it('reads overlays from the query and the #/settings, #/connection aliases', () => {
@@ -51,9 +54,9 @@ describe('formatHash', () => {
     expect(formatHash({ view: 'library', overlay: null })).toBe('#/')
     expect(formatHash({ view: 'practice', pieceId: 'p1', overlay: null })).toBe('#/practice/p1')
     expect(formatHash({ view: 'practice', overlay: null })).toBe('#/practice')
-    expect(formatHash({ view: 'consult', pieceId: 'p1', overlay: null })).toBe('#/consult/p1')
-    expect(formatHash({ view: 'consult', pieceId: 'p1', overlay: 'settings' })).toBe('#/consult/p1?settings')
-    expect(formatHash({ view: 'consult', overlay: null })).toBe('#/consult')
+    expect(formatHash({ view: 'study', pieceId: 'p1', overlay: null })).toBe('#/study/p1')
+    expect(formatHash({ view: 'study', pieceId: 'p1', overlay: 'settings' })).toBe('#/study/p1?settings')
+    expect(formatHash({ view: 'study', overlay: null })).toBe('#/study')
     expect(formatHash({ view: 'results', pieceId: 'p1', attemptId: 'a9', overlay: null })).toBe('#/results/p1/a9')
     expect(formatHash({ view: 'library', overlay: 'connection' })).toBe('#/?connection')
     expect(formatHash({ view: 'practice', pieceId: 'p1', overlay: 'settings' })).toBe('#/practice/p1?settings')
@@ -91,13 +94,10 @@ describe('route comparison', () => {
     ).toBe(false)
     expect(sameBase({ view: 'practice', overlay: null }, { view: 'results', overlay: null })).toBe(false)
     expect(
-      sameBase(
-        { view: 'consult', pieceId: 'a', overlay: null },
-        { view: 'consult', pieceId: 'a', overlay: 'settings' },
-      ),
+      sameBase({ view: 'study', pieceId: 'a', overlay: null }, { view: 'study', pieceId: 'a', overlay: 'settings' }),
     ).toBe(true)
     expect(
-      sameBase({ view: 'consult', pieceId: 'a', overlay: null }, { view: 'practice', pieceId: 'a', overlay: null }),
+      sameBase({ view: 'study', pieceId: 'a', overlay: null }, { view: 'practice', pieceId: 'a', overlay: null }),
     ).toBe(false)
     expect(
       sameBase(

@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
-import { connectionOpen, consultRequest, currentView, practiceRequest, settingsOpen } from '../../app/navigation'
+import { connectionOpen, studyRequest, currentView, practiceRequest, settingsOpen } from '../../app/navigation'
 import { connectionStatus, notices, resetAppStateForTests, settings } from '../../app/state'
 import { FakeMidi, FakeStrip, ManualFrames } from '../../app/session/testkit'
 import { newPieceRecord } from '../../core/storage/records'
@@ -13,8 +13,8 @@ import { ManualClock } from '../../core/playback/testkit'
 import { importFixture } from '../../../tests/unit/import/fixtures'
 import { $, $$, byLabel, byText, click, mount, type Mounted } from '../shared/testing'
 import type { PracticeEnv, PracticeStripOptions, StripHandle } from '../practice/env'
-import { ConsultViewWith } from './ConsultView'
-import { PHONE_QUERY } from '../shared/usePhone'
+import { StudyViewWith } from './StudyView'
+import { PHONE_LANDSCAPE_QUERY, PHONE_QUERY } from '../shared/usePhone'
 
 class TestStrip extends FakeStrip implements StripHandle {
   destroyed = false
@@ -56,6 +56,8 @@ interface Rig {
   strips: TestStrip[]
   rooms: (string | undefined)[]
   modes: (string | undefined)[]
+  /** `pageMaxWidth` of every preparation (R17: a phone's page is capped at its width). */
+  caps: (number | undefined)[]
   pieceId: string
 }
 
@@ -64,7 +66,7 @@ async function rig(): Promise<Rig> {
   const built = await importFixture('two-hands.musicxml')
   const piece = newPieceRecord(built.package, { id: 'piece-1', now: 1 })
   await storage.commitImport({ source: built.source, pkg: built.package, piece })
-  // Practice state that Consult must leave alone.
+  // Practice state that Study must leave alone.
   await storage.updatePiece(piece.id, { lastHands: 'left', lastMultiplier: 0.5, resume: null })
   const clock = new ManualClock()
   clock.now = 1000
@@ -73,6 +75,7 @@ async function rig(): Promise<Rig> {
   const strips: TestStrip[] = []
   const rooms: (string | undefined)[] = []
   const modes: (string | undefined)[] = []
+  const caps: (number | undefined)[] = []
   const env: PracticeEnv = {
     storage: async () => storage,
     midi: () => midi,
@@ -83,6 +86,7 @@ async function rig(): Promise<Rig> {
     prepare: async (_s, _i, options) => {
       rooms.push(options.labels.room)
       modes.push(options.mode)
+      caps.push(options.pageMaxWidth)
       return { key: 'fake' } as unknown as PreparedLayout
     },
     createStrip: (_host, _layout, options) => {
@@ -92,7 +96,7 @@ async function rig(): Promise<Rig> {
       return s
     },
   }
-  return { env, storage, clock, frames, midi, strips, rooms, modes, pieceId: piece.id }
+  return { env, storage, clock, frames, midi, strips, rooms, modes, caps, pieceId: piece.id }
 }
 
 /** Let promises (storage, preparation) settle, then run a frame. */
@@ -111,7 +115,7 @@ beforeEach(() => {
   resetAppStateForTests()
   // A phone: no Web MIDI at all.
   connectionStatus.value = { state: 'unsupported' }
-  consultRequest.value = null
+  studyRequest.value = null
   practiceRequest.value = null
   settingsOpen.value = false
   connectionOpen.value = false
@@ -133,30 +137,40 @@ function onPhone(): void {
   }))
 }
 
+/** A phone on its side: the phone and phone-landscape queries match, portrait does not (U80). */
+function onPhoneSideways(): void {
+  vi.stubGlobal('matchMedia', (q: string) => ({
+    matches: q === PHONE_QUERY || q === PHONE_LANDSCAPE_QUERY,
+    media: q,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }))
+}
+
 const dialog = () => document.querySelector<HTMLDialogElement>('dialog[open]')
 
 async function openPiece(r: Rig): Promise<void> {
-  consultRequest.value = { pieceId: r.pieceId }
-  view = mount(<ConsultViewWith env={r.env} />)
+  studyRequest.value = { pieceId: r.pieceId }
+  view = mount(<StudyViewWith env={r.env} />)
   await settle(r)
 }
 
-describe('ConsultView (U72)', () => {
+describe('StudyView (U72)', () => {
   it('without a request shows an empty state that leads back to the Library and lists recent pieces', async () => {
     const r = await rig()
-    view = mount(<ConsultViewWith env={r.env} />)
+    view = mount(<StudyViewWith env={r.env} />)
     await settle(r)
-    expect(view.container.textContent).toContain('Choose a piece to consult')
+    expect(view.container.textContent).toContain('Choose a piece to study')
     click(byText(view.container, 'Back to Library'))
     expect(currentView.value).toBe('library')
     click(byText(view.container, 'Two Hands'))
-    expect(consultRequest.value).toEqual({ pieceId: 'piece-1' })
+    expect(studyRequest.value).toEqual({ pieceId: 'piece-1' })
   })
 
   it('explains a missing piece', async () => {
     const r = await rig()
-    consultRequest.value = { pieceId: 'gone' }
-    view = mount(<ConsultViewWith env={r.env} />)
+    studyRequest.value = { pieceId: 'gone' }
+    view = mount(<StudyViewWith env={r.env} />)
     await settle(r)
     expect(view.container.textContent).toContain('Can’t open this piece')
     expect(view.container.textContent).toContain('no longer in the library')
@@ -194,7 +208,7 @@ describe('ConsultView (U72)', () => {
     const strip = r.strips[0]!
     click(byLabel(view!.container, 'Play'))
     await settle(r, 3)
-    expect($(view!.container, '[data-testid="consult-screen"]')?.dataset['playing']).toBe('true')
+    expect($(view!.container, '[data-testid="study-screen"]')?.dataset['playing']).toBe('true')
     expect(byLabel(view!.container, 'Pause')).not.toBeNull()
     act(() => {
       r.clock.advance(1500)
@@ -280,7 +294,7 @@ describe('ConsultView (U72)', () => {
       const r = await rig()
       await openPiece(r)
       const root = view!.container
-      expect($(root, '[data-testid="consult-screen"]')?.dataset['compact']).toBe('true')
+      expect($(root, '[data-testid="study-screen"]')?.dataset['compact']).toBe('true')
       expect($(root, 'footer')).toBeNull()
       const header = $(root, 'header')!
       for (const name of ['Back to Library', 'Show keys', 'Play', 'Menu'])
@@ -336,6 +350,36 @@ describe('ConsultView (U72)', () => {
       click(byLabel(dialog()!, 'Go to the start'))
       act(() => r.frames.flush())
       expect(strip.returned).toBe(1)
+    })
+
+    it('engraves the page to the stage width, capped, and fits the view to it (R17)', async () => {
+      onPhone()
+      const r = await rig()
+      await openPiece(r)
+      expect(r.modes).toEqual(['page'])
+      expect(r.caps[0]).toBeGreaterThan(0)
+      expect(r.strips[0]!.options.fitWidth).toBe(true)
+    })
+
+    it('on its side puts the overview in the header, with no keyboard guide and no Show keys (U80)', async () => {
+      onPhoneSideways()
+      const r = await rig()
+      await openPiece(r)
+      const root = view!.container
+      expect(r.modes).toEqual([undefined]) // the strip: no page options
+      expect(r.caps[0]).toBeUndefined()
+      expect(r.strips[0]!.options.fitWidth).toBe(false)
+      expect($(root, '[data-testid="study-screen"]')?.dataset['sideways']).toBe('true')
+      const header = $(root, 'header')!
+      expect($(header, 'h1')?.textContent).toBe('Two Hands')
+      expect(byLabel(header, 'Piece overview'), 'overview in the header').not.toBeNull()
+      expect($$(root, '[aria-label="Piece overview"]')).toHaveLength(1)
+      for (const name of ['Back to Library', 'Play', 'Menu']) expect(byLabel(header, name), name).not.toBeNull()
+      expect(byLabel(root, 'Show keys')).toBeNull()
+      expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('false')
+      click(byLabel(header, 'Menu'))
+      await settle(r, 1)
+      expect(byLabel(dialog()!, 'Show keys')).toBeNull()
     })
 
     it('Note names and Settings work from the menu', async () => {

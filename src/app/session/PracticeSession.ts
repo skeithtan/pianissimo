@@ -136,7 +136,7 @@ export interface SessionOptions {
    */
   readonly repeat?: boolean
   /**
-   * Show the cursor's repeat button (DECISIONS U14). Default true; Consult mode (U72) has no
+   * Show the cursor's repeat button (DECISIONS U14). Default true; Study mode (U72) has no
    * Repeat, so it passes false and the button never appears in either score view.
    */
   readonly cursorAction?: boolean
@@ -324,7 +324,7 @@ export class PracticeSession {
   /** The cursor's repeat button exists at all (`SessionOptions.cursorAction`). */
   readonly #cursorActionAllowed: boolean
   /**
-   * Names revealed on request at the cursor (`revealAtCursor`, Consult mode U72): the notes and
+   * Names revealed on request at the cursor (`revealAtCursor`, Study mode U72): the notes and
    * the real time they are gone by. They fade out over `hints.fadeMs` before `until`.
    */
   #reveal: { readonly notes: readonly number[]; readonly until: number } | null = null
@@ -1295,7 +1295,7 @@ export class PracticeSession {
 
   /**
    * Names the notes at the cursor (both hands' onset group there) for the hint lifetime, then
-   * fades them out (Consult mode, DECISIONS U72). The engine's hints need a running attempt;
+   * fades them out (Study mode, DECISIONS U72). The engine's hints need a running attempt;
    * this one works whenever the score is shown, paused or playing. Persistent labels stay; a
    * note already labeled keeps its label. Returns false when no note is at the cursor.
    */
@@ -2879,7 +2879,7 @@ export class PracticeSession {
       else if (hint.expiresAt !== null && now >= hint.expiresAt - this.#settings.hints.fadeMs) tempChanging = true
       else for (const v of temp.values()) if (v < 1) tempChanging = true
     }
-    // Names revealed at the cursor on request (Consult mode) are a third source, merged the same way.
+    // Names revealed at the cursor on request (Study mode) are a third source, merged the same way.
     const reveal = this.#revealOpacity(now)
     const revealFading = this.#reveal !== null && now >= this.#reveal.until - this.#settings.hints.fadeMs
     if (

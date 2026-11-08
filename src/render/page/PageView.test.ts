@@ -648,7 +648,54 @@ describe('PageView', () => {
     expect(zooms).toEqual([1.6])
   })
 
-  it('has no repeat button on the cursor without a handler (Consult mode, U72)', () => {
+  it('fits the page to a narrow host with `fitWidth`, keeping and reporting the requested zoom (R17)', () => {
+    vi.useFakeTimers()
+    // A 400 px host: the 740 px page fits between the gutters at (400 - 32) / 740.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      width: 400,
+      height: VIEW_H,
+      right: 400,
+      bottom: VIEW_H,
+      toJSON: () => ({}),
+    } as DOMRect)
+    const zooms: number[] = []
+    const { v, root } = view(24, {
+      fitWidth: true,
+      initialZoom: 1.5,
+      minZoom: 0.25,
+      onZoomChange: (z) => zooms.push(z),
+    })
+    const fit = (400 - 32) / 740
+    expect(v.zoom()).toBeCloseTo(fit, 5)
+    expect(root.classList.contains('pn-page-wide')).toBe(false)
+    expect(root.querySelector<HTMLElement>('.pn-page-sheet')!.style.width).toBe('400px')
+    // Zooming in past the fit changes nothing on screen but is reported: the owner re-prepares
+    // a narrower page, which is what the gesture means.
+    v.setZoom(2)
+    v.flushNow()
+    expect(v.zoom()).toBeCloseTo(fit, 5)
+    vi.advanceTimersByTime(260)
+    expect(zooms).toEqual([2])
+    // Zooming out below the fit shows at once.
+    v.setZoom(0.4)
+    v.flushNow()
+    expect(v.zoom()).toBe(0.4)
+    expect(root.querySelector<HTMLElement>('.pn-page-content')!.style.transform).toContain('scale(0.4)')
+    vi.advanceTimersByTime(260)
+    expect(zooms).toEqual([2, 0.4])
+  })
+
+  it('does not fit the page without `fitWidth`: a wide page scrolls sideways as before', () => {
+    const { v, root } = view(24, { initialZoom: 1.5 })
+    expect(v.zoom()).toBe(1.5)
+    expect(root.classList.contains('pn-page-wide')).toBe(true)
+  })
+
+  it('has no repeat button on the cursor without a handler (Study mode, U72)', () => {
     const { root } = view(24)
     expect(root.querySelector('.pn-cursor .pn-cursor-action')).toBeNull()
   })

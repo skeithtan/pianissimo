@@ -3,8 +3,14 @@
  * background (back, title, connection, Settings), the full-width score overview (which never
  * recedes), the
  * full-width notation stage with its overlays (Repeat panel in Repeat mode, banners, correction cue), the
- * keyboard-guide panel and the footer (Repeat, Speed | hand toggles around Start / Pause /
- * Listen | Labels, Hint, Show keys). While playing, the chrome recedes (U13).
+ * keyboard-guide panel and the footer (Speed | hand toggles around Start / Pause / Listen |
+ * Menu). While playing, the chrome recedes (U13).
+ *
+ * On a phone-size screen (`usePhone`, U80) there is no header and no footer: one top bar holds
+ * Back, the title (or, with the phone on its side, the piece overview), the hand toggles around
+ * Start and a Menu button whose sheet holds Speed, Note names, Play through, Keep time, Show keys
+ * (not on its side: no keyboard guide there), the connection status and Settings. The score takes the rest, and in portrait the page is engraved
+ * to the stage's width and fitted to it (R17).
  *
  * The `PracticeSession` owns every live behavior; this component only wires it to Preact and
  * re-renders on its coarse `ui` store. Per-frame state (cursor, correction cue, keyboard guide) goes to
@@ -27,17 +33,29 @@ import {
   type PieceSaver,
   type SessionSettings,
 } from '../../app/session'
-import { applyLabelSettings, connectionStatus, onBeforeApplyLabels, settings, updateSettings } from '../../app/state'
+import {
+  applyLabelSettings,
+  connectionStatus,
+  onBeforeApplyLabels,
+  pushNotice,
+  settings,
+  updateSettings,
+} from '../../app/state'
 import { passageBounds, positionText } from '../../core/model/passage'
 import type { ScorePackage } from '../../core/model/score'
 import type { PersistentLabelMode } from '../../core/model/settings'
 import { effectiveTempoAt, hasTempo } from '../../core/music/tempo'
 import { maxLabelWidthChars } from '../../core/naming'
 import type { PieceRecord, UserTempo } from '../../core/storage/records'
+import { rat } from '../../core/music/rational'
+import { Button, Sheet } from '../../ui/controls'
 import { useFadePresence } from '../../ui/fade'
+import { HandToggles } from '../../ui/HandToggles'
 import { Icon } from '../../ui/icons'
+import { TempoControl } from '../../ui/TempoControl'
 import { WrongNoteFlash } from '../../ui/WrongNoteFlash'
 import { ConnectionChip } from '../shared/ConnectionChip'
+import { usePhone, usePhoneLandscape } from '../shared/usePhone'
 import { pageWidthFor } from '../../render/page/geometry'
 import type { LabelRoom, PreparedLayout, PrepareOptions } from '../../render'
 import { MemoryLayoutCache } from '../../render/cache'
@@ -45,7 +63,8 @@ import type { PracticeEnv, StripHandle } from './env'
 import { GuidePanel, OverviewBar, StageCue } from './live'
 import { Banners } from './Banners'
 import { CountIn } from './CountIn'
-import { Footer } from './Footer'
+import { Footer, HANDS_UNAVAILABLE, HANDS_UNAVAILABLE_NOTICE } from './Footer'
+import { PracticeMenuItems } from './FooterMenu'
 import { RepeatPanel } from './RepeatPanel'
 import { ScoreSkeleton } from './ScoreSkeleton'
 import { TempoSheet } from './TempoSheet'
@@ -94,20 +113,42 @@ const RECENT_LAYOUT_BYTES = 24 * 1024 * 1024
  */
 export const PREPARE_AHEAD_MS = 1500
 
+const QUARTER = rat(1, 4)
+
 /** The preparation parameters a mounted view was made with. */
-interface LayoutParamsKey {
+export interface LayoutParamsKey {
   readonly maxChars: number
   readonly mode: 'strip' | 'page'
   readonly pageWidth: number
   readonly room: LabelRoom
+  /** The page is capped at its requested width and fitted to the stage (a phone, R17). */
+  readonly fit: boolean
 }
 
 function paramsId(k: LayoutParamsKey): string {
-  return `${k.maxChars}|${k.mode}|${k.pageWidth}|${k.room}`
+  return `${k.maxChars}|${k.mode}|${k.pageWidth}|${k.room}|${k.fit ? 'fit' : ''}`
 }
 
-function sameParams(a: LayoutParamsKey, b: LayoutParamsKey): boolean {
-  return a.maxChars === b.maxChars && a.mode === b.mode && a.pageWidth === b.pageWidth && a.room === b.room
+export function sameParams(a: LayoutParamsKey, b: LayoutParamsKey): boolean {
+  return (
+    a.maxChars === b.maxChars &&
+    a.mode === b.mode &&
+    a.pageWidth === b.pageWidth &&
+    a.room === b.room &&
+    a.fit === b.fit
+  )
+}
+
+/** The prepare options a layout key means (R17: a phone's page never grows past its width). */
+export function prepareOptionsFor(
+  key: LayoutParamsKey,
+): Pick<PrepareOptions, 'labels' | 'mode' | 'pageWidth' | 'pageMaxWidth'> {
+  return {
+    labels: { maxChars: key.maxChars, room: key.room },
+    ...(key.mode === 'page'
+      ? { mode: key.mode, pageWidth: key.pageWidth, ...(key.fit ? { pageMaxWidth: key.pageWidth } : {}) }
+      : {}),
+  }
 }
 
 /** The engraving's room for note names under a Labels mode (DECISIONS R3 revised). */
@@ -182,6 +223,10 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const appSettings = settings.value
   const [prep, setPrep] = useState<Prep>({ state: 'preparing', fraction: 0 })
   const [tempoOpen, setTempoOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  // A phone-size screen: one top bar and a menu sheet instead of the header and footer (U80).
+  const phone = usePhone()
+  const sideways = usePhoneLandscape()
   const host = useRef<HTMLDivElement>(null)
   const stripRef = useRef<StripHandle | null>(null)
   const autoStarted = useRef(false)
@@ -207,11 +252,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     return env.prepare(
       storage,
       { ...model, renderXml: pkg.renderXml },
-      {
-        ...opts,
-        labels: { maxChars: key.maxChars, room: key.room },
-        ...(key.mode === 'page' ? { mode: key.mode, pageWidth: key.pageWidth } : {}),
-      },
+      { ...opts, ...prepareOptionsFor(key) },
       recentLayouts,
     )
   }
@@ -222,7 +263,14 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const mode = useOrientation() === 'portrait' ? 'page' : 'strip'
   const stageWidth = useStageWidth(host)
   const pageWidth = mode === 'page' && stageWidth > 0 ? pageWidthFor(stageWidth, appSettings.view.pageZoom) : 0
+  // A phone's page never scrolls sideways: capped at the stage's width and fitted to it (R17).
+  const fit = phone && mode === 'page'
   // The chrome recedes while something plays; an interruption or pause brings it back (U13).
+  // The phone's menu sheet is modal: it closes when playback starts, and with the layout it
+  // belongs to.
+  useEffect(() => {
+    if (ui.playing || !phone) setMenuOpen(false)
+  }, [ui.playing, phone])
   const recede = useRecede(ui.playing, env.timers)
   // Leaving Repeat mode (U14): the panel sinks away over the loop it had before it unmounts.
   const repeatPresence = useFadePresence(ui.repeat, REPEAT_PANEL_FADE_MS)
@@ -274,7 +322,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   useEffect(() => {
     const el = host.current
     if (!el) return
-    const key: LayoutParamsKey = { maxChars, mode, pageWidth, room }
+    const key: LayoutParamsKey = { maxChars, mode, pageWidth, room, fit }
     const was = stripRef.current ? shown.current : null
     if (was && sameParams(was, key)) {
       // Back to what is shown (a quick Off → on → Off): nothing to prepare.
@@ -316,6 +364,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           layout,
           {
             initialZoom: mode === 'page' ? settings.peek().view.pageZoom : settings.peek().view.zoom,
+            fitWidth: fit,
             returnLabel: 'Return to current position',
             // Browsing while something plays stops it and drops that attempt (U41).
             onBrowse: (browsing) => {
@@ -352,14 +401,14 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       live = false
       ctrl.abort()
     }
-  }, [session, maxChars, mode, pageWidth, room])
+  }, [session, maxChars, mode, pageWidth, room, fit])
 
   // Prepare the other label room ahead once nothing has played for a moment, so the first switch
   // of Labels Off ↔ on glides at once instead of waiting for an engraving (user).
   useEffect(() => {
     if (prep.state !== 'ready' || ui.playing) return
     if (mode === 'page' && pageWidth <= 0) return
-    const other: LayoutParamsKey = { maxChars, mode, pageWidth, room: room === 'all' ? 'hints' : 'all' }
+    const other: LayoutParamsKey = { maxChars, mode, pageWidth, room: room === 'all' ? 'hints' : 'all', fit }
     const id = paramsId(other)
     if (ahead.done.has(id) || ahead.running.has(id)) return
     const timer = env.timers.setTimeout(() => {
@@ -374,7 +423,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       )
     }, PREPARE_AHEAD_MS)
     return () => env.timers.clearTimeout(timer)
-  }, [session, prep.state, ui.playing, maxChars, mode, pageWidth, room])
+  }, [session, prep.state, ui.playing, maxChars, mode, pageWidth, room, fit])
 
   // Leaving Practice (or another piece's session): the view goes with it.
   useEffect(
@@ -425,56 +474,113 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
                 ? 'Resume'
                 : 'Start'
 
+  const back = (
+    <button
+      type="button"
+      class={phone ? `${styles.iconButton} ${styles.recedes}` : styles.iconButton}
+      aria-label="Back to Library"
+      onClick={() => navigate('library')}
+    >
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <path
+          d="M15 5l-7 7 7 7"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </button>
+  )
+  const titleText = (
+    <div class={styles.titleText}>
+      <h1 class={styles.title}>{piece.title}</h1>
+      {piece.composer ? <p class={styles.subtitle}>{piece.composer}</p> : null}
+    </div>
+  )
+  const hands = (
+    <HandToggles
+      hands={ui.hands}
+      onHandsChange={(hands) => session.setSelection({ hands })}
+      handsUnavailable={ui.handsAvailable ? undefined : HANDS_UNAVAILABLE}
+      onHandsUnavailable={() => pushNotice({ kind: 'info', text: HANDS_UNAVAILABLE_NOTICE })}
+      playing={ui.playing}
+      onPlayPause={() => session.togglePlay()}
+      playLabel={playLabel}
+      playDisabled={!ui.playing && !ui.startEnabled && ui.activity !== 'listening'}
+      handClass={styles.recedes}
+      compact
+    />
+  )
+
   return (
     <div
       class={styles.screen}
       data-activity={ui.activity}
       data-phase={ui.phase ?? ''}
       data-recede={recede.receded ? 'true' : undefined}
+      data-compact={phone ? 'true' : undefined}
+      data-sideways={sideways ? 'true' : undefined}
     >
-      <div class={styles.headerSlot} data-testid="practice-header-slot">
-        <div class={styles.headerClip}>
-          <header class={styles.header} inert={recede.receded} {...recede.zone}>
-            <div class={styles.titleBlock}>
-              <button
-                type="button"
-                class={styles.iconButton}
-                aria-label="Back to Library"
-                onClick={() => navigate('library')}
-              >
-                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-                  <path
-                    d="M15 5l-7 7 7 7"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </button>
-              <div class={styles.titleText}>
-                <h1 class={styles.title}>{piece.title}</h1>
-                {piece.composer ? <p class={styles.subtitle}>{piece.composer}</p> : null}
-              </div>
-            </div>
-            <div class={styles.headerTools}>
-              <ConnectionChip compact="narrow" />
-              <button
-                type="button"
-                class={styles.iconButton}
-                aria-label="Settings"
-                title="Settings"
-                onClick={openSettings}
-              >
-                <Icon name="settings" size={22} />
-              </button>
-            </div>
-          </header>
+      {phone ? (
+        // The phone's top bar (U80). It never collapses: the overview (on its side) and Start /
+        // Pause live here; the other controls dim with the chrome and a tap brings them back.
+        // The connection status is in the menu.
+        <div class={styles.bar} data-testid="practice-bar" {...recede.zone}>
+          {back}
+          {sideways ? (
+            <>
+              <h1 class={styles.srOnly}>{piece.title}</h1>
+              <OverviewBar session={session} model={model} range={ui.range} view={stripRef} inline />
+            </>
+          ) : (
+            titleText
+          )}
+          {hands}
+          <button
+            type="button"
+            class={`${styles.iconButton} ${styles.menuButton} ${styles.recedes}`}
+            aria-label="Menu"
+            title="Menu"
+            aria-haspopup="dialog"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(true)}
+          >
+            <Icon name="menu" size={22} />
+            {ui.rhythm ? (
+              <span class={styles.menuBadge} data-testid="keep-time-badge" aria-hidden="true">
+                <Icon name="metronome" size={12} />
+              </span>
+            ) : null}
+          </button>
         </div>
-      </div>
+      ) : (
+        <div class={styles.headerSlot} data-testid="practice-header-slot">
+          <div class={styles.headerClip}>
+            <header class={styles.header} inert={recede.receded} {...recede.zone}>
+              <div class={styles.titleBlock}>
+                {back}
+                {titleText}
+              </div>
+              <div class={styles.headerTools}>
+                <ConnectionChip compact="narrow" />
+                <button
+                  type="button"
+                  class={styles.iconButton}
+                  aria-label="Settings"
+                  title="Settings"
+                  onClick={openSettings}
+                >
+                  <Icon name="settings" size={22} />
+                </button>
+              </div>
+            </header>
+          </div>
+        </div>
+      )}
 
-      <OverviewBar session={session} model={model} range={ui.range} view={stripRef} />
+      {sideways ? null : <OverviewBar session={session} model={model} range={ui.range} view={stripRef} />}
 
       <div
         class={styles.stage}
@@ -497,6 +603,11 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         ) : null}
         <StageCue session={session} />
         <CountIn beats={ui.countIn} />
+        {phone && !ui.playing && ui.startReason ? (
+          <p class={styles.stageNote} role="note">
+            {ui.startReason}
+          </p>
+        ) : null}
         <div class={styles.banners}>
           {repeatPresence.mounted ? (
             <RepeatPanel
@@ -525,17 +636,72 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
 
       <GuidePanel session={session} fadeMs={appSettings.hints.fadeMs} naming={appSettings.naming} />
 
-      <Footer
-        ui={ui}
-        session={session}
-        zone={recede.zone}
-        receded={recede.receded}
-        playLabel={playLabel}
-        tempo={source}
-        labels={appSettings.labels.mode}
-        onLabels={onLabels}
-        onRequestTempo={() => setTempoOpen(true)}
-      />
+      {phone ? (
+        <div class={styles.safeBottom} />
+      ) : (
+        <Footer
+          ui={ui}
+          session={session}
+          zone={recede.zone}
+          receded={recede.receded}
+          playLabel={playLabel}
+          tempo={source}
+          labels={appSettings.labels.mode}
+          onLabels={onLabels}
+          onRequestTempo={() => setTempoOpen(true)}
+        />
+      )}
+
+      <Sheet title="Menu" open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
+        <div class={styles.menu}>
+          <div class={styles.menuRow}>
+            <span class={styles.menuLabel}>Speed</span>
+            <TempoControl
+              multiplier={ui.multiplier}
+              sourceBeatBpm={source?.beatBpm ?? 0}
+              beatUnit={source?.beatUnit ?? QUARTER}
+              onChange={(multiplier) => session.setSelection({ multiplier })}
+              noTempo={source === null}
+              onRequestTempo={() => {
+                setMenuOpen(false)
+                setTempoOpen(true)
+              }}
+              placement="down"
+            />
+          </div>
+          <PracticeMenuItems
+            ui={ui}
+            session={session}
+            labels={appSettings.labels.mode}
+            onLabels={onLabels}
+            hasTempo={source !== null}
+            showKeys={!sideways}
+            rowClass={styles.menuRow}
+            labelClass={styles.menuLabel}
+            toggleClass={styles.menuToggle}
+          />
+          <div class={styles.menuRow}>
+            <span class={styles.menuLabel}>Piano</span>
+            <ConnectionChip
+              onOpen={() => {
+                setMenuOpen(false)
+                navigate('connection')
+              }}
+            />
+          </div>
+          <div class={styles.menuActions}>
+            <Button
+              icon="settings"
+              onClick={() => {
+                setMenuOpen(false)
+                openSettings()
+              }}
+            >
+              Settings
+            </Button>
+          </div>
+        </div>
+      </Sheet>
 
       <WrongNoteFlash onReady={(handle) => session.attachFlash(handle)} />
       <TempoSheet

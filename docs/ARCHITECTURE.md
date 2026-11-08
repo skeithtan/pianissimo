@@ -237,8 +237,8 @@ Fixed height, width from its container. Hide with `visible=false` and keep it mo
 ### app/ and views/
 `app/App.tsx` is the shell: current view from `app/views.ts`, compact app bar (non-practice
 views), toasts, Settings overlay. `views.ts` is the only place mapping a `ViewName` (`library`,
-`practice`, `results`, `consult`) to a component: `component` (static) or `load: () =>
-import(...)` (lazy), and `chrome: 'bar' | 'none'` ('none' gives Practice and Consult the whole
+`practice`, `results`, `study`) to a component: `component` (static) or `load: () =>
+import(...)` (lazy), and `chrome: 'bar' | 'none'` ('none' gives Practice and Study the whole
 viewport). Navigation is `app/navigation.ts`;
 Settings is an overlay over the mounted view, so the score and passage are never lost.
 `app/state.ts` holds coarse signals only: `settings` (`updateSettings(patch)`, immutable deep
@@ -335,13 +335,15 @@ interruption or Repeat panel shows while `activity === 'playing'`.
 Focus mode collapses the header and narrow footer-tools row using CSS grid tracks (U60).
 Only the stage height changes, so the existing score view remeasures without re-engraving.
 `useRecede` restores chrome on pause, pointer/touch interaction, or keyboard navigation.
-`views/consult` (U72): `ConsultView` reads `consultRequest` (`openConsult({pieceId})`, route
-`#/consult/<pieceId>`) and runs a `PracticeSession` in Listen (`hands: 'none'`,
+`views/study` (U72): `StudyView` reads `studyRequest` (`openStudy({pieceId})`, route
+`#/study/<pieceId>`) and runs a `PracticeSession` in Listen (`hands: 'none'`,
 `cursorAction: false`, no-op history and piece sinks) over the same score views, layouts and
 `PracticeEnv` as Practice: playback, Note names, `session.revealAtCursor()` (names of both
 hands' notes at the cursor for the hint lifetime, a third label-opacity source merged with the
 persistent and temporary ones) and the keyboard guide, on any device including a phone; nothing
-of practice is offered or recorded.
+of practice is offered or recorded. On phone-size screens (`views/shared/usePhone`) both Practice
+and Study trade their header and footer for one top bar and a menu sheet (U74, U80), and the
+portrait page is capped at the stage's width and fitted to it (`pageMaxWidth`, `fitWidth`, R17).
 `views/results`: `ResultsView` reads `resultsRequest` and calls `loadResultsData(storage,
 request, sessionDismissals)` (flush the history writer, read the piece, its attempts for one
 score version, the package occurrences, `loadSuggestions`). `deriveResults` (pure) picks the

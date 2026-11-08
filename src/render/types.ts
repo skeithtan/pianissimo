@@ -336,6 +336,13 @@ export interface PrepareOptions {
    * when a dense bar cannot fit readably. Ignored by the strip. Default 800.
    */
   readonly pageWidth?: number
+  /**
+   * Page mode: the canvas never grows past this width (layout px; at least `pageWidth`). A bar
+   * alone on its system that would need more keeps its stacked and callout labels instead, and
+   * no further engraving is spent on it (a phone, R17). Absent: the canvas may grow to three
+   * times `pageWidth`.
+   */
+  readonly pageMaxWidth?: number
 }
 
 export type PrepareStage = 'loading' | 'engraving' | 'extracting' | 'labels' | 'partitioning' | 'done'

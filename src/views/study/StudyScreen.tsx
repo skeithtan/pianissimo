@@ -1,5 +1,5 @@
 /**
- * The Consult screen (DECISIONS U72): the score and its playback, nothing to practice. A
+ * The Study screen (DECISIONS U72): the score and its playback, nothing to practice. A
  * header (back, title, Settings), the whole-piece overview, the notation stage (the landscape
  * strip or the portrait page, as in Practice), the keyboard-guide slot and a footer: Note names,
  * the "Name the notes at the cursor" hint and Show keys, then Speed, Go to the start and Play /
@@ -8,7 +8,9 @@
  * On a phone-size screen (`usePhone`, U74) there is no footer at all: the header carries Show
  * keys, Play / Pause and a menu button, and every other control (Speed, Note names, the hint,
  * Go to the start, Settings) is in the menu sheet, so the score and the keyboard guide get the
- * height.
+ * height. A phone on its side (`usePhoneLandscape`, U80) goes further: the overview sits in the
+ * header in place of the title, there is no keyboard guide and no Show keys, and in portrait the
+ * page is engraved to the stage's width and fitted to it (R17).
  *
  * It runs a `PracticeSession` in Listen (hands 'none') with no history and no piece writes, so
  * a phone with no piano and no Web MIDI plays the piece through browser sound (S3, S4) and the
@@ -27,7 +29,7 @@ import { effectiveTempoAt, hasTempo } from '../../core/music/tempo'
 import { rat } from '../../core/music/rational'
 import { maxLabelWidthChars } from '../../core/naming'
 import type { PieceRecord, UserTempo } from '../../core/storage/records'
-import type { LabelRoom, PrepareOptions, PreparedLayout } from '../../render'
+import type { PrepareOptions, PreparedLayout } from '../../render'
 import { MemoryLayoutCache } from '../../render/cache'
 import { pageWidthFor } from '../../render/page/geometry'
 import { Button, Segmented, Sheet } from '../../ui/controls'
@@ -35,15 +37,15 @@ import { Icon, type IconName } from '../../ui/icons'
 import { TempoControl } from '../../ui/TempoControl'
 import type { PracticeEnv, StripHandle } from '../practice/env'
 import { GuidePanel, OverviewBar } from '../practice/live'
-import { labelRoom } from '../practice/PracticeScreen'
+import { labelRoom, prepareOptionsFor, sameParams, type LayoutParamsKey } from '../practice/PracticeScreen'
 import { ScoreSkeleton } from '../practice/ScoreSkeleton'
 import { TempoSheet } from '../practice/TempoSheet'
 import { useOrientation, useStageWidth } from '../practice/useOrientation'
 import { useStore } from '../practice/useStore'
-import { usePhone } from '../shared/usePhone'
-import styles from './consult.module.css'
+import { usePhone, usePhoneLandscape } from '../shared/usePhone'
+import styles from './study.module.css'
 
-export interface ConsultScreenProps {
+export interface StudyScreenProps {
   readonly env: PracticeEnv
   readonly piece: PieceRecord
   readonly pkg: ScorePackage
@@ -61,19 +63,8 @@ const LABEL_OPTIONS = [
 
 const QUARTER = rat(1, 4)
 
-/** In-memory layouts per Consult screen (both label rooms, a rotation). */
+/** In-memory layouts per Study screen (both label rooms, a rotation). */
 const RECENT_LAYOUT_BYTES = 24 * 1024 * 1024
-
-interface LayoutParamsKey {
-  readonly maxChars: number
-  readonly mode: 'strip' | 'page'
-  readonly pageWidth: number
-  readonly room: LabelRoom
-}
-
-function sameParams(a: LayoutParamsKey, b: LayoutParamsKey): boolean {
-  return a.maxChars === b.maxChars && a.mode === b.mode && a.pageWidth === b.pageWidth && a.room === b.room
-}
 
 type Prep =
   | { readonly state: 'preparing'; readonly fraction: number }
@@ -122,7 +113,7 @@ function Tool({
   )
 }
 
-export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenProps) {
+export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps) {
   const model = useMemo(() => practiceModel(pkg.model, piece.userTempo), [pkg, piece.userTempo])
   const [session] = useState(
     () =>
@@ -142,7 +133,7 @@ export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenPr
           timers: env.timers,
           frames: env.frames,
           midi: env.midi(),
-          // Consulting records nothing and changes nothing about the piece (U72).
+          // Studying records nothing and changes nothing about the piece (U72).
           history: { queueAttempt: () => undefined, queueAbandon: () => undefined },
           piece: { save: () => undefined },
           timeOrigin: env.timeOrigin,
@@ -158,6 +149,7 @@ export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenPr
   const [tempoOpen, setTempoOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const phone = usePhone()
+  const sideways = usePhoneLandscape()
   const host = useRef<HTMLDivElement>(null)
   const stripRef = useRef<StripHandle | null>(null)
   const maxChars = maxLabelWidthChars(appSettings.naming)
@@ -167,6 +159,8 @@ export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenPr
   const mode = useOrientation() === 'portrait' ? 'page' : 'strip'
   const stageWidth = useStageWidth(host)
   const pageWidth = mode === 'page' && stageWidth > 0 ? pageWidthFor(stageWidth, appSettings.view.pageZoom) : 0
+  // A phone's page never scrolls sideways: capped at the stage's width and fitted to it (R17).
+  const fit = phone && mode === 'page'
 
   // Session lifetime: settings, label hook, page visibility, orientation, cleanup.
   useEffect(() => {
@@ -198,7 +192,7 @@ export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenPr
   useEffect(() => {
     const el = host.current
     if (!el) return
-    const key: LayoutParamsKey = { maxChars, mode, pageWidth, room }
+    const key: LayoutParamsKey = { maxChars, mode, pageWidth, room, fit }
     const was = stripRef.current ? shown.current : null
     if (was && sameParams(was, key)) {
       stripRef.current?.holdLabels?.(false)
@@ -222,8 +216,7 @@ export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenPr
         const options: PrepareOptions = {
           signal: ctrl.signal,
           onProgress: (_stage, fraction) => live && !respace && setPrep({ state: 'preparing', fraction }),
-          labels: { maxChars: key.maxChars, room: key.room },
-          ...(key.mode === 'page' ? { mode: key.mode, pageWidth: key.pageWidth } : {}),
+          ...prepareOptionsFor(key),
         }
         const layout: PreparedLayout = await env.prepare(
           storage,
@@ -242,6 +235,7 @@ export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenPr
           layout,
           {
             initialZoom: mode === 'page' ? settings.peek().view.pageZoom : settings.peek().view.zoom,
+            fitWidth: fit,
             returnLabel: 'Return to current position',
             // Browsing while the piece plays pauses it (U41).
             onBrowse: (browsing) => {
@@ -271,9 +265,9 @@ export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenPr
       live = false
       ctrl.abort()
     }
-  }, [session, maxChars, mode, pageWidth, room])
+  }, [session, maxChars, mode, pageWidth, room, fit])
 
-  // Leaving Consult (or another piece's session): the view goes with it.
+  // Leaving Study (or another piece's session): the view goes with it.
   useEffect(
     () => () => {
       session.layoutChanging()
@@ -332,9 +326,10 @@ export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenPr
   return (
     <div
       class={styles.screen}
-      data-testid="consult-screen"
+      data-testid="study-screen"
       data-playing={ui.playing ? 'true' : 'false'}
       data-compact={phone ? 'true' : undefined}
+      data-sideways={sideways ? 'true' : undefined}
     >
       <header class={styles.header}>
         <div class={styles.titleBlock}>
@@ -346,23 +341,32 @@ export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenPr
           >
             <Icon name="back" size={22} />
           </button>
-          <div class={styles.titleText}>
-            <h1 class={styles.title}>{piece.title}</h1>
-            {piece.composer ? <p class={styles.subtitle}>{piece.composer}</p> : null}
-          </div>
+          {sideways ? (
+            <>
+              <h1 class={styles.srOnly}>{piece.title}</h1>
+              <OverviewBar session={session} model={model} range={null} view={stripRef} inline />
+            </>
+          ) : (
+            <div class={styles.titleText}>
+              <h1 class={styles.title}>{piece.title}</h1>
+              {piece.composer ? <p class={styles.subtitle}>{piece.composer}</p> : null}
+            </div>
+          )}
         </div>
         {phone ? (
           <div class={styles.headerTools}>
-            <button
-              type="button"
-              class={styles.iconButton}
-              aria-label={keysLabel}
-              title={keysLabel}
-              aria-pressed={ui.keyboardVisible}
-              onClick={toggleKeys}
-            >
-              <Icon name="keys" size={22} />
-            </button>
+            {sideways ? null : (
+              <button
+                type="button"
+                class={styles.iconButton}
+                aria-label={keysLabel}
+                title={keysLabel}
+                aria-pressed={ui.keyboardVisible}
+                onClick={toggleKeys}
+              >
+                <Icon name="keys" size={22} />
+              </button>
+            )}
             <button
               type="button"
               class={styles.headerPlay}
@@ -392,7 +396,7 @@ export function ConsultScreen({ env, piece, pkg, onTempoSaved }: ConsultScreenPr
         )}
       </header>
 
-      <OverviewBar session={session} model={model} range={null} view={stripRef} />
+      {sideways ? null : <OverviewBar session={session} model={model} range={null} view={stripRef} />}
 
       <div class={styles.stage}>
         <div ref={host} class={styles.stripHost} data-testid="strip-host" data-mode={mode} />

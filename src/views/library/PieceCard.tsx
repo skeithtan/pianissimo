@@ -1,5 +1,5 @@
 /**
- * One library entry: title, composer, last opened, last speed; Practice and Consult (U72); and a disclosure with
+ * One library entry: title, composer, last opened, last speed; Practice and Study (U72); and a disclosure with
  * the piece's Suggested practice and its management actions (review hands and tempo, clear
  * practice history, delete), each destructive one behind a confirmation.
  */
@@ -63,11 +63,11 @@ export function PieceCard({
           <Button
             variant="ghost"
             icon="listen"
-            onClick={() => void model.consult(piece.id)}
-            aria-label={`Consult ${piece.title}`}
+            onClick={() => void model.study(piece.id)}
+            aria-label={`Study ${piece.title}`}
             title="Listen to the piece and read the score, on any device"
           >
-            Consult
+            Study
           </Button>
         </div>
       </div>

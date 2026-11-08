@@ -238,6 +238,11 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   **Playhead drag**: within the current system; keyboard (← → Shift Home End) across systems.
   **Zoom**: pinch / ctrl-wheel / `setZoom` scale the page at once; 250 ms later
   `onZoomChange(scale)` asks the owner to re-prepare at the new page width.
+  **Width fit** (R17, a phone): `PrepareOptions.pageMaxWidth` caps the canvas (a dense bar alone
+  on its system that needs more keeps its stacks and callouts, and no engraving is spent on it);
+  the key gains `|max<w>`. `PageOptions.fitWidth` shows the page at min(requested zoom,
+  (host − 2 × 16) / canvas width), so it never scrolls sideways; the requested zoom is kept,
+  re-fitted on resize and reported as is (a pinch in past the fit still asks for a narrower page).
 - Reference piece at 565 px requested width: three engravings produce an 1180 px canvas,
   with complete mapping. The dense reference bar expands from 530 to 1145 px and its stacked
   or callout labels drop from 23 to 5. Real reference-tablet timing still needs measurement.

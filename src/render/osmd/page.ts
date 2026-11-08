@@ -91,6 +91,14 @@ export function pageWidthOf(options: Pick<PrepareOptions, 'pageWidth'>): number 
   return Math.max(MIN_PAGE_WIDTH, Math.round(options.pageWidth ?? DEFAULT_PAGE_WIDTH))
 }
 
+/** The canvas cap for the cache key: `{ pageMaxWidth }` when the options set one, else nothing. */
+export function pageMaxWidthOf(
+  options: Pick<PrepareOptions, 'pageWidth' | 'pageMaxWidth'>,
+): { pageMaxWidth: number } | Record<never, never> {
+  if (options.pageMaxWidth === undefined || !Number.isFinite(options.pageMaxWidth)) return {}
+  return { pageMaxWidth: Math.max(pageWidthOf(options), Math.round(options.pageMaxWidth)) }
+}
+
 const now = (): number => performance.now()
 const nextTask = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
@@ -121,6 +129,8 @@ export async function preparePage(
   const maxIterations = room === 'hints' ? 1 : Math.max(1, options.maxIterations ?? 3)
   const measureLabel = options.measureLabel ?? defaultMeasureLabel
   const requestedWidth = pageWidthOf(options)
+  const maxWidth = pageMaxWidthOf(options)
+  const widthCap = 'pageMaxWidth' in maxWidth ? maxWidth.pageMaxWidth : Infinity
   let pageWidth = requestedWidth
 
   progress('loading', 0)
@@ -204,12 +214,16 @@ export async function preparePage(
       )
       const crowded = spacingFactor > 1 + 1 / pageWidth
       const tooMany = result.failures.length > Math.max(0, units.length * CALLOUT_TOLERANCE)
-      if ((crowded || tooMany) && iteration < maxIterations) {
+      // A capped canvas (R17): a bar alone on its system that needs more than the cap cannot be
+      // helped by spacing (OSMD squeezes it back) and keeps its stacks and callouts; the
+      // engraving stands as it is rather than widening every other system for it.
+      const uncappable = requiredWidth > widthCap + 1
+      if ((crowded || tooMany) && !uncappable && iteration < maxIterations) {
         const factor = crowded
           ? Math.min(3, 1 + (spacingFactor - 1) * 1.25)
           : Math.min(2, Math.max(1.15, result.spacingDemand))
         if (requiredWidth > pageWidth + 1) {
-          pageWidth = Math.ceil(Math.min(pageWidth * 3, pageWidth + (requiredWidth - pageWidth) * 1.25))
+          pageWidth = Math.ceil(Math.min(widthCap, pageWidth * 3, pageWidth + (requiredWidth - pageWidth) * 1.25))
           container.style.width = `${pageWidth}px`
         }
         spacing = {
@@ -314,6 +328,7 @@ export async function preparePage(
           segmentWidth,
           mode: 'page',
           pageWidth: requestedWidth,
+          ...maxWidth,
         }),
         scoreVersionId: input.scoreVersionId,
         renderer: { name: renderer.name, version: renderer.version },

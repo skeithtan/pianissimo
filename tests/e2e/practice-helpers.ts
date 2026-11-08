@@ -139,9 +139,17 @@ export async function seedPiece(page: Page, settingsPatch: Partial<AppSettings> 
 
 /**
  * Opens the Practice footer menu (DECISIONS U76), the popover that holds Note names, Play through
- * and Show keys, unless it is already open, and returns it.
+ * and Show keys, unless it is already open, and returns it. On a phone-size screen (U80) the
+ * same rows (plus Speed) are in the menu sheet opened from the top bar.
  */
 export async function openFooterMenu(page: Page): Promise<Locator> {
+  const bar = page.getByTestId('practice-bar')
+  if (await bar.count()) {
+    const menu = page.getByRole('dialog', { name: 'Menu' })
+    if (!(await menu.isVisible())) await bar.getByRole('button', { name: 'Menu', exact: true }).click()
+    await expect(menu).toBeVisible()
+    return menu
+  }
   const button = page.locator('footer').getByRole('button', { name: 'Menu', exact: true })
   const menu = page.getByRole('dialog', { name: 'Practice menu' })
   if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click()

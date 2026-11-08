@@ -114,6 +114,7 @@ async function prepare(
     maxIterations?: number
     mode?: LayoutMode
     pageWidth?: number
+    pageMaxWidth?: number
     room?: LabelRoom
     segmentWidth?: number
     spacing?: { voiceSpacingMultiplier: number; voiceSpacingAddend: number }
@@ -130,7 +131,10 @@ async function prepare(
 let strip: StripView | PageView | undefined
 const events: { type: string; value: unknown }[] = []
 
-function mount(size: { width?: number; height?: number } = {}, options: StripOptions = {}): StripStats {
+function mount(
+  size: { width?: number; height?: number } = {},
+  options: StripOptions & { fitWidth?: boolean } = {},
+): StripStats {
   if (!layout) throw new Error('prepare first')
   strip?.destroy()
   const host = document.getElementById('strip-host')!

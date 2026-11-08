@@ -1,5 +1,5 @@
 /**
- * Consult mode (DECISIONS U72) on a phone: no Web MIDI (like Safari on an iPhone), the piece
+ * Study mode (DECISIONS U72) on a phone: no Web MIDI (like Safari on an iPhone), the piece
  * plays through browser sound, the score shows as a page in portrait and a strip in landscape,
  * note names come on request, and nothing of practice is offered or recorded. On a phone-size
  * screen there is no footer (U74): Show keys, Play and Menu are in the header and the other
@@ -12,11 +12,11 @@ import { PIECE_ID, seedPiece } from './practice-helpers'
 
 const PHONE_PORTRAIT = { width: 390, height: 844 }
 const PHONE_LANDSCAPE = { width: 844, height: 390 }
-/** A cold load of the Consult chunk (renderer) is slow on WebKit. */
+/** A cold load of the Study chunk (renderer) is slow on WebKit. */
 const COLD = { timeout: 60_000 }
 
 const labels = (page: Page) => page.locator('.pn-label')
-const screen = (page: Page) => page.getByTestId('consult-screen')
+const screen = (page: Page) => page.getByTestId('study-screen')
 const menu = (page: Page) => page.getByRole('dialog', { name: 'Menu' })
 
 async function openMenu(page: Page): Promise<void> {
@@ -24,14 +24,14 @@ async function openMenu(page: Page): Promise<void> {
   await expect(menu(page)).toBeVisible()
 }
 
-async function openConsult(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Consult Two Hands' }).click()
-  await expect(page.locator('main')).toHaveAttribute('data-view', 'consult')
+async function openStudy(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Study Two Hands' }).click()
+  await expect(page.locator('main')).toHaveAttribute('data-view', 'study')
   await expect(page.locator('h1', { hasText: 'Two Hands' })).toBeVisible()
   await expect(page.getByTestId('score-skeleton')).toHaveCount(0, COLD)
 }
 
-test.describe('Consult on a phone', () => {
+test.describe('Study on a phone', () => {
   test.use({ viewport: PHONE_PORTRAIT, hasTouch: true, isMobile: true })
 
   test('opens from the Library as its own route, plays through this device and shows the page view', async ({
@@ -39,8 +39,10 @@ test.describe('Consult on a phone', () => {
   }) => {
     // No fake Web MIDI: the browser has none, like a phone.
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
-    await openConsult(page)
-    expect(await page.evaluate(() => location.hash)).toBe(`#/consult/${PIECE_ID}`)
+    await openStudy(page)
+    expect(await page.evaluate(() => location.hash)).toBe(`#/study/${PIECE_ID}`)
+    // The page is engraved to the stage's width and fitted to it: nothing scrolls sideways (R17).
+    await expect(page.locator('.pn-page-wide')).toHaveCount(0)
     await expect(page.getByTestId('strip-host')).toHaveAttribute('data-mode', 'page')
     await expect(page.locator('.pn-strip')).toBeVisible(COLD)
 
@@ -92,7 +94,7 @@ test.describe('Consult on a phone', () => {
 
   test('the menu names the notes at the cursor on request, and all of them with Note names', async ({ page }) => {
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
-    await openConsult(page)
+    await openStudy(page)
     await expect(page.locator('.pn-strip')).toBeVisible(COLD)
     await expect(labels(page)).toHaveCount(0)
     await openMenu(page)
@@ -113,7 +115,7 @@ test.describe('Consult on a phone', () => {
 
   test('Show keys in the header opens the keyboard guide; Settings is in the menu', async ({ page }) => {
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
-    await openConsult(page)
+    await openStudy(page)
     await expect(page.locator('.pn-strip')).toBeVisible(COLD)
     await page.getByRole('button', { name: 'Show keys' }).click()
     await expect(page.getByTestId('guide-slot')).toHaveAttribute('data-open', 'true')
@@ -128,22 +130,22 @@ test.describe('Consult on a phone', () => {
 
   test('Back returns to the Library and a reload reopens the piece', async ({ page }) => {
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
-    await openConsult(page)
+    await openStudy(page)
     await page.reload()
     await expect(page.locator('h1', { hasText: 'Two Hands' })).toBeVisible(COLD)
-    await expect(page.locator('main')).toHaveAttribute('data-view', 'consult')
+    await expect(page.locator('main')).toHaveAttribute('data-view', 'study')
     await page.getByRole('button', { name: 'Back to Library' }).click()
     await expect(page.locator('main')).toHaveAttribute('data-view', 'library')
-    await expect(page.getByRole('button', { name: 'Consult Two Hands' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Study Two Hands' })).toBeVisible()
   })
 })
 
-test.describe('Consult on a phone on its side', () => {
+test.describe('Study on a phone on its side', () => {
   test.use({ viewport: PHONE_LANDSCAPE, hasTouch: true, isMobile: true })
 
   test('shows the strip with the controls in the header and the staves readable', async ({ page }) => {
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
-    await openConsult(page)
+    await openStudy(page)
     await expect(page.getByTestId('strip-host')).toHaveAttribute('data-mode', 'strip')
     await expect(page.locator('.pn-strip')).toBeVisible(COLD)
     await expect(screen(page).locator('footer')).toHaveCount(0)
@@ -153,17 +155,25 @@ test.describe('Consult on a phone on its side', () => {
     expect(overflow).toBeLessThanOrEqual(0)
     const play = (await page.getByRole('button', { name: 'Play', exact: true }).boundingBox())!
     const back = (await page.getByRole('button', { name: 'Back to Library' }).boundingBox())!
-    // One row: Play sits in the header beside Back.
+    // One row: Play sits in the header beside Back, and so does the overview (U80), in the
+    // title's place; there is no keyboard guide and no Show keys.
     expect(Math.abs(play.y + play.height / 2 - (back.y + back.height / 2))).toBeLessThan(8)
+    await expect(screen(page)).toHaveAttribute('data-sideways', 'true')
+    const overview = (await page.locator('header').getByRole('slider', { name: 'Piece overview' }).boundingBox())!
+    expect(Math.abs(overview.y + overview.height / 2 - (back.y + back.height / 2))).toBeLessThan(8)
+    expect(overview.width).toBeGreaterThan(PHONE_LANDSCAPE.width / 2)
+    await expect(page.getByRole('button', { name: 'Show keys' })).toHaveCount(0)
+    await expect(page.getByTestId('guide-slot')).toHaveAttribute('data-open', 'false')
+    expect(stage.height).toBeGreaterThanOrEqual(PHONE_LANDSCAPE.height - 80)
   })
 })
 
-test.describe('Consult on a tablet', () => {
+test.describe('Study on a tablet', () => {
   test.use({ viewport: { width: 820, height: 1180 }, hasTouch: true })
 
   test('keeps the footer controls and Settings in the header: no menu', async ({ page }) => {
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
-    await openConsult(page)
+    await openStudy(page)
     await expect(page.locator('.pn-strip')).toBeVisible(COLD)
     await expect(screen(page)).not.toHaveAttribute('data-compact', 'true')
     await expect(page.getByRole('button', { name: 'Menu', exact: true })).toHaveCount(0)

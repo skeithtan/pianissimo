@@ -23,7 +23,7 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
   pointer to Settings → Backup.
 - **Piece cards** (`PieceCard.tsx`): title, composer, "Opened 2 days ago", "75% speed", the
   user-entered tempo if any, **Practice** (→ `openPractice({ pieceId })`, after marking the piece
-  opened) and **Consult** (→ `openConsult({ pieceId })`, likewise; playback and the score on any
+  opened) and **Study** (→ `openStudy({ pieceId })`, likewise; playback and the score on any
   device, U72). A disclosure "Suggested practice and options" (the most recently opened piece starts
   expanded) holds the suggestions without a repeated "Suggested practice" heading (U56), and Review hands and tempo… / Clear practice
   history… / Delete…

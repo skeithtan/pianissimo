@@ -94,3 +94,32 @@
 .play:active:not(:disabled) {
   transform: scale(0.94);
 }
+
+/* A phone's top bar (U80): the cluster keeps its shape, smaller than the bar so it sits in it
+   with room around (user): 40 px hands (a 44 px hit area through the pseudo-element) around a
+   44 px button. */
+.compact {
+  gap: var(--space-2);
+}
+.compact .hand {
+  width: 40px;
+  height: 40px;
+  border-width: 1.5px;
+}
+.compact .hand::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+}
+.compact .play {
+  width: 44px;
+  height: 44px;
+}
+.compact .letter {
+  right: -4px;
+  bottom: -4px;
+  min-width: 16px;
+  height: 16px;
+  font-size: 0.625rem;
+}
