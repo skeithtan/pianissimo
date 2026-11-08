@@ -213,6 +213,7 @@ export function Sheet({
   wide,
   tall,
   flush,
+  untitled,
 }: {
   title: string
   open: boolean
@@ -223,6 +224,9 @@ export function Sheet({
   tall?: boolean
   /** No body padding or scrolling: the content lays itself out (tabs with a scrolling pane). */
   flush?: boolean
+  /** No visible title and no divider, only the close button (the phone menus): the title is
+   *  still the dialog's accessible name. */
+  untitled?: boolean
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const opener = useRef<Element | null>(null)
@@ -253,8 +257,8 @@ export function Sheet({
       }}
       aria-label={title}
     >
-      <header class={styles.sheetHeader}>
-        <h2>{title}</h2>
+      <header class={[styles.sheetHeader, untitled ? styles.untitled : ''].join(' ')}>
+        {untitled ? null : <h2>{title}</h2>}
         <Button icon="close" variant="ghost" aria-label="Close" onClick={onClose} />
       </header>
       <div class={[styles.sheetBody, flush ? styles.flush : ''].join(' ')}>{presence.mounted ? children : null}</div>

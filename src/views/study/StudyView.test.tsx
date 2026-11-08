@@ -289,7 +289,7 @@ describe('StudyView (U72)', () => {
   })
 
   describe('on a phone-size screen (U74)', () => {
-    it('has no footer: Show keys, Play and the menu are in the header, the rest is in the menu', async () => {
+    it('has no footer: Play and the menu are in the header, the rest is in the menu', async () => {
       onPhone()
       const r = await rig()
       await openPiece(r)
@@ -297,8 +297,8 @@ describe('StudyView (U72)', () => {
       expect($(root, '[data-testid="study-screen"]')?.dataset['compact']).toBe('true')
       expect($(root, 'footer')).toBeNull()
       const header = $(root, 'header')!
-      for (const name of ['Back to Library', 'Show keys', 'Play', 'Menu'])
-        expect(byLabel(header, name), name).not.toBeNull()
+      for (const name of ['Back to Library', 'Play', 'Menu']) expect(byLabel(header, name), name).not.toBeNull()
+      expect(byLabel(header, 'Show keys')).toBeNull()
       // Not on screen until the menu opens.
       expect(byLabel(root, 'Go to the start')).toBeNull()
       expect(byLabel(root, 'Note names on the score')).toBeNull()
@@ -309,29 +309,36 @@ describe('StudyView (U72)', () => {
       await settle(r, 1)
       const menu = dialog()!
       expect(menu.getAttribute('aria-label')).toBe('Menu')
+      // No visible title: the close button alone.
+      expect($(menu, 'h2')).toBeNull()
+      expect(byLabel(menu, 'Close')).not.toBeNull()
       expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
       expect(menu.textContent).toContain('Speed')
+      expect(menu.textContent).toContain('Show keys')
       for (const text of ['Name the notes at the cursor', 'Go to the start', 'Settings'])
         expect(byLabel(menu, text), text).not.toBeNull()
     })
 
-    it('the header plays and shows the keys; the menu hint names the notes and closes the menu', async () => {
+    it('the menu shows the keys; its hint names the notes and closes the menu; the header plays', async () => {
       onPhone()
       const r = await rig()
       await openPiece(r)
       const root = view!.container
       const strip = r.strips[0]!
-      click(byLabel(root, 'Show keys'))
+      click(byLabel(root, 'Menu'))
+      await settle(r, 1)
+      const keys = $$(dialog()!, 'label')
+        .find((el) => el.textContent?.trim() === 'Show keys')!
+        .querySelector<HTMLInputElement>('input[role="switch"]')!
+      click(keys)
       await settle(r, 1)
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('true')
-      expect(byLabel(root, 'Hide keys')?.getAttribute('aria-pressed')).toBe('true')
+      expect(keys.checked).toBe(true)
       // The phone's guide: highlighted keys, no name chips (U75).
       expect($$(root, '[data-part="bar"]').length).toBeGreaterThan(0)
       expect($$(root, '[data-part="label"]')).toHaveLength(0)
       expect($(root, '[data-part="keyboard-guide"]')?.dataset['labels']).toBe('false')
 
-      click(byLabel(root, 'Menu'))
-      await settle(r, 1)
       click(byLabel(dialog()!, 'Name the notes at the cursor'))
       expect(strip.opacity.size).toBeGreaterThan(0)
       expect(byLabel(root, 'Menu')?.getAttribute('aria-expanded')).toBe('false')
@@ -379,7 +386,7 @@ describe('StudyView (U72)', () => {
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('false')
       click(byLabel(header, 'Menu'))
       await settle(r, 1)
-      expect(byLabel(dialog()!, 'Show keys')).toBeNull()
+      expect(dialog()!.textContent).not.toContain('Show keys')
     })
 
     it('Note names and Settings work from the menu', async () => {

@@ -2,8 +2,8 @@
  * Study mode (DECISIONS U72) on a phone: no Web MIDI (like Safari on an iPhone), the piece
  * plays through browser sound, the score shows as a page in portrait and a strip in landscape,
  * note names come on request, and nothing of practice is offered or recorded. On a phone-size
- * screen there is no footer (U74): Show keys, Play and Menu are in the header and the other
- * controls are in the menu sheet. A tablet keeps the footer.
+ * screen there is no footer (U74): Play and Menu are in the header and the other controls,
+ * Show keys too, are in the untitled menu sheet. A tablet keeps the footer.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
@@ -58,7 +58,8 @@ test.describe('Study on a phone', () => {
     await expect(screen(page).locator('footer')).toHaveCount(0)
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)
-    for (const name of ['Back to Library', 'Show keys', 'Play', 'Menu']) {
+    await expect(page.getByRole('button', { name: 'Show keys' })).toHaveCount(0)
+    for (const name of ['Back to Library', 'Play', 'Menu']) {
       const box = (await page.locator('header').getByRole('button', { name, exact: true }).boundingBox())!
       expect(box, name).not.toBeNull()
       expect(box.x, name).toBeGreaterThanOrEqual(0)
@@ -113,13 +114,19 @@ test.describe('Study on a phone', () => {
     await expect(menu(page)).toHaveCount(0)
   })
 
-  test('Show keys in the header opens the keyboard guide; Settings is in the menu', async ({ page }) => {
+  test('Show keys in the menu opens the keyboard guide; Settings is in the menu', async ({ page }) => {
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
     await openStudy(page)
     await expect(page.locator('.pn-strip')).toBeVisible(COLD)
-    await page.getByRole('button', { name: 'Show keys' }).click()
+    await openMenu(page)
+    // The menu has no visible title, only its close button.
+    await expect(menu(page).locator('h2')).toHaveCount(0)
+    const show = menu(page).getByRole('switch', { name: 'Show keys' })
+    await show.check()
+    await expect(show).toBeChecked()
     await expect(page.getByTestId('guide-slot')).toHaveAttribute('data-open', 'true')
-    await expect(page.getByRole('button', { name: 'Hide keys' })).toHaveAttribute('aria-pressed', 'true')
+    await menu(page).getByRole('button', { name: 'Close' }).click()
+    await expect(menu(page)).toHaveCount(0)
     // The guide reaches the bottom of the screen: nothing but the home-indicator strip below it.
     const guide = (await page.getByTestId('guide-slot').boundingBox())!
     expect(guide.y + guide.height).toBeGreaterThanOrEqual(PHONE_PORTRAIT.height - 40)
@@ -165,6 +172,8 @@ test.describe('Study on a phone on its side', () => {
     await expect(page.getByRole('button', { name: 'Show keys' })).toHaveCount(0)
     await expect(page.getByTestId('guide-slot')).toHaveAttribute('data-open', 'false')
     expect(stage.height).toBeGreaterThanOrEqual(PHONE_LANDSCAPE.height - 80)
+    await openMenu(page)
+    await expect(menu(page).getByRole('switch', { name: 'Show keys' })).toHaveCount(0)
   })
 })
 

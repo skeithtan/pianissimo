@@ -655,7 +655,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         />
       )}
 
-      <Sheet title="Menu" open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
+      <Sheet title="Menu" untitled open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
         <div class={styles.menu}>
           <div class={styles.menuRow}>
             <span class={styles.menuLabel}>Speed</span>

@@ -5,9 +5,9 @@
  * the "Name the notes at the cursor" hint and Show keys, then Speed, Go to the start and Play /
  * Pause.
  *
- * On a phone-size screen (`usePhone`, U74) there is no footer at all: the header carries Show
- * keys, Play / Pause and a menu button, and every other control (Speed, Note names, the hint,
- * Go to the start, Settings) is in the menu sheet, so the score and the keyboard guide get the
+ * On a phone-size screen (`usePhone`, U74) there is no footer at all: the header carries Play /
+ * Pause and a menu button, and every other control (Speed, Note names, Show keys, the hint, Go to
+ * the start, Settings) is in the untitled menu sheet, so the score and the keyboard guide get the
  * height. A phone on its side (`usePhoneLandscape`, U80) goes further: the overview sits in the
  * header in place of the title, there is no keyboard guide and no Show keys, and in portrait the
  * page is engraved to the stage's width and fitted to it (R17).
@@ -32,7 +32,7 @@ import type { PieceRecord, UserTempo } from '../../core/storage/records'
 import type { PrepareOptions, PreparedLayout } from '../../render'
 import { MemoryLayoutCache } from '../../render/cache'
 import { pageWidthFor } from '../../render/page/geometry'
-import { Button, Segmented, Sheet } from '../../ui/controls'
+import { Button, Segmented, Sheet, Toggle } from '../../ui/controls'
 import { Icon, type IconName } from '../../ui/icons'
 import { TempoControl } from '../../ui/TempoControl'
 import type { PracticeEnv, StripHandle } from '../practice/env'
@@ -355,18 +355,6 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
         </div>
         {phone ? (
           <div class={styles.headerTools}>
-            {sideways ? null : (
-              <button
-                type="button"
-                class={styles.iconButton}
-                aria-label={keysLabel}
-                title={keysLabel}
-                aria-pressed={ui.keyboardVisible}
-                onClick={toggleKeys}
-              >
-                <Icon name="keys" size={22} />
-              </button>
-            )}
             <button
               type="button"
               class={styles.headerPlay}
@@ -456,7 +444,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
         </footer>
       )}
 
-      <Sheet title="Menu" open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
+      <Sheet title="Menu" untitled open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
         <div class={styles.menu}>
           <div class={styles.menuRow}>
             <span class={styles.menuLabel}>Speed</span>
@@ -466,6 +454,14 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             <span class={styles.menuLabel}>Note names</span>
             {noteNames}
           </div>
+          {sideways ? null : (
+            <Toggle
+              class={`${styles.menuRow} ${styles.menuToggle}`}
+              label="Show keys"
+              checked={ui.keyboardVisible}
+              onChange={(on) => session.setKeyboardVisible(on)}
+            />
+          )}
           <div class={styles.menuActions}>
             <Button
               icon="hint"
