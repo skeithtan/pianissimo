@@ -84,6 +84,8 @@ export interface StartContext {
   /** One-hand grading allowed on this route (verified, echo-free output or browser sound). */
   readonly accompanimentAllowed: boolean
   readonly hasTempo: boolean
+  /** A piano input is connected (default true). Without one only a microphone play-through can start. */
+  readonly hasInput?: boolean
 }
 
 export interface StartPlanOptions {
@@ -99,6 +101,11 @@ export interface StartPlanOptions {
    * Hands 'none' stays Listen; play-through wins (the session never sets both).
    */
   readonly rhythm?: boolean
+  /**
+   * The microphone follower is on (DECISIONS P15): play-through with both hands needs no piano
+   * input; everything else without a piano is blocked with a reason.
+   */
+  readonly mic?: boolean
 }
 
 export function startPlan(
@@ -119,6 +126,24 @@ export function startPlan(
       action,
       enabled: false,
       reason: 'Set a practice tempo so the score can follow the timing.',
+    }
+  }
+  if (ctx.hasInput === false) {
+    if (action !== 'play') {
+      return {
+        action,
+        enabled: false,
+        reason: `${action === 'scored' ? 'Scored practice' : 'Reading'} needs a connected piano. Play through follows the microphone instead.`,
+      }
+    }
+    if (sel.hands !== 'both' || !opts.mic) {
+      return {
+        action,
+        enabled: false,
+        reason: opts.mic
+          ? 'One-hand play-through needs the piano: the microphone follows both hands only.'
+          : 'Play-through needs a connected piano.',
+      }
     }
   }
   if (sel.hands !== 'both') {

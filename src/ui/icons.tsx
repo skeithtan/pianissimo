@@ -15,6 +15,7 @@ const paths: Record<string, JSX.Element> = {
   ),
   /** Play-through (DECISIONS P12): a play triangle followed by two forward chevrons. */
   flow: <path d="M3 6.5v11l7-5.5zM13 7l4.5 5-4.5 5M17.5 7l4.5 5-4.5 5" />,
+  mic: <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" />,
   /** Keep time (rhythm mode): a metronome with its pendulum swung to the side. */
   metronome: (
     <g>

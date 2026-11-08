@@ -7,13 +7,13 @@
 import { type Rational, ZERO, rat, toNumber } from '../music/rational'
 import type { TempoMapData } from '../music/tempo'
 import type { ScoreModel } from '../model/score'
-import type { Timeline } from '../engine/timeline'
 import { FeatureExtractor, type FeatureOptions } from './features'
 import { OnlineTimeWarping, type OltwOptions } from './oltw'
 import { type Reference, type ReferenceNoteOptions, buildReference, frameAt, framePosition } from './reference'
 
 export { FeatureExtractor, Fft, FEATURE_DIM, HOP_SEC, frameSize, hopSize } from './features'
 export { OnlineTimeWarping } from './oltw'
+export { groupReached } from './groups'
 export {
   buildReference,
   framePosition,
@@ -111,21 +111,4 @@ export function createAudioFollower(
       restart()
     },
   }
-}
-
-/**
- * Index of the last group of `timeline` at or before `position` (−1 before the first). A session
- * would call `PlayFollower.transportArrived` (or release gates) when it increases with enough
- * confidence; groups are compared in float whole notes with a 1e-6 tolerance.
- */
-export function groupReached(timeline: Timeline, position: number): number {
-  const gs = timeline.groups
-  let lo = 0
-  let hi = gs.length
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1
-    if (toNumber(gs[mid]!.position) <= position + 1e-6) lo = mid + 1
-    else hi = mid
-  }
-  return lo - 1
 }

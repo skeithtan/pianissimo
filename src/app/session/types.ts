@@ -6,8 +6,9 @@ import type { MidiRouteEvent } from '../../core/midi/adapter'
 import type { MidiInputEvent } from '../../core/midi/types'
 import type { MidiOutputLike } from '../../core/midi/webmidi'
 import type { AbandonEvent, AttemptRecord, InterruptReason, PassageRange } from '../../core/model/practice'
-import type { HandSelection } from '../../core/model/score'
+import type { HandSelection, ScoreModel } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
+import type { TempoMapData } from '../../core/music/tempo'
 import type { AppSettings } from '../../core/model/settings'
 import type { Phase } from '../../core/engine'
 import type { BrowserAudioModule, MetronomeModule, OutputBackend, TimerApi } from '../../core/playback'
@@ -138,7 +139,40 @@ export interface SessionDeps {
   readonly loadMetronome?: () => Promise<MetronomeModule>
   /** Builds the MIDI output backend (tests inject a recording backend). */
   readonly createMidiBackend?: (output: MidiOutputLike, channel: number, humanGuard: boolean) => MidiBackendLike
+  /**
+   * Builds the microphone follower for play-through (DECISIONS P15; `app/audio/micFollower.ts`,
+   * tests inject a fake). Absent: the microphone setting has no effect.
+   */
+  readonly createMicFollower?: CreateMicFollower
 }
+
+/** A position estimate from the microphone follower (float whole notes, confidence 0..1). */
+export interface MicEstimate {
+  readonly position: number
+  readonly confidence: number
+}
+
+/** The microphone follower as the session drives it (`app/audio/micFollower.ts`). */
+export interface MicFollowerLike {
+  /** Opens the microphone (the browser may ask) and follows from `position`; rejects with a reason. */
+  start(position: Rational): Promise<void>
+  /** Follow again from `position` (a seek, a resume). */
+  reset(position: Rational): void
+  /** Estimates stop until `resume` (the microphone stays open). */
+  pause(): void
+  resume(): void
+  /** The reference is rebuilt at the new speed, at the current position. */
+  setMultiplier(multiplier: number): void
+  /** Closes the microphone. */
+  dispose(): void
+}
+
+export type CreateMicFollower = (
+  model: ScoreModel,
+  tempo: TempoMapData,
+  multiplier: number,
+  onEstimate: (estimate: MicEstimate) => void,
+) => MicFollowerLike
 
 /** What the session needs from `MidiOutputBackend` beyond `OutputBackend`. */
 export interface MidiBackendLike extends OutputBackend {
@@ -260,6 +294,11 @@ export interface SessionUi {
    */
   readonly playThrough: boolean
   /**
+   * The microphone follower's status while play-through uses it (DECISIONS P15): starting,
+   * following, or why it could not start; null otherwise.
+   */
+  readonly micStatus: string | null
+  /**
    * Keep time (rhythm mode, DECISIONS P13) is on: every Start is a scored attempt played against
    * the music (strict transport), after a one-bar count-in. Exclusive with play-through.
    */
@@ -312,4 +351,6 @@ export type SessionSettings = Pick<
 > & {
   /** Keep time tolerance; absent (Study, which has no Keep time) = the engine default. */
   readonly rhythm?: AppSettings['rhythm']
+  /** Microphone following (DECISIONS P15); absent = off. */
+  readonly mic?: AppSettings['mic']
 }

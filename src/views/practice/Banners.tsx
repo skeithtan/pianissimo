@@ -58,6 +58,12 @@ export function Banners(p: BannersProps) {
           <span>{ui.soundStatus}</span>
         </div>
       ) : null}
+      {ui.micStatus ? (
+        <div class={styles.banner} role="status" data-testid="mic-status">
+          <Icon name="mic" size={20} />
+          <span>{ui.micStatus}</span>
+        </div>
+      ) : null}
       {interruption ? (
         <div class={`${styles.banner} ${styles.bannerWarn}`} role="status" data-testid="interruption">
           <Icon name="alert" size={20} />

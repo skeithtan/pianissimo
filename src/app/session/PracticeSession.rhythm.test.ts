@@ -352,7 +352,7 @@ describe('Keep time: modes', () => {
     h.session.setPlayThrough(true)
     expect(ui(h)).toMatchObject({ playThrough: true, rhythm: false, startAction: 'play' })
     h.session.setRhythmMode(true)
-    expect(ui(h)).toMatchObject({ playThrough: false, rhythm: true, startAction: 'scored' })
+    expect(ui(h)).toMatchObject({ playThrough: false, micStatus: null, rhythm: true, startAction: 'scored' })
     expect(h.saves.filter((s) => 'rhythm' in s.patch).map((s) => s.patch.rhythm)).toEqual([true, false, true])
   })
 

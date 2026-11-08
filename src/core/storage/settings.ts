@@ -170,6 +170,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const sound = obj(s['sound'])
   const metronome = obj(s['metronome'])
   const rhythm = obj(s['rhythm'])
+  const mic = obj(s['mic'])
   const view = obj(s['view'])
   const suggestions = obj(s['suggestions'])
   const storedVersion = typeof s['version'] === 'number' ? s['version'] : 0
@@ -234,6 +235,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
         clamped(rhythm['toleranceMs'], d.rhythm.toleranceMs, MIN_RHYTHM_TOLERANCE_MS, MAX_RHYTHM_TOLERANCE_MS),
       ),
     },
+    mic: { follow: bool(mic['follow'], d.mic.follow) },
     view: {
       zoom: num(view['zoom'], d.view.zoom, 0.1, 20),
       pageZoom: num(view['pageZoom'], d.view.pageZoom, 0.1, 20),

@@ -51,6 +51,7 @@ import {
   type Timeline,
   type TransportKind,
 } from '../../core/engine'
+import { groupReached } from '../../core/audio/groups'
 import { timingAccuracy } from '../../core/history'
 import { HintPedalTrigger } from '../../core/midi/hintPedal'
 import { NATURAL, labelFor, labelForMidi } from '../../core/naming'
@@ -110,6 +111,8 @@ import type {
   GuideState,
   Interruption,
   LadderUi,
+  MicEstimate,
+  MicFollowerLike,
   MidiBackendLike,
   SessionDeps,
   SessionProgress,
@@ -195,6 +198,12 @@ interface PlayThrough {
 type GuideSource = Pick<EngineState, 'targetNotes' | 'acceptedPitches' | 'heldKeys' | 'heldWrongKeys'>
 
 const RESUME_SAVE_MS = 5000
+/** Estimates below this confidence never move the cursor (about 0.5 on synthetic audio; tune on recordings). */
+const MIC_CONFIDENCE = 0.5
+const MIC_STARTING = 'Starting the microphone…'
+const MIC_LISTENING = 'Following through the microphone.'
+const MIC_FAILED_TEXT = 'The microphone could not be started.'
+
 const ACTIVE: readonly Phase[] = ['preparing', 'ready', 'running']
 /** How long `revealAtCursor` names stay when hints are set to last until the correct note (no attempt here). */
 export const REVEAL_FALLBACK_S = 4
@@ -265,6 +274,12 @@ export class PracticeSession {
   #playAgain = false
   /** The hint pedal while the follower has the input (the engine's own detector never sees it). */
   #playPedal: HintPedalTrigger | null = null
+  /** The microphone follower while play-through uses it (DECISIONS P15). */
+  #mic: MicFollowerLike | null = null
+  /** Its status for the view: starting, following, or why it could not start. */
+  #micStatus: string | null = null
+  /** A piano input is connected (`setInputAvailable`). */
+  #inputAvailable = true
   /** Keep time (rhythm mode, DECISIONS P13) is on. */
   #rhythm: boolean
   /** The Keep time count-in in progress, else null. */
@@ -1060,6 +1075,8 @@ export class PracticeSession {
     const key = both ? '' : outputKey(this.#settings, this.#destination())
     if (p && !p.playing && p.outputKey === key && (both || (this.#output !== null && this.#outputKey === key))) {
       this.#followBrowsedCursor()
+      if (this.#micActive() && !(await this.#startMic(p.follower.state.position ?? ZERO))) return
+      if (this.#disposed || this.#play !== p || p.playing) return
       this.#playFrom(this.#deps.clock())
       this.#process(this.#deps.clock())
       return
@@ -1081,8 +1098,76 @@ export class PracticeSession {
     // Rebuilt for a new output at the follower's group; fresh at the engine's (reading) position.
     const position = current ? current.follower.state.position : this.#engine.state.position
     this.#buildPlay(position, now)
-    this.#playFrom(now)
+    const built = this.#play
+    if (built && this.#micActive()) {
+      if (!(await this.#startMic(built.follower.state.position ?? ZERO))) {
+        this.#process(this.#deps.clock())
+        return
+      }
+      if (this.#disposed || this.#play !== built || built.playing) return
+    }
+    this.#playFrom(this.#deps.clock())
     this.#process(this.#deps.clock())
+  }
+
+  /**
+   * The microphone follower for this play-through (DECISIONS P15): built and opened on the first
+   * Start (the browser may ask for the microphone); later Starts reuse it. False, with the reason
+   * in `ui.micStatus`, when it could not start: play-through stays on but does not play.
+   */
+  async #startMic(position: Rational): Promise<boolean> {
+    const create = this.#deps.createMicFollower
+    if (!create) return false
+    if (this.#mic) return true
+    const mic = create(this.#model, this.#tempo, this.#sel.multiplier, (e) => this.#onMicEstimate(mic, e))
+    this.#mic = mic
+    this.#setMicStatus(MIC_STARTING)
+    try {
+      await mic.start(position)
+    } catch (e) {
+      if (this.#mic === mic) {
+        this.#mic = null
+        this.#setMicStatus(e instanceof Error && e.message ? e.message : MIC_FAILED_TEXT)
+      }
+      mic.dispose()
+      return false
+    }
+    if (this.#mic !== mic || this.#disposed) {
+      mic.dispose()
+      return false
+    }
+    this.#setMicStatus(MIC_LISTENING)
+    return true
+  }
+
+  /**
+   * A position estimate from the microphone: with enough confidence, the last group at or before
+   * it is reached, so the follower releases every gate up to it (an estimate behind the current
+   * group is noise and ignored). Nothing is judged.
+   */
+  #onMicEstimate(mic: MicFollowerLike, e: MicEstimate): void {
+    const p = this.#play
+    if (this.#disposed || mic !== this.#mic || !p?.playing || e.confidence < MIC_CONFIDENCE) return
+    const i = p.follower.state.groupIndex
+    if (i === null) return
+    const g = groupReached(p.follower.timeline, e.position)
+    if (g < i) return
+    p.follower.audioReached(g, this.#deps.clock())
+    this.#processPlay()
+  }
+
+  #setMicStatus(status: string | null): void {
+    if (status === this.#micStatus) return
+    this.#micStatus = status
+    if (!this.#disposed) this.#publishUi()
+  }
+
+  /** Closes the microphone (play-through off, hands changed, the setting off, dispose). */
+  #disposeMic(): void {
+    const mic = this.#mic
+    this.#mic = null
+    mic?.dispose()
+    this.#setMicStatus(null)
   }
 
   /** A new play-through transport and follower at the first group at or after `position` (null: the start). */
@@ -1145,6 +1230,11 @@ export class PracticeSession {
     if (p.follower.state.paused) p.follower.resume(now)
     p.playing = true
     p.transport.play(now)
+    if (this.#mic) {
+      // The estimate restarts at the current group: what was heard while paused is forgotten.
+      this.#mic.reset(p.follower.state.position ?? ZERO)
+      this.#mic.resume()
+    }
   }
 
   /** Pause keeps the position; the patience clock stops with the music. */
@@ -1154,6 +1244,7 @@ export class PracticeSession {
     p.transport.pause()
     p.follower.pause(now)
     p.playing = false
+    this.#mic?.pause()
     this.#clearHighlights()
     this.#saveResume(now, true)
   }
@@ -1169,6 +1260,7 @@ export class PracticeSession {
     // The follower first: a playing transport reports the gate at the new position at once.
     p.follower.seek(group, now)
     p.transport.seek(g.position)
+    this.#mic?.reset(g.position)
     this.#lastSeek = { position: g.position }
     this.#clearHighlights()
     this.#processPlay()
@@ -1192,6 +1284,7 @@ export class PracticeSession {
       this.#engine.reconfigure({ reason, timeline: this.#timeline, transport: 'accompaniment' }, now)
       p.transport.setMultiplier(next.multiplier)
       p.follower.reconfigure(this.#timeline, now)
+      this.#mic?.setMultiplier(next.multiplier)
       this.#processPlay()
       this.#process(now)
       return true
@@ -1272,6 +1365,7 @@ export class PracticeSession {
     this.#play = null
     p.transport.stop()
     p.transport.dispose()
+    this.#disposeMic()
     this.#clearHighlights()
     this.#lastVersion = -1
     if (!keepPosition) return
@@ -1595,7 +1689,17 @@ export class PracticeSession {
    * the piano does.
    */
   setInputAvailable(available: boolean): void {
-    if (available === (this.#heldHands === null)) return
+    this.#inputAvailable = available
+    this.#syncHeldHands()
+  }
+
+  /** The hands are held off while no piano is connected, unless the microphone follower stands in (P15). */
+  #syncHeldHands(): void {
+    const available = this.#inputAvailable || this.#micFollow()
+    if (available === (this.#heldHands === null)) {
+      this.#publishUi()
+      return
+    }
     const multiplier = this.#sel.multiplier
     if (available) {
       const hands = this.#heldHands ?? this.#sel.hands
@@ -1883,6 +1987,14 @@ export class PracticeSession {
       // A paused one-hand play-through is rebuilt with the new automatic part on Start.
       if (this.#play && this.#sel.hands !== 'both') this.#disposePlay(true)
     }
+    if ((prev.mic?.follow ?? false) !== (next.mic?.follow ?? false)) {
+      // The microphone stands in for a piano input (hands available without one) or stops doing so.
+      this.#syncHeldHands()
+      if (!next.mic?.follow) this.#disposeMic()
+      else if (this.#play?.playing && this.#micActive()) {
+        void this.#startMic(this.#play.follower.state.position ?? ZERO)
+      }
+    }
     // Volumes apply live to sound already loaded (Settings over Practice).
     if (prev.sound.browserVolume !== next.sound.browserVolume) this.#browser?.setVolume(next.sound.browserVolume)
     if (prev.metronome.volume !== next.metronome.volume) this.#metronome?.setVolume(next.metronome.volume)
@@ -2075,8 +2187,8 @@ export class PracticeSession {
       case 'input-disconnected': {
         this.#inputDisconnected = true
         if (this.#playThrough) {
-          // Play-through pauses; nothing is interrupted or recorded.
-          this.#pausePlay(now)
+          // Play-through pauses (not while the microphone follows); nothing is interrupted or recorded.
+          if (!this.#micActive()) this.#pausePlay(now)
           this.#play?.follower.resetPhysical(now)
           this.#engine.resetPhysical(now)
           break
@@ -3019,9 +3131,20 @@ export class PracticeSession {
         noOutputReason: noPlaybackReason(this.#settings, out, browser),
         accompanimentAllowed: accompanimentAllowed(this.#settings, out, browser),
         hasTempo: hasTempo(this.#tempo),
+        hasInput: this.#inputAvailable,
       },
-      { playThrough: this.#playThrough, rhythm: this.#rhythm },
+      { playThrough: this.#playThrough, rhythm: this.#rhythm, mic: this.#micFollow() },
     )
+  }
+
+  /** The microphone setting is on and the app can build a follower (DECISIONS P15). */
+  #micFollow(): boolean {
+    return this.#settings.mic?.follow === true && this.#deps.createMicFollower !== undefined
+  }
+
+  /** The microphone follows this play-through: both hands only (it must never hear app playback). */
+  #micActive(): boolean {
+    return this.#micFollow() && this.#sel.hands === 'both'
   }
 
   #isPlaying(): boolean {
@@ -3085,6 +3208,7 @@ export class PracticeSession {
       soundStatus: this.#soundStatus,
       inputDisconnected: this.#inputDisconnected,
       playThrough: true,
+      micStatus: this.#micStatus,
       rhythm: false,
       countIn: null,
       finished: false,
@@ -3134,6 +3258,7 @@ export class PracticeSession {
       soundStatus: this.#soundStatus,
       inputDisconnected: this.#inputDisconnected,
       playThrough: false,
+      micStatus: null,
       rhythm: this.#rhythm,
       countIn: this.#countIn?.remaining ?? null,
       // A lead-in that read to its end is not the end of the piece: it wraps into the attempt.

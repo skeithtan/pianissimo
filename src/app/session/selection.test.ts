@@ -117,3 +117,55 @@ describe('selection', () => {
     expect(startPlan(selectionTimeline(score, score.tempo, preview), preview, ok, keep).action).toBe('listen')
   })
 })
+
+describe('start plans without a piano input (microphone follower, DECISIONS P15)', () => {
+  const both = { hands: 'both', range: null, multiplier: 1 } as const
+  const right = { hands: 'right', range: null, multiplier: 1 } as const
+  const timeline = selectionTimeline(score, score.tempo, both)
+  const rightTimeline = selectionTimeline(score, score.tempo, right)
+  const noInput = { ...ok, hasInput: false }
+
+  it('blocks reading and scored practice with a reason', () => {
+    expect(startPlan(timeline, both, noInput, { mic: true })).toMatchObject({
+      action: 'reading',
+      enabled: false,
+      reason: 'Reading needs a connected piano. Play through follows the microphone instead.',
+    })
+    expect(startPlan(timeline, both, noInput, { mic: true, rhythm: true })).toMatchObject({
+      action: 'scored',
+      enabled: false,
+      reason: expect.stringContaining('Scored practice needs a connected piano'),
+    })
+  })
+
+  it('allows play-through with both hands only, and only with the microphone', () => {
+    expect(startPlan(timeline, both, noInput, { playThrough: true, mic: true })).toEqual({
+      action: 'play',
+      enabled: true,
+      reason: null,
+    })
+    expect(startPlan(rightTimeline, right, noInput, { playThrough: true, mic: true })).toMatchObject({
+      action: 'play',
+      enabled: false,
+      reason: 'One-hand play-through needs the piano: the microphone follows both hands only.',
+    })
+    expect(startPlan(timeline, both, noInput, { playThrough: true })).toMatchObject({
+      action: 'play',
+      enabled: false,
+      reason: 'Play-through needs a connected piano.',
+    })
+  })
+
+  it('changes nothing with a piano connected', () => {
+    expect(startPlan(timeline, both, { ...ok, hasInput: true }, { mic: true })).toEqual({
+      action: 'reading',
+      enabled: true,
+      reason: null,
+    })
+    expect(startPlan(timeline, both, ok, { playThrough: true, mic: true })).toEqual({
+      action: 'play',
+      enabled: true,
+      reason: null,
+    })
+  })
+})

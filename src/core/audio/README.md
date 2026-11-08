@@ -3,7 +3,7 @@
 Estimates where the player is in a score from microphone samples, so Play-through (DECISIONS
 P12) could follow an acoustic piano without MIDI. A spike on branch `mic-follower-spike`
 (DECISIONS P14): pure, synchronous, framework-free TypeScript with no DOM, no Web Audio and no
-new dependency, proven on synthetic performances only. It is not wired into the app.
+new dependency, proven on synthetic performances only so far; wired into play-through by P15.
 
 Position only: from a microphone the follower cannot tell a wrong note from a right one, and
 Play-through does not need it to. Both hands only: the microphone must never hear the app's own
@@ -97,12 +97,15 @@ one worker. The reference of the 59-bar piece (22,000 frames) builds in about 0.
   one-second forgetting horizon.
 - Pedaling the score does not mark is the weakest case (table above).
 
-## Wiring plan (not built)
+## Wiring (DECISIONS P15)
 
-A Settings switch, both hands only. `getUserMedia({ audio: { echoCancellation: false,
-noiseSuppression: false, autoGainControl: false } })` → an `AudioWorklet` posting 10 ms mono
-blocks to a worker that runs the follower (HTTPS only; WebKit stops the stream when the page is
-backgrounded, so re-request on resume) → the session calls `PlayFollower.transportArrived(g)`
-when `groupReached(timeline, position)` rises with confidence above about 0.5, and never
-releases a gate from audio alone. Speed and hand changes rebuild the follower at the current
-position as they rebuild the transport.
+Settings → Sound → Microphone → "Follow an acoustic piano", both hands only.
+`app/audio/micFollower.ts`: `getUserMedia({ echoCancellation: false, noiseSuppression: false,
+autoGainControl: false })` → an `AudioWorklet` (`public/mic-processor.js`, 512-sample mono
+blocks posted to the main thread) → `workers/follower.worker.ts` running `workerHandler.ts`
+(`protocol.ts`: configure / reset / pause / resume / samples in, estimates every 20 ms of audio
+out) → the session's `#onMicEstimate`, which calls `PlayFollower.audioReached(groupReached(timeline,
+position))` for estimates with confidence ≥ 0.5 at or past the current group. Gates are never
+released from audio below that confidence; nothing is judged. Speed and hand changes rebuild the
+follower at the current position as they rebuild the transport; the microphone is closed outside
+play-through.

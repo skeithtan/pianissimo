@@ -47,6 +47,7 @@ const UI: SessionUi = {
   soundStatus: null,
   inputDisconnected: false,
   playThrough: false,
+  micStatus: null,
   rhythm: false,
   countIn: null,
   finished: false,
@@ -89,6 +90,14 @@ const DISCONNECT = {
 } as const
 
 describe('Banners', () => {
+  it('shows the microphone status beside the sound status', () => {
+    view = mount(banners({ micStatus: 'Following through the microphone.' }))
+    const row = view.container.querySelector('[data-testid="mic-status"]')
+    expect(row?.textContent).toContain('Following through the microphone.')
+    view.rerender(banners({ micStatus: null }))
+    expect(view.container.querySelector('[data-testid="mic-status"]')).toBeNull()
+  })
+
   it('shows one disconnect notice, and none once the piano is back', () => {
     view = mount(banners({ inputDisconnected: true, interruption: DISCONNECT }))
     const notice = $(view.container, '[data-testid="input-disconnected"]')

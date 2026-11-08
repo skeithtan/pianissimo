@@ -112,19 +112,26 @@ attack, no assistance, no missed group and every group within the tolerance. Clo
 from injected arrivals and surface through `nextDeadline()`; `input-complete` is still emitted
 but must not release gates in strict.
 
-### core/audio (spike, worker-safe)
-An audio score follower for Play-through on an acoustic piano (DECISIONS P14; branch
-`mic-follower-spike`, not wired into the app). `features.ts` turns mono samples into one feature
-vector per 10 ms (log-spectral energy per piano semitone plus a per-semitone onset rise; in-repo
-radix-2 FFT), `reference.ts` builds the expected sequence from a `ScoreModel` and tempo map with
-harmonic templates (no synthesis), `oltw.ts` aligns live frames to it by windowed online time
-warping, and `index.ts` exposes `createAudioFollower(model, tempo, multiplier)` (`push(samples,
-sampleRate, time)` → position in whole notes and a confidence; `reset(position)`) plus
-`groupReached(timeline, position)` for the session to turn positions into
-`PlayFollower.transportArrived` calls. `evaluate.ts` and `testkit.ts` are test support (a synthetic
-performance renderer and the onset-reaching metric). Pure: no DOM, no Web Audio; meant to run in
-an `AudioWorklet` + worker.
+### core/audio (worker-safe)
+The audio score follower behind play-through on an acoustic piano (DECISIONS P14 spike, P15
+wiring). `features.ts` turns mono samples into one feature vector per 10 ms (log-spectral energy
+per piano semitone plus a per-semitone onset rise; in-repo radix-2 FFT), `reference.ts` builds the
+expected sequence from a `ScoreModel` and tempo map with harmonic templates (no synthesis),
+`oltw.ts` aligns live frames to it by windowed online time warping, and `index.ts` exposes
+`createAudioFollower(model, tempo, multiplier)` (`push(samples, sampleRate, time)` → position in
+whole notes and a confidence; `reset(position)`). `groups.ts` (`groupReached(timeline, position)`)
+is the only part the session bundles. `protocol.ts` + `workerHandler.ts` are the worker side
+(`workers/follower.worker.ts` binds them): configure / reset / pause / resume / samples in,
+estimates out every 20 ms of audio. `evaluate.ts` and `testkit.ts` are test support. Pure: no
+DOM, no Web Audio.
 
+### app/audio
+`micFollower.ts` is the browser side of the microphone follower (P15): `getUserMedia` (no echo
+cancellation, noise suppression or gain control) → an `AudioContext` with the AudioWorklet
+`public/mic-processor.js` (512-sample blocks posted to the main thread) → the follower worker;
+estimates reach the session's `#onMicEstimate`. `SessionDeps.createMicFollower` injects it
+(tests use a fake); the session owns its lifetime (opened on Start in play-through with both
+hands, closed when play-through ends or the hands change).
 
 ### core/naming
 `labelFor(note, naming)` → `{name, accidental, octave, text}` from the resolved sounding pitch

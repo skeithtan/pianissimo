@@ -84,7 +84,12 @@ export type FollowerEvent =
       readonly feedbackUntil: number
     }
   /** Release transport gate `group` (in order; several per drain when the learner skipped ahead). */
-  | { readonly type: 'release'; readonly group: number; readonly reason: 'complete' | 'skipped' | 'patience' }
+  | {
+      readonly type: 'release'
+      readonly group: number
+      /** `'audio'`: the microphone follower heard the learner there (DECISIONS P15). */
+      readonly reason: 'complete' | 'skipped' | 'patience' | 'audio'
+    }
   | { readonly type: 'advanced'; readonly from: number; readonly to: number | null }
   | { readonly type: 'key'; readonly note: number; readonly down: boolean; readonly wrong: boolean }
   | { readonly type: 'finished' }
@@ -231,6 +236,25 @@ export class PlayFollower {
       this.#setGroup(group)
     }
     if (this.#arrivedAt === null) this.#arrivedAt = now
+    this.#touch()
+  }
+
+  /**
+   * The audio follower (core/audio, DECISIONS P15) heard the learner at `group`: the current
+   * group and every one up to it are released in order (`'audio'`) and the next becomes current
+   * (or the piece is finished). An earlier group, a paused follower or a finished one: ignored.
+   */
+  audioReached(group: number, now: number): void {
+    void now
+    const i = this.#group
+    if (i === null || group < i || this.#pausedAt !== null) return
+    const n = this.#timeline.groups.length
+    const last = Math.min(group, n - 1)
+    for (let k = i; k <= last; k++) this.#emit({ type: 'release', group: k, reason: 'audio' })
+    const to = last + 1 < n ? last + 1 : null
+    this.#emit({ type: 'advanced', from: i, to })
+    this.#setGroup(last + 1)
+    if (to === null) this.#emit({ type: 'finished' })
     this.#touch()
   }
 

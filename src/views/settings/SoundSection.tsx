@@ -32,7 +32,7 @@ function destinationHelp(destination: SoundDestination): string {
 }
 
 export function SoundSection({ features }: { features: FeatureReport }) {
-  const { sound, metronome, route } = settings.value
+  const { sound, metronome, route, mic } = settings.value
   const audio = features.features.webAudio
   return (
     <>
@@ -102,6 +102,19 @@ export function SoundSection({ features }: { features: FeatureReport }) {
           checked={sound.monitorInput}
           onChange={(monitorInput) => updateSettings({ sound: { monitorInput } })}
         />
+      </Group>
+
+      <Group title="Microphone">
+        <Toggle
+          label="Follow an acoustic piano"
+          description="In Play through with both hands, the cursor follows what this device's microphone hears, so no MIDI connection is needed. The browser asks for the microphone on the first Start."
+          checked={mic.follow}
+          onChange={(follow) => updateSettings({ mic: { follow } })}
+        />
+        <Help>
+          Position only: wrong notes are not judged, and the microphone is closed outside Play through. Keep the device
+          near the piano and the room quiet.
+        </Help>
       </Group>
     </>
   )

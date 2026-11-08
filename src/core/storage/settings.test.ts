@@ -59,6 +59,7 @@ const custom: AppSettings = {
   sound: { destination: 'browser', browserVolume: 0.25, monitorInput: true },
   metronome: { enabled: true, volume: 0.1 },
   rhythm: { toleranceMs: 250 },
+  mic: { follow: true },
   view: { zoom: 1.75, pageZoom: 1.25, theme: 'dark', scorePaper: 'light' },
   suggestions: { enabled: false },
 }
@@ -81,10 +82,11 @@ describe('normalizeSettings', () => {
   })
 
   it('fills fields missing from an older version with defaults', () => {
-    const { metronome: _m, view: _v, suggestions: _s, rhythm: _r, ...older } = custom
+    const { metronome: _m, view: _v, suggestions: _s, rhythm: _r, mic: _mic, ...older } = custom
     const loaded = normalizeSettings(older)
     expect(loaded.metronome).toEqual(DEFAULT_SETTINGS.metronome)
     expect(loaded.rhythm).toEqual({ toleranceMs: 150 })
+    expect(loaded.mic).toEqual({ follow: false })
     expect(loaded.view).toEqual(DEFAULT_SETTINGS.view)
     expect(loaded.suggestions).toEqual(DEFAULT_SETTINGS.suggestions)
     expect(loaded.naming).toEqual(custom.naming)

@@ -10,3 +10,9 @@
 Jobs are stateless: each request carries a transferred copy of the file bytes, results never
 include the file, and the client terminates the worker after a build or on cancellation so its
 memory is returned. Typechecked by `tsconfig.worker.json` (WebWorker libs only).
+
+- `follower.worker.ts` — the microphone follower worker (DECISIONS P15): binds
+  `core/audio/workerHandler.ts` (protocol `core/audio/protocol.ts`). Created by
+  `app/audio/micFollower.ts` on the first Start of a play-through that follows the microphone,
+  fed 512-sample blocks from the AudioWorklet `public/mic-processor.js` (relayed by the main
+  thread), terminated when the microphone closes.

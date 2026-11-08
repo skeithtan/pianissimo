@@ -132,6 +132,14 @@ export interface RhythmSettings {
 export const MIN_RHYTHM_TOLERANCE_MS = 40
 export const MAX_RHYTHM_TOLERANCE_MS = 500
 
+/**
+ * The microphone follower (DECISIONS P15): in Play-through with both hands the cursor follows
+ * what this device's microphone hears (an acoustic piano), so no MIDI input is needed.
+ */
+export interface MicSettings {
+  readonly follow: boolean
+}
+
 export interface ViewSettings {
   /** Notation scale factor (pinch zoom) of the landscape strip. */
   readonly zoom: number
@@ -160,6 +168,8 @@ export interface AppSettings {
   readonly metronome: MetronomeSettings
   /** Keep time (rhythm mode). Absent in older stored settings: normalized to the default. */
   readonly rhythm: RhythmSettings
+  /** Microphone following. Absent in older stored settings: off. */
+  readonly mic: MicSettings
   readonly view: ViewSettings
   readonly suggestions: SuggestionSettings
 }
@@ -210,6 +220,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sound: { destination: 'auto', browserVolume: 0.8, monitorInput: false },
   metronome: { enabled: false, volume: 0.6 },
   rhythm: { toleranceMs: 150 },
+  mic: { follow: false },
   view: { zoom: 1, pageZoom: 1, theme: 'system', scorePaper: 'theme' },
   suggestions: { enabled: true },
 }

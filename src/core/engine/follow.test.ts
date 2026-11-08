@@ -507,3 +507,50 @@ describe('Empty timeline', () => {
     expect(d.follower.nextDeadline()).toBeNull()
   })
 })
+
+describe('Audio reached (microphone follower, DECISIONS P15)', () => {
+  it('releases the current and skipped groups in order and moves on', () => {
+    const d = new Driver()
+    d.follower.audioReached(2, d.now)
+    expect(d.take()).toEqual([
+      { type: 'release', group: 0, reason: 'audio' },
+      { type: 'release', group: 1, reason: 'audio' },
+      { type: 'release', group: 2, reason: 'audio' },
+      { type: 'advanced', from: 0, to: 3 },
+    ])
+    expect(d.state.groupIndex).toBe(3)
+    expect(d.state.acceptedPitches).toEqual([])
+  })
+
+  it('ignores earlier groups and a paused follower', () => {
+    const d = new Driver()
+    d.follower.audioReached(1, d.now)
+    d.take()
+    d.follower.audioReached(0, d.now)
+    expect(d.take()).toEqual([])
+    expect(d.state.groupIndex).toBe(2)
+    d.follower.pause(d.now)
+    d.follower.audioReached(3, d.now)
+    expect(d.take()).toEqual([])
+    expect(d.state.groupIndex).toBe(2)
+    d.follower.resume(d.now)
+    d.follower.audioReached(2, d.now)
+    expect(d.take()).toEqual([
+      { type: 'release', group: 2, reason: 'audio' },
+      { type: 'advanced', from: 2, to: 3 },
+    ])
+  })
+
+  it('finishes at the last group, clamping estimates past the end', () => {
+    const d = new Driver()
+    const last = d.follower.timeline.groups.length - 1
+    d.follower.audioReached(last + 5, d.now)
+    const events = d.take()
+    expect(events.filter((e) => e.type === 'release').length).toBe(last + 1)
+    expect(events[events.length - 2]).toEqual({ type: 'advanced', from: 0, to: null })
+    expect(events[events.length - 1]).toEqual({ type: 'finished' })
+    expect(d.state.finished).toBe(true)
+    d.follower.audioReached(0, d.now)
+    expect(d.take()).toEqual([])
+  })
+})
