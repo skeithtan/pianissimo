@@ -184,8 +184,9 @@ Stores (subscribe from the view):
 - **Sound** (DECISIONS S4). `playbackDestination(settings, output, browserSound)`: Auto (the
   default) → the MIDI output when there is one, else browser sound; Connected piano → MIDI only;
   Browser sound → this device only. The MIDI backend is built synchronously from
-  `midi.output()` and the route channel (`humanGuard` off on an echoing route); browser sound is
-  loaded by `deps.loadBrowserAudio` only after a Start / Play gesture, so use with a piano never
+  `midi.output()` and the route channel (`humanGuardEnabled`: `humanGuard` on only on a route
+  verified echo-free, off while the echo is untested); browser sound is loaded by
+  `deps.loadBrowserAudio` only after a Start / Play gesture, so use with a piano never
   imports the bank (Playwright-checked). Under Auto a piano connecting while the device plays
   stops playback cleanly (the next Start uses the piano); a piano disconnecting interrupts and
   the next Start continues through the device. The metronome is separate (Web Audio).

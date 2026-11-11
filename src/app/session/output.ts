@@ -82,6 +82,16 @@ export function accompanimentAllowed(
   return kind === 'midi' && gradedAccompanimentAllowed(settings.route)
 }
 
+/**
+ * Whether the MIDI backend defers app releases of pitches the learner holds (the human-held
+ * guard). Only on a route verified echo-free: on an echoing or untested piano each app note
+ * comes back as a "held" key whose release never arrives, so every app note would stick. Without
+ * the guard the worst case is releasing a note the learner holds at the same pitch.
+ */
+export function humanGuardEnabled(settings: SessionSettings): boolean {
+  return settings.route.echo === 'none'
+}
+
 /** Identity of an output backend: a change requires a new one. */
 export function outputKey(settings: SessionSettings, kind: PlaybackKind | null): string {
   if (kind !== 'midi') return kind ?? 'none'

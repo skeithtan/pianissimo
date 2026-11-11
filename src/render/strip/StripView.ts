@@ -298,6 +298,7 @@ export class StripView {
   private gesture: { startX: number; startY: number; startTx: number; t: number; moved: boolean } | null = null
   private pinch: { dist: number; scale: number } | null = null
   private handleDrag: {
+    pointerId: number
     which: 'start' | 'end'
     range: LoopRange
     knot: number
@@ -1543,7 +1544,9 @@ export class StripView {
       this.on(el, 'pointerdown', (e) => this.handleDown(e, which))
       this.on(el, 'pointermove', (e) => this.handleMove(e))
       this.on(el, 'pointerup', (e) => this.handleUp(e))
-      this.on(el, 'pointercancel', (e) => this.handleUp(e))
+      // A canceled touch (a system gesture) or a lost capture ends the drag without committing it.
+      this.on(el, 'pointercancel', (e) => this.handleUp(e, true))
+      this.on(el, 'lostpointercapture', (e) => this.handleUp(e, true))
       this.on(el, 'keydown', (e) => this.handleKey(e, which))
     }
     this.on(this.cursorGrip, 'keydown', (e) => this.cursorKey(e))
@@ -1847,7 +1850,7 @@ export class StripView {
 
   private handleDown(e: PointerEvent, which: 'start' | 'end'): void {
     e.stopPropagation()
-    if (!this.loop || !this.loopEditable) return
+    if (!this.loop || !this.loopEditable || this.handleDrag) return
     const { start, end } = passagePositions(this.layout.occurrences, this.loop)
     const limits = edgeLimits(this.loopKnots, which, which === 'start' ? end : start)
     if (!limits) return
@@ -1859,6 +1862,7 @@ export class StripView {
     ;(e.currentTarget as HTMLElement).classList.add('pn-grab')
     const rect = this.root.getBoundingClientRect()
     this.handleDrag = {
+      pointerId: e.pointerId,
       which,
       range: this.loop,
       knot: knotAtPosition(this.loopKnots.pos, which === 'start' ? start : end),
@@ -1873,7 +1877,7 @@ export class StripView {
 
   private handleMove(e: PointerEvent): void {
     const d = this.handleDrag
-    if (!d || !this.loop) return
+    if (!d || e.pointerId !== d.pointerId || !this.loop) return
     e.stopPropagation()
     d.clientX = e.clientX
     this.dragHandleTo(e.clientX)
@@ -1895,13 +1899,16 @@ export class StripView {
     }
   }
 
-  private handleUp(e: PointerEvent): void {
+  /**
+   * Ends the drag of the pointer that started it; only a release commits. The `lostpointercapture`
+   * that follows a release finds no drag and does nothing.
+   */
+  private handleUp(e: PointerEvent, canceled = false): void {
     const d = this.handleDrag
-    ;(e.currentTarget as HTMLElement).classList.remove('pn-grab')
-    if (!d) return
+    if (!d || e.pointerId !== d.pointerId) return
     e.stopPropagation()
     this.endHandleDrag()
-    if (this.loop && this.loopEditable && !sameRange(d.range, this.loop)) {
+    if (!canceled && this.loop && this.loopEditable && !sameRange(d.range, this.loop)) {
       this.loop = d.range
       this.opts.onLoopChange?.(d.range)
     }

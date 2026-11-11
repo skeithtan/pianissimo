@@ -169,7 +169,7 @@ injected clock and timers: gates = learner group positions, nothing past an unre
 `onGateReached(i)` then hold, `releaseGate(i)` re-anchors without burst or replay, live
 `setMultiplier`, `msUntilGate` feeds the engine's `transportEta`. Backends share
 `OutputBackend`: `MidiOutputBackend` (ownership counted per channel+note, releases deferred
-while the human holds that pitch, cleanup on the app channel only) and the lazily imported
+while the human holds that pitch on a route verified echo-free, cleanup on the app channel only) and the lazily imported
 browser-audio backend (one AudioContext, Salamander bank ≤ 32 MiB decoded, synth fallback).
 The metronome is clicks scheduled by the same transport (free mode: click-only transport
 started at the first press). Session wiring notes: `src/core/playback/README.md`.

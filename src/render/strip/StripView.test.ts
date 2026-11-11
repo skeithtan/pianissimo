@@ -1433,4 +1433,82 @@ describe('StripView loop handle drag', () => {
     expect(changes).toEqual([])
     expect(end!.classList.contains('pn-grab')).toBe(false)
   })
+  it.each(['pointercancel', 'lostpointercapture'])('does not commit a loop edit after %s', (type) => {
+    const changes: unknown[] = []
+    const { v, layout } = view(40, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 2, toOcc: 4 })
+    v.flushNow()
+    const band = host.querySelector('.pn-loop') as HTMLElement
+    const width = band.style.width
+    const [, end] = [...host.querySelectorAll('.pn-handle')] as HTMLElement[]
+    pointer(end!, 'pointerdown', client(layout.occurrences[4]!.x1))
+    pointer(end!, 'pointermove', client(layout.occurrences[6]!.x1))
+    v.flushNow()
+    expect(band.style.width).not.toBe(width)
+    pointer(end!, type, client(layout.occurrences[6]!.x1))
+    v.flushNow()
+    // Canceling a drag keeps the original passage.
+    expect(changes).toEqual([])
+    expect(band.style.width).toBe(width)
+    expect(end!.classList.contains('pn-grab')).toBe(false)
+    // A fresh drag on the same handle still works and commits.
+    pointer(end!, 'pointerdown', client(layout.occurrences[4]!.x1))
+    pointer(end!, 'pointermove', client(layout.occurrences[5]!.x1))
+    pointer(end!, 'pointerup', client(layout.occurrences[5]!.x1))
+    expect(changes).toEqual([{ fromOcc: 2, toOcc: 5 }])
+  })
+
+  it('commits once when the capture is lost after the release', () => {
+    const changes: unknown[] = []
+    const { v, layout } = view(40, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 2, toOcc: 4 })
+    v.flushNow()
+    const [, end] = [...host.querySelectorAll('.pn-handle')] as HTMLElement[]
+    pointer(end!, 'pointerdown', client(layout.occurrences[4]!.x1))
+    pointer(end!, 'pointermove', client(layout.occurrences[6]!.x1))
+    pointer(end!, 'pointerup', client(layout.occurrences[6]!.x1))
+    pointer(end!, 'lostpointercapture', client(layout.occurrences[6]!.x1))
+    v.flushNow()
+    expect(changes).toEqual([{ fromOcc: 2, toOcc: 6 }])
+    const band = host.querySelector('.pn-loop') as HTMLElement
+    expect(band.style.width).toBe(`${layout.occurrences[6]!.x1 - layout.occurrences[2]!.x0}px`)
+  })
+
+  it('follows only the pointer that started the drag', () => {
+    const changes: unknown[] = []
+    const { v, layout } = view(40, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 2, toOcc: 6 })
+    v.flushNow()
+    const band = host.querySelector('.pn-loop') as HTMLElement
+    const width = band.style.width
+    const [start, end] = [...host.querySelectorAll('.pn-handle')] as HTMLElement[]
+    pointer(start!, 'pointerdown', client(layout.occurrences[2]!.x0), 7)
+    // A second finger on the end handle changes nothing while the start is held.
+    pointer(end!, 'pointerdown', client(layout.occurrences[6]!.x1), 8)
+    pointer(end!, 'pointermove', client(layout.occurrences[3]!.x1), 8)
+    v.flushNow()
+    expect(band.style.width).toBe(width)
+    pointer(end!, 'pointerup', client(layout.occurrences[3]!.x1), 8)
+    expect(changes).toEqual([])
+    expect(start!.classList.contains('pn-grab')).toBe(true)
+    // The first finger moves and commits the start edge.
+    pointer(start!, 'pointermove', client(layout.occurrences[3]!.x0), 7)
+    pointer(start!, 'pointerup', client(layout.occurrences[3]!.x0), 7)
+    expect(changes).toEqual([{ fromOcc: 3, toOcc: 6 }])
+  })
+
+  it("another pointer's cancel does not end the active drag", () => {
+    const changes: unknown[] = []
+    const { v, layout } = view(40, { onLoopChange: (r) => changes.push(r) })
+    v.setLoop({ fromOcc: 2, toOcc: 4 })
+    v.flushNow()
+    const [, end] = [...host.querySelectorAll('.pn-handle')] as HTMLElement[]
+    pointer(end!, 'pointerdown', client(layout.occurrences[4]!.x1), 7)
+    pointer(end!, 'pointermove', client(layout.occurrences[6]!.x1), 7)
+    pointer(end!, 'pointercancel', client(layout.occurrences[6]!.x1), 8)
+    pointer(end!, 'lostpointercapture', client(layout.occurrences[6]!.x1), 8)
+    expect(end!.classList.contains('pn-grab')).toBe(true)
+    pointer(end!, 'pointerup', client(layout.occurrences[6]!.x1), 7)
+    expect(changes).toEqual([{ fromOcc: 2, toOcc: 6 }])
+  })
 })

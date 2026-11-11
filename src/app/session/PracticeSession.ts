@@ -84,6 +84,7 @@ import {
   accompanimentAllowed,
   defaultMidiBackend,
   hasSoundOutput,
+  humanGuardEnabled,
   noPlaybackReason,
   outputKey,
   performanceKey,
@@ -2730,7 +2731,7 @@ export class PracticeSession {
     if (!out) return null
     if (this.#output) this.#disposeOutput()
     const make = this.#deps.createMidiBackend ?? defaultMidiBackend(this.#deps.clock)
-    const backend = make(out, this.#settings.route.outputChannel, this.#settings.route.echo !== 'echo-detected')
+    const backend = make(out, this.#settings.route.outputChannel, humanGuardEnabled(this.#settings))
     this.#midiBackend = backend
     this.#output = backend
     this.#outputKey = key

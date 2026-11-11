@@ -177,7 +177,9 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   150 px on screen, never hidden while editable) centered; pointer capture, never inverts,
   `setLoopEditable(false)` hides controls. Handles snap to loop knots (`strip/snap.ts`:
   every barline plus every onset of the hands inside a bar; without `setSnapPositions` barlines
-  only; a drag ends uncommitted when the loop is replaced, cleared or locked meanwhile): a note-level edge is drawn halfway between the edge note and the engraved entry before
+  only; a drag ends uncommitted when the loop is replaced, cleared or locked meanwhile, or on
+  `pointercancel` / `lostpointercapture`; one drag at a time, following only the pointer that
+  started it): a note-level edge is drawn halfway between the edge note and the engraved entry before
   it, a loop keeps at least one note, arrow keys step one note (Shift: one barline), and a drag
   near the strip's edge scrolls the music (then stays there, browsing).
 - **Playhead drag**: while `setCursorDraggable(true)`, the ≥ 44 px cursor grip scrubs the music

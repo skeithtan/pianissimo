@@ -44,8 +44,9 @@ Test helpers (not exported): `testkit.ts` (`makeModel`, `ManualClock`, `Recordin
 - **Both-hand practice:** the same learner gates and clock as one-hand practice, with
   `events: []` and `backend: null`. No app-generated notes or sound backend are needed. The
   metronome follows this gated transport; its sink loads only when enabled.
-- **Human input:** forward every human event to `MidiOutputBackend.humanInput` unless the
-  route echoes (then construct the backend with `humanGuard: false`); call `resetHuman()` on
+- **Human input:** forward every human event to `MidiOutputBackend.humanInput`; construct the
+  backend with `humanGuard: true` only on a route verified echo-free (an echoing or untested
+  piano returns app notes as "held" keys that are never released); call `resetHuman()` on
   input reconnect. Optional monitoring: `browserBackend.monitor(ev)`.
 - **Disconnect:** on `output-disconnected` call `transport.interrupt()` and
   `backend.disconnected()`; on `output-reconnected` call `backend.reconnect(adapter.output, now)`.

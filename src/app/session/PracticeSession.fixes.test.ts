@@ -10,7 +10,7 @@ import { sharedAudioContext, type BrowserAudioModule, type MetronomeModule } fro
 import { FakeAudioContext } from '../../core/playback/fakeWebAudio'
 import { resetSharedAudioContext } from '../../core/playback/webaudio/context'
 import { RecordingBackend } from '../../core/playback/testkit'
-import { harness, testSettings } from './testkit'
+import { FakeMidiBackend, harness, testSettings } from './testkit'
 
 const melody = buildScore({
   notes: [60, 62, 64, 65, 67, 69, 71, 72].map((midi, at) => ({ at, midi })),
@@ -480,5 +480,64 @@ describe('device sound', () => {
     } finally {
       resetSharedAudioContext()
     }
+  })
+})
+
+describe('Human-held guard on the MIDI output', () => {
+  const withEcho = (echo: 'untested' | 'none' | 'echo-detected') =>
+    testSettings({ route: { ...DEFAULT_SETTINGS.route, outputId: 'out-1', outputVerified: true, echo } })
+
+  /** A Listen harness that records the `humanGuard` of every MIDI backend it builds. */
+  function listen(echo: 'untested' | 'none' | 'echo-detected') {
+    const guards: boolean[] = []
+    const backend = new FakeMidiBackend(() => 0)
+    const h = harness(
+      melody,
+      { hands: 'none' },
+      {
+        settings: withEcho(echo),
+        deps: {
+          createMidiBackend: (_out, _ch, guard) => {
+            guards.push(guard)
+            return backend
+          },
+        },
+      },
+    )
+    return { h, guards }
+  }
+
+  it('is off on an untested route, so an echoing piano cannot make app notes stick', async () => {
+    const { h, guards } = listen('untested')
+    await h.session.start()
+    h.frames.flush()
+    expect(h.session.ui.get().activity).toBe('listening')
+    expect(guards).toEqual([false])
+  })
+
+  it('is on on a route verified echo-free', async () => {
+    const { h, guards } = listen('none')
+    await h.session.start()
+    expect(guards).toEqual([true])
+  })
+
+  it('is off on an echoing route', async () => {
+    const { h, guards } = listen('echo-detected')
+    await h.session.start()
+    expect(guards).toEqual([false])
+  })
+
+  it('the backend is rebuilt with the guard on once the echo test finds the route echo-free', async () => {
+    const { h, guards } = listen('untested')
+    await h.session.start()
+    h.step(300)
+    h.session.pause()
+    h.frames.flush()
+    h.session.updateSettings(withEcho('none'))
+    h.frames.flush()
+    await h.session.start()
+    h.frames.flush()
+    expect(h.session.ui.get().activity).toBe('listening')
+    expect(guards).toEqual([false, true])
   })
 })

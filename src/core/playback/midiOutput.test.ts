@@ -82,6 +82,20 @@ describe('MidiOutputBackend (spec "MIDI input, output, and pedal controls")', ()
     expect(b.out.sent.map(fmt)).toContain('off:2:60:64@500')
   })
 
+  it('with the guard off, a piano echoing an app note back never keeps that note sounding', () => {
+    // An echoing route (MIDI thru, local echo) returns each app Note On on the input; no human
+    // note-off follows, so a guarded backend would defer the release forever.
+    const { out, be } = setup(false, false)
+    be.noteOn(60, 80, 0)
+    be.humanInput(human('noteon', 60))
+    be.noteOff(60, 500)
+    expect(out.sent.map(fmt)).toEqual(['on:2:60:80@0', 'off:2:60:64@500'])
+    expect(be.deferredNotes()).toEqual([])
+    be.cleanup(1000)
+    expect(out.sent.map(fmt)).toEqual(['on:2:60:80@0', 'off:2:60:64@500'])
+    expect(be.ownedNotes()).toEqual([])
+  })
+
   it('a new app attack cancels a deferred release (the new note owns the key)', () => {
     const { clock, out, be } = setup()
     be.noteOn(60, 80, 0)
