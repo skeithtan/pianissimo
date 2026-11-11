@@ -151,6 +151,9 @@ onset group is judged against its scheduled time, the transport's arrival at its
    `toleranceMs` as the window; when i + 1 becomes current they are accepted if its gate is (or
    was) within the tolerance of the press, else `'early'`; still waiting at the window's end they
    are `'ahead'`. A close and a pending deadline at the same time: the close is processed first.
+   A press for a later group (i + 2 onward, nearest first, at most 16 ahead) whose scheduled time
+   is within the tolerance of the press (gate reached, or ETA ≤ `toleranceMs`) is pending for that
+   group the same way, so one slip on a fast run costs one group. Further ahead it stays `'pitch'`.
 7. **Completion and records.** The attempt completes when the last group closes (complete or
    missed); `completionTimeSec` runs from the clock start to the last group's completion or
    close. Records carry `context.transport = 'strict'`, `matchingRules = strict-v1-tol-<n>ms`,

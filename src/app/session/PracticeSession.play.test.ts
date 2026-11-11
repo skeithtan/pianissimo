@@ -250,7 +250,7 @@ describe('Play-through mode', () => {
     expect(h.session.engine.state.groupIndex).toBe(5)
   })
 
-  it('a reading pass replaced by play-through ends unrecorded', async () => {
+  it('a reading pass before play-through is recorded once; play-through records nothing', async () => {
     const h = harness(melody)
     await h.session.start()
     h.play(60, 62)
@@ -259,7 +259,8 @@ describe('Play-through mode', () => {
     h.step(500)
     h.session.setPlayThrough(false)
     h.frames.flush()
-    expect(h.attempts).toHaveLength(0)
+    expect(h.attempts.map((a) => [a.kind, a.completion])).toEqual([['reading', 'interrupted']])
+    expect(h.attempts[0]!.measures.length).toBeGreaterThan(0)
     expect(h.abandons).toHaveLength(0)
   })
 

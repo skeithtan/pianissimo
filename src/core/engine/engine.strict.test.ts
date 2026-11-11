@@ -53,10 +53,15 @@ interface Session {
   go(): void
 }
 
-function session(spec: ScoreSpec = SCALE, toleranceMs = 150, extra: Partial<EngineConfig> = {}): Session {
+function session(
+  spec: ScoreSpec = SCALE,
+  toleranceMs = 150,
+  extra: Partial<EngineConfig> = {},
+  msPerWhole = MS_PER_WHOLE,
+): Session {
   const model = buildScore(spec)
   const t = buildTimeline(model, { hands: 'right', range: null, multiplier: 1 })
-  const sched = transportGates(t).map((p) => START + toNumber(p) * MS_PER_WHOLE)
+  const sched = transportGates(t).map((p) => START + toNumber(p) * msPerWhole)
   let next = 0
   const d = new EngineDriver(
     t,
@@ -519,6 +524,114 @@ describe('Strict transport: overlapping windows (IOI shorter than the tolerance)
     at(START + 1020)
     expect(d.of('wrong').map((w) => [w.group, w.pitch, w.reason])).toEqual([[2, F4, 'ahead']])
     expect(d.state.wrongAttacks).toBe(1)
+  })
+})
+
+describe('Strict transport: a slip on a fast run (look-ahead within the tolerance)', () => {
+  // Twelve sixteenths on distinct pitches; `msPerWhole` sets the gap (sixteenth = msPerWhole / 16).
+  const RUN_PITCHES = [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79]
+  const RUN: ScoreSpec = { notes: RUN_PITCHES.map((midi, i) => ({ at: i / 4, midi, dur: 0.25 })) }
+  // Gaps under half the tolerance: 114 ms (♩=132) at 250, 72 ms at 150.
+  const FAST = [
+    { gapMs: 114, toleranceMs: 250 },
+    { gapMs: 72, toleranceMs: 150 },
+  ] as const
+
+  /** Press every group from `from` on exactly at its gate; `before` runs at the first gate. */
+  function playFrom(s: Session, from: number, before: () => void = () => {}): void {
+    s.go()
+    before()
+    for (let i = from; i < RUN_PITCHES.length; i++) {
+      s.at(s.sched[i]!)
+      s.d.tap(RUN_PITCHES[i]!)
+    }
+  }
+
+  function outcomes(s: Session): (number | 'missed' | undefined)[] {
+    return s.d.records()[0]!.groups!.map((g) => (g.missed ? 'missed' : g.offsetMs))
+  }
+
+  it.each(FAST)('one skipped note costs one group, not every second one ($gapMs ms, tolerance $toleranceMs)', (c) => {
+    const s = session(RUN, c.toleranceMs, {}, c.gapMs * 16)
+    playFrom(s, 1)
+    expect(s.d.state.phase).toBe('completed')
+    const r = s.d.records()[0]!
+    expect(r.missedGroups).toBe(1)
+    expect(r.wrongAttacks).toBe(0)
+    expect(outcomes(s)).toEqual(['missed', ...RUN_PITCHES.slice(1).map(() => 0)])
+  })
+
+  it.each(FAST)('a wrong key on the first beat is one wrong attack and one miss ($gapMs ms)', (c) => {
+    const s = session(RUN, c.toleranceMs, {}, c.gapMs * 16)
+    playFrom(s, 1, () => s.d.tap(61))
+    const r = s.d.records()[0]!
+    expect(s.d.of('wrong').map((w) => [w.group, w.pitch, w.reason])).toEqual([[0, 61, 'pitch']])
+    expect(r.wrongAttacks).toBe(1)
+    expect(r.missedGroups).toBe(1)
+    expect(outcomes(s)).toEqual(['missed', ...RUN_PITCHES.slice(1).map(() => 0)])
+  })
+
+  it('presses for several later groups pending while the current one is open are accepted in order', () => {
+    // 50 ms gaps at tolerance 250: groups 1 to 4 are pressed before group 0 closes at +250.
+    const s = session(RUN, 250, {}, 800)
+    s.go()
+    for (let i = 1; i <= 4; i++) {
+      s.at(s.sched[i]!)
+      s.d.tap(RUN_PITCHES[i]!)
+    }
+    expect(s.d.state.groupIndex).toBe(0)
+    expect(s.d.state.pendingPitches).toEqual(RUN_PITCHES.slice(1, 5))
+    s.at(START + 250)
+    expect(s.d.of('missed').map((m) => m.group)).toEqual([0])
+    expect(s.d.state.groupIndex).toBe(5)
+    expect(s.d.state.pendingPitches).toEqual([])
+    expect(s.d.of('accepted').map((a) => [a.group, a.time])).toEqual([1, 2, 3, 4].map((i) => [i, s.sched[i]!]))
+    expect(s.d.of('wrong')).toEqual([])
+  })
+
+  it.each(FAST)('two slips in a row cost exactly those two groups ($gapMs ms)', (c) => {
+    const s = session(RUN, c.toleranceMs, {}, c.gapMs * 16)
+    playFrom(s, 2)
+    const r = s.d.records()[0]!
+    expect(r.missedGroups).toBe(2)
+    expect(r.wrongAttacks).toBe(0)
+    expect(outcomes(s)).toEqual(['missed', 'missed', ...RUN_PITCHES.slice(2).map(() => 0)])
+  })
+
+  it('a pitch only further ahead than the tolerance is still a wrong key', () => {
+    const s = session(RUN, 250, {}, 114 * 16)
+    s.go()
+    // Group 4 is 456 ms away; group 9's pitch is not near either.
+    s.d.tap(RUN_PITCHES[4]!, RUN_PITCHES[9]!)
+    expect(s.d.state.pendingPitches).toEqual([])
+    expect(s.d.of('wrong').map((w) => [w.group, w.pitch, w.reason])).toEqual([
+      [0, RUN_PITCHES[4], 'pitch'],
+      [0, RUN_PITCHES[9], 'pitch'],
+    ])
+    expect(s.d.state.wrongAttacks).toBe(2)
+  })
+
+  it('a later group pressed within the tolerance before its gate is accepted early; beyond it, wrong', () => {
+    // 50 ms gaps at tolerance 100: group 3 is scheduled at +150.
+    const s = session(RUN, 100, {}, 800)
+    s.go()
+    s.d.tap(RUN_PITCHES[0]!)
+    s.at(START + 20)
+    // Current group 1; group 3 is 130 ms away, beyond the tolerance.
+    s.d.tap(RUN_PITCHES[3]!)
+    expect(s.d.of('wrong').map((w) => [w.group, w.pitch, w.reason])).toEqual([[1, RUN_PITCHES[3], 'pitch']])
+    s.at(START + 60)
+    // Group 3 is now 90 ms away: pending until group 3 is current.
+    s.d.tap(RUN_PITCHES[3]!)
+    expect(s.d.state.pendingPitches).toEqual([RUN_PITCHES[3]])
+    s.d.tap(RUN_PITCHES[1]!)
+    s.at(s.sched[2]!)
+    s.d.tap(RUN_PITCHES[2]!)
+    expect(s.d.state.groupIndex).toBe(4)
+    expect(s.d.of('wrong')).toHaveLength(1)
+    expect(s.d.of('accepted').at(-1)).toMatchObject({ group: 3, pitch: RUN_PITCHES[3], time: START + 60 })
+    // Completed before its scheduled time: the offset is negative (early).
+    expect(s.d.state.lastOffsetMs).toBeLessThan(0)
   })
 })
 

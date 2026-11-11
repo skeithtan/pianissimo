@@ -30,7 +30,7 @@ file picker ──► import worker (core/import) ──► ScorePackage {model,
 | `src/core/music/tempo.ts` | `TempoMapData`, seconds ↔ positions, multiplier math, BPM entry. |
 | `src/core/model/score.ts` | `ScoreModel`, `PerformedNote`, ottava/arpeggio/pedal/dynamics, `ScorePackage`. |
 | `src/core/model/settings.ts` | `AppSettings` and spec defaults (`SETTINGS_VERSION` 2: sound destination `'auto'`, S4). |
-| `src/core/model/practice.ts` | Comparison contexts, `AttemptRecord`, `MeasureTraversal`, passages. |
+| `src/core/model/practice.ts` | Comparison contexts, `AttemptRecord`, `MeasureTraversal`, passages; `TRANSPORT_KINDS` (the runtime list `TransportKind` is derived from). |
 | `src/core/midi/types.ts` | `MidiInputEvent` (decoded, sequenced, consumed once). |
 
 ### Timelines and identity
@@ -106,7 +106,9 @@ group against that scheduled time: presses more than the tolerance before arriva
 wrong attacks; completed groups advance at once and record `offsetMs` (completion − arrival,
 negative = early); incomplete groups close at arrival + tolerance with a `missed` event and the
 next group becomes current; a press of the just-missed group within the tolerance is a gentle
-`'late'` slip, not a wrong attack. Strict records use `matchingRules` `strict-v1-tol-<n>ms` and
+`'late'` slip, not a wrong attack. A press for a later group whose scheduled time is within the
+tolerance waits for that group (nearest first, P17), so a slip on a fast run costs only the
+groups slipped. Strict records use `matchingRules` `strict-v1-tol-<n>ms` and
 carry `rhythm`, `missedGroups` and per-group `offsetMs` / `missed`; they pass only with no wrong
 attack, no assistance, no missed group and every group within the tolerance. Close times come
 from injected arrivals and surface through `nextDeadline()`; `input-complete` is still emitted
@@ -304,7 +306,9 @@ once per frame). All practice uses a gated musical transport (P9), silent for bo
 playing the automatic part for one hand. It runs from Ready, holds at missing learner attacks,
 and preserves the first-human-press attempt clock. Preview has no engine attempt. Feedback
 includes an icon-only octave direction for same-pitch-class errors (U30); no generic error text.
-Hiding the page saves progress without stopping playback (P10). Preparation calls `markPrepared`
+Hiding the page saves progress without stopping playback (P10). Leaving the view ends a running
+attempt as a user stop and a paused reading pass as `'suspend'`, so both are recorded (P18). A
+Start that was paused while its sounds loaded starts nothing (`#startGen`, P19). Preparation calls `markPrepared`
 once the strip is attached and persistent-label fades have finished. `practiceModel` applies a user
 tempo; `createPieceSaver` debounces piece updates.
 Starting playback resolves the optional `StripSink.browsedPosition()` to an exact seek and

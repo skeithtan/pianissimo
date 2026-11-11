@@ -424,6 +424,32 @@ describe('Keep time: modes', () => {
     expect(h.attempts.at(-1)?.context.multiplier).toBe(0.5)
   })
 
+  it('Start while the climbing pass finishes counts the next pass in at the new speed', async () => {
+    const ladder: LadderSettings = { goal: 1, step: 0.05 }
+    const h = open({ range: LOOP, multiplier: 0.5 }, { options: { ladder, repeatTarget: 1 } })
+    await begin(h)
+    const run = T0 + 8000
+    at(h, run)
+    playOnTime(h, [60, 62, 64, 65], [], run, 2000)
+    expect(ui(h).lastResult).toMatchObject({ passed: true, ladder: { climbedTo: 0.55 } })
+    // The music still plays to the loop end: the learner starts the next run now.
+    at(h, run + 6500)
+    expect(ui(h).playing).toBe(false)
+    await begin(h)
+    expect(ui(h).multiplier).toBe(0.55)
+    expect(h.session.engine.mode).toBe('scored')
+    expect(h.session.engine.transport).toBe('strict')
+    expect(h.session.engine.state.phase).toBe('ready')
+    expect(ui(h).countIn).toBe(4)
+    const next = run + 6500
+    const beat = 1000 / 0.55
+    const last = rec.clicks.slice(-4).map((c) => c.time - next)
+    last.forEach((t, k) => expect(t).toBeCloseTo(k * beat, 6))
+    playOnTime(h, [60, 62, 64, 65], [], next + 4 * beat, beat)
+    expect(h.attempts.at(-1)?.context.multiplier).toBe(0.55)
+    expect(h.attempts.at(-1)?.passed).toBe(true)
+  })
+
   it('switching Keep time off mid-attempt interrupts and returns to reading at the current position', async () => {
     const h = open()
     await begin(h)

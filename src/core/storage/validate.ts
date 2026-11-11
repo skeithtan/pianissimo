@@ -3,6 +3,7 @@
  * Each returns the first problem as readable text, or null when the record is usable. They
  * check structure the app relies on, not every field of the large score model.
  */
+import { TRANSPORT_KINDS } from '../model/practice'
 import { SCORE_PACKAGE_FORMAT } from '../model/score'
 
 type Raw = Readonly<Record<string, unknown>>
@@ -107,7 +108,7 @@ function contextProblem(v: unknown): string | null {
     ['context.tempoMapId', isStr(v['tempoMapId'])],
     ['context.multiplier', isNum(v['multiplier']) && (v['multiplier'] as number) > 0],
     ['context.rollPolicy', isStr(v['rollPolicy'])],
-    ['context.transport', isOneOf(v['transport'], ['free', 'accompaniment', 'strict'])],
+    ['context.transport', isOneOf(v['transport'], TRANSPORT_KINDS)],
     ['context.matchingRules', isStr(v['matchingRules'])],
   ])
 }

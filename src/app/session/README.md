@@ -50,6 +50,12 @@ session position. This is checked again after sound loading so a later browse or
 Reading and scored lead-ins use the existing seek rules. Listen honors the selected onset
 inside its loop and keeps playback within that loop. A seek made while changing sound outputs
 also replaces the paused Listen position captured before the new output finished loading.
+A Start waits for sounds (`#ensureOutput`, `#ensureMetronome`, `#startMic`); afterwards it
+re-reads the plan (a hand chosen meanwhile turns a Listen Start into reading, and the reverse)
+and starts nothing when a Pause came in meanwhile (`#startGen`, bumped by `pause()`: an overlay,
+browsing, Stop sound), leaving the session as that Pause did. A Start pressed again after such a
+Pause runs once the canceled one has returned, unless another Pause came in by then; otherwise a
+second Start joins the first.
 
 Note-level loops and the draggable playhead (WP13, DECISIONS U19, U21–U23): `selection.range` /
 `setSelection({range})` accept `PassageRange` with exact `start` / `end` (normalized by
@@ -169,7 +175,8 @@ Stores (subscribe from the view):
   (`beforeApplyLabels`), layout (`layoutChanging`; zoom and orientation never interrupt), opening
   an overlay (`holdInput` pauses), input/output
   disconnect (`onRoute`; reconnect → `resetPhysical` + `resetHuman`), Stop sound (registered
-  owner), leaving the view (`user-stop`). Reading interruptions offer Resume / Restart. Hiding
+  owner), leaving the view (`user-stop`; a paused reading pass, also under an overlay, ends with
+  `'suspend'`, so it is recorded without an abandon event). Reading interruptions offer Resume / Restart. Hiding
   the page only saves progress: it does not pause practice, Listen, or their transports.
 - **Persistence.** `lastHands/lastPassage/lastMultiplier` on selection change (debounced),
   `repeatTarget`, `ladder`, `rhythm` (Keep time), `resume` on pause/seek/hide/dispose and every ≥ 5 s of reading (from the
@@ -206,8 +213,12 @@ The new speed waits for the Repeat reset (`#ladderNext`): the music finishes the
 old speed, then `#ladderStep` changes the speed through `#select` (the `setSelection` path: saved
 as `lastMultiplier`, new comparison context, the streak starts over) with the `ladder` flag, which
 keeps the result card and its marks and prepares a fresh attempt at the new speed even though the
-last one is `completed`; the strip wraps to the loop start. Any selection change before the reset
-cancels the pending speed. Tests: `ladder.test.ts`, `PracticeSession.ladder.test.ts`.
+last one is `completed`; the strip wraps to the loop start. Any selection change before the reset,
+or a seek to a lead-in (a new run), cancels the pending speed. Start or Again (`restart()`) while
+the music still finishes is a new run: the pending Repeat reset is dropped and a pending speed is
+applied at once through `#ladderStep` (`#newRunAtLadderSpeed`, only while the pass that announced
+it is the engine's `completed` attempt), so the run's first attempt is prepared at the announced
+speed (card cleared, streak 0, also in Keep time). Tests: `ladder.test.ts`, `PracticeSession.ladder.test.ts`.
 
 ## Keep time (rhythm mode, DECISIONS P13)
 
@@ -279,7 +290,9 @@ marker, pulse or cue), the transport position, the guide and the resume position
 freeze and re-anchor the patience clock; seeks keep playing from the first group at or after the
 position; browsing pauses; speed applies live; new hands rebuild the transport at the same group;
 the range end leaves it idle at the end (the next Start begins at the start of the piece). The
-engine records nothing while the mode is on (a reading pass it replaced ends unrecorded). Off:
+engine records nothing while the mode is on. Turning it on first records the reading pass so far
+(a paused reading engine is reconfigured on its keep-progress path and drained while the mode is
+still off); what the engine ends during play-through, and when it goes off, stays unrecorded. Off:
 `#play` goes and the engine seeks to the follower's group, so reading continues there. Tests:
 `PracticeSession.play.test.ts`.
 

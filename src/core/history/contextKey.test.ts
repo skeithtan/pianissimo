@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { measureContextKey } from '../model/practice'
+import { TRANSPORT_KINDS, measureContextKey } from '../model/practice'
 import { parseMeasureContextKey, toMeasureContext } from './contextKey'
 import { comparisonContext } from './testkit'
 
@@ -37,11 +37,22 @@ describe('measure context keys', () => {
     }
   })
 
+  it('round-trips every transport kind, including strict matching rules and a piped score id', () => {
+    for (const transport of TRANSPORT_KINDS) {
+      const matchingRules = transport === 'strict' ? 'strict-v1-tol-150ms' : 'match-v1'
+      for (const scoreVersionId of ['v1', 'abc|def']) {
+        const context = toMeasureContext(comparisonContext({ transport, matchingRules, scoreVersionId }))
+        expect(parseMeasureContextKey(measureContextKey(context))).toEqual(context)
+      }
+    }
+  })
+
   it('rejects keys it did not produce', () => {
     expect(parseMeasureContextKey('')).toBeNull()
     expect(parseMeasureContextKey('legacy-key')).toBeNull()
     expect(parseMeasureContextKey('v1|sideways|tm|1.0000|r|free|m')).toBeNull()
     expect(parseMeasureContextKey('v1|both|tm|1.0000|r|sometimes|m')).toBeNull()
+    expect(parseMeasureContextKey('v1|both|h1|tm|1.0000|r|sometimes|m')).toBeNull()
     expect(parseMeasureContextKey('v1|both|tm|zero|r|free|m')).toBeNull()
     expect(parseMeasureContextKey('v1|both|tm|-1.0000|r|free|m')).toBeNull()
     expect(parseMeasureContextKey('v1|both|tm|1|r|free|m')).toBeNull()

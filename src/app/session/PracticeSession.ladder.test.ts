@@ -205,4 +205,111 @@ describe('PracticeSession: speed ladder', () => {
     expect(ui(h).ladder).toBeNull()
     expect(h.saves.at(-1)?.patch).toEqual({ ladder: null })
   })
+
+  it('Start during the tail of the climbing pass begins the next pass at the climbed speed', async () => {
+    const h = await open(0.6)
+    pass(h)
+    pass(h)
+    h.play(60, 62, 64, 65)
+    expect(ui(h).lastResult?.ladder).toEqual({ climbedTo: 0.65 })
+    expect(ui(h).playing).toBe(false)
+    await h.session.start()
+    h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('ready')
+    expect(ui(h).multiplier).toBe(0.65)
+    // A new run: the card goes and the streak starts over (P11).
+    expect(ui(h).lastResult).toBeNull()
+    expect(h.saves.some((s) => s.patch.lastMultiplier === 0.65)).toBe(true)
+    pass(h)
+    expect(h.attempts).toHaveLength(4)
+    expect(h.attempts[3]!.context.multiplier).toBe(0.65)
+    expect(ui(h).lastResult?.streak).toBe(1)
+    expect(ui(h).multiplier).toBe(0.65)
+  })
+
+  it('Again during the tail of the climbing pass begins the next pass at the climbed speed', async () => {
+    const h = await open(0.6)
+    pass(h)
+    pass(h)
+    h.play(60, 62, 64, 65)
+    expect(ui(h).lastResult?.ladder).toEqual({ climbedTo: 0.65 })
+    h.session.restart()
+    h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('ready')
+    expect(ui(h).multiplier).toBe(0.65)
+    expect(ui(h).lastResult).toBeNull()
+    pass(h)
+    expect(h.attempts).toHaveLength(4)
+    expect(h.attempts[3]!.context.multiplier).toBe(0.65)
+    expect(ui(h).lastResult?.streak).toBe(1)
+  })
+
+  describe('a lead-in during the tail of the climbing pass', () => {
+    const SECOND = { fromOcc: 1, toOcc: 1 }
+
+    /** Three clean passes over the second bar climb; during the music's tail, a seek to bar 1 leads in. */
+    async function leadInAfterClimb(): Promise<Harness> {
+      const h = harness(melody, { range: SECOND, multiplier: 0.6 }, { options: { ladder: LADDER } })
+      await h.session.start()
+      h.frames.flush()
+      for (let i = 0; i < 2; i++) {
+        h.play(67, 69, 71, 72)
+        settle(h)
+      }
+      h.play(67, 69, 71, 72)
+      expect(ui(h).lastResult?.ladder).toEqual({ climbedTo: 0.65 })
+      h.session.seek(0)
+      h.frames.flush()
+      expect(ui(h).lastResult).toBeNull()
+      // The lead-in reads the first bar and hands over to the attempt over the loop.
+      h.play(60, 62, 64, 65)
+      // The music plays on into the loop, where the attempt waits for the first note.
+      for (let t = 0; t < 5000 && h.session.engine.state.transportGate < 0; t += 20) h.step(20)
+      expect(h.session.engine.mode).toBe('scored')
+      expect(ui(h).multiplier).toBe(0.6)
+      return h
+    }
+
+    it('Again in the run it started is a user restart at the same speed', async () => {
+      const h = await leadInAfterClimb()
+      const before = h.attempts.length
+      h.play(67)
+      h.tap(61)
+      h.session.restart()
+      h.frames.flush()
+      expect(ui(h).multiplier).toBe(0.6)
+      expect(h.attempts.slice(before)).toHaveLength(1)
+      expect(h.attempts.at(-1)).toMatchObject({
+        completion: 'abandoned',
+        interruptReason: 'user-restart',
+        context: { multiplier: 0.6 },
+      })
+      expect(h.abandons).toHaveLength(1)
+    })
+
+    it('Pause and Start in the run it started keep the speed', async () => {
+      const h = await leadInAfterClimb()
+      h.play(67)
+      h.session.pause()
+      await h.session.start()
+      h.frames.flush()
+      expect(ui(h).multiplier).toBe(0.6)
+      expect(h.session.engine.state.phase).toBe('ready')
+    })
+
+    it('the climb is canceled: the attempt runs at the old speed and the ladder counts afresh', async () => {
+      const h = await leadInAfterClimb()
+      const before = h.attempts.length
+      h.play(67, 69, 71, 72)
+      settle(h)
+      expect(h.attempts.slice(before).map((a) => [a.kind, a.passed, a.context.multiplier])).toEqual([
+        ['scored', true, 0.6],
+      ])
+      // A new run: one clean pass is not yet the three the ladder needs.
+      expect(ui(h).lastResult).toMatchObject({ streak: 1 })
+      expect(ui(h).lastResult?.ladder).toBeUndefined()
+      expect(ui(h).multiplier).toBe(0.6)
+      expect(h.session.engine.state.phase).toBe('ready')
+    })
+  })
 })

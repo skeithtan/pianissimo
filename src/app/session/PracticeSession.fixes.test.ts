@@ -76,6 +76,162 @@ describe('Start while sounds load', () => {
   })
 })
 
+describe('Start canceled while sounds load', () => {
+  /** Device sound only (no piano output), loading until the test resolves it. */
+  function loading(selection: Parameters<typeof harness>[1]) {
+    const s = deviceSound()
+    const p = pendingLoad()
+    const h = harness(melody, selection, { deps: { loadBrowserAudio: p.load, hasWebAudio: () => true } })
+    h.midi.out = null
+    h.session.updateSettings(testSettings())
+    h.frames.flush()
+    const finish = async (start: Promise<void>) => {
+      p.resolve({ createBrowserAudio: () => s.backend } as unknown as BrowserAudioModule)
+      await start
+      await settle()
+      h.frames.flush()
+    }
+    return { h, s, finish }
+  }
+
+  it('Listen, then a hand chosen during the load: reading is honored, Listen never plays', async () => {
+    const { h, s, finish } = loading({ hands: 'none' })
+    const start = h.session.start()
+    h.session.setSelection({ hands: 'right' })
+    await finish(start)
+    expect(h.session.ui.get()).toMatchObject({ hands: 'right', activity: 'reading', playing: true })
+    // Nothing of the Listen performance (the left hand's part is all the device plays now).
+    h.step(500)
+    expect(s.backend.ons().every((c) => c.note < 60)).toBe(true)
+  })
+
+  it('Listen, then the held hands given back during the load: reading starts, not Listen', async () => {
+    const { h, finish } = loading({ hands: 'right' })
+    h.session.setInputAvailable(false)
+    h.frames.flush()
+    expect(h.session.ui.get().hands).toBe('none')
+    const start = h.session.start()
+    h.session.setInputAvailable(true)
+    await finish(start)
+    expect(h.session.ui.get()).toMatchObject({ hands: 'right', activity: 'reading' })
+  })
+
+  it('Listen, then an overlay opened during the load: nothing plays', async () => {
+    const { h, s, finish } = loading({ hands: 'none' })
+    const start = h.session.start()
+    h.session.holdInput(true)
+    await finish(start)
+    h.step(1000)
+    // As before the Start: no Listen transport was built.
+    expect(h.session.ui.get()).toMatchObject({ activity: 'idle', playing: false, startEnabled: true })
+    expect(s.backend.ons()).toHaveLength(0)
+  })
+
+  it('one-hand reading, then Pause during the load: nothing plays, and Start again works', async () => {
+    const { h, finish } = loading({ hands: 'right' })
+    const start = h.session.start()
+    h.session.pause()
+    await finish(start)
+    h.step(1000)
+    expect(h.session.ui.get()).toMatchObject({ activity: 'idle', playing: false, startEnabled: true })
+    expect(h.session.engine.state.phase).not.toBe('running')
+    await h.session.start()
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ activity: 'reading', playing: true })
+    h.play(60, 62)
+    expect(h.session.engine.state.groupIndex).toBe(2)
+  })
+
+  it('Start, Pause and Start again during the load: the second Start plays', async () => {
+    const { h, finish } = loading({ hands: 'right' })
+    const first = h.session.start()
+    h.session.pause()
+    const second = h.session.start()
+    await finish(first)
+    await second
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ activity: 'reading', playing: true })
+    h.play(60, 62)
+    expect(h.session.engine.state.groupIndex).toBe(2)
+  })
+
+  it('Start, Pause, Start, Pause during the load: nothing plays, and Start afterwards works', async () => {
+    const { h, finish } = loading({ hands: 'right' })
+    const first = h.session.start()
+    h.session.pause()
+    const second = h.session.start()
+    h.session.pause()
+    await finish(first)
+    await second
+    h.step(1000)
+    expect(h.session.ui.get()).toMatchObject({ playing: false, startEnabled: true })
+    expect(h.session.engine.state.phase).not.toBe('running')
+    await h.session.start()
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ activity: 'reading', playing: true })
+  })
+
+  it('one-hand reading, then an overlay opened during the load: nothing plays', async () => {
+    const { h, s, finish } = loading({ hands: 'right' })
+    const start = h.session.start()
+    h.session.holdInput(true)
+    await finish(start)
+    h.step(1000)
+    expect(h.session.ui.get().playing).toBe(false)
+    expect(h.session.engine.state.phase).not.toBe('running')
+    expect(s.backend.ons()).toHaveLength(0)
+  })
+
+  it('one-hand play-through, then an overlay opened during the load: nothing plays', async () => {
+    const { h, s, finish } = loading({ hands: 'right' })
+    h.session.setPlayThrough(true)
+    const start = h.session.start()
+    h.session.holdInput(true)
+    await finish(start)
+    h.step(1000)
+    expect(h.session.ui.get()).toMatchObject({ playThrough: true, playing: false })
+    expect(s.backend.ons()).toHaveLength(0)
+  })
+
+  it('play-through through the microphone, then an overlay while it opens: nothing plays', async () => {
+    let open!: () => void
+    const mic = {
+      start: vi.fn(() => new Promise<void>((r) => (open = r))),
+      reset: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      dispose: vi.fn(),
+    }
+    const h = harness(
+      melody,
+      {},
+      { settings: testSettings({ mic: { follow: true } }), deps: { createMicFollower: () => mic } },
+    )
+    h.session.setPlayThrough(true)
+    const start = h.session.start()
+    await settle()
+    expect(mic.start).toHaveBeenCalledTimes(1)
+    h.session.holdInput(true)
+    open()
+    await start
+    h.frames.flush()
+    h.step(1000)
+    expect(h.session.ui.get()).toMatchObject({ playThrough: true, playing: false })
+    expect(mic.resume).not.toHaveBeenCalled()
+    // Paused as an ordinary pause of play-through through the microphone, not closed.
+    expect(mic.pause).toHaveBeenCalledTimes(1)
+    expect(mic.dispose).not.toHaveBeenCalled()
+    // The overlay closes: Start plays through, with the microphone already open.
+    h.session.holdInput(false)
+    await h.session.start()
+    h.frames.flush()
+    expect(h.session.ui.get().playing).toBe(true)
+    expect(mic.start).toHaveBeenCalledTimes(1)
+    expect(mic.reset).toHaveBeenCalledTimes(1)
+    expect(mic.resume).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('Again', () => {
   it('Again after closing Repeat does not leave a running engine without a transport', async () => {
     const h = harness(melody, { range: loop })
@@ -110,6 +266,53 @@ describe('Again', () => {
     h.play(60, 62, 64, 65)
     h.step(1000)
     expect(h.session.ui.get().lastResult).toMatchObject({ streak: 1, targetReached: false })
+  })
+})
+
+describe('a new run during the tail of a Repeat pass', () => {
+  const bar = { fromOcc: 0, toOcc: 0 }
+
+  async function failedPass(again: (h: ReturnType<typeof harness>) => Promise<void> | void) {
+    const h = harness(melody, { range: bar })
+    h.session.setRepeatTarget(1)
+    await h.session.start()
+    h.play(60)
+    h.tap(61)
+    h.play(62, 64, 65)
+    // The pass failed; the music still plays to the loop end before Repeat resets.
+    expect(h.session.ui.get().lastResult?.passed).toBe(false)
+    expect(h.session.ui.get().playing).toBe(false)
+    await again(h)
+    h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('ready')
+    h.play(60, 62, 64, 65)
+    expect(h.session.ui.get().lastResult?.targetReached).toBe(true)
+    for (let i = 0; i < 50; i++) h.step(100)
+    return h
+  }
+
+  it('Start: a clean pass reaches the target and the session stays completed', async () => {
+    const h = await failedPass((x) => x.session.start())
+    expect(h.session.engine.state.phase).toBe('completed')
+    expect(h.session.ui.get()).toMatchObject({ playing: false, lastResult: { targetReached: true } })
+    expect(h.attempts.map((a) => a.passed)).toEqual([false, true])
+  })
+
+  it('Restart: a clean pass reaches the target and the session stays completed', async () => {
+    const h = await failedPass((x) => x.session.restart())
+    expect(h.session.engine.state.phase).toBe('completed')
+    expect(h.session.ui.get()).toMatchObject({ playing: false, lastResult: { targetReached: true } })
+  })
+
+  it('without a new Start the pass repeats by itself', async () => {
+    const h = harness(melody, { range: bar })
+    h.session.setRepeatTarget(1)
+    await h.session.start()
+    h.play(60)
+    h.tap(61)
+    h.play(62, 64, 65)
+    for (let i = 0; i < 50; i++) h.step(100)
+    expect(h.session.engine.state.phase).toBe('ready')
   })
 })
 

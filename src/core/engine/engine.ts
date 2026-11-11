@@ -109,7 +109,7 @@ interface PendingPress {
   readonly time: number
   /** Group current when pressed ("ahead" errors are attributed here). */
   readonly from: number
-  /** The immediate next group, whose pitch it is. */
+  /** The group whose pitch it is: the next one, or in strict a later one within the tolerance. */
   readonly target: number
   readonly deadline: number
   /** A pitch tied into `target` (not required anywhere): a tie-end press if `target` comes in time. */
@@ -117,6 +117,9 @@ interface PendingPress {
 }
 
 type PendingOutcome = 'keep' | 'done'
+
+/** Strict: how many groups past gi + 1 a press may look for its group (keeps input O(small)). */
+const STRICT_LOOK_AHEAD_GROUPS = 16
 
 export class PracticeEngine {
   #timeline: Timeline
@@ -328,6 +331,8 @@ export class PracticeEngine {
    * - Pitch of i already accepted → replay (no progress, no error, never prefills i+1).
    * - Pitch of i → accepted, unless (accompaniment) its gate is more than the grace away → 'early'.
    * - Pitch of i+1 only → pending for the grace window (applied to i+1 if i advances in time).
+   * - Strict: pitch of a later group within the tolerance of its scheduled time → pending for the
+   *   nearest such group.
    * - Pitch tied into i → tie-end press (E16); tied into i+1 → pending, a tie-end press of i+1
    *   if i advances in time, else 'pitch'.
    * - Strict: a pitch of the group that just closed as missed, before the music reaches the
@@ -365,6 +370,11 @@ export class PracticeEngine {
       this.#pending.push({ pitch, time, from: gi, target: gi + 1, deadline: time + this.#windowMs })
       return false
     }
+    const later = this.#strict ? this.#laterGroupWithin(gi, pitch, time) : null
+    if (later !== null) {
+      this.#pending.push({ pitch, time, from: gi, target: later, deadline: time + this.#windowMs })
+      return false
+    }
     if (g.tiedPitches.includes(pitch)) {
       this.#tieEnd(gi, pitch, time)
       return false
@@ -375,6 +385,27 @@ export class PracticeEngine {
     }
     this.#wrong(gi, g, pitch, time, 'pitch')
     return true
+  }
+
+  /**
+   * Strict: the nearest group j ≥ gi + 2 that requires `pitch` and whose scheduled time is within
+   * the tolerance of `time`, else null. Without it, a slip on a group closer than half the
+   * tolerance to the next ones spends the on-time press of gi + 2 as a wrong attack, and every
+   * second group after it is missed. A gate already reached is within the tolerance (gi is still
+   * open); an unknown ETA or one beyond the tolerance ends the search, later gates being further.
+   */
+  #laterGroupWithin(gi: number, pitch: number, time: number): number | null {
+    const groups = this.#timeline.groups
+    const tol = this.#rhythm!.toleranceMs
+    const end = Math.min(groups.length, gi + 2 + STRICT_LOOK_AHEAD_GROUPS)
+    for (let j = gi + 2; j < end; j++) {
+      if (this.#transportGate < j) {
+        const eta = this.#transportEta?.(j, time) ?? null
+        if (eta === null || eta > tol) return null
+      }
+      if (groups[j]!.pitches.includes(pitch)) return j
+    }
+    return null
   }
 
   /**

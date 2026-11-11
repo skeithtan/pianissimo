@@ -1,5 +1,5 @@
-import { measureContextKey } from '../model/practice'
-import type { ComparisonContext } from '../model/practice'
+import { TRANSPORT_KINDS, measureContextKey } from '../model/practice'
+import type { ComparisonContext, TransportKind } from '../model/practice'
 import type { HandSelection } from '../model/score'
 import type { MeasureContext } from './types'
 
@@ -48,7 +48,7 @@ export function parseMeasureContextKey(key: string): MeasureContext | null {
     return null
   }
   if (!HANDS.includes(hands)) return null
-  if (transport !== 'free' && transport !== 'accompaniment') return null
+  if (transport === undefined || !(TRANSPORT_KINDS as readonly string[]).includes(transport)) return null
   const multiplier = Number(multiplierText)
   if (!Number.isFinite(multiplier) || multiplier <= 0) return null
   const context: MeasureContext = {
@@ -58,7 +58,7 @@ export function parseMeasureContextKey(key: string): MeasureContext | null {
     tempoMapId,
     multiplier,
     rollPolicy,
-    transport,
+    transport: transport as TransportKind,
     matchingRules,
   }
   return measureContextKey(context) === key ? context : null

@@ -52,7 +52,10 @@ export function passageKey(p: PassageRange): string {
  * mode (DECISIONS P13), the music never waits and every onset group is judged against its
  * scheduled time.
  */
-export type TransportKind = 'free' | 'accompaniment' | 'strict'
+export type TransportKind = (typeof TRANSPORT_KINDS)[number]
+
+/** Every `TransportKind`, for code that checks a stored or parsed value at run time. */
+export const TRANSPORT_KINDS = ['free', 'accompaniment', 'strict'] as const
 
 /** Rhythm mode (strict transport) parameters recorded with an attempt. */
 export interface RhythmParams {

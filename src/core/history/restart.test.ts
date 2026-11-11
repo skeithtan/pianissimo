@@ -5,7 +5,7 @@ import { selectSuggestions } from './selection'
 import { MKEY, PIECE, abandon, attemptOf, comparisonContext, fresh, occurrences, play } from './testkit'
 import { measureContextKey } from '../model/practice'
 import { toMeasureContext } from './contextKey'
-import { barKey } from './types'
+import { ABANDON_TRIGGER, barKey } from './types'
 import type { PieceHistory } from './types'
 
 const BAR = 12
@@ -165,6 +165,21 @@ describe('repeated-restart suggestions', () => {
     for (let i = 0; i < 4; i += 1) h = abandon(h, BAR, 'user-restart', 100 + i, 'legacy-key')
     expect(restarts(h)).toHaveLength(0)
     expect(h.abandons[barKey('legacy-key', BAR)]).toHaveLength(4)
+  })
+
+  it('Keep time (strict) restarts create a restart suggestion exactly as free practice does', () => {
+    const strictKey = measureContextKey(
+      toMeasureContext(comparisonContext({ transport: 'strict', matchingRules: 'strict-v1-tol-150ms' })),
+    )
+    for (const key of [MKEY, strictKey]) {
+      let h = fresh()
+      for (let i = 0; i < ABANDON_TRIGGER - 1; i += 1) h = abandon(h, BAR, 'user-restart', 100 + i, key)
+      expect(restarts(h)).toHaveLength(0)
+      h = abandon(h, BAR, 'user-restart', 200, key)
+      expect(restarts(h)).toHaveLength(1)
+      expect(restarts(h)[0]).toMatchObject({ measureContextKey: key, coreFrom: BAR, coreTo: BAR })
+      expect(h.abandons[barKey(key, BAR)]).toHaveLength(ABANDON_TRIGGER)
+    }
   })
 
   it('rejects an event for another piece', () => {

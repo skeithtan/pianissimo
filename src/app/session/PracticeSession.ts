@@ -361,6 +361,10 @@ export class PracticeSession {
   #inputHeld = false
   /** The Start in progress (`start`): sounds may be loading. */
   #starting: Promise<void> | null = null
+  /** Bumped by every Pause: a Start still loading sounds when it changes starts nothing. */
+  #startGen = 0
+  /** `#startGen` when the Start in `#starting` began. */
+  #startingGen = 0
   /** Accepted seeks supersede a Listen resume position captured before sounds finish loading. */
   #lastSeek: { position: Rational } | null = null
   /** Both hands' onset groups for the keyboard guide (U20); rebuilt on first use per selection. */
@@ -515,14 +519,23 @@ export class PracticeSession {
   /**
    * Start reading, a scored attempt or Preview, per the selection. One Start at a time: a second
    * one while sounds load joins the first (it would otherwise stop the transport the first one
-   * started at Ready).
+   * started at Ready), unless a Pause canceled the first meanwhile: then it runs after it.
    */
   start(): Promise<void> {
-    this.#starting ??= this.#start().finally(() => (this.#starting = null))
-    return this.#starting
+    if (this.#starting && this.#startingGen === this.#startGen) return this.#starting
+    const before = this.#starting
+    const gen = (this.#startingGen = this.#startGen)
+    // Queued behind a canceled Start: a Pause meanwhile cancels this one too.
+    const queued = () => (this.#startCanceled(gen) ? undefined : this.#start())
+    const run: Promise<void> = (before ? before.then(queued) : this.#start()).finally(() => {
+      if (this.#starting === run) this.#starting = null
+    })
+    this.#starting = run
+    return run
   }
 
   async #start(): Promise<void> {
+    const gen = this.#startGen
     const first = this.#plan()
     if (!first.enabled) return
     if (first.action === 'play') {
@@ -538,11 +551,11 @@ export class PracticeSession {
     if (this.#listen) this.#stopListening()
     if (this.#sel.hands !== 'both') {
       const output = await this.#ensureOutput()
-      if (!output || this.#disposed) return
+      if (!output || this.#startCanceled(gen)) return
     }
     // Keep time counts in through the metronome even when the Metronome setting is off.
     await this.#ensureMetronome(this.#rhythm)
-    if (this.#disposed) return
+    if (this.#startCanceled(gen)) return
     // The selection may have changed while sounds loaded (the loop cleared, the hands changed).
     const plan = this.#plan()
     if (!plan.enabled) return
@@ -563,15 +576,20 @@ export class PracticeSession {
     if (lead && !lead.handedOver && this.#engine.mode === 'reading') {
       this.#startLeadIn(t)
     } else if (plan.action === 'scored') {
-      const kind = this.#scoredKind()
-      if (this.#engine.mode !== 'scored' || this.#engine.transport !== kind.transport) {
-        this.#engine.reconfigure({ reason: 'mode-change', mode: 'scored', timeline: this.#timeline, ...kind }, t)
-      } else if (!ACTIVE.includes(this.#engine.state.phase)) {
-        this.#engine.restart(t)
+      // A new run: the Repeat reset or ladder step that waited for the last pass's music is
+      // taken over here, so nothing stale fires at the loop end.
+      this.#pendingRepeat = false
+      if (!this.#newRunAtLadderSpeed()) {
+        const kind = this.#scoredKind()
+        if (this.#engine.mode !== 'scored' || this.#engine.transport !== kind.transport) {
+          this.#engine.reconfigure({ reason: 'mode-change', mode: 'scored', timeline: this.#timeline, ...kind }, t)
+        } else if (!ACTIVE.includes(this.#engine.state.phase)) {
+          this.#engine.restart(t)
+        }
+        this.#prepareAttempt(t)
       }
       this.#lastResult = null
       this.#streak = 0
-      this.#prepareAttempt(t)
     } else {
       if (this.#engine.mode !== 'reading') {
         this.#engine.reconfigure(
@@ -606,6 +624,8 @@ export class PracticeSession {
   /** Pause: reading keeps progress; a scored attempt is interrupted (spec); Preview pauses. */
   pause(): void {
     const now = this.#deps.clock()
+    // Pause is a stop intent also for a Start still loading sounds (an overlay, browsing, Stop sound).
+    this.#startGen++
     if (this.#playThrough) {
       this.#pausePlay(now)
       this.#process(now)
@@ -668,6 +688,13 @@ export class PracticeSession {
         this.#ensureTransport((t) => this.#tryPrepared(t))
         this.#prepareAttempt(now)
       }
+      this.#process(now)
+      return
+    }
+    if (this.#newRunAtLadderSpeed()) {
+      // Again / Restart is a new run, at the speed the ladder announced.
+      this.#lastResult = null
+      this.#streak = 0
       this.#process(now)
       return
     }
@@ -811,6 +838,8 @@ export class PracticeSession {
     this.#pauseTransports()
     this.#awaitPrepared = false
     this.#pendingRepeat = false
+    // A new run: the ladder speed announced for the next pass is canceled, as by a selection change.
+    this.#ladderNext = null
     this.#disposeAccompaniment()
     this.#leadInKeys.add(passageKey(timeline.context.passage))
     this.#leadIn = { start, passage, timeline, span, wrap, handedOver: false }
@@ -1007,10 +1036,16 @@ export class PracticeSession {
     }
     // Another destination than last time: release the old transport before its output goes.
     if (this.#listen) this.#disposeListen()
+    const gen = this.#startGen
     const output = await this.#ensureOutput()
-    if (!output || this.#disposed) return
+    if (!output || this.#startCanceled(gen)) return
     await this.#ensureMetronome()
-    if (this.#disposed) return
+    if (this.#startCanceled(gen)) return
+    // The selection may have changed while sounds loaded (a hand chosen, held hands given back):
+    // Start honors the new plan instead (its own load is done, so it does not come back here).
+    const plan = this.#plan()
+    if (!plan.enabled) return
+    if (plan.action !== 'listen') return this.#start()
     this.#followBrowsedCursor()
     const t = this.#deps.clock()
     // Leaving practice for Preview: a scored attempt is interrupted, reading pauses.
@@ -1073,20 +1108,23 @@ export class PracticeSession {
     const both = this.#sel.hands === 'both'
     const p = this.#play
     const key = both ? '' : outputKey(this.#settings, this.#destination())
+    const gen = this.#startGen
     if (p && !p.playing && p.outputKey === key && (both || (this.#output !== null && this.#outputKey === key))) {
       this.#followBrowsedCursor()
       if (this.#micActive() && !(await this.#startMic(p.follower.state.position ?? ZERO))) return
-      if (this.#disposed || this.#play !== p || p.playing) return
+      // Canceled once the microphone opened: paused as by an ordinary pause (`#pausePlay`), kept open.
+      if (this.#startCanceled(gen)) return this.#mic?.pause()
+      if (this.#play !== p || p.playing) return
       this.#playFrom(this.#deps.clock())
       this.#process(this.#deps.clock())
       return
     }
     if (!both) {
       const output = await this.#ensureOutput()
-      if (!output || this.#disposed) return
+      if (!output || this.#startCanceled(gen)) return
     }
     await this.#ensureMetronome()
-    if (this.#disposed || !this.#playThrough) return
+    if (this.#startCanceled(gen) || !this.#playThrough) return
     // The selection may have changed while sounds loaded.
     const plan = this.#plan()
     if (!plan.enabled || plan.action !== 'play') return
@@ -1104,10 +1142,17 @@ export class PracticeSession {
         this.#process(this.#deps.clock())
         return
       }
-      if (this.#disposed || this.#play !== built || built.playing) return
+      // Canceled once the microphone opened: paused as by an ordinary pause (`#pausePlay`), kept open.
+      if (this.#startCanceled(gen)) return this.#mic?.pause()
+      if (this.#play !== built || built.playing) return
     }
     this.#playFrom(this.#deps.clock())
     this.#process(this.#deps.clock())
+  }
+
+  /** A Pause (or leaving) since a Start began: it must not start anything after its awaits. */
+  #startCanceled(gen: number): boolean {
+    return this.#disposed || gen !== this.#startGen
   }
 
   /**
@@ -1483,6 +1528,12 @@ export class PracticeSession {
       if (this.#engine.mode === 'scored' && ACTIVE.includes(this.#engine.state.phase))
         this.#engine.interrupt('mode-change', now)
       else if (this.#engine.state.phase === 'running') this.#engine.pause(now)
+      if (this.#engine.mode === 'reading' && this.#engine.state.phase === 'paused') {
+        // The reading pass so far is recorded before play-through drops what the engine ends:
+        // the keep-progress path ends the traversal and continues a new one at the same target.
+        this.#engine.reconfigure({ reason: 'mode-change' }, now)
+        this.#drain(now)
+      }
       this.#playThrough = true
       // The reading transport goes; Start in reading builds a new one from the engine's position.
       this.#disposeAccompaniment()
@@ -2073,7 +2124,7 @@ export class PracticeSession {
     this.#process(now)
   }
 
-  /** Leaving the view: a running attempt is a user stop; output is cleaned up. */
+  /** Leaving the view: a running attempt is a user stop, a paused reading pass is recorded; output is cleaned up. */
   dispose(): void {
     if (this.#disposed) return
     const now = this.#deps.clock()
@@ -2085,6 +2136,11 @@ export class PracticeSession {
     }
     this.#cancelCountIn(now)
     this.#saveResume(now, true)
+    // A paused reading pass is recorded too (per-bar history, ST2). 'suspend' abandons nothing:
+    // pausing and leaving is not giving up at that bar.
+    if (this.#engine.mode === 'reading' && this.#engine.state.phase === 'paused') {
+      this.#engine.interrupt('suspend', now)
+    }
     this.#drain(now)
     this.#disposed = true
     this.#stopListening()
@@ -2380,7 +2436,8 @@ export class PracticeSession {
         this.#onPhase(ev.phase, now)
         break
       case 'attempt-ended':
-        // Play-through records nothing: a reading pass it replaced ends unrecorded.
+        // Play-through records nothing: the reading before it was recorded when it went on;
+        // what the engine ends during play-through (and when it goes off) stays unrecorded.
         if (!this.#discarding && !this.#playThrough) this.#onRecord(ev.record)
         break
       case 'abandon':
@@ -2576,6 +2633,20 @@ export class PracticeSession {
     this.#clearHighlights()
     this.#select({ hands: this.#sel.hands, multiplier: speed }, this.#loop, true, true, true)
     this.#strip?.wrapTo?.(this.#cursorPosition())
+  }
+
+  /**
+   * Start or Again while a ladder speed still waits for the Repeat reset (the last pass's music
+   * plays on): the step is taken now, so the new run's first attempt is prepared at the speed the
+   * card announced. False when no step waits.
+   */
+  #newRunAtLadderSpeed(): boolean {
+    const speed = this.#ladderNext
+    // Only while the pass that announced it is the engine's finished attempt (its tail, also paused).
+    if (speed === null || !this.#repeat || this.#engine.mode !== 'scored' || this.#engine.state.phase !== 'completed')
+      return false
+    this.#ladderStep(speed)
+    return true
   }
 
   #onAccompanimentEnd(): void {

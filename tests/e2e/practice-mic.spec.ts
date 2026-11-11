@@ -84,11 +84,19 @@ async function installFakeMicrophone(page: Page, pcm: string): Promise<void> {
   )
 }
 
-/** Pitches of the notes at the cursor (the group expected next), ascending. */
-function targets(page: Page, pitches: readonly number[]): Promise<number[]> {
+interface Snapshot {
+  /** Seconds of the performance the fake microphone has played. */
+  heard: number
+  /** Pitches of the notes at the cursor (the group expected next), ascending. */
+  targets: number[]
+}
+
+/** Both readings in one task of the page, so `heard` says when the cursor was where `targets` has it. */
+function snapshot(page: Page, pitches: readonly number[]): Promise<Snapshot> {
   return page.evaluate(
-    (pitches) =>
-      [
+    (pitches) => ({
+      heard: window.__micStartedAt === undefined ? -1 : (performance.now() - window.__micStartedAt) / 1000,
+      targets: [
         ...new Set(
           [...document.querySelectorAll('.pn-music .pn-target:not(.pn-acc)')].flatMap((el) =>
             (el.getAttribute('data-n') ?? '')
@@ -98,13 +106,16 @@ function targets(page: Page, pitches: readonly number[]): Promise<number[]> {
           ),
         ),
       ].sort((a, b) => a - b),
+    }),
     pitches,
   )
 }
 
-/** Seconds of the performance the fake microphone has played. */
-const heard = (page: Page): Promise<number> =>
-  page.evaluate(() => (window.__micStartedAt === undefined ? -1 : (performance.now() - window.__micStartedAt) / 1000))
+/**
+ * For polls whose sample time matters: every 100 ms, not Playwright's default back-off to one
+ * poll a second, which is coarser than the windows below.
+ */
+const OFTEN = { timeout: 20_000, intervals: [100] }
 
 test('the cursor follows an acoustic piano through the microphone and waits while the player stops', async ({
   page,
@@ -122,22 +133,30 @@ test('the cursor follows an acoustic piano through the microphone and waits whil
   await page.getByRole('button', { name: 'Start', exact: true }).click()
   await expect(page.getByTestId('mic-status')).toContainText('Following through the microphone.')
 
+  // Each poll keeps the snapshot it took, so the checks after it look at the sample that ended it
+  // (time and cursor read together) rather than at a later read.
+  let now = await snapshot(page, pitches)
+  const take = async (): Promise<Snapshot> => (now = await snapshot(page, pitches))
+
   // Before the first note the cursor stays at the first group.
-  await expect.poll(() => heard(page)).toBeGreaterThan(0.5)
-  expect(await targets(page, pitches)).toEqual(groups[0])
+  await expect.poll(async () => (await take()).heard, OFTEN).toBeGreaterThan(0.5)
+  expect(now.heard).toBeLessThan(times[0]!)
+  expect(now.targets).toEqual(groups[0])
 
-  // The first three groups are played a second apart: after each the cursor is at the next.
-  await expect.poll(() => targets(page, pitches), { timeout: 20_000 }).toEqual(groups[3])
-  const reached = await heard(page)
-  expect(reached).toBeGreaterThan(times[2]!)
-  expect(reached).toBeLessThan(times[2]! + 1)
+  // The first three groups are played a second apart: after each the cursor is at the next. The
+  // poll that first sees it at the fourth group comes at most 100 ms (plus a round trip) after.
+  await expect.poll(async () => (await take()).targets, OFTEN).toEqual(groups[3])
+  expect(now.heard).toBeGreaterThan(times[2]!)
+  expect(now.heard).toBeLessThan(times[2]! + 1)
 
-  // The player stops with the keys held: the cursor waits, however long the chord rings.
-  await expect.poll(() => heard(page), { timeout: 20_000 }).toBeGreaterThan(times[3]! - 0.5)
-  expect(await targets(page, pitches)).toEqual(groups[3])
+  // The player stops with the keys held: the cursor waits, however long the chord rings. The
+  // sample that ends this poll falls in the last half second before the player resumes.
+  await expect.poll(async () => (await take()).heard, OFTEN).toBeGreaterThan(times[3]! - 0.5)
+  expect(now.heard).toBeLessThan(times[3]!)
+  expect(now.targets).toEqual(groups[3])
 
   // And goes on with the player to the end of the piece.
-  await expect.poll(() => targets(page, pitches), { timeout: 20_000 }).toEqual(groups[5])
+  await expect.poll(async () => (await take()).targets, { timeout: 20_000 }).toEqual(groups[5])
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible({ timeout: 20_000 })
-  expect(await heard(page)).toBeGreaterThan(times[5]!)
+  expect((await take()).heard).toBeGreaterThan(times[5]!)
 })
