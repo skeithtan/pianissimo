@@ -48,7 +48,8 @@
      `--bg-raised` (controls and the selected segment or tab). Light mode recesses a well
      (sunken is darker than the page) and keeps raised white; dark mode steps every level
      lighter (never toward black), so a well inside a card is a lighter fill and a control sits
-     above the surface it is on. */
+     above the surface it is on. The dark page itself is near black (U85), with the score paper
+     one step above it. */
   --bg: #f2f4ef;
   --bg-elevated: #ffffff;
   --bg-sunken: #e4e9de;
@@ -67,6 +68,9 @@
   /* Staff and ledger lines relative to the ink: full in light mode, softer on dark paper so the
      notes read above the lines (A17). */
   --score-staff-opacity: 1;
+  /* The score cursor (strip.css): a translucent accent band, strong enough to find at a glance
+     but never darker than the user wants (U85); each paper has its own strength. */
+  --score-cursor: color-mix(in srgb, var(--accent) 20%, transparent);
 
   --warning: #9a5b00;
   --warning-bg: #fff0d1;
@@ -122,18 +126,22 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --practice-surface: #252d28;
-    --score-paper: #252d28;
-    --score-ink: #e0e7db;
+    --practice-surface: #151916;
+    --score-paper: #151916;
+    --score-ink: #cdd0c5;
     --score-ink-muted: #a6b29f;
-    --score-staff-opacity: 0.7;
-    --bg: #1b201e;
-    --bg-elevated: #303931;
-    --bg-sunken: #3b453a;
-    --bg-raised: #485441;
+    /* Light marks on dark paper read heavier than ink on paper, so the dark score is quieter:
+       dimmer warm ink, softer staff lines, letter names a step below the notes (U86). */
+    --score-label: #a7ae9d;
+    --score-staff-opacity: 0.42;
+    --score-cursor: color-mix(in srgb, var(--accent) 20%, transparent);
+    --bg: #0e1110;
+    --bg-elevated: #1a1f1b;
+    --bg-sunken: #232a24;
+    --bg-raised: #2f382f;
     --fg: #eff2e8;
     --fg-muted: #c0cab3;
-    --border: #4d5945;
+    --border: #364034;
     --scrim: rgb(0 0 0 / 0.62);
     --warning: #ffc266;
     --warning-bg: #3a2a0e;
@@ -158,18 +166,22 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --practice-surface: #252d28;
-  --score-paper: #252d28;
-  --score-ink: #e0e7db;
+  --practice-surface: #151916;
+  --score-paper: #151916;
+  --score-ink: #cdd0c5;
   --score-ink-muted: #a6b29f;
-  --score-staff-opacity: 0.7;
-  --bg: #1b201e;
-  --bg-elevated: #303931;
-  --bg-sunken: #3b453a;
-  --bg-raised: #485441;
+  /* Light marks on dark paper read heavier than ink on paper, so the dark score is quieter:
+     dimmer warm ink, softer staff lines, letter names a step below the notes (U86). */
+  --score-label: #a7ae9d;
+  --score-staff-opacity: 0.42;
+  --score-cursor: color-mix(in srgb, var(--accent) 20%, transparent);
+  --bg: #0e1110;
+  --bg-elevated: #1a1f1b;
+  --bg-sunken: #232a24;
+  --bg-raised: #2f382f;
   --fg: #eff2e8;
   --fg-muted: #c0cab3;
-  --border: #4d5945;
+  --border: #364034;
   --scrim: rgb(0 0 0 / 0.62);
   --warning: #ffc266;
   --warning-bg: #3a2a0e;
@@ -292,7 +304,9 @@ a {
   --score-paper: var(--paper);
   --score-ink: var(--ink);
   --score-ink-muted: #8a8478;
+  --score-label: var(--ink);
   --score-staff-opacity: 1;
+  --score-cursor: color-mix(in srgb, #59643b 20%, transparent);
 }
 
 /* Pinned light paper also needs the existing light semantic inks. Scope them to the score so

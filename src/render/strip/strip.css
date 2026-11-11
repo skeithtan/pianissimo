@@ -49,9 +49,11 @@
   --pn-handle-bg: var(--bg-elevated, #ffffff);
   --pn-handle-fg: var(--accent, #2c7a43);
   --pn-loop-ctl: var(--color-loop-control, rgb(255 255 255 / 0.92));
-  --pn-cursor: var(--score-cursor, color-mix(in srgb, var(--pn-ink) 9%, transparent));
-  --pn-cursor-wrong: color-mix(in srgb, var(--pn-wrong) 16%, transparent);
-  --pn-cursor-early: color-mix(in srgb, var(--warning, #9a5b00) 22%, transparent);
+  /* The cursor is an accent tint set per theme by --score-cursor (U85); the wrong and early tints
+     are about as strong, so a state change still reads. */
+  --pn-cursor: var(--score-cursor, color-mix(in srgb, var(--accent, #59643b) 20%, transparent));
+  --pn-cursor-wrong: color-mix(in srgb, var(--pn-wrong) 32%, transparent);
+  --pn-cursor-early: color-mix(in srgb, var(--warning, #9a5b00) 34%, transparent);
   --pn-cursor-w: 24px;
   --pn-action-border: var(--border, color-mix(in srgb, var(--pn-ink) 18%, transparent));
   --pn-fast: var(--motion-fast, 120ms);
@@ -308,10 +310,10 @@
   fill: var(--pn-ink-muted);
 }
 
-/* Cursor (R13): a plain translucent bar drawn in screen space above the music (its own layer, so
-   it does not move while the score scrolls beneath it). No opaque part, border or shadow; it tints
-   red while the current group has a wrong key, amber after a too-early press. Width follows zoom;
-   StripView sizes it to the staves plus 56 px at each end, which the mask fades out. */
+/* Cursor (R13, U85): a plain translucent bar drawn in screen space above the music (its own layer,
+   so it does not move while the score scrolls beneath it). No opaque part, border or shadow; an
+   accent tint, red while the current group has a wrong key, amber after a too-early press. Width
+   follows zoom; StripView sizes it to the staves plus 56 px at each end, which the mask fades out. */
 .pn-cursor {
   position: absolute;
   left: 0;
