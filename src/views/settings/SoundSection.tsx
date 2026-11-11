@@ -112,8 +112,9 @@ export function SoundSection({ features }: { features: FeatureReport }) {
           onChange={(follow) => updateSettings({ mic: { follow } })}
         />
         <Help>
-          Position only: wrong notes are not judged, and the microphone is closed outside Play through. Keep the device
-          near the piano and the room quiet.
+          Position only: wrong notes are not judged, and the microphone is closed outside Play through. The cursor waits
+          as long as you do and moves when it hears the next notes, at any speed. Keep the device near the piano. The
+          metronome stays silent while the microphone follows.
         </Help>
       </Group>
     </>

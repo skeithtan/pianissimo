@@ -1,114 +1,122 @@
 /**
- * Audio score follower (spike on branch `mic-follower-spike`, DECISIONS P14): estimates the
- * player's position in a score from microphone samples, for Play-through (P12) on an acoustic
- * piano. Pure and worker-safe: the caller (an AudioWorklet or worker) passes mono samples.
+ * Audio score follower (DECISIONS P14, redesigned in P16): tells from microphone samples which
+ * onset group of a score the player has reached, for Play-through (P12) on an acoustic piano.
+ * Pure and worker-safe: the caller (an AudioWorklet and a worker) passes mono samples.
  * See README.md.
  */
-import { type Rational, ZERO, rat, toNumber } from '../music/rational'
-import type { TempoMapData } from '../music/tempo'
+import { type Rational, ZERO, cmp, toNumber } from '../music/rational'
 import type { ScoreModel } from '../model/score'
-import { FeatureExtractor, type FeatureOptions } from './features'
-import { OnlineTimeWarping, type OltwOptions } from './oltw'
-import { type Reference, type ReferenceNoteOptions, buildReference, frameAt, framePosition } from './reference'
+import { SemitoneAnalyzer } from './features'
+import { type MatcherOptions, OnsetMatcher } from './matcher'
+import { type AttackGroup, attackGroups, attackTemplates } from './templates'
 
-export { FeatureExtractor, Fft, FEATURE_DIM, HOP_SEC, frameSize, hopSize } from './features'
-export { OnlineTimeWarping } from './oltw'
+export { Fft, HOP_SEC, SEMITONES, SemitoneAnalyzer, frameSize, hopSize } from './features'
 export { groupReached } from './groups'
-export {
-  buildReference,
-  framePosition,
-  frameAt,
-  referenceNotes,
-  sustainSpans,
-  type Reference,
-  type ReferenceNote,
-} from './reference'
+export { OnsetMatcher, type MatcherOptions } from './matcher'
+export { attackGroups, attackTemplates, pitchTemplate, type AttackGroup, type AttackTemplate } from './templates'
 
-export interface AudioFollowerOptions extends FeatureOptions, OltwOptions, ReferenceNoteOptions {}
+export type AudioFollowerOptions = MatcherOptions
 
 export interface AudioEstimate {
-  /** Float performance position in whole notes. */
+  /** Index of the onset group heard last (−1: none yet). */
+  readonly group: number
+  /** Its performance position in float whole notes (just before the first group when none). */
   readonly position: number
-  /** 0..1; act on positions only above a threshold (about 0.5 on synthetic audio). */
+  /** 0..1: how well the attack that moved the position last matched its group. */
   readonly confidence: number
   /** Stream time (seconds, the caller's clock) of the end of the latest analyzed frame. */
   readonly time: number
   /** Frames analyzed by this push. */
   readonly frames: number
+  /** The position changed during this push. */
+  readonly moved: boolean
 }
 
 export interface AudioFollower {
+  /** The score's onset groups, in the order the follower counts them. */
+  readonly groups: readonly AttackGroup[]
   /**
    * Feeds mono samples starting at stream time `time` (seconds). Any block size: a frame is
-   * analyzed every 10 ms of audio. A different sample rate than before restarts the follower
-   * at its current position.
+   * analyzed every 10 ms of audio. A different sample rate than before starts listening afresh
+   * at the current position.
    */
   push(samples: Float32Array, sampleRate: number, time: number): AudioEstimate
-  /** Restarts at a performance position (default the start), e.g. after a seek. */
+  /**
+   * Expect the first group at or after `position` next (default the start), e.g. after a seek.
+   * The sound heard so far stays known: a chord still ringing is not an attack.
+   */
   reset(position?: Rational): void
+  /** The stream was interrupted (a pause): forget the sound heard so far, keep the position. */
+  listen(): void
 }
 
-/**
- * An audio follower for `model` at `tempo` × `multiplier`. The reference is built lazily for the
- * first sample rate seen (it bins partials like the live FFT does).
- */
-export function createAudioFollower(
-  model: ScoreModel,
-  tempo: TempoMapData,
-  multiplier: number,
-  options: AudioFollowerOptions = {},
-): AudioFollower {
-  let ref: Reference | null = null
-  let features: FeatureExtractor | null = null
-  let oltw: OnlineTimeWarping | null = null
-  let start: Rational = ZERO
-  /** Samples pushed since the extractor started (frame i ends at sample (i + 1) × hop). */
-  let pushed = 0
-  let last: AudioEstimate = { position: toNumber(start), confidence: 0, time: 0, frames: 0 }
+/** How far before the first group the position reads while nothing was heard (whole notes). */
+const BEFORE_FIRST = 1e-3
 
-  const restart = (): void => {
-    if (!ref || !oltw) return
-    const j = frameAt(ref, start)
-    // At the start the whole lead-in is a candidate; elsewhere the half second before.
-    oltw.reset(j - 1, toNumber(start) === 0 ? j : 50)
-    features?.reset()
-    pushed = 0
+/**
+ * An audio follower for `model`. It follows the order of the score's onset groups only: no
+ * tempo is involved, the player may take any time. The templates are built lazily for the first
+ * sample rate seen (they bin partials as the analyzer does).
+ */
+export function createAudioFollower(model: ScoreModel, options: AudioFollowerOptions = {}): AudioFollower {
+  const groups = attackGroups(model)
+  const positions = groups.map((g) => toNumber(g.position))
+  let analyzer: SemitoneAnalyzer | null = null
+  let matcher: OnsetMatcher | null = null
+  /** Group expected next when the matcher is (re)built. */
+  let expected = 0
+  /** Samples pushed since the analyzer started (frame i ends at sample (i + 1) × hop). */
+  let pushed = 0
+  let lastTime = 0
+
+  const estimate = (frames: number, moved: boolean): AudioEstimate => {
+    const group = matcher ? matcher.group : expected - 1
+    return {
+      group,
+      position: group >= 0 ? positions[group]! : (positions[0] ?? 0) - BEFORE_FIRST,
+      confidence: matcher?.confidence ?? 0,
+      time: lastTime,
+      frames,
+      moved,
+    }
   }
 
   return {
+    groups,
     push(samples, sampleRate, time) {
-      if (!features || features.sampleRate !== sampleRate) {
-        if (ref && oltw) start = rat(Math.round(framePosition(ref, oltw.frame) * 1e6), 1e6)
-        ref = buildReference(model, tempo, multiplier, sampleRate, options)
-        features = new FeatureExtractor(sampleRate, options)
-        oltw = new OnlineTimeWarping(ref, options)
-        restart()
+      if (!analyzer || analyzer.sampleRate !== sampleRate) {
+        if (matcher) expected = matcher.group + 1
+        analyzer = new SemitoneAnalyzer(sampleRate)
+        matcher = new OnsetMatcher(attackTemplates(groups, sampleRate), analyzer.fillFrames, options)
+        matcher.seek(expected)
+        pushed = 0
       }
-      const fx = features
-      const tw = oltw!
+      const m = matcher!
+      const hop = analyzer.hop
       const blockStart = pushed
       pushed += samples.length
       let frames = 0
+      let moved = false
       let lastIndex = -1
-      fx.push(samples, (frame, index) => {
-        tw.step(frame.vector, frame.onset, frame.silent)
+      analyzer.push(samples, (energy, total, index) => {
+        if (m.step(energy, total)) moved = true
         frames++
         lastIndex = index
       })
-      last =
-        frames > 0
-          ? {
-              position: framePosition(ref!, tw.frame),
-              confidence: tw.confidence,
-              time: time + ((lastIndex + 1) * fx.hop - blockStart) / sampleRate,
-              frames,
-            }
-          : { ...last, frames: 0 }
-      return last
+      if (frames > 0) lastTime = time + ((lastIndex + 1) * hop - blockStart) / sampleRate
+      return estimate(frames, moved)
     },
     reset(position = ZERO) {
-      start = position
-      restart()
+      let g = 0
+      while (g < groups.length && cmp(groups[g]!.position, position) < 0) g++
+      expected = g
+      matcher?.seek(g)
+    },
+    listen() {
+      if (!analyzer || !matcher) return
+      analyzer.reset()
+      matcher.listen()
+      pushed = 0
     },
   }
 }

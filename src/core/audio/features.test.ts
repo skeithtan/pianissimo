@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
-  FEATURE_DIM,
-  FeatureExtractor,
   Fft,
-  HALF_DIM,
-  LSE_SHARE,
+  LOBE_SPAN,
   SEMITONES,
+  SemitoneAnalyzer,
+  WINDOW_SKEW,
+  analysisWindow,
   binToSemitone,
   frameSize,
   hopSize,
   semitoneOfFrequency,
+  windowLobe,
 } from './features'
 
 function sine(freq: number, seconds: number, sampleRate: number, amplitude = 0.5, from = 0): Float32Array {
@@ -18,6 +19,12 @@ function sine(freq: number, seconds: number, sampleRate: number, amplitude = 0.5
     out[i] = amplitude * Math.sin((2 * Math.PI * freq * i) / sampleRate)
   }
   return out
+}
+
+function loudest(energy: ArrayLike<number>): number {
+  let best = 0
+  for (let p = 1; p < SEMITONES; p++) if (energy[p]! > energy[best]!) best = p
+  return best
 }
 
 describe('FFT and frame geometry', () => {
@@ -45,9 +52,10 @@ describe('FFT and frame geometry', () => {
     expect(() => new Fft(24)).toThrow(RangeError)
   })
 
-  it('uses 2048-sample frames and exactly 10 ms hops at 44.1 and 48 kHz', () => {
-    expect(frameSize(44100)).toBe(2048)
-    expect(frameSize(48000)).toBe(2048)
+  it('uses 4096-sample frames and exactly 10 ms hops at 44.1 and 48 kHz', () => {
+    expect(frameSize(44100)).toBe(4096)
+    expect(frameSize(48000)).toBe(4096)
+    expect(frameSize(96000)).toBe(8192)
     expect(hopSize(44100)).toBe(441)
     expect(hopSize(48000)).toBe(480)
   })
@@ -58,81 +66,99 @@ describe('FFT and frame geometry', () => {
     expect(semitoneOfFrequency(4186)).toBe(SEMITONES - 1)
     expect(semitoneOfFrequency(10)).toBe(-1)
     expect(semitoneOfFrequency(8000)).toBe(-1)
-    const bins = binToSemitone(44100, 2048)
+    const bins = binToSemitone(44100, 4096)
     expect(bins[0]).toBe(-1)
-    expect(bins[Math.round((440 * 2048) / 44100)]).toBe(48)
+    expect(bins[Math.round((440 * 4096) / 44100)]).toBe(48)
   })
 })
 
-describe('FeatureExtractor', () => {
-  it('emits one frame per hop and puts a sine in its semitone', () => {
-    const fx = new FeatureExtractor(44100)
-    const frames: { semitone: number; silent: boolean; onset: number; time: number }[] = []
-    fx.push(sine(440, 1, 44100), (f, index) => {
-      let best = -1
-      let bestV = -1
-      for (let p = 0; p < SEMITONES; p++) {
-        if (f.vector[p]! > bestV) {
-          bestV = f.vector[p]!
-          best = p
-        }
-      }
-      frames.push({ semitone: best, silent: f.silent, onset: f.onset, time: (index + 1) / 100 })
+describe('analysis window', () => {
+  it('rises over three quarters of the frame and falls over the rest', () => {
+    const n = 4096
+    const w = analysisWindow(n)
+    const top = Math.round(n * WINDOW_SKEW)
+    expect(w[0]).toBe(0)
+    expect(w[top]).toBeCloseTo(1, 9)
+    expect(w[n - 1]).toBeLessThan(1e-5)
+    for (let i = 1; i <= top; i++) expect(w[i]!).toBeGreaterThanOrEqual(w[i - 1]!)
+    for (let i = top + 1; i < n; i++) expect(w[i]!).toBeLessThanOrEqual(w[i - 1]!)
+    // The newest fifth of the frame carries an eighth of the weight (under a Hann window, 2 %).
+    let recent = 0
+    let all = 0
+    for (let i = 0; i < n; i++) {
+      all += w[i]! ** 2
+      if (i >= n * 0.8) recent += w[i]! ** 2
+    }
+    expect(recent / all).toBeGreaterThan(0.1)
+  })
+
+  it('spreads a partial between bins as its power response says', () => {
+    const lobe = windowLobe(4096)
+    expect(lobe(0)).toBeCloseTo(1, 9)
+    expect(lobe(0.5)).toBeGreaterThan(0.5)
+    expect(lobe(0.5)).toBeCloseTo(lobe(-0.5), 9)
+    expect(lobe(1)).toBeLessThan(lobe(0.5))
+    expect(lobe(3)).toBeLessThan(0.01)
+    expect(lobe(LOBE_SPAN)).toBe(0)
+    expect(lobe(-LOBE_SPAN - 1)).toBe(0)
+  })
+})
+
+describe('SemitoneAnalyzer', () => {
+  it('emits one frame per hop and puts a sine in its semitone at its power', () => {
+    const fx = new SemitoneAnalyzer(44100)
+    const frames: { semitone: number; total: number; share: number }[] = []
+    fx.push(sine(440, 1, 44100, 0.5), (energy, total) => {
+      const p = loudest(energy)
+      frames.push({ semitone: p, total, share: energy[p]! / total })
     })
     expect(frames.length).toBe(100)
     expect(fx.frames).toBe(100)
-    const steady = frames.filter((f) => f.time > 0.2)
-    expect(steady.every((f) => f.semitone === 48 && !f.silent)).toBe(true)
-    // Unit vector: the two halves share the energy as LSE_SHARE says.
-    const v = new Float32Array(FEATURE_DIM)
-    fx.reset()
-    fx.push(sine(440, 0.1, 44100), (f) => v.set(f.vector))
-    let lse = 0
-    let onset = 0
-    for (let k = 0; k < HALF_DIM; k++) {
-      lse += v[k]! ** 2
-      onset += v[HALF_DIM + k]! ** 2
+    expect(fx.fillFrames).toBe(10)
+    const steady = frames.slice(20)
+    expect(steady.every((f) => f.semitone === 48)).toBe(true)
+    // A full-scale sine reads 1: amplitude 0.5 reads a quarter, nearly all of it in its semitone.
+    for (const f of steady) {
+      expect(f.total).toBeCloseTo(0.25, 2)
+      expect(f.share).toBeGreaterThan(0.9)
     }
-    expect(lse).toBeCloseTo(LSE_SHARE, 5)
-    expect(onset).toBeCloseTo(1 - LSE_SHARE, 5)
   })
 
-  it('marks silence and gives it the presence value only', () => {
-    const fx = new FeatureExtractor(48000)
+  it('reads the same level at 48 kHz and tells a semitone from its neighbor at middle C', () => {
+    const fx = new SemitoneAnalyzer(48000)
+    let last = { semitone: -1, total: 0 }
+    fx.push(sine(261.63, 0.5, 48000, 0.5), (energy, total) => (last = { semitone: loudest(energy), total }))
+    expect(last.semitone).toBe(60 - 21)
+    expect(last.total).toBeCloseTo(0.25, 2)
+    fx.reset()
+    fx.push(sine(277.18, 0.5, 48000, 0.5), (energy) => (last = { semitone: loudest(energy), total: 0 }))
+    expect(last.semitone).toBe(61 - 21)
+  })
+
+  it('reads silence as zero and starts afresh after a reset', () => {
+    const fx = new SemitoneAnalyzer(48000)
     let seen = 0
-    fx.push(new Float32Array(4800), (f) => {
-      seen++
-      expect(f.silent).toBe(true)
-      expect(f.power).toBe(0)
-      expect(f.vector[SEMITONES]).toBeCloseTo(Math.sqrt(LSE_SHARE), 6)
-      for (let p = 0; p < SEMITONES; p++) expect(f.vector[p]).toBe(0)
+    fx.push(new Float32Array(4800), (energy, total, index) => {
+      expect(index).toBe(seen++)
+      expect(total).toBe(0)
+      expect(energy.every((v) => v === 0)).toBe(true)
     })
     expect(seen).toBe(10)
+    fx.push(sine(440, 0.2, 48000), () => {})
+    fx.reset()
+    expect(fx.frames).toBe(0)
+    const totals: number[] = []
+    fx.push(new Float32Array(960), (_, total) => totals.push(total))
+    expect(totals).toEqual([0, 0])
   })
 
-  it('gates frames far below the running peak', () => {
-    const fx = new FeatureExtractor(44100)
-    const loud = sine(440, 0.5, 44100, 0.5)
-    const faint = sine(440, 0.5, 44100, 0.5e-3)
-    const audio = new Float32Array(loud.length + faint.length)
-    audio.set(loud)
-    audio.set(faint, loud.length)
-    const silent: boolean[] = []
-    fx.push(audio, (f) => silent.push(f.silent))
-    expect(silent.slice(10, 50).every((s) => !s)).toBe(true)
-    // The faint tail is -60 dB under the peak and under the absolute floor: silent once the
-    // frame has left the loud part.
-    expect(silent.slice(57, 70).every((s) => s)).toBe(true)
-  })
-
-  it('onset strength peaks at an attack and settles while the note sounds', () => {
-    const fx = new FeatureExtractor(44100)
-    const onsets: number[] = []
-    fx.push(sine(440, 1.2, 44100, 0.5, 0.3), (f) => onsets.push(f.onset))
-    let peak = 0
-    for (let i = 1; i < onsets.length; i++) if (onsets[i]! > onsets[peak]!) peak = i
-    expect((peak + 1) / 100).toBeGreaterThan(0.28)
-    expect((peak + 1) / 100).toBeLessThan(0.36)
-    expect(onsets[80]).toBeLessThan(onsets[peak]! * 0.05)
+  it('lets a new attack into the frame within a few hops', () => {
+    const fx = new SemitoneAnalyzer(44100)
+    const totals: number[] = []
+    fx.push(sine(440, 0.6, 44100, 0.5, 0.3), (_, total) => totals.push(total))
+    // Frame i ends at (i + 1) × 10 ms: nothing before the attack at 0.3 s, half the level 40 ms in.
+    expect(totals[28]).toBe(0)
+    expect(totals[33]!).toBeGreaterThan(0.125)
+    expect(totals[45]).toBeCloseTo(0.25, 2)
   })
 })

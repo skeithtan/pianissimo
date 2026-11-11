@@ -283,19 +283,24 @@ engine records nothing while the mode is on (a reading pass it replaced ends unr
 `#play` goes and the engine seeks to the follower's group, so reading continues there. Tests:
 `PracticeSession.play.test.ts`.
 
-### Through the microphone (DECISIONS P15)
+### Through the microphone (DECISIONS P15, P16)
 
 With `settings.mic.follow` on and `deps.createMicFollower` present, play-through with both hands
 also follows the microphone: `#startPlay` opens it (`#startMic`, the browser may ask; a refusal
-leaves play-through on but not playing, the reason in `ui.micStatus`) before `#playFrom`;
-estimates arrive in `#onMicEstimate`, which maps those with confidence ≥ 0.5 to
-`groupReached(timeline, position)` and calls `follower.audioReached(g, now)` for the current
-group or later, so `#processPlay` releases the gates up to it. `#playFrom` resets and resumes
-the estimate at the current group, `#pausePlay` pauses it, `#seekPlay` resets it, a speed change
-calls `setMultiplier`, `#disposePlay` closes it (`#disposeMic`). The microphone stands in for a
-piano input: `#syncHeldHands` keeps the hands available without one, and `startPlan` gets
-`hasInput` / `mic` to block reading, scored practice and one-hand play-through with a reason.
-Tests: `PracticeSession.mic.test.ts`.
+leaves play-through on but not playing, the reason in `ui.micStatus`) before `#playFrom`. The
+follower reports each time it hears the player at a new onset group; `#onMicEstimate` maps a
+report with confidence ≥ 0.5 to `groupReached(timeline, position)` and calls
+`follower.audioReached(g, now)` for the current group or later, so `#processPlay` releases the
+gates up to it (a report behind the cursor, the player repeating a bar, changes nothing).
+`#playFrom` resets it to the current group and resumes it (it listens afresh), `#pausePlay`
+pauses it, `#seekPlay` resets it, `#disposePlay` closes it (`#disposeMic`). A speed change is
+not passed on: the follower follows the order of the notes, not time. `#playMetronome` keeps
+the metronome silent while the microphone follows (the clicks would come out beside it). A
+microphone that stops by itself (`onLost`: unplugged, a failing worker) pauses play-through
+with the reason in `ui.micStatus` (`#onMicLost`); the next Start opens it again. The microphone
+stands in for a piano input: `#syncHeldHands` keeps the hands available without one, and
+`startPlan` gets `hasInput` / `mic` to block reading, scored practice and one-hand play-through
+with a reason. Tests: `PracticeSession.mic.test.ts`.
 
 ## Tests
 

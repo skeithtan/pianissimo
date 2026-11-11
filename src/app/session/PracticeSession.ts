@@ -1119,7 +1119,11 @@ export class PracticeSession {
     const create = this.#deps.createMicFollower
     if (!create) return false
     if (this.#mic) return true
-    const mic = create(this.#model, this.#tempo, this.#sel.multiplier, (e) => this.#onMicEstimate(mic, e))
+    const mic = create(
+      this.#model,
+      (e) => this.#onMicEstimate(mic, e),
+      (reason) => this.#onMicLost(mic, reason),
+    )
     this.#mic = mic
     this.#setMicStatus(MIC_STARTING)
     try {
@@ -1154,6 +1158,20 @@ export class PracticeSession {
     if (g < i) return
     p.follower.audioReached(g, this.#deps.clock())
     this.#processPlay()
+  }
+
+  /**
+   * The microphone stopped by itself (unplugged, taken by the system): play-through pauses with
+   * the reason in the status line, and the next Start opens the microphone again.
+   */
+  #onMicLost(mic: MicFollowerLike, reason: string): void {
+    if (this.#disposed || mic !== this.#mic) return
+    const now = this.#deps.clock()
+    this.#pausePlay(now)
+    this.#mic = null
+    mic.dispose()
+    this.#setMicStatus(reason)
+    this.#process(now)
   }
 
   #setMicStatus(status: string | null): void {
@@ -1200,7 +1218,7 @@ export class PracticeSession {
       metronome: {
         sink: this.#metronomeSink,
         clicks: buildClickTrack(this.#model, range),
-        enabled: this.#settings.metronome.enabled,
+        enabled: this.#playMetronome(),
       },
       // Re-entrant inside `releaseGate` when an early release fast-forwards (tolerated).
       onGateReached: (gate) => {
@@ -1284,7 +1302,7 @@ export class PracticeSession {
       this.#engine.reconfigure({ reason, timeline: this.#timeline, transport: 'accompaniment' }, now)
       p.transport.setMultiplier(next.multiplier)
       p.follower.reconfigure(this.#timeline, now)
-      this.#mic?.setMultiplier(next.multiplier)
+      // The microphone follower knows no speed: it follows the order of the notes (P16).
       this.#processPlay()
       this.#process(now)
       return true
@@ -1994,6 +2012,7 @@ export class PracticeSession {
       else if (this.#play?.playing && this.#micActive()) {
         void this.#startMic(this.#play.follower.state.position ?? ZERO)
       }
+      this.#play?.transport.setMetronomeEnabled(this.#playMetronome())
     }
     // Volumes apply live to sound already loaded (Settings over Practice).
     if (prev.sound.browserVolume !== next.sound.browserVolume) this.#browser?.setVolume(next.sound.browserVolume)
@@ -2002,7 +2021,7 @@ export class PracticeSession {
       if (next.metronome.enabled) void this.#ensureMetronome()
       this.#accomp?.setMetronomeEnabled(next.metronome.enabled)
       this.#listen?.transport.setMetronomeEnabled(next.metronome.enabled)
-      this.#play?.transport.setMetronomeEnabled(next.metronome.enabled)
+      this.#play?.transport.setMetronomeEnabled(this.#playMetronome())
     }
     this.#process(now)
   }
@@ -3145,6 +3164,14 @@ export class PracticeSession {
   /** The microphone follows this play-through: both hands only (it must never hear app playback). */
   #micActive(): boolean {
     return this.#micFollow() && this.#sel.hands === 'both'
+  }
+
+  /**
+   * The metronome clicks in play-through unless the microphone follows: the clicks come out of
+   * this device right beside its microphone, louder there than the piano (DECISIONS P16).
+   */
+  #playMetronome(): boolean {
+    return this.#settings.metronome.enabled && !this.#micActive()
   }
 
   #isPlaying(): boolean {

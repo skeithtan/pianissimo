@@ -6,9 +6,11 @@ import { describe, expect, it } from 'vitest'
 import { buildScore } from '../../core/engine/testkit'
 import type { ScoreModel } from '../../core/model/score'
 import { type Rational, ZERO, rat } from '../../core/music/rational'
-import type { TempoMapData } from '../../core/music/tempo'
 import { harness, testSettings, type Harness } from './testkit'
-import type { MicEstimate, MicFollowerLike } from './types'
+import type { MetronomeModule } from '../../core/playback'
+import { FakeAudioContext } from '../../core/playback/fakeWebAudio'
+import { resetSharedAudioContext, sharedAudioContext } from '../../core/playback/webaudio/context'
+import type { MicEstimate, MicFollowerLike, SessionDeps } from './types'
 
 // Quarter = 60: one quarter (a quarter of a whole note) per second; group k at k/4.
 const melody = buildScore({
@@ -22,8 +24,8 @@ class FakeMic implements MicFollowerLike {
   disposed = false
   fail: Error | null = null
   constructor(
-    readonly multiplier: number,
     readonly onEstimate: (e: MicEstimate) => void,
+    readonly onLost: (reason: string) => void,
   ) {}
   async start(position: Rational): Promise<void> {
     this.calls.push('start')
@@ -38,9 +40,6 @@ class FakeMic implements MicFollowerLike {
   }
   resume(): void {
     this.calls.push('resume')
-  }
-  setMultiplier(multiplier: number): void {
-    this.calls.push(`speed ${multiplier}`)
   }
   dispose(): void {
     this.disposed = true
@@ -59,8 +58,8 @@ function micHarness(model: ScoreModel = melody, opts: { follow?: boolean; fail?:
     {
       settings: testSettings({ mic: { follow: opts.follow ?? true } }),
       deps: {
-        createMicFollower: (_model: ScoreModel, _tempo: TempoMapData, multiplier: number, onEstimate) => {
-          const mic = new FakeMic(multiplier, onEstimate)
+        createMicFollower: (_model: ScoreModel, onEstimate, onLost) => {
+          const mic = new FakeMic(onEstimate, onLost)
           if (opts.fail) mic.fail = opts.fail
           mics.push(mic)
           return mic
@@ -154,11 +153,20 @@ describe('Play-through through the microphone', () => {
     expect(h.session.ui.get().playing).toBe(true)
   })
 
-  it('speed changes rebuild the reference; hands other than both close the microphone', async () => {
+  it('a speed change leaves the follower alone; hands other than both close the microphone', async () => {
     const { h, mics, mic } = micHarness()
     await playThrough(h)
+    mic().hear(0.26)
+    h.frames.flush()
+    const calls = mic().calls.length
     h.session.setSelection({ hands: 'both', multiplier: 0.8 })
-    expect(mic().calls.at(-1)).toBe('speed 0.8')
+    // The follower follows the order of the notes, at any speed: nothing to tell it, and it
+    // goes on from where the player is.
+    expect(mic().calls.length).toBe(calls)
+    expect(h.session.ui.get().playing).toBe(true)
+    mic().hear(0.51)
+    h.frames.flush()
+    expect(h.strip.targets).toEqual([3])
     h.session.setSelection({ hands: 'right', multiplier: 0.8 })
     await h.session.start()
     expect(mics[0]!.disposed).toBe(true)
@@ -238,6 +246,78 @@ describe('Play-through through the microphone', () => {
     await playThrough(h)
     h.midi.route({ kind: 'input-disconnected', port: { id: 'in-1', name: 'Piano' } as never })
     expect(h.session.ui.get().playing).toBe(true)
+  })
+
+  it('a microphone that stops by itself pauses play-through with the reason; Start opens it again', async () => {
+    const { h, mics, mic } = micHarness()
+    await playThrough(h)
+    mic().hear(0.26)
+    h.frames.flush()
+    mic().onLost('The microphone stopped. Press Start to listen again.')
+    expect(mic().disposed).toBe(true)
+    let ui = h.session.ui.get()
+    expect(ui.playing).toBe(false)
+    expect(ui.playThrough).toBe(true)
+    expect(ui.micStatus).toBe('The microphone stopped. Press Start to listen again.')
+    // A late word from the closed microphone changes nothing.
+    mics[0]!.hear(0.8)
+    mics[0]!.onLost('again')
+    h.frames.flush()
+    expect(h.strip.targets).toEqual([2])
+    expect(h.session.ui.get().micStatus).toBe('The microphone stopped. Press Start to listen again.')
+    await h.session.start()
+    h.frames.flush()
+    expect(mics.length).toBe(2)
+    expect(mic().started).toEqual(rat(1, 2))
+    ui = h.session.ui.get()
+    expect(ui.playing).toBe(true)
+    expect(ui.micStatus).toBe('Following through the microphone.')
+  })
+
+  it('the metronome is silent while the microphone follows', async () => {
+    const clicks: number[] = []
+    const mics: FakeMic[] = []
+    const settings = (follow: boolean) => {
+      const s = testSettings({ mic: { follow } })
+      return { ...s, metronome: { ...s.metronome, enabled: true } }
+    }
+    class WebAudioMetronome {
+      click(time: number): void {
+        clicks.push(time)
+      }
+      cancel(): void {}
+      setVolume(): void {}
+      dispose(): void {}
+    }
+    const deps: Partial<SessionDeps> = {
+      createMicFollower: (_model, onEstimate, onLost) => {
+        const mic = new FakeMic(onEstimate, onLost)
+        mics.push(mic)
+        return mic
+      },
+      loadMetronome: async () => ({ WebAudioMetronome }) as unknown as MetronomeModule,
+    }
+    resetSharedAudioContext()
+    sharedAudioContext(() => new FakeAudioContext() as unknown as AudioContext)
+    try {
+      const h = harness(melody, {}, { settings: settings(true), deps })
+      await playThrough(h)
+      // The clicks would come out of the device beside its own microphone.
+      for (let k = 0; k < 4; k++) {
+        mics[0]!.hear(k / 4 + 0.001)
+        h.step(1000)
+      }
+      expect(clicks).toEqual([])
+      // With the setting off the same play-through clicks.
+      h.session.updateSettings(settings(false))
+      h.tap(67)
+      h.step(1000)
+      h.tap(69)
+      h.step(1000)
+      expect(clicks.length).toBeGreaterThan(0)
+    } finally {
+      resetSharedAudioContext()
+    }
   })
 
   it('MIDI presses still work alongside the microphone', async () => {

@@ -114,24 +114,31 @@ but must not release gates in strict.
 
 ### core/audio (worker-safe)
 The audio score follower behind play-through on an acoustic piano (DECISIONS P14 spike, P15
-wiring). `features.ts` turns mono samples into one feature vector per 10 ms (log-spectral energy
-per piano semitone plus a per-semitone onset rise; in-repo radix-2 FFT), `reference.ts` builds the
-expected sequence from a `ScoreModel` and tempo map with harmonic templates (no synthesis),
-`oltw.ts` aligns live frames to it by windowed online time warping, and `index.ts` exposes
-`createAudioFollower(model, tempo, multiplier)` (`push(samples, sampleRate, time)` → position in
-whole notes and a confidence; `reset(position)`). `groups.ts` (`groupReached(timeline, position)`)
-is the only part the session bundles. `protocol.ts` + `workerHandler.ts` are the worker side
-(`workers/follower.worker.ts` binds them): configure / reset / pause / resume / samples in,
-estimates out every 20 ms of audio. `evaluate.ts` and `testkit.ts` are test support. Pure: no
-DOM, no Web Audio.
+wiring, P16 redesign). It follows attacks, not time: the position moves only when something is
+struck that fits an onset group near it, so a player who stops is waited for and no tempo is
+involved. `features.ts` (`SemitoneAnalyzer`) turns mono samples into the energy of each piano
+semitone every 10 ms (4096-sample frames under a skewed window; in-repo radix-2 FFT);
+`templates.ts` lists the score's onset groups (`attackGroups`, the practice timeline's groups
+for both hands) and the semitone energies each adds when struck (`attackTemplates`);
+`matcher.ts` (`OnsetMatcher`) opens an event when semitones rise over their baselines, scores it
+against the groups near the position (cosine of the observed rise with each group's expected
+rise over the sound already there) and keeps a Viterbi score per position, so skipped notes,
+chords arriving in parts, a jump of a few bars and getting lost are one mechanism; `index.ts`
+exposes `createAudioFollower(model)` (`push(samples, sampleRate, time)` → the group heard last,
+its position in whole notes and a confidence; `reset(position)`; `listen()`).
+`groups.ts` (`groupReached(timeline, position)`) is the only part the session bundles.
+`protocol.ts` + `workerHandler.ts` are the worker side (`workers/follower.worker.ts` binds
+them): configure / reset / pause / resume / samples in, an estimate out each time the group
+heard last changes. `evaluate.ts` and `testkit.ts` are test support. Pure: no DOM, no Web Audio.
 
 ### app/audio
 `micFollower.ts` is the browser side of the microphone follower (P15): `getUserMedia` (no echo
-cancellation, noise suppression or gain control) → an `AudioContext` with the AudioWorklet
-`public/mic-processor.js` (512-sample blocks posted to the main thread) → the follower worker;
-estimates reach the session's `#onMicEstimate`. `SessionDeps.createMicFollower` injects it
-(tests use a fake); the session owns its lifetime (opened on Start in play-through with both
-hands, closed when play-through ends or the hands change).
+cancellation, noise suppression or gain control; one channel) → an `AudioContext` with the
+AudioWorklet `public/mic-processor.js` (512-sample blocks posted to the main thread) → the
+follower worker; estimates reach the session's `#onMicEstimate`, a capture that ends by itself
+or a failing worker reaches `#onMicLost`. `SessionDeps.createMicFollower` injects it (tests use
+a fake); the session owns its lifetime (opened on Start in play-through with both hands, closed
+when play-through ends or the hands change).
 
 ### core/naming
 `labelFor(note, naming)` → `{name, accidental, octave, text}` from the resolved sounding pitch

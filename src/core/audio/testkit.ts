@@ -1,10 +1,14 @@
 /**
- * Test helpers for the audio follower: a deterministic additive piano-like synthesizer and
- * performance perturbations (tempo factor, timing jitter, wrong and missing notes). Pure (no
- * Node APIs). The synthesizer deliberately differs from the reference templates (partial
+ * Test helpers for the audio follower: a deterministic additive piano-like synthesizer. Pure (no
+ * Node APIs). The synthesizer deliberately differs from the follower's templates (partial
  * amplitudes, inharmonicity, per-partial decay, velocity), so tests do not match a copy.
  */
-import { decaySec } from './reference'
+import { PIANO_LOW } from './features'
+
+/** Decay time constant of a sounding piano string by pitch (rough: long in the bass, short in the treble). */
+export function decaySec(midi: number): number {
+  return 3 * 2 ** (-(midi - PIANO_LOW) / 24)
+}
 
 export interface PlayedNote {
   readonly midi: number

@@ -8,7 +8,6 @@ import type { MidiOutputLike } from '../../core/midi/webmidi'
 import type { AbandonEvent, AttemptRecord, InterruptReason, PassageRange } from '../../core/model/practice'
 import type { HandSelection, ScoreModel } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
-import type { TempoMapData } from '../../core/music/tempo'
 import type { AppSettings } from '../../core/model/settings'
 import type { Phase } from '../../core/engine'
 import type { BrowserAudioModule, MetronomeModule, OutputBackend, TimerApi } from '../../core/playback'
@@ -156,22 +155,25 @@ export interface MicEstimate {
 export interface MicFollowerLike {
   /** Opens the microphone (the browser may ask) and follows from `position`; rejects with a reason. */
   start(position: Rational): Promise<void>
-  /** Follow again from `position` (a seek, a resume). */
+  /** Expect the first group at or after `position` next (a seek, a resume). */
   reset(position: Rational): void
   /** Estimates stop until `resume` (the microphone stays open). */
   pause(): void
+  /** Listen again: what sounded during the pause is forgotten. */
   resume(): void
-  /** The reference is rebuilt at the new speed, at the current position. */
-  setMultiplier(multiplier: number): void
   /** Closes the microphone. */
   dispose(): void
 }
 
+/**
+ * `onEstimate`: the player was heard at a new place. `onLost`: the microphone stopped by itself
+ * (unplugged, taken by the system) with a reason for the learner; the follower is of no more use.
+ * The follower needs no tempo and no speed: it follows the order of the notes only (DECISIONS P16).
+ */
 export type CreateMicFollower = (
   model: ScoreModel,
-  tempo: TempoMapData,
-  multiplier: number,
   onEstimate: (estimate: MicEstimate) => void,
+  onLost: (reason: string) => void,
 ) => MicFollowerLike
 
 /** What the session needs from `MidiOutputBackend` beyond `OutputBackend`. */

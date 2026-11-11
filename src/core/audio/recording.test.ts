@@ -127,15 +127,14 @@ describe.skipIf(!present)('the reference piece recording (private)', () => {
     const wav = readWav(new Uint8Array(readFileSync(WAV)))
     const onsets = readOnsets(readFileSync(ONSETS, 'utf8'))
     expect(onsets.length).toBeGreaterThan(0)
-    const ev = evaluateAudio(model, model.tempo, 1, wav.samples, wav.sampleRate, onsets, [], {
-      clock: () => performance.now(),
-    })
+    const ev = evaluateAudio(model, wav.samples, wav.sampleRate, onsets, [], { clock: () => performance.now() })
     const table = onsets.map(
       (o, i) => `${o.position.toFixed(3)}\t${o.time.toFixed(2)}\t${(ev.errors[i]! * 1000).toFixed(0)}`,
     )
     console.info(
       [
         `within 100 ms ${(ev.within100 * 100).toFixed(0)} %, within 150 ms ${(ev.within150 * 100).toFixed(0)} %,`,
+        `ahead of the player ${(ev.ahead * 100).toFixed(0)} %,`,
         `median ${ev.medianAbsMs.toFixed(0)} ms, ${ev.msPerFrame.toFixed(3)} ms per frame`,
         'position\ttime\terror ms',
         ...table,
