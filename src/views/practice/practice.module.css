@@ -500,20 +500,12 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-2);
-  transition:
-    transform var(--dur-slow) var(--ease-standard),
-    opacity var(--dur-base) var(--ease-standard);
+  transition: opacity var(--dur-base) var(--ease-standard);
 }
+/* One row in both orientations (U88): while playing the tools dim where they are. */
 .screen[data-recede='true'] .footerSide {
   opacity: var(--practice-recede);
   pointer-events: none;
-}
-/* Only portrait reclaims score space by moving footer tools out of the way. */
-@media (orientation: portrait) {
-  .screen[data-recede='true'] .footerSide {
-    transform: translateY(calc(100% + var(--space-2) + var(--safe-b)));
-    opacity: 0;
-  }
 }
 .footerEnd {
   grid-column: 3;
@@ -529,7 +521,9 @@
 }
 .startReason {
   margin: 0;
-  max-width: 420px;
+  /* The center column is as wide as its content. Each side column needs about 170 px for Speed
+     (plus the gap and the padding: 404 px for both), or the hands would sit off center. */
+  max-width: min(420px, calc(100vw - 404px));
   text-align: center;
   font-size: var(--text-xs);
   color: var(--fg-muted);
@@ -623,9 +617,10 @@
 }
 
 /* ── Portrait / narrow ──────────────────────────────────────────────────── */
-/* The tools wrap into centered rows above the hand cluster, which stays at the very bottom
-   (nearest the hands). */
-@media (max-width: 940px) {
+/* A window too narrow for one row (narrower than any tablet held upright: Speed, the hand
+   cluster and Speed's mirror need 620 px) wraps the tools into a centered row above the hand
+   cluster, which stays at the very bottom (nearest the hands). */
+@media (max-width: 640px) {
   .footer {
     display: flex;
     flex-direction: column;
@@ -661,8 +656,12 @@
   .footerCenter {
     flex: none;
   }
+  .startReason {
+    max-width: min(420px, 100%);
+  }
 }
-@media (max-width: 940px) and (orientation: portrait) {
+/* Only there, and only in portrait, the tools' own row collapses to give the page its height. */
+@media (max-width: 640px) and (orientation: portrait) {
   .screen[data-recede='true'] .footerToolsSlot {
     grid-template-rows: 0fr;
   }
@@ -674,7 +673,6 @@
     opacity: 0;
   }
   .screen[data-recede='true'] .footerSide {
-    transform: none;
     opacity: 1;
   }
 }
@@ -859,7 +857,6 @@
     animation: none;
   }
   .screen[data-recede='true'] .header,
-  .screen[data-recede='true'] .footerSide,
   .screen[data-recede='true'] .footerTools {
     transform: none;
   }

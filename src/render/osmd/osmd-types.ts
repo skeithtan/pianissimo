@@ -90,6 +90,8 @@ export interface OsmdEngravingRules {
   VoiceSpacingAddendVexflow: number
   SheetMaximumWidth: number
   RenderMultipleRestMeasures?: boolean
+  /** Empties `NoteToGraphicalNoteMap` (every graphical note of the last engraving). */
+  clearMusicSheetObjects?(): void
   [key: string]: unknown
 }
 
@@ -102,6 +104,16 @@ export interface OsmdInstance {
   readonly Version?: string
 }
 
+/**
+ * Statics every OSMD calculator sets in its constructor to objects holding that instance's
+ * `EngravingRules`; they stay set after the instance is discarded.
+ */
+export interface OsmdCalculatorStatics {
+  TextMeasurer?: unknown
+  stafflineNoteCalculator?: unknown
+}
+
 export interface OsmdModule {
   readonly OpenSheetMusicDisplay: new (host: HTMLElement, options: Record<string, unknown>) => OsmdInstance
+  readonly MusicSheetCalculator?: OsmdCalculatorStatics
 }

@@ -114,8 +114,16 @@ export interface SoundSettings {
   readonly monitorInput: boolean
 }
 
+/**
+ * The Web Audio click (DECISIONS P20). The Keep time count-in always clicks, whatever both
+ * switches say.
+ */
 export interface MetronomeSettings {
+  /** The click in Listen, ordinary reading, scored practice and Play through (default off). */
   readonly enabled: boolean
+  /** The click during a Keep time attempt, after its count-in (default on). */
+  readonly keepTime: boolean
+  /** 0..1 click volume. */
   readonly volume: number
 }
 
@@ -218,7 +226,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     connection: 'unknown',
   },
   sound: { destination: 'auto', browserVolume: 0.8, monitorInput: false },
-  metronome: { enabled: false, volume: 0.6 },
+  metronome: { enabled: false, keepTime: true, volume: 0.6 },
   rhythm: { toleranceMs: 150 },
   mic: { follow: false },
   view: { zoom: 1, pageZoom: 1, theme: 'system', scorePaper: 'theme' },

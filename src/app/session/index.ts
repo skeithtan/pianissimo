@@ -5,6 +5,7 @@ export { PracticeSession, REVEAL_FALLBACK_S, occAt, type SessionOptions } from '
 export { LADDER_DEFAULT_TARGET, LADDER_DROP_AFTER, LADDER_STEP } from './ladder'
 export { PersistentLabels, labelSnapshot, mergeOpacity } from './labels'
 export { accompanimentAllowed, hasSoundOutput } from './output'
+export { metronomeOn, metronomePatch, metronomeScope, type MetronomeScope } from './metronome'
 export { createPieceSaver, type PieceSaver } from './persistence'
 export { practiceModel, practiceTempoMissing } from './model'
 export {

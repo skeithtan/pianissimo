@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act } from 'preact/test-utils'
 import { connectionOpen, currentView, practiceRequest, resultsRequest, settingsOpen } from '../../app/navigation'
-import { connectionStatus, notices, resetAppStateForTests, settings } from '../../app/state'
+import { connectionStatus, notices, resetAppStateForTests, settings, updateSettings } from '../../app/state'
 import { FakeMidi, FakeStrip, ManualFrames } from '../../app/session/testkit'
 import { newPieceRecord } from '../../core/storage/records'
 import { openFresh } from '../../core/storage/testkit'
@@ -14,7 +14,7 @@ import { importFixture } from '../../../tests/unit/import/fixtures'
 import { $, $$, byLabel, byText, click, mount, press, type Mounted } from '../shared/testing'
 import type { PracticeEnv, PracticeStripOptions, StripHandle } from './env'
 import type { RespaceSnapshot } from '../../render'
-import { PREPARE_AHEAD_MS, REPEAT_PANEL_FADE_MS } from './PracticeScreen'
+import { PREPARE_AHEAD_MS, prepareAheadDelay, REPEAT_PANEL_FADE_MS } from './PracticeScreen'
 import { PHONE_LANDSCAPE_QUERY, PHONE_QUERY } from '../shared/usePhone'
 import { PracticeViewWith } from './PracticeView'
 import { RECEDE_DELAY_MS, REVEAL_MS } from './recede'
@@ -365,6 +365,200 @@ describe('PracticeView', () => {
     act(() => r.clock.advance(PREPARE_AHEAD_MS * 2))
     await settle(r, 2)
     expect(r.rooms.filter((room) => room === 'hints')).toHaveLength(1)
+  })
+
+  describe('the run prepared ahead', () => {
+    /** Runs of the roomy layout wait until released and reject as canceled when their signal aborts. */
+    function gated(r: Rig): { env: PracticeEnv; runs: { signal?: AbortSignal; release: () => void }[] } {
+      const runs: { signal?: AbortSignal; release: () => void }[] = []
+      const env: PracticeEnv = {
+        ...r.env,
+        prepare: (...args) => {
+          const options = args[2]
+          if (options.labels.room !== 'all') return r.env.prepare(...args)
+          return new Promise<PreparedLayout>((resolve, reject) => {
+            const signal = options.signal
+            const release = () => void r.env.prepare(...args).then(resolve, reject)
+            runs.push({ ...(signal ? { signal } : {}), release })
+            signal?.addEventListener('abort', () => reject(new DOMException('canceled', 'AbortError')))
+          })
+        },
+      }
+      return { env, runs }
+    }
+
+    /** The idle period before the next run, after `canceled` runs were canceled. */
+    async function idle(r: Rig, canceled = 0): Promise<void> {
+      act(() => r.clock.advance(prepareAheadDelay(canceled)))
+      await settle(r, 2)
+    }
+
+    it('is canceled when playback starts, leaves no trace and starts again after the next idle period', async () => {
+      const r = await rig()
+      const g = gated(r)
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={g.env} />)
+      await settle(r)
+      await idle(r)
+      expect(g.runs).toHaveLength(1)
+      expect(g.runs[0]!.signal?.aborted).toBe(false)
+      click(byLabel(view.container, 'Start')!)
+      await settle(r, 2)
+      expect(g.runs[0]!.signal?.aborted).toBe(true)
+      expect(view.container.textContent).not.toContain('could not be drawn')
+      expect(r.strips).toHaveLength(1)
+      // Nothing starts while it plays.
+      act(() => r.clock.advance(PREPARE_AHEAD_MS * 2))
+      await settle(r, 2)
+      expect(g.runs).toHaveLength(1)
+      // After a pause and an idle period (twice as long after one cancellation) it starts again,
+      // and this time completes.
+      click(byLabel(view.container, 'Pause')!)
+      await settle(r, 2)
+      await idle(r)
+      expect(g.runs).toHaveLength(1)
+      await idle(r)
+      expect(g.runs).toHaveLength(2)
+      expect(g.runs[1]!.signal?.aborted).toBe(false)
+      g.runs[1]!.release()
+      await settle(r, 2)
+      expect(r.rooms).toEqual(['hints', 'all'])
+      // Done: nothing more is prepared ahead.
+      await idle(r)
+      await idle(r)
+      expect(g.runs).toHaveLength(2)
+      expect(r.strips).toHaveLength(1)
+    })
+
+    it('a label switch adopts the run: playback starting meanwhile does not cancel it', async () => {
+      const r = await rig()
+      const g = gated(r)
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={g.env} />)
+      await settle(r)
+      await idle(r)
+      expect(g.runs).toHaveLength(1)
+      pickLabels(view.container, 'All')
+      await settle(r, 2)
+      // Adopted, not engraved a second time.
+      expect(g.runs).toHaveLength(1)
+      click(byLabel(view.container, 'Start')!)
+      await settle(r, 2)
+      expect(g.runs[0]!.signal?.aborted).toBe(false)
+      g.runs[0]!.release()
+      await settle(r, 2)
+      expect(r.strips).toHaveLength(2)
+      expect(r.strips[0]!.destroyed).toBe(true)
+      expect(r.strips[1]!.respacedFrom).toEqual([r.strips[0]!.snapshot])
+      expect(byLabel(view.container, 'Pause')).not.toBeNull()
+      expect(view.container.textContent).not.toContain('could not be drawn')
+    })
+
+    it('is canceled when its parameters no longer apply', async () => {
+      const r = await rig()
+      const g = gated(r)
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={g.env} />)
+      await settle(r)
+      await idle(r)
+      expect(g.runs).toHaveLength(1)
+      // Octave numbers widen every label: the run was for another label width.
+      act(() => updateSettings({ naming: { showOctave: !settings.value.naming.showOctave } }))
+      await settle(r, 2)
+      expect(g.runs[0]!.signal?.aborted).toBe(true)
+      expect(view.container.textContent).not.toContain('could not be drawn')
+      expect(r.strips).toHaveLength(2)
+    })
+
+    it('is canceled when the screen unmounts', async () => {
+      const r = await rig()
+      const g = gated(r)
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={g.env} />)
+      await settle(r)
+      await idle(r)
+      expect(g.runs).toHaveLength(1)
+      view.unmount()
+      view = null
+      await settle(r, 2)
+      expect(g.runs[0]!.signal?.aborted).toBe(true)
+    })
+
+    it('is canceled in the same task as pointer or keyboard input, then starts again after an idle period', async () => {
+      const r = await rig()
+      const g = gated(r)
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={g.env} />)
+      await settle(r)
+      await idle(r)
+      expect(g.runs).toHaveLength(1)
+      // The learner reaches for a control: canceled before anything else runs.
+      $(view.container, 'footer')!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      expect(g.runs[0]!.signal?.aborted).toBe(true)
+      await settle(r, 2)
+      expect(view.container.textContent).not.toContain('could not be drawn')
+      // No playback and no further input: it starts again after the idle delay, now twice as long.
+      expect(prepareAheadDelay(1)).toBe(PREPARE_AHEAD_MS * 2)
+      act(() => r.clock.advance(prepareAheadDelay(1) - 1))
+      await settle(r, 2)
+      expect(g.runs).toHaveLength(1)
+      act(() => r.clock.advance(1))
+      await settle(r, 2)
+      expect(g.runs).toHaveLength(2)
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+      expect(g.runs[1]!.signal?.aborted).toBe(true)
+      // Continuous interaction keeps postponing it, and the second cancellation doubled the delay again.
+      expect(prepareAheadDelay(2)).toBe(PREPARE_AHEAD_MS * 4)
+      act(() => r.clock.advance(prepareAheadDelay(2) - 100))
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      act(() => r.clock.advance(prepareAheadDelay(2) - 1))
+      await settle(r, 2)
+      expect(g.runs).toHaveLength(2)
+      act(() => r.clock.advance(1))
+      await settle(r, 2)
+      expect(g.runs).toHaveLength(3)
+      g.runs[2]!.release()
+      await settle(r, 2)
+      expect(r.rooms).toEqual(['hints', 'all'])
+    })
+
+    it('is canceled in the same task as a key on the piano', async () => {
+      const r = await rig()
+      const g = gated(r)
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={g.env} />)
+      await settle(r)
+      await idle(r)
+      expect(g.runs).toHaveLength(1)
+      r.midi.on(60, r.clock.now)
+      expect(g.runs[0]!.signal?.aborted).toBe(true)
+      r.midi.off(60, r.clock.now)
+      await settle(r, 2)
+      expect(view.container.textContent).not.toContain('could not be drawn')
+    })
+
+    it('input on the menu and its Note names keeps the run, so the switch can adopt it', async () => {
+      const r = await rig()
+      const g = gated(r)
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={g.env} />)
+      await settle(r)
+      await idle(r)
+      const menuButton = byLabel($(view.container, 'footer')!, 'Menu')!
+      menuButton.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      click(menuButton)
+      const all = $$(byLabel(view.container, 'Practice menu')!, '[role="radio"]').find(
+        (el) => el.textContent === 'All',
+      )!
+      all.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      expect(g.runs[0]!.signal?.aborted).toBe(false)
+      click(all)
+      await settle(r, 2)
+      expect(g.runs).toHaveLength(1)
+      g.runs[0]!.release()
+      await settle(r, 2)
+      expect(r.strips).toHaveLength(2)
+    })
   })
 
   it('Labels Off swaps to the tight engraving at once; the names fade during the glide (R3 revised)', async () => {
@@ -749,6 +943,85 @@ describe('PracticeView', () => {
     expect(badge()).toBeNull()
   })
 
+  describe('the Metronome switch (U87, P20)', () => {
+    async function opened(env?: Partial<PracticeEnv>) {
+      const r = await rig()
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={{ ...r.env, ...env }} />)
+      await settle(r)
+      return r
+    }
+    const metronome = () => menuSwitch(view!.container, 'Metronome')
+
+    it('sits in the footer menu, off by default; on and off edit metronome.enabled and prime audio once', async () => {
+      let primed = 0
+      const r = await opened({ primeAudio: () => primed++ })
+      expect(metronome().checked).toBe(false)
+      expect(metronome().disabled).toBe(false)
+      click(metronome())
+      await settle(r, 1)
+      expect(settings.value.metronome.enabled).toBe(true)
+      expect(settings.value.metronome.keepTime).toBe(true)
+      expect(metronome().checked).toBe(true)
+      expect(primed).toBe(1)
+      click(metronome())
+      await settle(r, 1)
+      expect(settings.value.metronome.enabled).toBe(false)
+      expect(metronome().checked).toBe(false)
+      expect(primed).toBe(1)
+    })
+
+    it('with Keep time on it shows and edits the Keep time preference; the general one returns when it is off', async () => {
+      const r = await opened()
+      expect(metronome().checked).toBe(false)
+      click(menuSwitch(view!.container, 'Keep time'))
+      await settle(r, 1)
+      expect(metronome().checked).toBe(true)
+      click(metronome())
+      await settle(r, 1)
+      expect(settings.value.metronome).toMatchObject({ enabled: false, keepTime: false })
+      expect(metronome().checked).toBe(false)
+      click(metronome())
+      await settle(r, 1)
+      expect(settings.value.metronome).toMatchObject({ enabled: false, keepTime: true })
+      click(menuSwitch(view!.container, 'Keep time'))
+      await settle(r, 1)
+      expect(metronome().checked).toBe(false)
+      expect(settings.value.metronome.enabled).toBe(false)
+    })
+
+    it('is disabled when Web Audio is unavailable', async () => {
+      await opened({ hasWebAudio: () => false })
+      expect(metronome().disabled).toBe(true)
+    })
+
+    it('is in the phone menu sheet too', async () => {
+      const original = window.matchMedia
+      window.matchMedia = ((query: string) => ({
+        matches: query === PHONE_QUERY || query.includes('portrait'),
+        media: query,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      })) as unknown as typeof window.matchMedia
+      try {
+        let primed = 0
+        const r = await opened({ primeAudio: () => primed++ })
+        click(byLabel($(view!.container, '[data-testid="practice-bar"]')!, 'Menu'))
+        await settle(r, 1)
+        const menu = document.querySelector<HTMLDialogElement>('dialog[open]')!
+        const row = $$(menu, 'label').find((el) => el.textContent?.trim() === 'Metronome')!
+        const input = row.querySelector<HTMLInputElement>('input[role="switch"]')!
+        expect(input.checked).toBe(false)
+        click(input)
+        await settle(r, 1)
+        expect(settings.value.metronome.enabled).toBe(true)
+        expect(primed).toBe(1)
+      } finally {
+        window.matchMedia = original
+      }
+    })
+  })
+
   it('the Play through switch is disabled without a connected piano (P12, U27)', async () => {
     connectionStatus.value = { state: 'disconnected' }
     const r = await rig()
@@ -775,7 +1048,7 @@ describe('PracticeView', () => {
       return r
     }
 
-    it('opens a popover dialog with Note names, Play through, Keep time and Show keys; aria-expanded follows', async () => {
+    it('opens a popover dialog with Note names, Play through, Keep time, Metronome and Show keys; aria-expanded follows', async () => {
       await opened()
       const button = menuButton()
       expect(button.getAttribute('aria-haspopup')).toBe('dialog')
@@ -788,12 +1061,12 @@ describe('PracticeView', () => {
       expect(dialog.getAttribute('aria-modal')).toBeNull()
       expect(
         [...dialog.children].map(
-          (row) => row.textContent?.trim().match(/^(Note names|Play through|Keep time|Show keys)/)?.[0],
+          (row) => row.textContent?.trim().match(/^(Note names|Play through|Keep time|Metronome|Show keys)/)?.[0],
         ),
-      ).toEqual(['Note names', 'Play through', 'Keep time', 'Show keys'])
+      ).toEqual(['Note names', 'Play through', 'Keep time', 'Metronome', 'Show keys'])
       expect(byLabel(dialog, 'Faster by 5 percent')).toBeNull()
       expect(byLabel(dialog, 'Note names on the score')).not.toBeNull()
-      expect(dialog.querySelectorAll('input[role="switch"]')).toHaveLength(3)
+      expect(dialog.querySelectorAll('input[role="switch"]')).toHaveLength(4)
       expect(dialog.contains(document.activeElement)).toBe(true)
       // The Menu button again closes it.
       click(button)
@@ -1113,11 +1386,11 @@ describe('PracticeView', () => {
       expect(menu.textContent).toContain('Speed')
       expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
       const switches = $$(menu, 'input[role="switch"]').map((el) => el.closest('label')?.textContent?.trim())
-      expect(switches).toEqual(['Play through', 'Keep time', 'Show keys'])
+      expect(switches).toEqual(['Play through', 'Keep time', 'Metronome', 'Show keys'])
       expect(menu.textContent).toContain('Connected · Test piano')
       expect(byLabel(menu, 'Settings')).not.toBeNull()
       // Show keys opens the guide slot from the sheet.
-      const keys = $$(menu, 'input[role="switch"]')[2]!
+      const keys = $$(menu, 'input[role="switch"]')[3]!
       click(keys)
       await settle(r, 1)
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('true')
@@ -1142,7 +1415,7 @@ describe('PracticeView', () => {
       await settle(r, 1)
       const menu = dialog()!
       const switches = $$(menu, 'input[role="switch"]').map((el) => el.closest('label')?.textContent?.trim())
-      expect(switches).toEqual(['Play through', 'Keep time'])
+      expect(switches).toEqual(['Play through', 'Keep time', 'Metronome'])
       expect(menu.textContent).toContain('Connected · Test piano')
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('false')
     })

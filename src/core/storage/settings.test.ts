@@ -57,7 +57,7 @@ const custom: AppSettings = {
     connection: 'bluetooth',
   },
   sound: { destination: 'browser', browserVolume: 0.25, monitorInput: true },
-  metronome: { enabled: true, volume: 0.1 },
+  metronome: { enabled: true, keepTime: false, volume: 0.1 },
   rhythm: { toleranceMs: 250 },
   mic: { follow: true },
   view: { zoom: 1.75, pageZoom: 1.25, theme: 'dark', scorePaper: 'light' },
@@ -96,6 +96,17 @@ describe('normalizeSettings', () => {
     const loaded = normalizeSettings({ naming: { system: 'fixed-do' }, hints: { fadeMs: 500 } })
     expect(loaded.naming).toEqual({ ...DEFAULT_SETTINGS.naming, system: 'fixed-do' })
     expect(loaded.hints).toEqual({ ...DEFAULT_SETTINGS.hints, fadeMs: 500 })
+  })
+
+  it('reads the Keep time click additively (DECISIONS P20): absent (older settings) means on, a stored false is kept', () => {
+    expect(DEFAULT_SETTINGS.metronome).toEqual({ enabled: false, keepTime: true, volume: 0.6 })
+    expect(normalizeSettings({ metronome: { enabled: true, volume: 0.3 } }).metronome).toEqual({
+      enabled: true,
+      keepTime: true,
+      volume: 0.3,
+    })
+    expect(normalizeSettings({ metronome: { keepTime: false } }).metronome.keepTime).toBe(false)
+    expect(normalizeSettings({ metronome: { keepTime: 'no' } }).metronome.keepTime).toBe(true)
   })
 
   it('reads the page zoom additively: absent (older settings) means 1, out of range falls back', () => {

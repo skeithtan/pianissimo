@@ -290,12 +290,29 @@ describe('Sound', () => {
     const panel = openTab(open(), 'Sound')
     expect(toggle(panel, 'Metronome click').checked).toBe(false)
     const volume = $$(panel, 'input[type="range"]')[2] as HTMLInputElement
-    expect(volume.disabled).toBe(true)
+    // Keep time's click is on by default, so the volume still applies.
+    expect(volume.disabled).toBe(false)
     click(toggle(panel, 'Metronome click'))
     expect(settings.value.metronome.enabled).toBe(true)
     expect(volume.disabled).toBe(false)
     type(volume, '0.3')
     expect(settings.value.metronome.volume).toBe(0.3)
+  })
+
+  it('has its own Keep time click switch (on by default); the volume is disabled only when both are off (P20)', () => {
+    const panel = openTab(open(), 'Sound')
+    const volume = $$(panel, 'input[type="range"]')[2] as HTMLInputElement
+    expect(toggle(panel, 'Click in Keep time').checked).toBe(true)
+    click(toggle(panel, 'Click in Keep time'))
+    expect(settings.value.metronome.keepTime).toBe(false)
+    expect(settings.value.metronome.enabled).toBe(false)
+    expect(volume.disabled).toBe(true)
+    click(toggle(panel, 'Metronome click'))
+    expect(volume.disabled).toBe(false)
+    click(toggle(panel, 'Click in Keep time'))
+    expect(settings.value.metronome).toMatchObject({ enabled: true, keepTime: true })
+    click(toggle(panel, 'Metronome click'))
+    expect(volume.disabled).toBe(false)
   })
 
   it('keeps monitoring through browser sound off by default', () => {

@@ -50,6 +50,8 @@ const UI: SessionUi = {
   micStatus: null,
   rhythm: false,
   countIn: null,
+  metronomeScope: 'general',
+  metronomeMuted: false,
   finished: false,
 }
 

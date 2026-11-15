@@ -274,6 +274,28 @@ describe('Play-through through the microphone', () => {
     expect(ui.micStatus).toBe('Following through the microphone.')
   })
 
+  it('ui.metronomeMuted: only in play-through with the microphone following (DECISIONS P16, P20)', async () => {
+    const { h } = micHarness()
+    expect(h.session.ui.get()).toMatchObject({ playThrough: false, metronomeMuted: false, metronomeScope: 'general' })
+    h.session.setPlayThrough(true)
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ playThrough: true, metronomeMuted: true, metronomeScope: 'general' })
+    // One hand: the microphone does not follow (it would hear the automatic part).
+    h.session.setSelection({ hands: 'right' })
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ playThrough: true, metronomeMuted: false })
+    h.session.setSelection({ hands: 'both' })
+    h.frames.flush()
+    expect(h.session.ui.get().metronomeMuted).toBe(true)
+    h.session.updateSettings(testSettings({ mic: { follow: false } }))
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ playThrough: true, metronomeMuted: false })
+    h.session.updateSettings(testSettings({ mic: { follow: true } }))
+    h.session.setPlayThrough(false)
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ playThrough: false, metronomeMuted: false })
+  })
+
   it('the metronome is silent while the microphone follows', async () => {
     const clicks: number[] = []
     const mics: FakeMic[] = []

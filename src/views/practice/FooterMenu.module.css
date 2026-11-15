@@ -58,6 +58,11 @@
   white-space: nowrap;
 }
 
+/* A row's description (the Metronome row's note) stays a quiet, regular-weight second line. */
+.toggle small {
+  font-weight: 400;
+}
+
 .menuButton {
   position: relative;
 }

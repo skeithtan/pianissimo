@@ -30,6 +30,8 @@ import {
 import {
   PracticeSession,
   createPieceSaver,
+  metronomeOn,
+  metronomePatch,
   practiceModel,
   type PieceSaver,
   type SessionSettings,
@@ -65,7 +67,7 @@ import { GuidePanel, OverviewBar, StageCue } from './live'
 import { Banners } from './Banners'
 import { CountIn } from './CountIn'
 import { Footer, HANDS_UNAVAILABLE, HANDS_UNAVAILABLE_NOTICE } from './Footer'
-import { PracticeMenuItems } from './FooterMenu'
+import { KEEPS_AHEAD, PracticeMenuItems, type MetronomeRow } from './FooterMenu'
 import { RepeatPanel } from './RepeatPanel'
 import { ScoreSkeleton } from './ScoreSkeleton'
 import { TempoSheet } from './TempoSheet'
@@ -109,10 +111,31 @@ const RECENT_LAYOUT_BYTES = 24 * 1024 * 1024
 
 /**
  * Idle time (nothing playing) before the other label room's engraving is prepared ahead, so the
- * first Labels Off ↔ on switch does not wait for it (user). Engraving holds the main thread for a
- * moment, so it never starts while something plays; once started it runs to the end.
+ * first Labels Off ↔ on switch does not wait for it (user). Engraving holds the main thread for
+ * seconds on the tablet, so it never starts while something plays, and a run still in flight when
+ * playback starts is canceled unless a label switch has adopted it.
  */
 export const PREPARE_AHEAD_MS = 1500
+
+/** The idle delay stops doubling after this many canceled runs (1.5 s → 24 s). */
+const PREPARE_AHEAD_MAX_DOUBLINGS = 4
+
+/**
+ * Idle time before the next run prepared ahead, after `canceled` runs of this screen were canceled.
+ * A canceled run starts again from nothing and holds the main thread again, so each cancellation
+ * doubles the wait: a learner who keeps touching the screen or the piano between short pauses meets
+ * that work a few times, not after every pause.
+ */
+export function prepareAheadDelay(canceled: number): number {
+  return PREPARE_AHEAD_MS * 2 ** Math.min(canceled, PREPARE_AHEAD_MAX_DOUBLINGS)
+}
+
+/** A layout being prepared ahead; `adopted` while a label switch waits for it. */
+interface AheadRun {
+  readonly promise: Promise<PreparedLayout>
+  readonly ctrl: AbortController
+  adopted: boolean
+}
 
 const QUARTER = rat(1, 4)
 
@@ -243,11 +266,24 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const shown = useRef<LayoutParamsKey | null>(null)
   /** This screen's recent layouts (both label rooms, a rotation), checked before IndexedDB. */
   const recentLayouts = useMemo(() => new MemoryLayoutCache(RECENT_LAYOUT_BYTES), [session])
-  /** Layouts prepared ahead (by `paramsId`): in flight, and done this session. */
+  /** Layouts prepared ahead (by `paramsId`): in flight, done this session, and how many were canceled. */
   const ahead = useMemo(
-    () => ({ running: new Map<string, Promise<PreparedLayout>>(), done: new Set<string>() }),
+    () => ({ running: new Map<string, AheadRun>(), done: new Set<string>(), canceled: 0 }),
     [session],
   )
+  /** Restarts the idle delay before the next run prepared ahead (null while none may start). */
+  const rearmAhead = useRef<(() => void) | null>(null)
+  /**
+   * Cancels a run prepared ahead: it leaves nothing behind and starts again after the next idle
+   * period, which is longer after every cancellation (`prepareAheadDelay`).
+   */
+  const cancelAhead = (id: string): void => {
+    const run = ahead.running.get(id)
+    if (!run) return
+    ahead.running.delete(id)
+    ahead.canceled++
+    run.ctrl.abort()
+  }
   /** Prepares (or loads from memory / IndexedDB) the layout for `key`. */
   const prepareLayoutFor = async (
     key: LayoutParamsKey,
@@ -350,14 +386,28 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     let live = true
     const ctrl = new AbortController()
     if (!respace) setPrep({ state: 'preparing', fraction: 0 })
+    // Already being prepared ahead: wait for that instead of engraving it a second time. Adopted,
+    // the run is the learner's own request: playback starting no longer cancels it.
+    const adopted = ahead.running.get(paramsId(key))
+    if (adopted) adopted.adopted = true
+    const prepareHere = () =>
+      prepareLayoutFor(key, {
+        signal: ctrl.signal,
+        onProgress: (_stage, fraction) => live && !respace && setPrep({ state: 'preparing', fraction }),
+      })
     void (async () => {
       try {
-        // Already being prepared ahead: wait for that instead of engraving it a second time.
-        const layout = await (ahead.running.get(paramsId(key)) ??
-          prepareLayoutFor(key, {
-            signal: ctrl.signal,
-            onProgress: (_stage, fraction) => live && !respace && setPrep({ state: 'preparing', fraction }),
-          }))
+        let layout: PreparedLayout
+        if (!adopted) layout = await prepareHere()
+        else {
+          try {
+            layout = await adopted.promise
+          } catch (e) {
+            // Canceled after all (never by playback): engrave it here instead of failing.
+            if (!live || !adopted.ctrl.signal.aborted) throw e
+            layout = await prepareHere()
+          }
+        }
         ahead.done.add(paramsId(key))
         if (!live) return
         // A rapid reversal starts from the current glide's visible destination, never from
@@ -417,30 +467,86 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     return () => {
       live = false
       ctrl.abort()
+      // A run still in flight goes back to the runs prepared ahead, under their rule (below).
+      if (adopted) adopted.adopted = false
     }
   }, [session, maxChars, mode, pageWidth, room, fit])
 
   // Prepare the other label room ahead once nothing has played for a moment, so the first switch
-  // of Labels Off ↔ on glides at once instead of waiting for an engraving (user).
+  // of Labels Off ↔ on glides at once instead of waiting for an engraving (user). Its engraving is
+  // seconds of main-thread work on the tablet, so it must never run during playback: a run not
+  // adopted by a label switch (above) is canceled when something starts playing or when the
+  // parameters it was started for no longer apply (it stops at the adapter's next stage
+  // boundary), and starts again after the next idle period (longer each time, `prepareAheadDelay`).
   useEffect(() => {
-    if (prep.state !== 'ready' || ui.playing) return
-    if (mode === 'page' && pageWidth <= 0) return
     const other: LayoutParamsKey = { maxChars, mode, pageWidth, room: room === 'all' ? 'hints' : 'all', fit }
     const id = paramsId(other)
-    if (ahead.done.has(id) || ahead.running.has(id)) return
-    const timer = env.timers.setTimeout(() => {
-      const run = prepareLayoutFor(other)
+    for (const [runId, run] of [...ahead.running]) if (!run.adopted && (ui.playing || runId !== id)) cancelAhead(runId)
+    if (prep.state !== 'ready' || ui.playing) return
+    if (mode === 'page' && pageWidth <= 0) return
+    const start = () => {
+      if (ahead.done.has(id) || ahead.running.has(id)) return
+      const ctrl = new AbortController()
+      const run: AheadRun = { promise: prepareLayoutFor(other, { signal: ctrl.signal }), ctrl, adopted: false }
       ahead.running.set(id, run)
-      run.then(
-        () => {
-          ahead.running.delete(id)
-          ahead.done.add(id)
-        },
-        () => ahead.running.delete(id),
-      )
-    }, PREPARE_AHEAD_MS)
-    return () => env.timers.clearTimeout(timer)
+      const settled = (done: boolean) => () => {
+        if (ahead.running.get(id) !== run) return
+        ahead.running.delete(id)
+        if (done) ahead.done.add(id)
+      }
+      run.promise.then(settled(true), settled(false))
+    }
+    let timer: unknown
+    // (Re)starts the idle delay: on entering this state, and on every input (below).
+    const arm = () => {
+      if (timer !== undefined) env.timers.clearTimeout(timer)
+      timer = ahead.done.has(id) ? undefined : env.timers.setTimeout(start, prepareAheadDelay(ahead.canceled))
+    }
+    rearmAhead.current = arm
+    if (!ahead.done.has(id) && !ahead.running.has(id)) arm()
+    return () => {
+      if (timer !== undefined) env.timers.clearTimeout(timer)
+      if (rearmAhead.current === arm) rearmAhead.current = null
+    }
   }, [session, prep.state, ui.playing, maxChars, mode, pageWidth, room, fit])
+
+  // The learner's intent cancels a run not adopted at once, in the same task as the input: waiting
+  // for `ui.playing` (the session's async start, its frame, a render, the effect flush) let whole
+  // engraving stages run into playback. Pointer and keyboard input on the screen (except on the
+  // menu that switches labels, whose switch adopts the run) also postpones the next run; a key on
+  // the piano only aborts (the MIDI path stays O(small)) and re-arms if it canceled something.
+  // Leaving Practice (or another piece's session) cancels every run, adopted or not.
+  useEffect(() => {
+    const cancelIdle = (): boolean => {
+      let canceled = false
+      for (const [id, run] of [...ahead.running]) {
+        if (run.adopted) continue
+        ahead.running.delete(id)
+        ahead.canceled++
+        run.ctrl.abort()
+        canceled = true
+      }
+      return canceled
+    }
+    const onInput = (e: Event) => {
+      const target = e.target as Partial<Element> | null
+      if (target?.closest?.(`[${KEEPS_AHEAD}]`)) return
+      cancelIdle()
+      rearmAhead.current?.()
+    }
+    document.addEventListener('pointerdown', onInput, true)
+    document.addEventListener('keydown', onInput, true)
+    const offMidi = env.midi().subscribe(() => {
+      if (ahead.running.size && cancelIdle()) rearmAhead.current?.()
+    })
+    return () => {
+      document.removeEventListener('pointerdown', onInput, true)
+      document.removeEventListener('keydown', onInput, true)
+      offMidi()
+      for (const run of ahead.running.values()) run.ctrl.abort()
+      ahead.running.clear()
+    }
+  }, [ahead])
 
   // Leaving Practice (or another piece's session): the view goes with it.
   useEffect(
@@ -465,6 +571,18 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const tempo = model.tempo
   const startPos = passageBounds(model, ui.range).start
   const source = hasTempo(tempo) ? effectiveTempoAt(tempo, startPos, 1) : null
+
+  // The menu's Metronome switch (DECISIONS U87, P20): edits the preference the current mode uses.
+  const metronome: MetronomeRow = {
+    on: !ui.metronomeMuted && metronomeOn(appSettings.metronome, ui.metronomeScope),
+    disabled: ui.metronomeMuted || source === null || env.hasWebAudio?.() === false,
+    ...(ui.metronomeMuted ? { note: 'Silent while the microphone follows.' } : {}),
+  }
+  const onMetronome = (on: boolean) => {
+    // Inside the tap: iPadOS starts an AudioContext only during a gesture.
+    if (on) env.primeAudio?.()
+    updateSettings(metronomePatch(ui.metronomeScope, on))
+  }
 
   const onLabels = (mode: PersistentLabelMode) => {
     applyLabelSettings({ ...settings.peek().labels, mode })
@@ -559,6 +677,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             type="button"
             class={`${styles.iconButton} ${styles.menuButton} ${styles.recedes}`}
             aria-label="Menu"
+            data-keeps-ahead
             title="Menu"
             aria-haspopup="dialog"
             aria-expanded={menuOpen}
@@ -666,6 +785,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           labels={appSettings.labels.mode}
           onLabels={onLabels}
           onRequestTempo={() => setTempoOpen(true)}
+          metronome={metronome}
+          onMetronome={onMetronome}
         />
       )}
 
@@ -692,6 +813,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             labels={appSettings.labels.mode}
             onLabels={onLabels}
             hasTempo={source !== null}
+            metronome={metronome}
+            onMetronome={onMetronome}
             showKeys={!sideways}
             rowClass={styles.menuRow}
             labelClass={styles.menuLabel}

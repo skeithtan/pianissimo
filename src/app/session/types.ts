@@ -14,6 +14,7 @@ import type { BrowserAudioModule, MetronomeModule, OutputBackend, TimerApi } fro
 import type { LadderSettings, ResumePosition } from '../../core/storage/records'
 import type { GuideKey } from '../../render/keyboard/types'
 import type { CorrectionMark } from '../../render/strip/StripView'
+import type { MetronomeScope } from './metronome'
 
 /** The subset of `StripView` the session drives (render/strip/StripView.ts). */
 export interface StripSink {
@@ -307,6 +308,10 @@ export interface SessionUi {
   readonly rhythm: boolean
   /** Beats left in the Keep time count-in (the number to show), else null. */
   readonly countIn: number | null
+  /** Which Metronome preference the current mode uses, so the Practice menu's switch edits the right one (DECISIONS P20). */
+  readonly metronomeScope: MetronomeScope
+  /** Play through with the microphone following: the metronome is silent whatever its setting (DECISIONS P16). */
+  readonly metronomeMuted: boolean
   /** Completed the whole piece in ordinary reading. */
   readonly finished: boolean
 }

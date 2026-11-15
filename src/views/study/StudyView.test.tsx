@@ -278,6 +278,33 @@ describe('StudyView (U72)', () => {
     expect(byLabel(view!.container, 'Hide keys')).not.toBeNull()
   })
 
+  it('the Metronome tool follows and edits metronome.enabled, priming audio once when it turns on (U87)', async () => {
+    let primed = 0
+    const r = await rig()
+    r.env = { ...r.env, primeAudio: () => primed++ }
+    await openPiece(r)
+    const tool = () => byLabel(view!.container, 'Metronome') as HTMLButtonElement
+    expect(tool().getAttribute('aria-pressed')).toBe('false')
+    expect(tool().disabled).toBe(false)
+    click(tool())
+    await settle(r, 1)
+    expect(settings.value.metronome.enabled).toBe(true)
+    expect(tool().getAttribute('aria-pressed')).toBe('true')
+    expect(primed).toBe(1)
+    click(tool())
+    await settle(r, 1)
+    expect(settings.value.metronome.enabled).toBe(false)
+    expect(tool().getAttribute('aria-pressed')).toBe('false')
+    expect(primed).toBe(1)
+  })
+
+  it('the Metronome tool is disabled without Web Audio (U87)', async () => {
+    const r = await rig()
+    r.env = { ...r.env, hasWebAudio: () => false }
+    await openPiece(r)
+    expect((byLabel(view!.container, 'Metronome') as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('Settings opens over the score and Back leads to the Library', async () => {
     const r = await rig()
     await openPiece(r)
@@ -317,6 +344,26 @@ describe('StudyView (U72)', () => {
       expect(menu.textContent).toContain('Show keys')
       for (const text of ['Name the notes at the cursor', 'Go to the start', 'Settings'])
         expect(byLabel(menu, text), text).not.toBeNull()
+    })
+
+    it('the menu has the Metronome switch right after Speed (U87)', async () => {
+      onPhone()
+      let primed = 0
+      const r = await rig()
+      r.env = { ...r.env, primeAudio: () => primed++ }
+      await openPiece(r)
+      const root = view!.container
+      expect(byLabel(root, 'Metronome')).toBeNull()
+      click(byLabel(root, 'Menu'))
+      await settle(r, 1)
+      const row = $$(dialog()!, 'label').find((el) => el.textContent?.trim() === 'Metronome')!
+      expect(row.previousElementSibling?.textContent).toContain('Speed')
+      const input = row.querySelector<HTMLInputElement>('input[role="switch"]')!
+      expect(input.checked).toBe(false)
+      click(input)
+      await settle(r, 1)
+      expect(settings.value.metronome.enabled).toBe(true)
+      expect(primed).toBe(1)
     })
 
     it('the menu shows the keys; its hint names the notes and closes the menu; the header plays', async () => {

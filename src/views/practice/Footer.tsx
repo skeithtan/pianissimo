@@ -2,9 +2,11 @@
  * The practice footer (DECISIONS U4, U9, U12, U17, U76): the always-visible Speed control on the
  * start side; the hand toggles around the large Start / Pause / Listen button in the middle; the
  * Menu button on the end side (an anchored popover holding Note names, Play through (P12),
- * Keep time (P13) and Show keys). Large touch targets within thumb reach of a piano bench. In portrait focus mode the tools slide down
- * and their narrow-screen row collapses (the menu closes as they go). Landscape tools stay in
- * place and dim. The hand/play row stays available (U60).
+ * Keep time (P13), Metronome (U87) and Show keys). Large touch targets within thumb reach of a
+ * piano bench. One row on every tablet, upright or on its side (U88): while playing, the tools dim
+ * in place (the menu closes). Only a window too narrow for one row (640 px or less) wraps the
+ * tools into their own row, which collapses in portrait focus mode (U60). The hand/play row stays
+ * available.
  */
 import type { PracticeSession, SessionUi } from '../../app/session'
 import { pushNotice } from '../../app/state'
@@ -12,7 +14,7 @@ import type { PersistentLabelMode } from '../../core/model/settings'
 import { rat, type Rational } from '../../core/music/rational'
 import { HandToggles } from '../../ui/HandToggles'
 import { TempoControl } from '../../ui/TempoControl'
-import { FooterMenu } from './FooterMenu'
+import { FooterMenu, type MetronomeRow } from './FooterMenu'
 import type { RecedeZone } from './recede'
 import styles from './practice.module.css'
 
@@ -34,6 +36,9 @@ export interface FooterProps {
   readonly labels: PersistentLabelMode
   readonly onLabels: (mode: PersistentLabelMode) => void
   readonly onRequestTempo: () => void
+  /** The menu's Metronome row (U87) and its handler. */
+  readonly metronome: MetronomeRow
+  readonly onMetronome: (on: boolean) => void
 }
 
 export function Footer({
@@ -46,6 +51,8 @@ export function Footer({
   labels,
   onLabels,
   onRequestTempo,
+  metronome,
+  onMetronome,
 }: FooterProps) {
   return (
     <footer class={styles.footer} {...zone}>
@@ -71,6 +78,8 @@ export function Footer({
                 labels={labels}
                 onLabels={onLabels}
                 hasTempo={tempo !== null}
+                metronome={metronome}
+                onMetronome={onMetronome}
               />
             </div>
           </div>

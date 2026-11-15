@@ -58,7 +58,9 @@ import { toNumber } from '../../core/music/rational'
 import {
   Aborted,
   CALLOUT_TOLERANCE,
+  createOsmd,
   defaultSpacing,
+  discardOsmd,
   OSMD_OPTIONS,
   defaultMeasureLabel,
   labelIndexByOcc,
@@ -69,6 +71,7 @@ import {
   ottavaGeometry,
   tagElements,
 } from './adapter'
+import { stageBoundary } from './boundary'
 import { extractPage, type PageExtraction } from './extract'
 import { loadOsmd } from './load'
 import type { OsmdInstance } from './osmd-types'
@@ -100,7 +103,6 @@ export function pageMaxWidthOf(
 }
 
 const now = (): number => performance.now()
-const nextTask = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
 export async function preparePage(
   renderer: { readonly name: string; readonly version: string },
@@ -112,6 +114,15 @@ export async function preparePage(
   const check = (): void => {
     if (signal?.aborted) throw new Aborted()
   }
+  /**
+   * Lets pending input, a frame and timers run (`stageBoundary`), then stops if the caller canceled
+   * meanwhile. Every await is followed by a check, so a canceled run stops at the next stage
+   * boundary and returns nothing to cache.
+   */
+  const pause = async (): Promise<void> => {
+    await stageBoundary()
+    check()
+  }
   const progress = (stage: PrepareStage, f: number): void => options.onProgress?.(stage, f)
   const fontPx = options.labels.fontPx ?? LABEL_FONT_PX
   const host = options.host ?? document.body
@@ -122,6 +133,7 @@ export async function preparePage(
   } catch {
     // Measuring with the fallback metrics of a font still loading is only slightly off.
   }
+  check()
   const measure = options.textMeasurer ?? canvasMeasurer(document) ?? estimateMeasurer
   const label = labelMetrics(options.labels.maxChars, fontPx, measure, LABEL_FONT_FAMILY)
   const segmentWidth = options.segmentWidth ?? DEFAULT_SEGMENT_WIDTH
@@ -143,7 +155,7 @@ export async function preparePage(
   container.setAttribute('aria-hidden', 'true')
   container.style.cssText = `position:absolute;left:-200000px;top:0;width:${pageWidth}px;visibility:hidden;pointer-events:none;contain:layout style`
   host.append(container)
-  let osmd: OsmdInstance | undefined = new mod.OpenSheetMusicDisplay(container, {
+  let osmd: OsmdInstance | undefined = createOsmd(mod, container, {
     ...OSMD_OPTIONS,
     renderSingleHorizontalStaffline: false,
   })
@@ -151,6 +163,7 @@ export async function preparePage(
     progress('engraving', 0)
     const te = now()
     await osmd.load(input.renderXml)
+    check()
     let engraveMs = now() - te
     let extractMs = 0
     let labelMs = 0
@@ -166,14 +179,14 @@ export async function preparePage(
       rules['SystemRightMargin'] = 0
       rules.VoiceSpacingMultiplierVexflow = spacing.voiceSpacingMultiplier
       rules.VoiceSpacingAddendVexflow = spacing.voiceSpacingAddend
-      await nextTask()
+      await pause()
       const tr = now()
       osmd.render()
       engraveMs += now() - tr
       check()
 
       progress('extracting', 0)
-      await nextTask()
+      await pause()
       const tx = now()
       const ex = extractPage(osmd, container, input.occurrences.length)
       const mapping = mapNotes(input.notes, ex.graphics)
@@ -182,6 +195,7 @@ export async function preparePage(
       check()
 
       progress('labels', 0)
+      await pause()
       const tlab = now()
       const units = labelUnits(input, ex, mapping)
       const result = layoutSystemLabels(units, ex, occurrences, label.w, label.h, fontPx, room)
@@ -234,7 +248,7 @@ export async function preparePage(
       }
 
       progress('partitioning', 0)
-      await nextTask()
+      await pause()
       const tp = now()
       const order = result.labels
         .map((l, unit) => ({ l, unit }))
@@ -257,6 +271,7 @@ export async function preparePage(
       tagElements(input, ex, mapping, ottavas.raw)
       const svgNodes = ex.svgNodes
       sanitizeSvgTree(ex.svg)
+      await pause()
 
       // Each system's content extent (engraved y): its marks, labels, number, ottava brackets.
       const startOccOfSpan = new Map(input.ottavas.map((o) => [o.index, o.startOcc]))
@@ -367,11 +382,7 @@ export async function preparePage(
       return layout
     }
   } finally {
-    try {
-      osmd?.clear()
-    } catch {
-      // The instance is discarded either way.
-    }
+    if (osmd) discardOsmd(mod, osmd)
     osmd = undefined
     container.remove()
   }

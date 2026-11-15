@@ -11,7 +11,8 @@ export function loadOsmd(): Promise<OsmdModule> {
     const m = mod as Partial<OsmdModule> & { default?: Partial<OsmdModule> }
     const ctor = m.OpenSheetMusicDisplay ?? m.default?.OpenSheetMusicDisplay
     if (!ctor) throw new Error('OpenSheetMusicDisplay export not found')
-    return { OpenSheetMusicDisplay: ctor }
+    const calculator = m.MusicSheetCalculator ?? m.default?.MusicSheetCalculator
+    return { OpenSheetMusicDisplay: ctor, ...(calculator ? { MusicSheetCalculator: calculator } : {}) }
   })
   pending.catch(() => {
     pending = undefined

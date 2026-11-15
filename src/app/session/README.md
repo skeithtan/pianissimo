@@ -235,17 +235,32 @@ position); the transport is rebuilt by the next Start.
 Every scored attempt is then `transport: 'strict'` with `rhythm: { toleranceMs }` from
 `settings.rhythm` (`#scoredKind`, also for Restart, Repeat resets, ladder steps and selection
 changes that prepare a fresh attempt). The transport is the gated one of practice (silent with
-both hands, the other hand automatic with one, metronome per the setting).
+both hands, the other hand automatic with one; its click per `metronome.keepTime`, below).
 
 - **Count-in.** When the engine reaches Ready, `#beginCountIn` counts one bar (`countIn.ts`:
   the meter numerator at the passage start, compound numerators above 4 divisible by 3 in dotted
   beats, 4 beats without a meter; the beat from the tempo segment there ÷ speed). All clicks go to
-  the metronome sink at once (accent first); Start loads the metronome for it even when the
-  Metronome setting is off (the attempt's own clicks keep following the setting). `ui.countIn`
+  the metronome sink at once (accent first); Start loads the metronome for it even when both
+  Metronome switches are off. `ui.countIn`
   counts the beats left (one timer per beat). At the end (`#endCountIn`) the engine's
   `startRunning(t)` and `transport.play(t)` get the same timestamp. Presses meanwhile are not judged
   (the engine ignores them in Ready). Leaving Ready (pause, seek, selection change, interruption,
   a new attempt) cancels it: the timer goes and the sink's `cancel(now)` drops its clicks.
+- **Metronome (DECISIONS P20).** The count-in always clicks; the attempt after it clicks per
+  `settings.metronome.keepTime` (default on: one steady pulse from the count-in into the music),
+  everything else (Listen, reading, scored practice, play-through) per `metronome.enabled`.
+  `metronome.ts` holds the pure rule: `metronomeScope(rhythm, hands)` ('keepTime' with Keep time on
+  and a hand selected, else 'general'), `metronomeOn(settings.metronome, scope)` and
+  `metronomePatch(scope, on)` (for `updateSettings`). The gated practice transport clicks per
+  `#practiceClick()`; `updateSettings` applies either switch live to `#accomp`, `#listen` and
+  `#play` (each by its own rule) and loads the module when a click is now wanted. Turning a click
+  off cancels the sink, which also holds the count-in's beats: `#reclickCountIn` clicks the beats
+  still to come again. `ui.metronomeScope` names the switch the current mode uses (the Practice
+  menu's switch edits that one) and `ui.metronomeMuted` is true in play-through while the
+  microphone follows (P16). The click is not assistance and is not recorded. Start
+  (`#unlockAudio`) creates the shared AudioContext synchronously inside the tap when this Start
+  will click (iPadOS starts one only in a user gesture; `#ensureMetronome` creates it after an
+  await); nothing when no click is wanted, never throws.
 - **Gates.** The music never waits. At the count-in's end every gate is released before
   `play`, so the transport never holds (releasing on arrival would re-anchor the music at each
   timer wake-up and let jitter accumulate); `onGateReached(i)` still reports
@@ -271,7 +286,7 @@ both hands, the other hand automatic with one, metronome per the setting).
   `SessionSettings.rhythm` is optional (Study has no Keep time; absent = the engine default).
 
 Tests: `PracticeSession.rhythm.test.ts` (manual clock, a recording metronome module),
-`countIn.test.ts`, `selection.test.ts`.
+`countIn.test.ts`, `metronome.test.ts`, `selection.test.ts`.
 
 ## Play-through (DECISIONS P12)
 
@@ -309,7 +324,8 @@ gates up to it (a report behind the cursor, the player repeating a bar, changes 
 `#playFrom` resets it to the current group and resumes it (it listens afresh), `#pausePlay`
 pauses it, `#seekPlay` resets it, `#disposePlay` closes it (`#disposeMic`). A speed change is
 not passed on: the follower follows the order of the notes, not time. `#playMetronome` keeps
-the metronome silent while the microphone follows (the clicks would come out beside it). A
+the metronome silent while the microphone follows (the clicks would come out beside it;
+`ui.metronomeMuted`). A
 microphone that stops by itself (`onLost`: unplugged, a failing worker) pauses play-through
 with the reason in `ui.micStatus` (`#onMicLost`); the next Start opens it again. The microphone
 stands in for a piano input: `#syncHeldHands` keeps the hands available without one, and

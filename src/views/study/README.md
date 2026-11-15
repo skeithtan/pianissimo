@@ -17,8 +17,9 @@ playback and seeing the notes, hints possible too".
 - **Reading aids**: Note names (Off / Conditional / All, the persistent labels, same settings as
   Practice), **Name the notes at the cursor** (`session.revealAtCursor()`: the names of both
   hands' notes at the cursor for the hint lifetime, then a fade; the engine's own hints need a
-  running attempt, which Study never has), and Show keys (the 88-key guide, which follows
-  playback here).
+  running attempt, which Study never has), Show keys (the 88-key guide, which follows
+  playback here) and a **Metronome** tool (U87: `metronome.enabled`, the click while it plays;
+  disabled without a numerical tempo or Web Audio; turning it on primes audio first).
 - **Settings** over the score, Back to the Library.
 
 ## Files
@@ -27,7 +28,7 @@ playback and seeing the notes, hints possible too".
 | --- | --- |
 | `StudyView.tsx` | Entry. Reads `studyRequest`; loads piece + package; missing piece → explanation + Back to Library; no request → empty state with Back to Library and recent pieces. `StudyViewWith({env})` for tests (the Practice `PracticeEnv` seam is reused). Opening a piece updates `lastOpenedAt` only. |
 | `StudyScreen.tsx` | Builds a `PracticeSession` in Listen (`hands: 'none'`, no range, speed 1, `cursorAction: false`) with a no-op history sink and a no-op piece sink, so the piece's practice state (hands, speed, loop, resume) is never read or written. Prepares the layout exactly as Practice does (label width, label room with the respacing glide, rotation, page width), without the prepare-ahead. Header (Back, title / composer, Settings), `OverviewBar`, stage, `GuidePanel`, footer. |
-| `study.module.css` | Tokens only. Header / overview / stage / keyboard guide / footer; the footer stacks the reading aids (Note names, Hint, Keys) over the transport row (Speed, Go to the start, Play). `data-compact` (phone-size): no footer, a 48 px header with Show keys, a 44 px Play and Menu, the menu sheet's rows, the status pill over the score, and the home-indicator strip. Nothing recedes. |
+| `study.module.css` | Tokens only. Header / overview / stage / keyboard guide / footer; the footer stacks the reading aids (Note names, Hint, Keys, Metronome) over the transport row (Speed, Go to the start, Play). `data-compact` (phone-size): no footer, a 48 px header with Show keys, a 44 px Play and Menu, the menu sheet's rows, the status pill over the score, and the home-indicator strip. Nothing recedes. |
 | `../shared/usePhone.ts` | `usePhone()` / `PHONE_QUERY`: at most 520 px wide, or landscape and at most 520 px tall (U74); `usePhoneLandscape()` / `PHONE_LANDSCAPE_QUERY`: the landscape half alone (U80). Shared with Practice (its phone layout, U80) and `GuidePanel`, which drops the keyboard guide's name chips on a phone (U75) and the guide itself on a phone on its side (U80). |
 
 Shared with Practice: `practice/env` (`PracticeEnv`, `StripHandle`), `practice/live`
@@ -37,7 +38,7 @@ Shared with Practice: `practice/env` (`PracticeEnv`, `StripHandle`), `practice/l
 ## Phone layout (U74, U80)
 
 On a phone-size screen there is no footer. The header holds Back, the title, Show keys, Play /
-Pause and Menu; the `Sheet` titled "Menu" holds Speed, Note names, Name the notes at the
+Pause and Menu; the `Sheet` titled "Menu" holds Speed, a Metronome switch (U87), Note names, Name the notes at the
 cursor, Go to the start and Settings. The hint and Go to the start close the menu. Why Play is
 unavailable, or the sound status, is a pill over the bottom of the score. Tablets and larger
 keep the footer and the Settings button in the header.
@@ -62,8 +63,8 @@ stays awake while the view is shown (`app/App.tsx` wake lock), as in Practice.
 
 - `StudyView.test.tsx` (happy-dom, fake-indexeddb, an imported fixture, fake MIDI/strip, no
   Web MIDI): empty and missing states, the controls offered and withheld, playback and pause
-  with no practice state written, the Hint tool, the Note names respacing glide, Show keys,
-  Settings and Back.
+  with no practice state written, the Hint tool, the Note names respacing glide, Show keys, the Metronome tool and
+  the phone sheet's switch, Settings and Back.
 - `app/session/PracticeSession.reveal.test.ts`: `revealAtCursor` and `cursorAction`.
 - `tests/e2e/study.spec.ts` (Chromium + WebKit, production build, phone viewports 390×844
   and 844×390 with touch, no fake Web MIDI): the route, the page view in portrait, browser-sound

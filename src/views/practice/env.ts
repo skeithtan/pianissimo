@@ -6,7 +6,13 @@
 import { getFeatures } from '../../app/features'
 import { getMidiService, getStorage } from '../../app/services'
 import type { FrameApi, MidiSource, StripSink } from '../../app/session'
-import { browserTimers, loadBrowserAudio, loadWebAudioMetronome, type TimerApi } from '../../core/playback'
+import {
+  browserTimers,
+  loadBrowserAudio,
+  loadWebAudioMetronome,
+  sharedAudioContext,
+  type TimerApi,
+} from '../../core/playback'
 import type { BrowserAudioModule, MetronomeModule } from '../../core/playback'
 import type { PianissimoStorage } from '../../core/storage'
 import {
@@ -94,6 +100,12 @@ export interface PracticeEnv {
   /** Can this device play sound (Web Audio)? Listen falls back to it without a piano (S3). */
   readonly hasWebAudio?: () => boolean
   readonly loadMetronome?: () => Promise<MetronomeModule>
+  /**
+   * Creates or resumes the shared AudioContext; called synchronously inside the tap that turns the
+   * Metronome switch on (DECISIONS U87). iPadOS starts a context only during a gesture, and the
+   * click module would otherwise create it after an awaited import. Never throws.
+   */
+  readonly primeAudio?: () => void
 }
 
 let renderer: OsmdRenderer | null = null
@@ -135,5 +147,13 @@ export function defaultPracticeEnv(): PracticeEnv {
     loadBrowserAudio,
     hasWebAudio: () => getFeatures().features.webAudio.supported,
     loadMetronome: loadWebAudioMetronome,
+    primeAudio: () => {
+      if (!getFeatures().features.webAudio.supported) return
+      try {
+        sharedAudioContext()
+      } catch {
+        // Unavailable sound is reported where the click would play; the switch still saves.
+      }
+    },
   }
 }

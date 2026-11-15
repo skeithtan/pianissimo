@@ -9,10 +9,12 @@ import type { ScorePackage } from '../../src/core/model/score'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { labelForMidi, labelText } from '../../src/core/naming'
 import { PageView } from '../../src/render/page/PageView'
+import { isPreparedLayout } from '../../src/render/cache'
 import { OsmdRenderer } from '../../src/render/osmd/adapter'
+import { isSafeSvgMarkup } from '../../src/render/sanitize'
 import { positionToX } from '../../src/render/strip/scroll'
 import { StripView, type StripOptions, type StripStats } from '../../src/render/strip/StripView'
-import type { LabelRoom, LayoutMode, PreparedLayout, RenderInput } from '../../src/render/types'
+import type { LabelRoom, LayoutMode, PreparedLayout, PrepareStage, RenderInput } from '../../src/render/types'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { longScoreFixture } from '../fixtures/render/long-score'
 import { FIXTURES, fixture, type FixtureName } from '../fixtures/render/scores'
@@ -85,9 +87,17 @@ export function packageInput(pkg: ScorePackage): RenderInput {
 let lastPackage: ScorePackage | undefined
 
 /** Imports MusicXML text with the real importer, then prepares it (ad-hoc fixtures). */
-async function prepareXml(name: string, xml: string, maxChars = 3): Promise<PrepareSummary> {
+async function prepareXml(
+  name: string,
+  xml: string,
+  maxChars = 3,
+  opts: { mode?: LayoutMode; pageWidth?: number; room?: LabelRoom } = {},
+): Promise<PrepareSummary> {
   input = await importXml(name, xml)
-  layout = await new OsmdRenderer().prepare(input, { labels: { maxChars } })
+  layout = await new OsmdRenderer().prepare(input, {
+    labels: { maxChars, ...(opts.room ? { room: opts.room } : {}) },
+    ...opts,
+  })
   return summarize(name, layout)
 }
 function summarize(name: string, l: PreparedLayout): PrepareSummary {
@@ -126,6 +136,39 @@ async function prepare(
     ...opts,
   })
   return summarize(name, layout)
+}
+
+/**
+ * Prepares `name` and cancels it when the adapter reports `stage` ('start': canceled before the
+ * call). Says how the run ended, which stages it reported and how many children `document.body`
+ * gained (the hidden engraving container must be gone).
+ */
+async function prepareCanceledAt(
+  name: string,
+  stage: PrepareStage | 'start',
+  opts: { mode?: LayoutMode; room?: LabelRoom } = {},
+): Promise<{ outcome: string; stages: string[]; bodyChildrenAdded: number }> {
+  const source = await inputFor(name)
+  const ctrl = new AbortController()
+  if (stage === 'start') ctrl.abort()
+  const stages: string[] = []
+  const before = document.body.childElementCount
+  let outcome: string
+  try {
+    await new OsmdRenderer().prepare(source, {
+      labels: { maxChars: 3, ...(opts.room ? { room: opts.room } : {}) },
+      ...(opts.mode ? { mode: opts.mode } : {}),
+      signal: ctrl.signal,
+      onProgress: (s) => {
+        stages.push(s)
+        if (s === stage) ctrl.abort()
+      },
+    })
+    outcome = 'completed'
+  } catch (e) {
+    outcome = e instanceof Error ? e.name : 'thrown'
+  }
+  return { outcome, stages, bodyChildrenAdded: document.body.childElementCount - before }
 }
 
 let strip: StripView | PageView | undefined
@@ -427,6 +470,7 @@ const harness = {
   fixtures: [...Object.keys(FIXTURES), 'long-500', ...Object.keys(privateScores).map((k) => k.split('/').pop()!)],
   importerFixtures: Object.keys(importerScores).map((k) => `scores/${k.split('/').pop()!}`),
   prepare,
+  prepareCanceledAt,
   layout: () => layout,
   input: () => input,
   package: () => lastPackage,
@@ -437,6 +481,8 @@ const harness = {
   showAllLabels,
   onsets,
   traverse,
+  isSafeSvgMarkup,
+  isPreparedLayout,
 }
 
 declare global {

@@ -2,11 +2,11 @@
  * The Study screen (DECISIONS U72): the score and its playback, nothing to practice. A
  * header (back, title, Settings), the whole-piece overview, the notation stage (the landscape
  * strip or the portrait page, as in Practice), the keyboard-guide slot and a footer: Note names,
- * the "Name the notes at the cursor" hint and Show keys, then Speed, Go to the start and Play /
+ * the "Name the notes at the cursor" hint, Show keys and the Metronome tool (U87), then Speed, Go to the start and Play /
  * Pause.
  *
  * On a phone-size screen (`usePhone`, U74) there is no footer at all: the header carries Play /
- * Pause and a menu button, and every other control (Speed, Note names, Show keys, the hint, Go to
+ * Pause and a menu button, and every other control (Speed, Metronome, Note names, Show keys, the hint, Go to
  * the start, Settings) is in the untitled menu sheet, so the score and the keyboard guide get the
  * height. A phone on its side (`usePhoneLandscape`, U80) goes further: the overview sits in the
  * header in place of the title, there is no keyboard guide and no Show keys, and in portrait the
@@ -20,7 +20,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { navigate, openSettings } from '../../app/navigation'
-import { PracticeSession, practiceModel, type SessionSettings } from '../../app/session'
+import { PracticeSession, metronomeOn, metronomePatch, practiceModel, type SessionSettings } from '../../app/session'
 import { applyLabelSettings, onBeforeApplyLabels, pushNotice, settings, updateSettings } from '../../app/state'
 import { passageBounds, positionText } from '../../core/model/passage'
 import type { ScorePackage } from '../../core/model/score'
@@ -334,6 +334,14 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
   )
   const keysLabel = ui.keyboardVisible ? 'Hide keys' : 'Show keys'
   const toggleKeys = () => session.setKeyboardVisible(!ui.keyboardVisible)
+  // The Metronome switch (DECISIONS U87, P20): Study is Listen-only, so the scope is the general one.
+  const metronomeIsOn = !ui.metronomeMuted && metronomeOn(appSettings.metronome, ui.metronomeScope)
+  const metronomeDisabled = ui.metronomeMuted || source === null || env.hasWebAudio?.() === false
+  const toggleMetronome = (on: boolean) => {
+    // Inside the tap: iPadOS starts an AudioContext only during a gesture.
+    if (on) env.primeAudio?.()
+    updateSettings(metronomePatch(ui.metronomeScope, on))
+  }
   const playDisabled = !ui.playing && !ui.startEnabled
   const status = !ui.playing && ui.startReason ? ui.startReason : ui.soundStatus
 
@@ -430,6 +438,13 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             </div>
             <Tool icon="hint" label="Name the notes at the cursor" onClick={onHint} />
             <Tool icon="keys" label={keysLabel} pressed={ui.keyboardVisible} onClick={toggleKeys} />
+            <Tool
+              icon="metronome"
+              label="Metronome"
+              pressed={metronomeIsOn}
+              disabled={metronomeDisabled}
+              onClick={() => toggleMetronome(!metronomeIsOn)}
+            />
           </div>
           <div class={styles.transport}>
             {speed('up')}
@@ -464,6 +479,13 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             <span class={styles.menuLabel}>Speed</span>
             {speed('down')}
           </div>
+          <Toggle
+            class={`${styles.menuRow} ${styles.menuToggle}`}
+            label="Metronome"
+            checked={metronomeIsOn}
+            disabled={metronomeDisabled}
+            onChange={toggleMetronome}
+          />
           <div class={styles.menuRow}>
             <span class={styles.menuLabel}>Note names</span>
             {noteNames}

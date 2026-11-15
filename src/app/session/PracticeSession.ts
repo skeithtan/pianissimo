@@ -95,6 +95,7 @@ import { clampPassage, sameSelection, selectionTimeline, startPlan, type Selecti
 import { buildGuideKeys, sameGuideKeys } from './guide'
 import { correctionMarks, type CorrectionMark } from './corrections'
 import { countInPlan } from './countIn'
+import { metronomeOn, metronomeScope, type MetronomeScope } from './metronome'
 import {
   LADDER_DEFAULT_TARGET,
   ladderAfterAttempt,
@@ -256,10 +257,15 @@ export class PracticeSession {
   #accomp: Transport | null = null
   #accompKey = ''
   #metronome: InstanceType<MetronomeModule['WebAudioMetronome']> | null = null
+  /** Counts the sink's cancels, so a settings change can tell whether it silenced a count-in. */
+  #sinkCancels = 0
   /** Click schedules exist from the start; sound can be enabled later without rebuilding time. */
   readonly #metronomeSink: MetronomeSink = {
     click: (time, accent) => this.#metronome?.click(time, accent),
-    cancel: (now) => this.#metronome?.cancel(now),
+    cancel: (now) => {
+      this.#sinkCancels++
+      this.#metronome?.cancel(now)
+    },
   }
   /** Listen (both hands off): its transport and the output it was built for. */
   #listen: { transport: Transport; playing: boolean; outputKey: string } | null = null
@@ -523,6 +529,7 @@ export class PracticeSession {
    * started at Ready), unless a Pause canceled the first meanwhile: then it runs after it.
    */
   start(): Promise<void> {
+    this.#unlockAudio()
     if (this.#starting && this.#startingGen === this.#startGen) return this.#starting
     const before = this.#starting
     const gen = (this.#startingGen = this.#startGen)
@@ -1679,6 +1686,19 @@ export class PracticeSession {
     this.#process(this.#deps.clock())
   }
 
+  /**
+   * Click the count-in's beats after `now` again: a Metronome switch turned off meanwhile
+   * canceled the sink (`setMetronomeEnabled(false)`), but the count-in always clicks (P20).
+   */
+  #reclickCountIn(now: number): void {
+    const c = this.#countIn
+    if (!c) return
+    for (let k = 0; k < c.beats; k++) {
+      const time = c.start + k * c.beatMs
+      if (time > now) this.#metronomeSink.click(time, k === 0)
+    }
+  }
+
   /** Cancel a count-in in progress: its timer and its clicks still to come (through the sink). */
   #cancelCountIn(now: number): void {
     const c = this.#countIn
@@ -2069,11 +2089,15 @@ export class PracticeSession {
     // Volumes apply live to sound already loaded (Settings over Practice).
     if (prev.sound.browserVolume !== next.sound.browserVolume) this.#browser?.setVolume(next.sound.browserVolume)
     if (prev.metronome.volume !== next.metronome.volume) this.#metronome?.setVolume(next.metronome.volume)
-    if (prev.metronome.enabled !== next.metronome.enabled) {
-      if (next.metronome.enabled) void this.#ensureMetronome()
-      this.#accomp?.setMetronomeEnabled(next.metronome.enabled)
+    if (prev.metronome.enabled !== next.metronome.enabled || prev.metronome.keepTime !== next.metronome.keepTime) {
+      // Each transport by its own rule (DECISIONS P20). Switching a click off cancels the sink,
+      // which also holds the count-in's beats: those still to come are clicked again.
+      void this.#ensureMetronome()
+      const cancels = this.#sinkCancels
+      this.#accomp?.setMetronomeEnabled(this.#practiceClick())
       this.#listen?.transport.setMetronomeEnabled(next.metronome.enabled)
       this.#play?.transport.setMetronomeEnabled(this.#playMetronome())
+      if (this.#sinkCancels !== cancels) this.#reclickCountIn(now)
     }
     this.#process(now)
   }
@@ -2786,9 +2810,13 @@ export class PracticeSession {
     return this.#deps.hasWebAudio?.() ?? true
   }
 
-  /** Load the metronome when the setting is on, or `force` (the Keep time count-in clicks anyway). */
+  /**
+   * Load the metronome when a click is wanted: the general setting, the current mode's (Keep
+   * time's own, DECISIONS P20), or `force` (the Keep time count-in clicks anyway).
+   */
   async #ensureMetronome(force = false): Promise<void> {
-    if ((!this.#settings.metronome.enabled && !force) || this.#metronome || !this.#deps.loadMetronome) return
+    if (this.#metronome || !this.#deps.loadMetronome) return
+    if (!force && !this.#settings.metronome.enabled && !this.#practiceClick()) return
     try {
       const m = await this.#deps.loadMetronome()
       if (this.#disposed || this.#metronome) return
@@ -2844,7 +2872,7 @@ export class PracticeSession {
       metronome: {
         sink: this.#metronomeSink,
         clicks: buildClickTrack(this.#model, range),
-        enabled: this.#settings.metronome.enabled,
+        enabled: this.#practiceClick(),
       },
       onGateReached: (gate) => {
         const t = this.#deps.clock()
@@ -3246,6 +3274,39 @@ export class PracticeSession {
     return this.#settings.metronome.enabled && !this.#micActive()
   }
 
+  /** Which Metronome preference the current mode uses (DECISIONS P20; `ui.metronomeScope`). */
+  #metronomeScope(): MetronomeScope {
+    return metronomeScope(this.#rhythm, this.#sel.hands)
+  }
+
+  /** The gated practice transport's click: Keep time's own preference in its attempts, else the general one. */
+  #practiceClick(): boolean {
+    return metronomeOn(this.#settings.metronome, this.#metronomeScope())
+  }
+
+  /**
+   * Create (resume) the shared AudioContext inside the Start tap when this Start wants a click:
+   * iPadOS starts an AudioContext only during a user gesture, and `#ensureMetronome` creates it
+   * after awaiting the module (DECISIONS P20). Nothing when no click is wanted; never throws.
+   */
+  #unlockAudio(): void {
+    if (!this.#deps.loadMetronome || !(this.#deps.hasWebAudio?.() ?? true)) return
+    try {
+      const plan = this.#plan()
+      if (!plan.enabled) return
+      const click =
+        plan.action === 'play'
+          ? this.#playMetronome()
+          : plan.action === 'listen'
+            ? this.#settings.metronome.enabled
+            : // The Keep time count-in always clicks.
+              (this.#rhythm && plan.action === 'scored') || this.#practiceClick()
+      if (click) sharedAudioContext()
+    } catch {
+      // No Web Audio: the Start goes on without a click.
+    }
+  }
+
   #isPlaying(): boolean {
     if (this.#playThrough) return this.#play?.playing ?? false
     if (this.#listen) return this.#listen.playing
@@ -3310,6 +3371,8 @@ export class PracticeSession {
       micStatus: this.#micStatus,
       rhythm: false,
       countIn: null,
+      metronomeScope: this.#metronomeScope(),
+      metronomeMuted: this.#micActive(),
       finished: false,
     }
   }
@@ -3360,6 +3423,8 @@ export class PracticeSession {
       micStatus: null,
       rhythm: this.#rhythm,
       countIn: this.#countIn?.remaining ?? null,
+      metronomeScope: this.#metronomeScope(),
+      metronomeMuted: false,
       // A lead-in that read to its end is not the end of the piece: it wraps into the attempt.
       finished: this.#engine.mode === 'reading' && s.phase === 'completed' && !leadIn,
     }

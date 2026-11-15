@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,6 +14,10 @@ import { defineConfig } from '@playwright/test'
  *   npm run perf -- --project=chromium # one browser
  *   PERF_LABEL=after npm run perf      # results in $TMPDIR/pianissimo-perf/<label>-<browser>.json
  */
+// Same rule as the root playwright.config.ts: the cloud container's Chromium when present, unless
+// PW_CHROMIUM_PATH says otherwise ('' = Playwright's own, selected by channel below).
+const containerChromium = '/opt/pw-browsers/chromium'
+const chromiumPath = process.env['PW_CHROMIUM_PATH'] ?? (existsSync(containerChromium) ? containerChromium : '')
 const port = Number(process.env['PERF_PORT'] ?? 4185)
 const [vw, vh] = (process.env['PERF_VIEWPORT'] ?? '1366x1024').split('x').map(Number) as [number, number]
 
@@ -21,6 +26,8 @@ export default defineConfig({
   testMatch: 'perf.spec.ts',
   outputDir: join(tmpdir(), 'pianissimo-perf', 'test-results'),
   timeout: 20 * 60_000,
+  // Long waits in the spec pass their own timeouts; anything else that is stale fails fast.
+  expect: { timeout: 20_000 },
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -31,10 +38,17 @@ export default defineConfig({
     deviceScaleFactor: 2,
     colorScheme: 'light',
     reducedMotion: 'no-preference',
+    actionTimeout: 30_000,
   },
   projects: [
     // The full Chromium build in new headless mode (not the headless shell): real compositor frames.
-    { name: 'chromium', use: { browserName: 'chromium', channel: 'chromium' } },
+    {
+      name: 'chromium',
+      use: {
+        browserName: 'chromium',
+        ...(chromiumPath ? { launchOptions: { executablePath: chromiumPath } } : { channel: 'chromium' as const }),
+      },
+    },
     { name: 'webkit', use: { browserName: 'webkit' } },
   ],
   webServer: {

@@ -2,7 +2,7 @@
  * The Practice footer menu (DECISIONS U76): one Menu button in the bottom-left corner, before the
  * always-visible Speed control, that opens an anchored popover (never a modal sheet) holding Note
  * names, Play through, Keep time (rhythm mode, P13; exclusive with Play through, the session
- * switches the other off) and Show keys. While Keep time is on the Menu button carries a small
+ * switches the other off), Metronome (U87, P20) and Show keys. While Keep time is on the Menu button carries a small
  * metronome badge, so the mode shows with the menu closed. The popover opens upward, stays on screen (`placePopover`)
  * and fades. It
  * closes on Escape, a press outside it, the Menu button again, when playback starts and when the
@@ -24,6 +24,14 @@ const LABEL_OPTIONS = [
   { value: 'all', label: 'All', title: 'Name every note' },
 ] as const
 
+/** The Metronome row's state, computed once by the screen (DECISIONS U87, P20). */
+export interface MetronomeRow {
+  readonly on: boolean
+  readonly disabled: boolean
+  /** Shown under the label (the microphone is following), else absent. */
+  readonly note?: string
+}
+
 export interface FooterMenuProps {
   readonly ui: SessionUi
   readonly session: PracticeSession
@@ -32,10 +40,19 @@ export interface FooterMenuProps {
   readonly onLabels: (mode: PersistentLabelMode) => void
   /** The score (or the piece) has a numerical tempo: Keep time needs one. */
   readonly hasTempo: boolean
+  readonly metronome: MetronomeRow
+  /** Turns the click on or off for the current mode (the screen primes audio, then edits the settings). */
+  readonly onMetronome: (on: boolean) => void
 }
 
 /**
- * The menu's rows: Note names, Play through, Keep time and (unless `showKeys` is false: a phone
+ * Marks the controls on the way to a label switch (the Menu buttons, the Note names row): input on
+ * them does not cancel the run prepared ahead, so the switch can adopt it (`PracticeScreen`).
+ */
+export const KEEPS_AHEAD = 'data-keeps-ahead'
+
+/**
+ * The menu's rows: Note names, Play through, Keep time, Metronome and (unless `showKeys` is false: a phone
  * on its side has no keyboard guide, U80) Show keys. The footer popover and the phone's menu
  * sheet (`PracticeScreen`, U80) share them; the classes come from the host.
  */
@@ -45,11 +62,13 @@ export function PracticeMenuItems({
   labels,
   onLabels,
   hasTempo,
+  metronome,
+  onMetronome,
   showKeys = true,
   rowClass,
   labelClass,
   toggleClass,
-}: Pick<FooterMenuProps, 'ui' | 'session' | 'labels' | 'onLabels' | 'hasTempo'> & {
+}: Pick<FooterMenuProps, 'ui' | 'session' | 'labels' | 'onLabels' | 'hasTempo' | 'metronome' | 'onMetronome'> & {
   readonly showKeys?: boolean
   readonly rowClass: string | undefined
   readonly labelClass: string | undefined
@@ -58,7 +77,7 @@ export function PracticeMenuItems({
   const toggleRow = [rowClass, toggleClass].filter(Boolean).join(' ')
   return (
     <>
-      <div class={rowClass}>
+      <div class={rowClass} data-keeps-ahead>
         <span class={labelClass} aria-hidden="true">
           Note names
         </span>
@@ -84,6 +103,14 @@ export function PracticeMenuItems({
         disabled={!ui.handsAvailable || ui.hands === 'none' || !hasTempo}
         onChange={(on) => session.setRhythmMode(on)}
       />
+      <Toggle
+        class={toggleRow}
+        label="Metronome"
+        checked={metronome.on}
+        disabled={metronome.disabled}
+        {...(metronome.note ? { description: metronome.note } : {})}
+        onChange={onMetronome}
+      />
       {showKeys ? (
         <Toggle
           class={toggleRow}
@@ -96,7 +123,16 @@ export function PracticeMenuItems({
   )
 }
 
-export function FooterMenu({ ui, session, receded, labels, onLabels, hasTempo }: FooterMenuProps) {
+export function FooterMenu({
+  ui,
+  session,
+  receded,
+  labels,
+  onLabels,
+  hasTempo,
+  metronome,
+  onMetronome,
+}: FooterMenuProps) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
@@ -145,6 +181,7 @@ export function FooterMenu({ ui, session, receded, labels, onLabels, hasTempo }:
         class={`${styles.tool} ${menuStyles.menuButton}`}
         aria-label="Menu"
         title="Menu"
+        data-keeps-ahead
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
@@ -176,6 +213,8 @@ export function FooterMenu({ ui, session, receded, labels, onLabels, hasTempo }:
             labels={labels}
             onLabels={onLabels}
             hasTempo={hasTempo}
+            metronome={metronome}
+            onMetronome={onMetronome}
             rowClass={menuStyles.row}
             labelClass={menuStyles.label}
             toggleClass={menuStyles.toggle}

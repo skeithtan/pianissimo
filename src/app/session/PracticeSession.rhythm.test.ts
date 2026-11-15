@@ -2,12 +2,12 @@
  * Keep time (rhythm mode, DECISIONS P13): a count-in, then the strict transport plays without
  * waiting and the engine judges every group against its scheduled time.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildScore } from '../../core/engine/testkit'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { FakeAudioContext } from '../../core/playback/fakeWebAudio'
 import type { MetronomeModule } from '../../core/playback'
-import { resetSharedAudioContext, sharedAudioContext } from '../../core/playback/webaudio/context'
+import { existingAudioContext, resetSharedAudioContext, sharedAudioContext } from '../../core/playback/webaudio/context'
 import type { LadderSettings } from '../../core/storage/records'
 import { harness, testSettings, type Harness } from './testkit'
 import type { SessionOptions } from './PracticeSession'
@@ -117,9 +117,19 @@ describe('Keep time: count-in', () => {
     expect(ui(h).countIn).toBeNull()
     expect(h.session.engine.state.phase).toBe('running')
     expect(h.session.engine.state.clockStartedAt).toBe(RUN)
-    // The attempt's own clicks follow the Metronome setting (off): only the count-in clicked.
-    at(h, RUN + 3000)
-    expect(rec.clicks).toHaveLength(4)
+    // The attempt clicks its own beats by default (DECISIONS P20): one steady pulse, the count-in
+    // then the attempt's bar from the moment the clock starts, its first beat accented.
+    at(h, RUN + 3500)
+    expect(rec.clicks.slice(0, 8)).toEqual([
+      { time: 1000, accent: true },
+      { time: 2000, accent: false },
+      { time: 3000, accent: false },
+      { time: 4000, accent: false },
+      { time: RUN, accent: true },
+      { time: RUN + 1000, accent: false },
+      { time: RUN + 2000, accent: false },
+      { time: RUN + 3000, accent: false },
+    ])
   })
 
   it('counts in at the speed and in dotted beats for a compound meter', async () => {
@@ -350,6 +360,7 @@ describe('Keep time: modes', () => {
     h.session.setRhythmMode(true)
     expect(ui(h).rhythm).toBe(true)
     h.session.setPlayThrough(true)
+    h.frames.flush()
     expect(ui(h)).toMatchObject({ playThrough: true, rhythm: false, startAction: 'play' })
     h.session.setRhythmMode(true)
     expect(ui(h)).toMatchObject({ playThrough: false, micStatus: null, rhythm: true, startAction: 'scored' })
@@ -384,7 +395,8 @@ describe('Keep time: modes', () => {
     at(h, RUN + 4000)
     expect(h.session.engine.state.phase).toBe('ready')
     expect(ui(h).countIn).toBe(4)
-    expect(rec.clicks.filter((c) => c.accent).map((c) => c.time)).toEqual([T0, RUN + 4000])
+    // The pass's own bar clicks too (accent at RUN, DECISIONS P20), then the next count-in.
+    expect(rec.clicks.filter((c) => c.accent).map((c) => c.time)).toEqual([T0, RUN, RUN + 4000])
     at(h, RUN + 8000)
     expect(h.session.engine.state.phase).toBe('running')
     playOnTime(h, [60, 62, 64, 65], [], RUN + 8000)
@@ -476,5 +488,170 @@ describe('Keep time: modes', () => {
     await begin(h)
     expect(h.session.engine.transport).toBe('strict')
     expect(ui(h).countIn).toBe(4)
+  })
+})
+
+describe('Keep time: its own metronome switch (DECISIONS P20)', () => {
+  const metronome = (patch: Partial<SessionSettings['metronome']>) =>
+    testSettings({ metronome: { ...DEFAULT_SETTINGS.metronome, ...patch } })
+
+  it('keepTime off: only the count-in clicks, whatever the general switch says', async () => {
+    for (const enabled of [false, true]) {
+      rec = { clicks: [], cancels: [] }
+      const h = open({}, { settings: metronome({ enabled, keepTime: false }) })
+      await begin(h)
+      at(h, RUN)
+      expect(h.session.engine.state.phase).toBe('running')
+      at(h, RUN + 3500)
+      expect(rec.clicks.map((c) => c.time)).toEqual([1000, 2000, 3000, 4000])
+      h.session.dispose()
+    }
+  })
+
+  it('ordinary reading follows the general switch only', async () => {
+    const reading = async (enabled: boolean, keepTime: boolean): Promise<number> => {
+      rec = { clicks: [], cancels: [] }
+      const h = open({}, { rhythm: false, settings: metronome({ enabled, keepTime }) })
+      expect(ui(h).metronomeScope).toBe('general')
+      await begin(h)
+      expect(h.session.engine.mode).toBe('reading')
+      h.play(60, 62, 64, 65)
+      h.step(1000)
+      h.session.dispose()
+      return rec.clicks.length
+    }
+    expect(await reading(true, false)).toBeGreaterThan(0)
+    expect(await reading(false, true)).toBe(0)
+  })
+
+  it('switching it off during the count-in keeps the count-in clicks; the attempt is then silent', async () => {
+    const h = open()
+    await begin(h)
+    at(h, 2500)
+    const before = rec.clicks.length
+    h.session.updateSettings(metronome({ keepTime: false }))
+    expect(rec.cancels.at(-1)).toBe(2500)
+    // The beats still to come are clicked again after the sink's cancel.
+    expect(rec.clicks.slice(before)).toEqual([
+      { time: 3000, accent: false },
+      { time: 4000, accent: false },
+    ])
+    expect(ui(h).countIn).toBe(3)
+    at(h, RUN)
+    expect(h.session.engine.state.phase).toBe('running')
+    at(h, RUN + 3500)
+    expect(rec.clicks.filter((c) => c.time >= RUN)).toEqual([])
+  })
+
+  it('switching it on during the count-in does not click the count-in twice', async () => {
+    const h = open({}, { settings: metronome({ keepTime: false }) })
+    await begin(h)
+    at(h, 2500)
+    h.session.updateSettings(metronome({ keepTime: true }))
+    at(h, RUN + 500)
+    expect(rec.clicks.filter((c) => c.time < RUN).map((c) => c.time)).toEqual([1000, 2000, 3000, 4000])
+    expect(rec.clicks.filter((c) => c.time >= RUN)[0]).toEqual({ time: RUN, accent: true })
+  })
+
+  it('switching it off, on and off mid-attempt stops and resumes the clicks', async () => {
+    const h = open()
+    await begin(h)
+    at(h, RUN + 1500)
+    expect(rec.clicks.some((c) => c.time === RUN + 1000)).toBe(true)
+    h.session.updateSettings(metronome({ keepTime: false }))
+    expect(rec.cancels.at(-1)).toBe(RUN + 1500)
+    let n = rec.clicks.length
+    at(h, RUN + 2500)
+    expect(rec.clicks.length).toBe(n)
+    h.session.updateSettings(metronome({ keepTime: true }))
+    at(h, RUN + 3500)
+    expect(rec.clicks.slice(n).map((c) => c.time)).toContain(RUN + 3000)
+    h.session.updateSettings(metronome({ keepTime: false }))
+    n = rec.clicks.length
+    at(h, RUN + 3900)
+    expect(rec.clicks.length).toBe(n)
+    // The attempt itself is untouched: still running and judged against the beat.
+    expect(h.session.engine.state.phase).toBe('running')
+  })
+
+  it('ui.metronomeScope: Keep time with a hand, else the general switch', () => {
+    const h = open()
+    expect(ui(h)).toMatchObject({ rhythm: true, metronomeScope: 'keepTime', metronomeMuted: false })
+    h.session.setSelection({ hands: 'right' })
+    h.frames.flush()
+    expect(ui(h).metronomeScope).toBe('keepTime')
+    h.session.setSelection({ hands: 'none' })
+    h.frames.flush()
+    expect(ui(h)).toMatchObject({ hands: 'none', metronomeScope: 'general', metronomeMuted: false })
+    h.session.setSelection({ hands: 'both' })
+    h.frames.flush()
+    expect(ui(h).metronomeScope).toBe('keepTime')
+    h.session.setRhythmMode(false)
+    h.frames.flush()
+    expect(ui(h)).toMatchObject({ rhythm: false, metronomeScope: 'general' })
+    h.session.setPlayThrough(true)
+    h.frames.flush()
+    expect(ui(h)).toMatchObject({ playThrough: true, metronomeScope: 'general', metronomeMuted: false })
+  })
+})
+
+describe('Start unlocks audio inside the tap (DECISIONS P20)', () => {
+  beforeEach(() => resetSharedAudioContext())
+
+  it('a Keep time Start creates the shared AudioContext synchronously, even with both switches off', () => {
+    const h = open({}, { settings: testSettings({ metronome: { enabled: false, keepTime: false, volume: 0.6 } }) })
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    try {
+      const run = h.session.start()
+      expect(existingAudioContext()).not.toBeNull()
+      return run
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('a reading Start with the general switch on creates it synchronously', () => {
+    const h = open(
+      {},
+      { rhythm: false, settings: testSettings({ metronome: { ...DEFAULT_SETTINGS.metronome, enabled: true } }) },
+    )
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    try {
+      const run = h.session.start()
+      expect(existingAudioContext()).not.toBeNull()
+      return run
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('a Start that wants no click creates none (MIDI-only reading)', async () => {
+    const h = open({}, { rhythm: false })
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    try {
+      await begin(h)
+      expect(h.session.engine.mode).toBe('reading')
+      expect(existingAudioContext()).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('never throws without Web Audio, and does nothing when the app reports none', async () => {
+    const h = open()
+    expect(() => void h.session.start()).not.toThrow()
+    await h.session.start()
+    const off = harness(
+      melody,
+      {},
+      { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec), hasWebAudio: () => false } },
+    )
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+    try {
+      void off.session.start()
+      expect(existingAudioContext()).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

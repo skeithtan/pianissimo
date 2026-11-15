@@ -9,6 +9,17 @@ const screen = (page: Page) => page.locator('[data-activity]')
 const header = (page: Page) => page.getByTestId('practice-header-slot')
 const tools = (page: Page) => page.getByTestId('footer-tools-slot')
 const stage = (page: Page) => page.getByTestId('strip-host')
+const speedButton = (page: Page) => page.getByRole('button', { name: /Open speed options/ })
+const menuButton = (page: Page) => page.locator('footer').getByRole('button', { name: 'Menu', exact: true })
+
+/** How strongly a footer control shows: its opacity times every ancestor's, up to the footer. */
+const strength = (locator: Locator) =>
+  locator.evaluate((el) => {
+    let value = 1
+    for (let node: Element | null = el; node && node.tagName !== 'FOOTER'; node = node.parentElement)
+      value *= Number(getComputedStyle(node).opacity)
+    return Math.round(value * 100) / 100
+  })
 
 async function open(page: Page): Promise<void> {
   await installFakeMidi(page)
@@ -30,10 +41,12 @@ async function reveal(page: Page): Promise<void> {
 }
 
 for (const size of [
-  { name: 'portrait', width: 586, height: 846, colorScheme: 'light', reducedMotion: 'no-preference' },
-  { name: 'tablet', width: 820, height: 1180, colorScheme: 'dark', reducedMotion: 'no-preference' },
+  // A window too narrow for one footer row: the tools wrap into their own row, which collapses.
+  { name: 'portrait', width: 586, height: 846, wraps: true, colorScheme: 'light', reducedMotion: 'no-preference' },
+  // A tablet held upright has the footer it has on its side (U88): one row, nothing to collapse.
+  { name: 'tablet', width: 820, height: 1180, wraps: false, colorScheme: 'dark', reducedMotion: 'no-preference' },
 ] as const) {
-  test(`${size.name}: focus releases header and tool-row space, and restores usable speed controls`, async ({
+  test(`${size.name}: focus releases the header${size.wraps ? ' and the tool row' : ', the footer tools dim in place'}, and restores usable speed controls`, async ({
     page,
     browserName,
   }) => {
@@ -45,11 +58,20 @@ for (const size of [
     const originalHeight = await height(stage(page))
     const releasedHeight = (await height(header(page))) + (await height(tools(page)))
     const playBefore = await page.getByRole('button', { name: 'Start', exact: true }).boundingBox()
+    const speedBefore = await speedButton(page).boundingBox()
+    const menuBefore = await menuButton(page).boundingBox()
 
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await focused(page)
     await expect.poll(() => height(tools(page))).toBeLessThan(1)
     await expect.poll(() => height(stage(page))).toBeGreaterThan(originalHeight + releasedHeight - 2)
+    if (!size.wraps) {
+      // Speed and Menu stay exactly where they were and dim, as in landscape.
+      await expect.poll(() => strength(menuButton(page))).toBe(0.12)
+      expect(await strength(speedButton(page))).toBe(0.12)
+      expect(await speedButton(page).boundingBox()).toEqual(speedBefore)
+      expect(await menuButton(page).boundingBox()).toEqual(menuBefore)
+    }
     expect(await originalPage!.evaluate((el) => el.isConnected)).toBe(true)
     expect(
       await header(page)
@@ -63,11 +85,12 @@ for (const size of [
     await page.screenshot({ path: join(SHOT_DIR, `${browserName}-focus-${size.name}.png`) })
 
     await reveal(page)
-    await expect.poll(() => height(tools(page))).toBeGreaterThan(40)
+    if (size.wraps) await expect.poll(() => height(tools(page))).toBeGreaterThan(40)
+    else await expect.poll(() => strength(menuButton(page))).toBe(1)
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
     expect(await originalPage!.evaluate((el) => el.isConnected)).toBe(true)
 
-    await page.getByRole('button', { name: /Open speed options/ }).click()
+    await speedButton(page).click()
     const speed = page.getByRole('dialog', { name: 'Playback speed' })
     await expect(speed).toBeVisible()
     // The automatically focused preset is a button, not a keyboard-focused text field.
@@ -89,9 +112,49 @@ for (const size of [
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
     await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
     await expect.poll(() => height(header(page))).toBeGreaterThan(50)
-    await expect.poll(() => height(tools(page))).toBeGreaterThan(40)
+    if (size.wraps) await expect.poll(() => height(tools(page))).toBeGreaterThan(40)
+    else expect(await speedButton(page).boundingBox()).toEqual(speedBefore)
   })
 }
+
+/**
+ * A tablet's footer is the same single row held upright and on its side (U88): Speed at the start
+ * edge, the hands around Start in the middle, Menu at the end edge.
+ */
+test('a tablet held upright has the footer it has on its side: one row', async ({ page }) => {
+  const footerLayout = async (width: number, viewportHeight: number) => {
+    await page.setViewportSize({ width, height: viewportHeight })
+    await expect(page.getByTestId('strip-host')).toHaveAttribute('data-mode', width > viewportHeight ? 'strip' : 'page')
+    return page.evaluate(() => {
+      const footer = document.querySelector('footer')!
+      const box = (label: string) => footer.querySelector(`button[aria-label${label}]`)!.getBoundingClientRect()
+      const area = footer.getBoundingClientRect()
+      const speed = box('^="Slower"')
+      const start = box('="Start"')
+      const menu = box('="Menu"')
+      return {
+        height: Math.round(area.height),
+        speedFromStartEdge: Math.round(speed.left - area.left),
+        speedTop: Math.round(speed.top - area.top),
+        startOffCenter: Math.round(start.left + start.width / 2 - (area.left + area.width / 2)),
+        startTop: Math.round(start.top - area.top),
+        menuFromEndEdge: Math.round(area.right - menu.right),
+        menuTop: Math.round(menu.top - area.top),
+      }
+    })
+  }
+  await page.setViewportSize({ width: 1180, height: 820 })
+  await open(page)
+  const onItsSide = await footerLayout(1180, 820)
+  expect(onItsSide.startOffCenter).toBe(0)
+  // The 11-inch and 10-inch tablets, and the smallest one, held upright.
+  for (const [width, viewportHeight] of [
+    [820, 1180],
+    [744, 1133],
+  ] as const) {
+    expect(await footerLayout(width, viewportHeight), `${width} px wide`).toEqual(onItsSide)
+  }
+})
 
 /**
  * A phone-size screen (U80) has one top bar instead of the header and footer, and nothing in it

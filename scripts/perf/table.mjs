@@ -62,8 +62,11 @@ const ROWS = [
     'MIDI → next frame p50 / p95 (ms)',
     (r) => `${n(get(r, 'midiLatency.nextFrame.p50'))} / ${n(get(r, 'midiLatency.nextFrame.p95'))}`,
   ],
-  ['Practice 8 notes/s: frame p50 / p95 / p99', (r) => pct(get(r, 'practiceFast.frames'))],
-  ['Practice 8 notes/s: main ms/frame', (r) => split(get(r, 'practiceFast.mainThreadPerFrame'))],
+  ['Practice at 200%, each group on time (~4/s): frame p50 / p95 / p99', (r) => pct(get(r, 'practiceFast.frames'))],
+  [
+    'Practice at 200%, each group on time (~4/s): main ms/frame',
+    (r) => split(get(r, 'practiceFast.mainThreadPerFrame')),
+  ],
   [
     'Wrong-note flash: frame p95 / max (ms)',
     (r) => `${n(get(r, 'wrongFlash.frames.p95'))} / ${n(get(r, 'wrongFlash.frames.max'))}`,

@@ -9,7 +9,14 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   — loads OSMD with a dynamic `import()` (library view never fetches it), engraves `renderXml` as
   one horizontal staffline in a hidden attached container, maps graphics to
   `PerformedNote.index`, reserves label boxes, partitions into segments, discards the SVG tree and
-  the OSMD instance. Progress via `onProgress(stage, f)`; `signal` cancels between stages.
+  the OSMD instance. Progress via `onProgress(stage, f)`; `signal` cancels at the next stage
+  boundary (every await is followed by a check; a boundary is `stageBoundary()`, which lets pending
+  input, a frame and timers run first; a single OSMD call cannot be interrupted), and a
+  canceled run rejects with an `AbortError` and returns nothing to cache.
+  After it returns or throws nothing of the engraving stays reachable: `discardOsmd` clears the
+  instance, empties OSMD's `NoteToGraphicalNoteMap` and unsets the calculator statics that would
+  keep the last `EngravingRules` (and through them the engraved SVG tree) alive once no other
+  engraving is in flight (`tests/e2e/render-lifecycle.spec.ts`).
   `RenderInput` = `ScorePackage.renderXml` + `ScoreModel` fields (the model satisfies it).
 - `prepareLayout(adapter, cache | null, input, opts)` — cache hit or prepare + put.
 - `LayoutCache` (`get(key)`, `put(layout)`), `MemoryLayoutCache` (byte-bounded LRU),
@@ -120,8 +127,11 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   ottava parts `data-o`.
 - **Sanitization** (`sanitize.ts`): element/attribute allow-list, no `url(`/`javascript:`,
   geometry rounded (0.1 px paths), default attributes dropped, engraver black → `currentColor`.
-  `isSafeSvgMarkup` (cached layouts) also finds attributes right after a quote or `/` and rejects
-  character references other than `&amp; &lt; &gt; &quot; &nbsp;`.
+  `isSafeSvgMarkup` (cached layouts) is a single-pass scanner that accepts only the form
+  `outerHTML` gives a sanitized tree: allowed names spelled exactly, one space before each
+  attribute, double-quoted values, matching end tags, no comments, CDATA, self-closing tags,
+  controls or character references other than `&amp; &lt; &gt; &quot;` (and `&nbsp;` in text).
+  `url(`/`javascript:` are checked in attribute values only: text between tags is inert.
 - **Cursor path** (`strip/cursorPath.ts`, pure): knots are every onset anchor in global position
   order; a bar's last onset glides straight to the next bar's first onset. Continuous following
   uses monotone cubic interpolation with continuous speed and exact onset alignment. A held

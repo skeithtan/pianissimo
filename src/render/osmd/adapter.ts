@@ -51,10 +51,11 @@ import {
   type SpacingParams,
   type StaffGeometry,
 } from '../types'
+import { stageBoundary } from './boundary'
 import { extract, type Extraction, type RawMeasure, type RawOttava } from './extract'
 import { loadOsmd } from './load'
 import { preparePage } from './page'
-import type { OsmdInstance } from './osmd-types'
+import type { OsmdInstance, OsmdModule } from './osmd-types'
 
 export const OSMD_VERSION = '2.2.1'
 /**
@@ -133,7 +134,6 @@ export class Aborted extends Error {
 }
 
 const now = (): number => performance.now()
-const nextTask = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
 export class OsmdRenderer implements RendererAdapter {
   readonly name = RENDERER_NAME
@@ -147,6 +147,15 @@ export class OsmdRenderer implements RendererAdapter {
     const check = (): void => {
       if (signal?.aborted) throw new Aborted()
     }
+    /**
+     * Lets pending input, a frame and timers run (`stageBoundary`), then stops if the caller canceled
+     * meanwhile. Every await is followed by a check, so a canceled run stops at the next stage
+     * boundary and returns nothing to cache.
+     */
+    const pause = async (): Promise<void> => {
+      await stageBoundary()
+      check()
+    }
     const progress = (stage: PrepareStage, f: number): void => options.onProgress?.(stage, f)
     const fontPx = options.labels.fontPx ?? LABEL_FONT_PX
     const host = options.host ?? document.body
@@ -158,6 +167,7 @@ export class OsmdRenderer implements RendererAdapter {
     } catch {
       // Measuring with the fallback metrics of a font still loading is only slightly off.
     }
+    check()
     const measure = options.textMeasurer ?? canvasMeasurer(document) ?? estimateMeasurer
     const label = labelMetrics(options.labels.maxChars, fontPx, measure, LABEL_FONT_FAMILY)
     const segmentWidth = options.segmentWidth ?? DEFAULT_SEGMENT_WIDTH
@@ -177,11 +187,12 @@ export class OsmdRenderer implements RendererAdapter {
     container.style.cssText =
       'position:absolute;left:-200000px;top:0;width:1600px;visibility:hidden;pointer-events:none;contain:layout style'
     host.append(container)
-    let osmd: OsmdInstance | undefined = new mod.OpenSheetMusicDisplay(container, { ...OSMD_OPTIONS })
+    let osmd: OsmdInstance | undefined = createOsmd(mod, container, { ...OSMD_OPTIONS })
     try {
       progress('engraving', 0)
       const te = now()
       await osmd.load(input.renderXml)
+      check()
       let engraveMs = now() - te
       let extractMs = 0
       let labelMs = 0
@@ -194,14 +205,14 @@ export class OsmdRenderer implements RendererAdapter {
         osmd.EngravingRules.SheetMaximumWidth = MAX_SHEET_WIDTH
         osmd.EngravingRules.VoiceSpacingMultiplierVexflow = spacing.voiceSpacingMultiplier
         osmd.EngravingRules.VoiceSpacingAddendVexflow = spacing.voiceSpacingAddend
-        await nextTask()
+        await pause()
         const tr = now()
         osmd.render()
         engraveMs += now() - tr
         check()
 
         progress('extracting', 0)
-        await nextTask()
+        await pause()
         const tx = now()
         const ex = extract(osmd, container, input.occurrences.length)
         const mapping = mapNotes(input.notes, ex.graphics)
@@ -210,6 +221,7 @@ export class OsmdRenderer implements RendererAdapter {
         check()
 
         progress('labels', 0)
+        await pause()
         const tlab = now()
         const units = labelUnits(input, ex, mapping)
         const obstacles = [...ex.obstacles, ...occurrences.map((o) => o.labelBox)]
@@ -236,7 +248,7 @@ export class OsmdRenderer implements RendererAdapter {
         }
 
         progress('partitioning', 0)
-        await nextTask()
+        await pause()
         const tp = now()
         const order = result.labels
           .map((l, unit) => ({ l, unit }))
@@ -255,6 +267,7 @@ export class OsmdRenderer implements RendererAdapter {
         tagElements(input, ex, mapping, ottavas.raw)
         const svgNodes = ex.svgNodes
         sanitizeSvgTree(ex.svg)
+        await pause()
 
         const bboxOf = (el: Element): Box => {
           const b = (el as SVGGraphicsElement).getBBox()
@@ -283,6 +296,7 @@ export class OsmdRenderer implements RendererAdapter {
         const height = Math.ceil(extent.y + extent.h + pad) - top
         const width = Math.ceil(Math.max(extent.x + extent.w, occurrences.at(-1)?.x1 ?? 0) + pad)
         const bounds = segmentBounds(occurrences, width, segmentWidth)
+        await pause()
         const firstLabelOfOcc = labelIndexByOcc(labels, occurrences.length)
         const segments = partitionSvg(ex.svg, bounds, top, height, (b) => [
           firstLabelOfOcc[b.occStart]!,
@@ -347,15 +361,47 @@ export class OsmdRenderer implements RendererAdapter {
         return layout
       }
     } finally {
-      try {
-        osmd?.clear()
-      } catch {
-        // The instance is discarded either way.
-      }
+      if (osmd) discardOsmd(mod, osmd)
       osmd = undefined
       container.remove()
     }
   }
+}
+
+/** Engravings in flight: they share OSMD's calculator statics. */
+let engravings = 0
+
+/** A new OSMD instance for one engraving; give it back with `discardOsmd`. */
+export function createOsmd(mod: OsmdModule, container: HTMLElement, options: Record<string, unknown>): OsmdInstance {
+  const osmd = new mod.OpenSheetMusicDisplay(container, options)
+  engravings++
+  return osmd
+}
+
+/**
+ * Lets go of everything an engraving made. `clear()` alone is not enough: OSMD's calculator
+ * statics (`MusicSheetCalculator.TextMeasurer`, `.stafflineNoteCalculator`) keep the last
+ * instance's `EngravingRules` reachable, and its `NoteToGraphicalNoteMap` holds every graphical
+ * note and, through VexFlow, the engraved SVG tree, until the next engraving replaces them. The
+ * map is emptied here, and the statics are unset once no other engraving is using them (every
+ * new instance sets them again).
+ */
+export function discardOsmd(mod: OsmdModule, osmd: OsmdInstance): void {
+  engravings--
+  try {
+    osmd.clear()
+  } catch {
+    // The instance is discarded either way.
+  }
+  try {
+    osmd.EngravingRules.clearMusicSheetObjects?.()
+  } catch {
+    // As above.
+  }
+  const statics = mod.MusicSheetCalculator
+  if (engravings > 0 || !statics) return
+  statics.TextMeasurer = undefined
+  statics.stafflineNoteCalculator = undefined
 }
 
 export function labelIndexByOcc(labels: readonly LabelBox[], occCount: number): number[] {

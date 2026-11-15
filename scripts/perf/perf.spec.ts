@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test, type Browser, type CDPSession, type Page } from '@playwright/test'
 import { generateLongScore } from '../../tests/fixtures/generate-long-score'
-import { installFakeMidi } from '../../tests/e2e/practice-helpers'
+import { installFakeMidi, setShowKeys, openFooterMenu } from '../../tests/e2e/practice-helpers'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { dist, frameStats, installPageProbe, perFrame, topSelf, traceSplit, type TraceSplit } from './lib'
 
@@ -47,6 +47,8 @@ declare global {
     }
     __pnProbe?: { renders: Record<string, number>; reset(): void }
     __groups?: number[][]
+    /** Resolves when `notes` are at the stationary cursor (gate); `stable` also waits for 80 ms without motion. */
+    __due?: (notes: number[], stable: boolean) => Promise<void>
   }
 }
 
@@ -132,22 +134,22 @@ test('perf walk', async ({ page, browser, browserName }) => {
       await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
 
       // Same, with the 88-key guide shown (U15).
-      await page.getByRole('button', { name: 'Show keys' }).click()
+      await setShowKeys(page, true)
       await page.waitForTimeout(600)
       results['listenGuide'] = await measure(page, browser, cdp, 'listen-guide', LISTEN_MS, async () => {
         await page.getByRole('button', { name: 'Play', exact: true }).click()
       })
       await page.getByRole('button', { name: 'Pause', exact: true }).click()
-      await page.getByRole('button', { name: 'Hide keys' }).click()
+      await setShowKeys(page, false)
 
       // Same, with every note named (spec: a 500-measure score works with all-note labels).
-      await page.getByRole('radio', { name: 'All' }).click()
+      await setNoteNames(page, 'All')
       await page.waitForTimeout(800)
       results['listenLabels'] = await measure(page, browser, cdp, 'listen-labels', LISTEN_MS, async () => {
         await page.getByRole('button', { name: 'Play', exact: true }).click()
       })
       await page.getByRole('button', { name: 'Pause', exact: true }).click()
-      await page.getByRole('radio', { name: 'Off' }).click()
+      await setNoteNames(page, 'Off')
       results['heapAfterListen'] = await heap(cdp)
     })
 
@@ -160,6 +162,7 @@ test('perf walk', async ({ page, browser, browserName }) => {
       await page.keyboard.press('Home')
       await page.waitForTimeout(300)
       await loadGroups(page)
+      await setSpeed(page, '200%')
       await page.getByRole('button', { name: 'Start', exact: true }).click()
       await page.waitForTimeout(400)
 
@@ -170,9 +173,10 @@ test('perf walk', async ({ page, browser, browserName }) => {
         const dom: number[] = []
         const frame: number[] = []
         const nextFrame = () => new Promise<number>((r) => requestAnimationFrame((t) => r(t)))
-        const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
         for (let i = 0; i < 30; i++) {
           const notes = groups[i]!
+          // Timed practice (P9): the music gates at each onset, so press when the group is due.
+          await window.__due!(notes, true)
           let hit = -1
           const mo = new MutationObserver((list) => {
             if (hit >= 0) return
@@ -195,24 +199,23 @@ test('perf walk', async ({ page, browser, browserName }) => {
             dom.push(hit - t0)
             frame.push(presented - t0)
           }
-          await wait(300)
         }
         return { dom, frame }
       })
       const lat = results['midiLatency'] as { dom: number[]; frame: number[] }
       results['midiLatency'] = { dom: dist(lat.dom), nextFrame: dist(lat.frame) }
 
-      // Fast playing: 8 groups per second.
+      // Fast playing: at 200% speed (set before Start) every group is pressed the moment it reaches the cursor.
       results['practiceFast'] = await measure(page, browser, cdp, 'practice-fast', 0, async () => {
         await page.evaluate(async () => {
           const groups = window.__groups!
           const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
           for (let i = 30; i < 30 + 80 && i < groups.length; i++) {
             const notes = groups[i]!
+            await window.__due!(notes, false)
             for (const n of notes) window.__midi.on(n)
-            await wait(60)
+            await wait(40)
             for (const n of notes) window.__midi.off(n)
-            await wait(65)
           }
         })
       })
@@ -230,6 +233,7 @@ test('perf walk', async ({ page, browser, browserName }) => {
         })
       })
       await page.getByRole('button', { name: 'Pause', exact: true }).click()
+      await setSpeed(page, '100%')
     })
 
   // ── Memory after traversing the whole strip ─────────────────────────────────────────────
@@ -302,6 +306,15 @@ test('perf walk', async ({ page, browser, browserName }) => {
 
 // ── helpers ─────────────────────────────────────────────────────────────────────────────
 
+/** Picks a speed preset in the footer's speed popover (the stepper shows the current speed). */
+async function setSpeed(page: Page, preset: string): Promise<void> {
+  await page.getByRole('button', { name: /Open speed options/ }).click()
+  const dialog = page.getByRole('dialog', { name: 'Playback speed' })
+  await dialog.getByRole('group', { name: 'Speed presets' }).getByRole('button', { name: preset, exact: true }).click()
+  await page.getByRole('button', { name: /Open speed options/ }).click()
+  await expect(dialog).toHaveCount(0)
+}
+
 /** Both hand toggles on (practice both hands) or off (Listen, U9). */
 async function setHands(page: Page, on: boolean): Promise<void> {
   for (const name of ['Left hand', 'Right hand']) {
@@ -309,6 +322,34 @@ async function setHands(page: Page, on: boolean): Promise<void> {
     if ((await toggle.getAttribute('aria-pressed')) !== String(on)) await toggle.click()
     await expect(toggle).toHaveAttribute('aria-pressed', String(on))
   }
+}
+
+/**
+ * Waits until the page has had no long task for 2 s, so background work left over from the
+ * previous step (cache writes, deferred layout) does not land inside the next measurement. Under
+ * CPU throttling that work can run for many seconds and starve the first Listen sample.
+ */
+async function settle(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const t0 = performance.now()
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 250))
+      const now = performance.now()
+      const last = Math.max(0, ...window.__perf.longTasksSince(now - 2000).map((l) => l.start))
+      if (now - Math.max(last, t0) >= 2000 && now - t0 >= 2000) return
+      if (now - t0 > 120_000) throw new Error('page never went quiet')
+    }
+  })
+}
+
+/** Picks a "Note names on the score" option in the footer menu (U76), then closes the menu. */
+async function setNoteNames(page: Page, option: string): Promise<void> {
+  const menu = await openFooterMenu(page)
+  const radio = menu.getByRole('radiogroup', { name: 'Note names on the score' }).getByRole('radio', { name: option })
+  await radio.click()
+  await expect(radio).toHaveAttribute('aria-checked', 'true')
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
 }
 
 async function heap(cdp: CDPSession | null): Promise<Json | null> {
@@ -540,6 +581,39 @@ async function loadGroups(page: Page): Promise<void> {
       if (!g) groups.set(at, (g = new Set()))
       g.add(n.midi)
     }
+    const pitches = pkg.model.notes.map((n) => n.midi)
+    window.__due = (notes, stable) =>
+      new Promise<void>((resolve, reject) => {
+        const deadline = performance.now() + 20_000
+        let stableSince = performance.now()
+        let previous = ''
+        const check = () => {
+          const now = performance.now()
+          const cursor = document.querySelector('.pn-cursor-bar')?.getBoundingClientRect()
+          const targets = [...document.querySelectorAll('.pn-music .pn-target:not(.pn-acc)')].map((el) => ({
+            pitches: (el.getAttribute('data-n') ?? '').split(' ').map((n) => pitches[Number(n)]),
+            box: el.getBoundingClientRect(),
+          }))
+          const wanted = notes.map((n) => targets.find((t) => t.pitches.includes(n)))
+          // Overlapping the cursor and not moving for 80 ms: held at the gate. Moving (not `stable`
+          // mode): the first head has reached the cursor's centre line, so the press is on time or
+          // a little late, never early.
+          const overlaps = (t: { box: DOMRect } | undefined) =>
+            !!cursor && !!t && t.box.left <= cursor.right && t.box.right >= cursor.left
+          const atCursor = !!cursor && wanted.every(Boolean) && wanted.some(overlaps)
+          const arrived =
+            !!cursor &&
+            wanted.every(Boolean) &&
+            wanted.some((t) => t && t.box.left + t.box.width / 2 <= cursor.left + cursor.width / 2 && overlaps(t))
+          const position = atCursor ? wanted.map((t) => t!.box.x.toFixed(1)).join('|') : ''
+          if (!position || position !== previous) stableSince = now
+          previous = position
+          if (position && ((!stable && arrived) || now - stableSince >= 80)) return resolve()
+          if (now >= deadline) return reject(new Error(`Notes ${notes.join(', ')} did not reach the cursor`))
+          requestAnimationFrame(check)
+        }
+        requestAnimationFrame(check)
+      })
     window.__groups = [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([, s]) => [...s])
   })
 }
@@ -556,6 +630,7 @@ async function measure(
   ms: number,
   action: () => Promise<void>,
 ): Promise<Json> {
+  await settle(page)
   const tracing = cdp !== null
   const profiling = cdp !== null && PROFILE
   if (profiling) {
@@ -646,7 +721,7 @@ function summaryTable(r: Json): string {
     ['listen+labels main ms/frame', (g('listenLabels.mainThreadPerFrame') as Json | undefined)?.['total']],
     ['MIDI→DOM p50/p95 ms', `${g('midiLatency.dom.p50')} / ${g('midiLatency.dom.p95')}`],
     ['MIDI→next frame p50/p95 ms', `${g('midiLatency.nextFrame.p50')} / ${g('midiLatency.nextFrame.p95')}`],
-    ['practice 8/s frames p50/p95/p99', fr(g('practiceFast.frames'))],
+    ['practice 200% frames p50/p95/p99', fr(g('practiceFast.frames'))],
     ['wrong flash frames p50/p95/p99', fr(g('wrongFlash.frames'))],
     ['traversal max mounted segs', g('traversal.maxMountedSegments')],
     ['heap after traversal MB', (g('heapAfterTraversal') as Json | null)?.['jsHeapUsedMB']],

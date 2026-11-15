@@ -29,7 +29,7 @@ file picker ──► import worker (core/import) ──► ScorePackage {model,
 | `src/core/music/pitch.ts` | `Spelling` (step, alter, octave), MIDI conversion. |
 | `src/core/music/tempo.ts` | `TempoMapData`, seconds ↔ positions, multiplier math, BPM entry. |
 | `src/core/model/score.ts` | `ScoreModel`, `PerformedNote`, ottava/arpeggio/pedal/dynamics, `ScorePackage`. |
-| `src/core/model/settings.ts` | `AppSettings` and spec defaults (`SETTINGS_VERSION` 2: sound destination `'auto'`, S4). |
+| `src/core/model/settings.ts` | `AppSettings` and spec defaults (`SETTINGS_VERSION` 2: sound destination `'auto'`, S4; `metronome.keepTime` added without a bump, P20). |
 | `src/core/model/practice.ts` | Comparison contexts, `AttemptRecord`, `MeasureTraversal`, passages; `TRANSPORT_KINDS` (the runtime list `TransportKind` is derived from). |
 | `src/core/midi/types.ts` | `MidiInputEvent` (decoded, sequenced, consumed once). |
 
@@ -172,7 +172,9 @@ injected clock and timers: gates = learner group positions, nothing past an unre
 while the human holds that pitch on a route verified echo-free, cleanup on the app channel only) and the lazily imported
 browser-audio backend (one AudioContext, Salamander bank ≤ 32 MiB decoded, synth fallback).
 The metronome is clicks scheduled by the same transport (free mode: click-only transport
-started at the first press). Session wiring notes: `src/core/playback/README.md`.
+started at the first press). `AppSettings.metronome` (P20): `enabled` (default off) is the click in
+Listen, reading, scored practice and play-through; `keepTime` (default on, absent in older stored
+settings = on) is the click in a Keep time attempt after its count-in; the count-in always clicks. Session wiring notes: `src/core/playback/README.md`.
 
 ### core/history and core/storage
 history (pure, worker-safe): `ingestAttempt` / `ingestAbandon` fold engine records
@@ -336,7 +338,12 @@ Keep time (rhythm mode, P13, U78): `PracticeSession.setRhythmMode` (saved per pi
 `PieceRecord.rhythm`) turns every Start into a scored attempt on the engine's strict transport,
 with `rhythm.toleranceMs` from `AppSettings.rhythm`, over the Repeat loop or else the whole
 piece. When the engine is Ready the session counts in one bar (`countIn.ts`) through the
-metronome sink and publishes `ui.countIn`; at the end it calls `engine.startRunning(t)` and
+metronome sink (whatever the Metronome switches say; a switch turned off meanwhile cancels the
+sink, so the session clicks the beats still to come again) and publishes `ui.countIn`. The
+attempt itself clicks per `metronome.keepTime` (P20; `app/session/metronome.ts`: `metronomeScope`,
+`metronomeOn`, `metronomePatch`; `ui.metronomeScope` names the switch the current mode uses and
+`ui.metronomeMuted` is true in play-through while the microphone follows). Start creates the shared
+AudioContext synchronously inside the tap when it will click (iPadOS gesture rule); at the end it calls `engine.startRunning(t)` and
 `transport.play(t)` with one timestamp after releasing every gate, so the music never holds. The
 transport reports each arrival (`transportArrived`); the engine judges, closes missed groups and
 builds the record. The session renders only gentle feedback (soft wash for `missed`, amber
@@ -350,7 +357,7 @@ session and `StripView` (`prepareLayout` + IndexedDB layout cache; re-prepared w
 The footer's **Play through** tool (icon `flow`, `aria-pressed`, disabled while the hands are
 off) toggles play-through; the main button reads Start / Pause / Resume there, and no result card,
 interruption or Repeat panel shows while `activity === 'playing'`.
-Focus mode collapses the header and narrow footer-tools row using CSS grid tracks (U60).
+Focus mode collapses the header, and on windows of 640 px or less the wrapped footer-tools row, using CSS grid tracks (U60); a tablet's footer is one row in both orientations and its tools dim in place (U88).
 Only the stage height changes, so the existing score view remeasures without re-engraving.
 `useRecede` restores chrome on pause, pointer/touch interaction, or keyboard navigation.
 `views/study` (U72): `StudyView` reads `studyRequest` (`openStudy({pieceId})`, route

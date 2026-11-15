@@ -2,7 +2,9 @@
  * Sound (spec "Listening and hand practice", DECISIONS S4): where Listen and the accompaniment
  * play. Auto (default) uses the connected piano when there is one and this device otherwise;
  * Connected piano and Browser sound pin one destination. Also the browser volume, the
- * accompaniment level and the metronome.
+ * accompaniment level and the metronome: "Metronome click" (Listen, reading, scored practice and
+ * Play through) and "Click in Keep time" (the rhythm mode's attempt), each its own switch (DECISIONS
+ * P20; the Practice and Study menus edit the one that applies, U87), and one shared volume.
  */
 import { settings, updateSettings } from '../../app/state'
 import type { FeatureReport } from '../../app/features'
@@ -76,9 +78,15 @@ export function SoundSection({ features }: { features: FeatureReport }) {
       <Group title="Metronome">
         <Toggle
           label="Metronome click"
-          description="Off by default. It follows the music and never forces the score to advance."
+          description="Off by default. In Listen, reading and Play through it follows the music and never forces the score to advance."
           checked={metronome.enabled}
           onChange={(enabled) => updateSettings({ metronome: { enabled } })}
+        />
+        <Toggle
+          label="Click in Keep time"
+          description="On by default. In Keep time the beat keeps clicking through the attempt, after the count-in."
+          checked={metronome.keepTime}
+          onChange={(keepTime) => updateSettings({ metronome: { keepTime } })}
         />
         <Slider
           label="Metronome volume"
@@ -87,7 +95,7 @@ export function SoundSection({ features }: { features: FeatureReport }) {
           step={0.05}
           value={metronome.volume}
           format={percent}
-          disabled={!metronome.enabled}
+          disabled={!metronome.enabled && !metronome.keepTime}
           onChange={(volume) => updateSettings({ metronome: { volume } })}
         />
         {metronome.enabled && !audio.supported && audio.explanation ? (

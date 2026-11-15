@@ -228,6 +228,8 @@ export function normalizeSettings(raw: unknown): AppSettings {
     },
     metronome: {
       enabled: bool(metronome['enabled'], d.metronome.enabled),
+      // Absent before DECISIONS P20: the default (on).
+      keepTime: bool(metronome['keepTime'], d.metronome.keepTime),
       volume: num(metronome['volume'], d.metronome.volume, 0, 1),
     },
     rhythm: {
