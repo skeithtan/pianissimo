@@ -24,10 +24,18 @@ test('three clean passes climb the ladder one step, and the ladder survives a re
   await expect(speed).toHaveCount(0)
   await expect(speedButton).toHaveAccessibleName(/Speed 50%/)
 
-  await panel.getByRole('combobox', { name: 'Repeat until' }).selectOption({ label: 'Until 3 clean in a row' })
-  const ladder = panel.getByTestId('ladder-select')
-  await ladder.selectOption({ label: 'Ladder to 100%' })
+  // The goal button opens the repeat options: Until 3 clean in a row, and a ladder to 100%.
+  await panel.getByRole('button', { name: /^Repeat goal: / }).click()
+  const options = panel.getByRole('dialog', { name: 'Repeat options' })
+  await options.getByRole('radiogroup', { name: 'Repeat until' }).getByRole('radio', { name: '3' }).click()
+  await options.getByRole('switch', { name: 'Speed ladder' }).check()
+  await expect(
+    options.getByRole('radiogroup', { name: 'Ladder goal' }).getByRole('radio', { name: '100%' }),
+  ).toBeChecked()
+  await expect(panel.getByTestId('target-line')).toHaveText('Until 3 clean')
   await expect(panel.getByTestId('ladder-line')).toContainText('50% → 100%')
+  await page.keyboard.press('Escape')
+  await expect(options).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Start', exact: true }).click()
   const card = page.getByTestId('attempt-result')
@@ -62,6 +70,11 @@ test('three clean passes climb the ladder one step, and the ladder survives a re
   const reopen = page.getByRole('button', { name: 'Repeat from here' })
   await expect(restored.or(reopen)).toBeVisible()
   if (!(await restored.isVisible())) await reopen.click()
-  await expect(restored.getByTestId('ladder-select')).toHaveValue('100')
-  await expect(restored.getByTestId('ladder-line')).toContainText('100%')
+  await expect(restored.getByTestId('ladder-line')).toContainText('→ 100%')
+  await restored.getByRole('button', { name: /^Repeat goal: / }).click()
+  const reopened = restored.getByRole('dialog', { name: 'Repeat options' })
+  await expect(reopened.getByRole('switch', { name: 'Speed ladder' })).toBeChecked()
+  await expect(
+    reopened.getByRole('radiogroup', { name: 'Ladder goal' }).getByRole('radio', { name: '100%' }),
+  ).toBeChecked()
 })

@@ -394,8 +394,9 @@ Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `prac
   action button live in a screen-space layer (R13). Label font is loaded before metrics (R14).
 - Practice: no PassageBar; `views/practice` footer holds Speed on the start side, the hand
   toggles + play in the middle, and a Menu button on the end side (an anchored popover,
-  `FooterMenu.tsx`, with Note names, Play through and Show keys, U76); a Repeat panel floats over the Stage in
-  Repeat mode (U12–U14).
+  `FooterMenu.tsx`, with Note names, Play through and Show keys, U76); a Repeat panel (`RepeatPanel.tsx`:
+  passage selector `LoopSteppers`, goal popover or phone sheet `RepeatOptions`, Exit repeat) floats over
+  the Stage in Repeat mode, or has its own folding row under the overview on an upright phone (U12–U14, U89).
   `render/keyboard` draws all 88 keys (U15). `app/session/output.ts` resolves Auto (S4).
 - Routing: `app/routes.ts` (parse/format) and `app/router.ts` (signal ⇄ URL sync, started in
   `boot.ts`) (A10). Connection setup is `views/connection/ConnectionModal.tsx` over any view (C8).

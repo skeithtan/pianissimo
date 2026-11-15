@@ -25,6 +25,11 @@ export interface PopoverPlacementInput {
   readonly margin?: number
   /** Distance between the anchor and the panel. */
   readonly gap?: number
+  /**
+   * 'center' (default) centers the panel on the anchor; 'start' lines its left edge up with the
+   * anchor's, as an option menu drops from its button (the Repeat goal, U89).
+   */
+  readonly align?: 'center' | 'start'
 }
 
 export interface PopoverPlacement {
@@ -45,11 +50,12 @@ export function placePopover({
   preferred,
   margin = POPOVER_MARGIN,
   gap = POPOVER_GAP,
+  align = 'center',
 }: PopoverPlacementInput): PopoverPlacement {
-  const centered = anchor.left + anchor.width / 2 - size.width / 2
+  const wanted = align === 'start' ? anchor.left : anchor.left + anchor.width / 2 - size.width / 2
   const maxLeft = viewport.width - margin - size.width
   // A panel wider than the viewport keeps its left edge on screen.
-  const viewportLeft = Math.max(margin, Math.min(centered, maxLeft))
+  const viewportLeft = Math.max(margin, Math.min(wanted, maxLeft))
 
   const below = viewport.height - (anchor.top + anchor.height) - gap - margin
   const above = anchor.top - gap - margin

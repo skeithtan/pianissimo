@@ -29,6 +29,23 @@ describe('placePopover', () => {
     expect(p).toEqual({ side: 'down', left: 100 - 170, maxHeight: null })
   })
 
+  it("drops from the anchor's left edge like an option menu with align 'start'", () => {
+    const viewport = { width: 1180, height: 820 }
+    const panel = { width: 380, height: 300 }
+    const at = (left: number) =>
+      placePopover({
+        anchor: { left, top: 10, width: 300, height: 48 },
+        size: panel,
+        viewport,
+        preferred: 'down',
+        align: 'start',
+        gap: 4,
+      })
+    expect(at(400)).toEqual({ side: 'down', left: 0, maxHeight: null })
+    // Near the right edge it shifts left just enough to stay inside the margin.
+    expect(at(900).left).toBe(1180 - POPOVER_MARGIN - 380 - 900)
+  })
+
   it('shifts the panel inside the right edge (tempo control at the right of a 360 px header)', () => {
     const e = edges({ left: 140, top: 120, width: 208, height: 56 }, 'down')
     expect(e.right).toBeLessThanOrEqual(viewport.width - POPOVER_MARGIN)

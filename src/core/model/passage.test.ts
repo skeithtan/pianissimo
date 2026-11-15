@@ -4,6 +4,7 @@ import { rat } from '../music/rational'
 import {
   beatText,
   describePassage,
+  edgeShortText,
   edgeText,
   isWholeBars,
   lastOnsetIn,
@@ -146,5 +147,21 @@ describe('passage words (U22)', () => {
     expect(edgeText(score, { fromOcc: 0, toOcc: 1, start: quarters(2) }, 'start', 'right')).toBe('Bar 1, beat 3')
     expect(edgeText(score, { fromOcc: 0, toOcc: 1, start: quarters(2) }, 'end', 'right')).toBe('Bar 2')
     expect(edgeText(score, { fromOcc: 0, toOcc: 1, end: quarters(7) }, 'end', 'right')).toBe('Bar 2, beat 3')
+  })
+
+  it('shortens edges for the Repeat steppers: "1", "1·3", the end naming its last note', () => {
+    expect(edgeShortText(score, { fromOcc: 0, toOcc: 1 }, 'start', 'right')).toBe('1')
+    expect(edgeShortText(score, { fromOcc: 0, toOcc: 1 }, 'end', 'right')).toBe('2')
+    expect(edgeShortText(score, { fromOcc: 0, toOcc: 1, start: quarters(2) }, 'start', 'right')).toBe('1·3')
+    expect(edgeShortText(score, { fromOcc: 0, toOcc: 1, end: quarters(7) }, 'end', 'right')).toBe('2·3')
+  })
+
+  it('marks the pass of a repeated bar in the short text', () => {
+    const repeated = {
+      ...score,
+      occurrences: score.occurrences.map((o, i) => (i === 1 ? { ...o, number: '1', pass: 2 } : o)),
+    }
+    expect(edgeShortText(repeated, { fromOcc: 1, toOcc: 1 }, 'start', 'right')).toBe('1 (2nd)')
+    expect(edgeShortText(repeated, { fromOcc: 0, toOcc: 1, end: quarters(7) }, 'end', 'right')).toBe('1 (2nd)·3')
   })
 })

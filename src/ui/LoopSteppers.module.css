@@ -1,25 +1,29 @@
+/* One rounded selector: ‹ 12 › – ‹ 14 ›. The chevrons are borderless 44 px targets on the
+   selector's sunken surface (no boxes inside the box, U22 revised). */
 .steppers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-.group {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1);
+  min-width: 0;
+  padding: 2px;
   border-radius: var(--radius-m);
   background: var(--bg-sunken);
 }
+.group {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+}
 .step {
+  flex: none;
   display: grid;
   place-items: center;
-  width: var(--touch);
-  height: var(--touch);
+  width: 44px;
+  height: 44px;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-m);
-  background: var(--bg-raised);
+  border: 0;
+  border-radius: calc(var(--radius-m) - 2px);
+  background: transparent;
   color: var(--fg);
   cursor: pointer;
   touch-action: manipulation;
@@ -34,53 +38,29 @@
 .step:active:not(:disabled) {
   transform: scale(0.94);
 }
+.step:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
 .step:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
-.label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 92px;
-  line-height: var(--leading-tight);
-}
-.title {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--fg-muted);
-}
+/* The edge's short text; it truncates rather than pushing the row wider on a narrow phone. */
 .value {
+  flex: 1 1 auto;
+  min-width: 2.5ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-size: var(--text-m);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
 }
-/* Phones: both groups side by side in two equal columns (44 px targets); anything placed
-   between them (children) takes a full row. */
-@media (max-width: 600px) {
-  .steppers {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--space-2);
-  }
-  .steppers > :not(.group) {
-    grid-column: 1 / -1;
-  }
-  .group {
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
-    gap: 2px;
-    padding: 2px;
-  }
-  .step {
-    width: 44px;
-    height: 44px;
-  }
-  .label {
-    min-width: 0;
-    text-align: center;
-  }
-  .title {
-    white-space: nowrap;
-    letter-spacing: -0.01em;
-  }
+.dash {
+  flex: none;
+  padding: 0 2px;
+  color: var(--fg-muted);
 }

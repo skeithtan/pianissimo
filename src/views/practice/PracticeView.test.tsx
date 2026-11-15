@@ -668,7 +668,10 @@ describe('PracticeView', () => {
     const panel = $(view.container, '[data-testid="repeat-controls"]')!
     expect(byLabel(panel, 'Loop start')?.textContent).toContain('Bar 1')
     expect(byLabel(panel, 'Loop end')?.textContent).toContain('Bar 1')
-    expect(panel.querySelector('label')?.textContent).toContain('Repeat until')
+    // "Bars", the passage selector with short numbers, the goal button and the exit (U14 revised).
+    expect(panel.textContent).toContain('Bars')
+    expect($(panel, '[data-testid="target-line"]')?.textContent).toBe('No limit')
+    expect($(panel, 'button[aria-haspopup="dialog"]')?.getAttribute('aria-label')).toMatch(/^Repeat goal: /)
     // The overview row holds only the overview (U11): the steppers are not in it.
     const overview = byLabel(view.container, 'Piece overview')!.parentElement!
     expect(overview.contains(panel)).toBe(false)
@@ -687,10 +690,10 @@ describe('PracticeView', () => {
     expect(strip.loop).toBeNull()
     expect(strip.cursorAction).toBe(true)
 
-    // The toolbar's icon clears the same passage and leaves Repeat mode too.
+    // The panel's ✕ clears the same passage and leaves Repeat mode too (U61).
     act(() => strip.options.onCursorAction?.())
     await settle(r)
-    const clear = byLabel(view.container, 'Clear loop')!
+    const clear = byLabel(view.container, 'Exit repeat')!
     expect(clear.textContent).toBe('')
     click(clear)
     await settle(r)
@@ -1170,7 +1173,7 @@ describe('PracticeView', () => {
     expect(screen().dataset['recede']).toBeUndefined()
   })
 
-  it('the speed ladder select offers goals above the speed, shows its status and is saved on the piece', async () => {
+  it('the repeat options set the target and a speed ladder above the speed, saved on the piece', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
     view = mount(<PracticeViewWith env={r.env} />)
@@ -1178,34 +1181,51 @@ describe('PracticeView', () => {
     act(() => r.strips.at(-1)!.options.onCursorAction?.())
     await settle(r)
     const panel = $(view.container, '[data-testid="repeat-controls"]')!
-    const select = $(panel, '[data-testid="ladder-select"]') as HTMLSelectElement
-    expect(select.closest('label')?.textContent).toContain('Speed ladder')
-    // At 100% the goals are the faster presets.
-    expect([...select.options].map((o) => o.textContent)).toEqual([
-      'Ladder: off',
-      'Ladder to 125%',
-      'Ladder to 150%',
-      'Ladder to 200%',
-    ])
+    const goal = $(panel, 'button[aria-haspopup="dialog"]')!
+    expect($(panel, '[role="dialog"]')).toBeNull()
+    click(goal)
+    await settle(r)
+    const options = $(panel, '[role="dialog"][aria-label="Repeat options"]')!
+    expect(goal.getAttribute('aria-expanded')).toBe('true')
+    // Repeat until: No limit, 3, 5, 10 clean in a row.
+    const until = $(options, '[role="radiogroup"][aria-label="Repeat until"]')!
+    expect($$(until, '[role="radio"]').map((b) => b.textContent)).toEqual(['No limit', '3', '5', '10'])
+    click(byText(until, '3', 'button'))
+    await settle(r)
+    expect($(panel, '[data-testid="target-line"]')?.textContent).toBe('Until 3 clean')
+    // The ladder is off: no summary. Switched on at 100%, it aims at the next preset.
     expect($(panel, '[data-testid="ladder-line"]')).toBeNull()
+    const ladder = $(options, 'input[role="switch"]') as HTMLInputElement
+    expect(ladder.closest('label')?.textContent).toContain('Speed ladder')
     act(() => {
-      select.value = '150'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
+      ladder.checked = true
+      ladder.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await settle(r)
-    expect($(panel, '[data-testid="ladder-line"]')?.textContent).toBe('Ladder 100% → 150%')
+    const goals = $(options, '[role="radiogroup"][aria-label="Ladder goal"]')!
+    expect($$(goals, '[role="radio"]').map((b) => b.textContent)).toEqual(['125%', '150%', '200%'])
+    expect($(panel, '[data-testid="ladder-line"]')?.textContent).toBe('100% → 125%')
+    click(byText(goals, '150%', 'button'))
+    await settle(r)
+    expect($(panel, '[data-testid="ladder-line"]')?.textContent).toBe('100% → 150%')
     act(() => r.clock.advance(1500))
     await settle(r)
-    expect((await r.storage.getPiece(r.pieceId))?.ladder).toEqual({ goal: 1.5, step: 0.05 })
+    const saved = await r.storage.getPiece(r.pieceId)
+    expect(saved?.ladder).toEqual({ goal: 1.5, step: 0.05 })
     act(() => {
-      select.value = ''
-      select.dispatchEvent(new Event('change', { bubbles: true }))
+      ladder.checked = false
+      ladder.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await settle(r)
     expect($(panel, '[data-testid="ladder-line"]')).toBeNull()
     act(() => r.clock.advance(1500))
     await settle(r)
     expect((await r.storage.getPiece(r.pieceId))?.ladder).toBeNull()
+    // Escape closes the options.
+    press($(options, '[role="radio"]'), 'Escape')
+    await settle(r)
+    await faded()
+    expect($(panel, '[role="dialog"]')).toBeNull()
   })
 
   it('remembers hands, passage and speed on the piece', async () => {
@@ -1438,6 +1458,72 @@ describe('PracticeView', () => {
       // A tap on the bar brings its controls back (U13).
       act(() => {
         bar(root).dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      })
+      await settle(r, 1)
+      expect($(root, '[data-activity]')?.dataset['recede']).toBeUndefined()
+    })
+
+    it('upright, Repeat has its own row under the overview: selector, ⋯ (a sheet) and ✕; it folds while playing', async () => {
+      const r = await phoneRig()
+      const root = r.root
+      act(() => r.strips.at(-1)!.options.onCursorAction?.())
+      await settle(r)
+      const slot = $(root, '[data-testid="repeat-slot"]')!
+      const panel = $(slot, '[data-testid="repeat-controls"]')!
+      expect(panel.dataset['layout']).toBe('docked')
+      expect($(root, '[data-repeat-bounds] [data-testid="repeat-controls"]'), 'not over the score').toBeNull()
+      // The overview row comes first, then the Repeat row (U11: the overview's row is its own).
+      const overview = byLabel(root, 'Piece overview')!
+      expect(overview.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(panel.textContent).not.toContain('Bars')
+      expect(byLabel(panel, 'Exit repeat')).not.toBeNull()
+      const more = $(panel, 'button[aria-haspopup="dialog"]')!
+      expect(more.getAttribute('aria-label')).toBe('Repeat options: repeat with no limit')
+      expect($(panel, '[data-testid="repeat-goal-dot"]')).toBeNull()
+      click(more)
+      await settle(r, 1)
+      const sheet = dialog()!
+      expect(sheet.getAttribute('aria-label')).toBe('Repeat options')
+      click(byText($(sheet, '[role="radiogroup"][aria-label="Repeat until"]')!, '5', 'button'))
+      await settle(r, 1)
+      expect(more.getAttribute('aria-label')).toBe('Repeat options: until 5 clean in a row')
+      expect($(panel, '[data-testid="repeat-goal-dot"]')).not.toBeNull()
+      // Playing closes the sheet and folds the row away; a tap on it brings it back.
+      click(byLabel(bar(root), 'Start'))
+      await settle(r)
+      expect(more.getAttribute('aria-expanded')).toBe('false')
+      act(() => r.clock.advance(RECEDE_DELAY_MS))
+      await settle(r, 1)
+      expect($(root, '[data-activity]')?.dataset['recede']).toBe('true')
+      expect(slot.inert).toBe(true)
+      act(() => {
+        bar(root).dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      })
+      await settle(r, 1)
+      expect(slot.inert).toBe(false)
+    })
+
+    it('on its side, Repeat floats over the score with ⋯ and ✕, and recedes with the chrome', async () => {
+      sideways = true
+      const r = await phoneRig()
+      const root = r.root
+      act(() => r.strips.at(-1)!.options.onCursorAction?.())
+      await settle(r)
+      expect($(root, '[data-testid="repeat-slot"]')).toBeNull()
+      const panel = $(root, '[data-repeat-bounds] [data-testid="repeat-controls"]')!
+      expect(panel.dataset['layout']).toBe('compact')
+      expect(byLabel(panel, 'Exit repeat')).not.toBeNull()
+      expect($(panel, 'button[aria-haspopup="dialog"]')?.getAttribute('aria-label')).toMatch(/^Repeat options: /)
+      click(byLabel(bar(root), 'Start'))
+      await settle(r)
+      act(() => r.clock.advance(RECEDE_DELAY_MS))
+      await settle(r, 1)
+      expect($(root, '[data-activity]')?.dataset['recede']).toBe('true')
+      // A touch anywhere on the score brings the chrome back (U13).
+      act(() => {
+        $(root, '[data-repeat-bounds]')!.dispatchEvent(
+          Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'touch' }),
+        )
       })
       await settle(r, 1)
       expect($(root, '[data-activity]')?.dataset['recede']).toBeUndefined()

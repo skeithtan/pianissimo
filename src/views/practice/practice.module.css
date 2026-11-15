@@ -366,7 +366,10 @@
   justify-content: flex-end;
 }
 
-/* ── Repeat panel (Repeat mode only, U14) ───────────────────────────────── */
+/* ── Repeat panel (Repeat mode only, U14; revised 15 November 2026) ───────── */
+/* "Bars", the passage selector, the goal (a button with a popover, or ⋯ on a phone) and an
+   always-visible ✕. No outline (U49) and a solid surface. `float` and `compact` sit at the top
+   of the stage and recede; `docked` is the upright phone's own row under the overview. */
 .repeatZone {
   pointer-events: auto;
   max-width: 100%;
@@ -378,10 +381,26 @@
   justify-content: center;
   gap: var(--space-2);
   padding: var(--space-1);
-  border: 0;
   border-radius: var(--radius-l);
-  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  background: var(--bg-elevated);
   animation: rise var(--dur-base) var(--ease-out) both;
+}
+.repeatPanel[data-layout='compact'] {
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+}
+/* The upright phone's row: the selector takes the width left by ⋯ and ✕. */
+.repeatPanel[data-layout='docked'] {
+  flex-wrap: nowrap;
+  justify-content: stretch;
+  gap: 6px;
+  padding: 0 calc(var(--space-3) + var(--safe-r)) var(--space-2) calc(var(--space-3) + var(--safe-l));
+  border-radius: 0;
+  background: transparent;
+  animation: none;
+}
+.repeatPanel[data-layout='docked'] .passage {
+  flex: 1 1 auto;
 }
 /* Leaving Repeat mode (U14): the panel sinks back up and fades while it is still mounted. */
 .repeatPanel[data-leaving] {
@@ -394,45 +413,221 @@
     transform: translateY(-6px);
   }
 }
-.repeatActions {
-  display: flex;
+.barsLabel {
+  padding-inline-start: var(--space-2);
+  font-size: var(--text-s);
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+/* Tablets: the numbers keep a steady width while they change. */
+.repeatPanel[data-layout='float'] .passage [data-edge] {
+  min-width: 40px;
+}
+.goalWrap {
+  position: relative;
+}
+.goalButton {
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  min-height: 48px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--text-s);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background var(--dur-fast) var(--ease-standard);
 }
-/* The speed ladder: its goal select and, while on, its status ("Ladder 60% → 100%"). */
-.ladder {
+.goalButton:hover {
+  background: var(--hover);
+}
+.goalButton[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+.goalButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.goalButton > svg {
+  flex: none;
+  color: var(--accent);
+}
+.goalDivider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+.goalLadder {
+  font-variant-numeric: tabular-nums;
+}
+.goalLadder[data-done] {
+  color: var(--success);
+}
+.goalChevron {
+  display: inline-grid;
+  color: var(--fg-muted);
+  transform: rotate(90deg);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.goalChevron[data-open] {
+  transform: rotate(-90deg);
+}
+/* The options drop from the goal button like an option menu: its left edge, just below it, at
+   least as wide (RepeatPanel places it inside the stage). */
+.goalPopover {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 4px);
+  left: 0;
+  width: min(380px, calc(100vw - 24px));
+  min-width: 100%;
+  box-sizing: border-box;
+  transform-origin: top left;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  background: var(--bg-elevated);
+  text-align: start;
+  animation: drop-menu var(--dur-fast) var(--ease-out) both;
+}
+.goalPopoverUp {
+  top: auto;
+  bottom: calc(100% + 4px);
+  transform-origin: bottom left;
+}
+@keyframes drop-menu {
+  from {
+    opacity: 0;
+    transform: scaleY(0.94);
+  }
+}
+.moreButton {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--touch);
+  height: var(--touch);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg-raised);
+  color: var(--fg);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.moreButton[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+.moreButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* A goal is set (a target or a ladder): the ⋯ says so, since a phone has no room for the summary. */
+.moreDot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--bg-raised);
+  border-radius: 50%;
+  background: var(--accent);
+}
+.exitDivider {
+  width: 1px;
+  height: 28px;
+  background: var(--border);
+}
+/* The goal settings, in the popover or the phone's sheet. */
+.repeatOptions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1) var(--space-2);
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
 }
-.ladderLine {
+.optionBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.optionRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+/* The choices share the full width in one line, in the popover and the phone's sheet. */
+.repeatOptions [role='radiogroup'] {
+  display: flex;
+  flex-wrap: nowrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+.repeatOptions [role='radio'] {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 4px;
+}
+.optionLabel {
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--fg-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
-.ladderLine[data-done] {
-  color: var(--success);
+/* A phone on its side has little height: Repeat until and the ladder sit side by side. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .repeatOptions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-5);
+    padding-block: var(--space-2);
+  }
+  .optionDivider {
+    display: none;
+  }
 }
-.selectWrap {
-  position: relative;
-  display: inline-flex;
-}
-.selectWrap::after {
-  content: '';
-  position: absolute;
-  inset-inline-end: 14px;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
+.optionNote {
+  margin: 0;
+  font-size: var(--text-xs);
   color: var(--fg-muted);
-  transform: translateY(-70%) rotate(45deg);
-  pointer-events: none;
+}
+.optionDivider {
+  height: 1px;
+  background: var(--border);
+}
+/* The upright phone's Repeat row: it folds away with the chrome while playing (U60/U80 revised),
+   like the tablet header, and a tap brings it back. Hidden, it is inert. */
+.repeatSlot {
+  flex: none;
+  display: grid;
+  grid-template-rows: 1fr;
+  background: var(--bg);
+  transition: grid-template-rows var(--dur-slow) var(--ease-standard);
+}
+.repeatSlotClip {
+  min-height: 0;
+  overflow: hidden;
+}
+.repeatSlotClip > * {
+  transition:
+    transform var(--dur-slow) var(--ease-standard),
+    opacity var(--dur-base) var(--ease-standard);
+}
+.screen[data-recede='true'] .repeatSlot,
+.repeatSlot[data-leaving] {
+  grid-template-rows: 0fr;
+}
+.screen[data-recede='true'] .repeatSlotClip > *,
+.repeatSlot[data-leaving] .repeatSlotClip > * {
+  transform: translateY(-100%);
+  opacity: 0;
 }
 .select {
   appearance: none;
@@ -857,8 +1052,13 @@
     animation: none;
   }
   .screen[data-recede='true'] .header,
-  .screen[data-recede='true'] .footerTools {
+  .screen[data-recede='true'] .footerTools,
+  .screen[data-recede='true'] .repeatSlotClip > *,
+  .repeatSlot[data-leaving] .repeatSlotClip > * {
     transform: none;
+  }
+  .goalPopover {
+    animation: none;
   }
   .banner,
   .repeatPanel {

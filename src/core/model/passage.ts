@@ -248,6 +248,34 @@ export function edgeText(model: PassageWords, p: PassageRange, edge: 'start' | '
   return `${bar}, beat ${beatText(model, lastOnsetIn(model, hands, start, end))}`
 }
 
+/** "2nd", "3rd", "4th", … for a repeat pass. */
+function ordinal(n: number): string {
+  const tens = n % 100
+  if (tens >= 11 && tens <= 13) return `${n}th`
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
+}
+
+/**
+ * The short text of one loop edge for the Repeat steppers, which sit next to a "Bars" label
+ * (U22, revised 15 November 2026): "12", "12·3" (beat 3), "12 (2nd)" for the second pass of a
+ * repeated bar, "12 (2nd)·3". The end names the loop's last note, as `edgeText` does; the
+ * steppers keep `edgeText` as the accessible text.
+ */
+export function edgeShortText(
+  model: PassageWords,
+  p: PassageRange,
+  edge: 'start' | 'end',
+  hands: HandSelection,
+): string {
+  const occ = edge === 'start' ? p.fromOcc : p.toOcc
+  const o = model.occurrences[occ]
+  const bar = !o ? `${occ + 1}` : o.pass > 1 ? `${o.number} (${ordinal(o.pass)})` : o.number
+  if (edge === 'start') return p.start ? `${bar}·${beatText(model, p.start)}` : bar
+  if (!p.end) return bar
+  const { start, end } = passageBounds(model, p)
+  return `${bar}·${beatText(model, lastOnsetIn(model, hands, start, end))}`
+}
+
 /**
  * A passage in words, capitalized: "Bar 12", "Bars 12–14" for whole bars (as before);
  * "Bar 12, beat 3 – bar 14", "Bar 12 – bar 14, beat 2" or "Bar 12, beats 2–3" for note-level

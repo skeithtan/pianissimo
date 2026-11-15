@@ -68,7 +68,7 @@ import { Banners } from './Banners'
 import { CountIn } from './CountIn'
 import { Footer, HANDS_UNAVAILABLE, HANDS_UNAVAILABLE_NOTICE } from './Footer'
 import { KEEPS_AHEAD, PracticeMenuItems, type MetronomeRow } from './FooterMenu'
-import { RepeatPanel } from './RepeatPanel'
+import { RepeatOptions, RepeatPanel } from './RepeatPanel'
 import { ScoreSkeleton } from './ScoreSkeleton'
 import { TempoSheet } from './TempoSheet'
 import { useBrowsedBar } from './browse'
@@ -316,6 +316,14 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     if (ui.playing || !phone) setMenuOpen(false)
   }, [ui.playing, phone])
   const recede = useRecede(ui.playing, env.timers)
+  // An upright phone gives the Repeat controls a row of their own that folds away while playing;
+  // elsewhere they float over the score (U14, U80, revised 15 November 2026). Their options open
+  // in a sheet on a phone, which closes when playback starts, like the menu.
+  const dockedRepeat = phone && !sideways
+  const [repeatOptionsOpen, setRepeatOptionsOpen] = useState(false)
+  useEffect(() => {
+    if (ui.playing || !phone || !ui.repeat) setRepeatOptionsOpen(false)
+  }, [ui.playing, phone, ui.repeat])
   // Leaving Repeat mode (U14): the panel sinks away over the loop it had before it unmounts.
   const repeatPresence = useFadePresence(ui.repeat, REPEAT_PANEL_FADE_MS)
   const lastRange = useRef(ui.range)
@@ -718,8 +726,38 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
 
       {sideways ? null : <OverviewBar session={session} model={model} range={ui.range} view={stripRef} />}
 
+      {dockedRepeat && repeatPresence.mounted ? (
+        <div
+          class={styles.repeatSlot}
+          data-testid="repeat-slot"
+          data-leaving={repeatPresence.phase === 'leaving' || undefined}
+          inert={recede.receded}
+          {...recede.zone}
+        >
+          <div class={styles.repeatSlotClip}>
+            <RepeatPanel
+              session={session}
+              model={model}
+              loop={ui.range ?? lastRange.current}
+              hands={ui.hands}
+              repeatTarget={ui.repeatTarget}
+              multiplier={ui.multiplier}
+              ladder={ui.ladder}
+              browsedOcc={browsed.occ}
+              zone={recede.zone}
+              layout="docked"
+              playing={ui.playing}
+              onOpenOptions={() => setRepeatOptionsOpen(true)}
+              optionsOpen={repeatOptionsOpen}
+              leaving={repeatPresence.phase === 'leaving'}
+            />
+          </div>
+        </div>
+      ) : null}
+
       <div
         class={styles.stage}
+        data-repeat-bounds
         // A pointer near the cursor line, or a tap anywhere, leaves focus mode (U13, U14). The
         // events still reach the strip.
         onPointerMove={(event) => {
@@ -745,7 +783,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           </p>
         ) : null}
         <div class={styles.banners}>
-          {repeatPresence.mounted ? (
+          {repeatPresence.mounted && !dockedRepeat ? (
             <RepeatPanel
               session={session}
               model={model}
@@ -756,6 +794,10 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
               ladder={ui.ladder}
               browsedOcc={browsed.occ}
               zone={recede.zone}
+              layout={phone ? 'compact' : 'float'}
+              playing={ui.playing}
+              onOpenOptions={() => setRepeatOptionsOpen(true)}
+              optionsOpen={repeatOptionsOpen}
               leaving={repeatPresence.phase === 'leaving'}
             />
           ) : null}
@@ -789,6 +831,15 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           onMetronome={onMetronome}
         />
       )}
+
+      <Sheet
+        title="Repeat options"
+        floating
+        open={phone && ui.repeat && repeatOptionsOpen}
+        onClose={() => setRepeatOptionsOpen(false)}
+      >
+        <RepeatOptions session={session} repeatTarget={ui.repeatTarget} multiplier={ui.multiplier} ladder={ui.ladder} />
+      </Sheet>
 
       <Sheet title="Menu" untitled floating open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
         <div class={styles.menu}>

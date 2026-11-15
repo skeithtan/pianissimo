@@ -1,28 +1,46 @@
 /**
- * Repeat mode's loop controls (spec "Repeating passages", DECISIONS U10, U14, U22): a slim group
- * that floats at the top of the score while Repeat mode is open — "Loop start" / "Loop end"
- * steppers (one whole bar per press), the consecutive-pass target, the speed ladder (a goal speed;
- * each met target raises Speed one 5% step until the goal) and an icon-only clear action. The strip's handles (which
- * can set note-level edges) and ✕ edit the same loop; the overview row shows it. Without Repeat
- * mode nothing here exists.
+ * Repeat mode's loop controls (spec "Repeating passages"; DECISIONS U10, U14, U22, U61, U77,
+ * revised 15 November 2026). Two clusters, which bars and what goal, plus an always-visible exit:
+ *
+ *  - `float` (tablets and desktops): "Bars", the passage selector ‹ 12 › – ‹ 14 ›, a goal button
+ *    whose label sums up the goal ("Until 3 clean | 60% → 100%") and opens the options as a
+ *    popover, then ✕. It floats at the top of the score and recedes while playing.
+ *  - `compact` (a phone on its side): the selector, ⋯ (options) and ✕, floating over the score;
+ *    it recedes while playing and a tap on the screen brings it back, like the other chrome.
+ *  - `docked` (an upright phone): the same three in a row of their own under the overview; the
+ *    practice screen folds that row away while playing.
+ *
+ * The options (`RepeatOptions`): Repeat until (No limit, 3, 5, 10 clean in a row) and the speed
+ * ladder (a goal above the current speed; each met target raises Speed one 5% step until the
+ * goal). On a phone they open in a sheet that the practice screen owns. ✕ clears the loop and
+ * leaves Repeat mode (U61). The strip's handles (which can set note-level edges) and ✕ edit the
+ * same loop; the overview row shows it. Without Repeat mode nothing here exists.
  */
-import { LADDER_STEP, type LadderUi, type PracticeSession } from '../../app/session'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { LADDER_DEFAULT_TARGET, LADDER_STEP, type LadderUi, type PracticeSession } from '../../app/session'
 import { barLabel } from '../../core/engine'
-import { edgeText } from '../../core/model/passage'
+import { edgeShortText, edgeText } from '../../core/model/passage'
 import type { PassageRange } from '../../core/model/practice'
 import type { HandSelection, ScoreModel } from '../../core/model/score'
-import { LoopSteppers } from '../../ui/LoopSteppers'
+import { Segmented, Toggle } from '../../ui/controls'
+import { useFadePresence } from '../../ui/fade'
 import { Icon } from '../../ui/icons'
+import { LoopSteppers } from '../../ui/LoopSteppers'
+import { placePopover, type PopoverPlacement } from '../../ui/popoverPlacement'
 import { SPEED_PRESETS_PERCENT, formatSpeedPercent } from '../../ui/speed'
 import type { RecedeZone } from './recede'
 import { useStoreValue } from './useStore'
 import styles from './practice.module.css'
 
 const TARGETS: readonly (number | null)[] = [null, 3, 5, 10]
+/** Space between the goal button and its options, as close as an option menu's (px). */
+const GOAL_MENU_GAP = 4
+
+export type RepeatLayout = 'float' | 'compact' | 'docked'
 
 /**
- * Goals the ladder select offers, in percent: the speed presets and 100%, those above the current
- * speed, plus the ladder's own goal while one is set (so the select can show it).
+ * Goals the ladder offers, in percent: the speed presets and 100%, those above the current
+ * speed, plus the ladder's own goal while one is set (so the choice can show it).
  */
 export function ladderGoals(multiplier: number, goal: number | null): number[] {
   const current = Math.round(multiplier * 1000) / 10
@@ -31,114 +49,337 @@ export function ladderGoals(multiplier: number, goal: number | null): number[] {
   return [...set].sort((a, b) => a - b)
 }
 
-/** The panel's ladder status: "Ladder 60% → 100%" while climbing, "Goal reached" at the goal. */
+/** The ladder's summary on the goal button: "60% → 100%" while climbing, "Goal reached" at the goal. */
 export function ladderLine(ladder: LadderUi, multiplier: number): string {
-  return ladder.done ? 'Goal reached' : `Ladder ${formatSpeedPercent(multiplier)} → ${formatSpeedPercent(ladder.goal)}`
+  return ladder.done ? 'Goal reached' : `${formatSpeedPercent(multiplier)} → ${formatSpeedPercent(ladder.goal)}`
 }
 
-export interface RepeatPanelProps {
+/** "Until 3 clean" or "No limit": the target half of the goal button. */
+export function targetLine(target: number | null): string {
+  return target === null ? 'No limit' : `Until ${target} clean`
+}
+
+/** The goal in words, for the options button's accessible name and the ladder note. */
+export function goalWords(target: number | null, ladder: LadderUi | null, multiplier: number): string {
+  const until = target === null ? 'repeat with no limit' : `until ${target} clean in a row`
+  if (!ladder) return until
+  return ladder.done
+    ? `${until}; speed ladder goal reached`
+    : `${until}; speed ladder ${formatSpeedPercent(multiplier)} to ${formatSpeedPercent(ladder.goal)}`
+}
+
+/** The goal a ladder switched on starts with: 100% when it is above the current speed, else the next goal. */
+export function defaultLadderGoal(multiplier: number): number | null {
+  const goals = ladderGoals(multiplier, null)
+  return goals.includes(100) ? 100 : (goals[0] ?? null)
+}
+
+export interface RepeatOptionsProps {
   readonly session: PracticeSession
+  readonly repeatTarget: number | null
+  readonly multiplier: number
+  readonly ladder: LadderUi | null
+}
+
+/** The goal settings, shared by the popover (tablets) and the phone's sheet. */
+export function RepeatOptions({ session, repeatTarget, multiplier, ladder }: RepeatOptionsProps) {
+  const goals = ladderGoals(multiplier, ladder?.goal ?? null)
+  const firstGoal = defaultLadderGoal(multiplier)
+  const goalValue = ladder ? String(Math.round(ladder.goal * 1000) / 10) : null
+  const passes = repeatTarget ?? LADDER_DEFAULT_TARGET
+  const note = ladder
+    ? ladder.done
+      ? `Goal reached: ${formatSpeedPercent(ladder.goal)}.`
+      : `Now ${formatSpeedPercent(multiplier)}. Each time you play it clean ${passes} times in a row, the speed goes up 5% until ${formatSpeedPercent(ladder.goal)}.`
+    : firstGoal === null
+      ? 'Already at the top speed.'
+      : 'Raises the speed 5% each time you reach the target, up to a goal.'
+  return (
+    <div class={styles.repeatOptions} data-testid="repeat-options">
+      <div class={styles.optionBlock}>
+        <span class={styles.optionLabel} aria-hidden="true">
+          Repeat until · clean passes in a row
+        </span>
+        <Segmented
+          label="Repeat until"
+          value={repeatTarget === null ? 'none' : String(repeatTarget)}
+          options={TARGETS.map((t) => ({
+            value: t === null ? 'none' : String(t),
+            label: t === null ? 'No limit' : String(t),
+            title: t === null ? 'Repeat with no limit' : `Until ${t} clean in a row`,
+          }))}
+          onChange={(v) => session.setRepeatTarget(v === 'none' ? null : Number(v))}
+        />
+      </div>
+      <div class={styles.optionDivider} />
+      <div class={styles.optionBlock}>
+        <Toggle
+          label="Speed ladder"
+          checked={ladder !== null}
+          disabled={ladder === null && firstGoal === null}
+          onChange={(on) =>
+            session.setLadder(on && firstGoal !== null ? { goal: firstGoal / 100, step: LADDER_STEP } : null)
+          }
+        />
+        {ladder ? (
+          <div class={styles.optionRow}>
+            <span class={styles.optionLabel} aria-hidden="true">
+              Up to
+            </span>
+            <Segmented
+              label="Ladder goal"
+              value={goalValue}
+              options={goals.map((p) => ({ value: String(p), label: `${p}%` }))}
+              onChange={(v) => session.setLadder({ goal: Number(v) / 100, step: LADDER_STEP })}
+            />
+          </div>
+        ) : null}
+        <p class={styles.optionNote} data-testid="ladder-note">
+          {note}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+export interface RepeatPanelProps extends RepeatOptionsProps {
   readonly model: ScoreModel
   readonly loop: PassageRange | null
-  /** Hands whose notes the note steps and the edge texts count. */
+  /** Hands whose notes the edge texts count. */
   readonly hands: HandSelection
-  readonly repeatTarget: number | null
-  /** The current speed (multiplier). */
-  readonly multiplier: number
-  /** The speed ladder, or null when off. */
-  readonly ladder: LadderUi | null
   /** The bar being browsed in the strip, or null (the steppers then act on the cursor's bar). */
   readonly browsedOcc: number | null
   readonly zone: RecedeZone
+  readonly layout: RepeatLayout
+  /** Something is playing: an open popover closes. */
+  readonly playing: boolean
+  /** Phone layouts: open the options sheet (the practice screen owns it). */
+  readonly onOpenOptions?: () => void
+  /** The options sheet is open (phone layouts), for the ⋯ button's state. */
+  readonly optionsOpen?: boolean
   /** Repeat mode just closed: the panel sinks away before it unmounts (U14). */
   readonly leaving?: boolean
 }
 
-export function RepeatPanel({
-  session,
-  model,
-  loop,
-  hands,
-  repeatTarget,
-  multiplier,
-  ladder,
-  browsedOcc,
-  zone,
-  leaving,
-}: RepeatPanelProps) {
-  const currentOcc = useStoreValue(session.progress, (p) => p.occ)
+/**
+ * Drops the options from the goal button like an option menu: left edges aligned, just below
+ * it (above when the stage has more room there), shifted and capped to stay inside the stage,
+ * which clips it. It is measured again after every render and whenever the panel changes size:
+ * a choice in the options can widen the goal button ("100% → 125%"), which moves it within the
+ * centered panel, and the menu must stay on the button.
+ */
+function useStagePlacement(
+  mounted: boolean,
+  anchor: { current: HTMLElement | null },
+  panel: { current: HTMLElement | null },
+): PopoverPlacement | null {
+  const [placement, setPlacement] = useState<PopoverPlacement | null>(null)
+  const measure = useRef<() => void>(() => undefined)
+  measure.current = () => {
+    const a = anchor.current
+    const el = panel.current
+    const stage = a?.closest<HTMLElement>('[data-repeat-bounds]')
+    if (!mounted || !a || !el || !stage) return
+    const s = stage.getBoundingClientRect()
+    const r = a.getBoundingClientRect()
+    const next = placePopover({
+      anchor: { left: r.left - s.left, top: r.top - s.top, width: r.width, height: r.height },
+      size: { width: el.offsetWidth, height: el.scrollHeight },
+      viewport: { width: s.width, height: s.height },
+      preferred: 'down',
+      align: 'start',
+      gap: GOAL_MENU_GAP,
+    })
+    setPlacement((prev) =>
+      prev && prev.side === next.side && Math.abs(prev.left - next.left) < 0.5 && prev.maxHeight === next.maxHeight
+        ? prev
+        : next,
+    )
+  }
+  // After every render: the button may have moved with what the options just changed.
+  useLayoutEffect(() => {
+    if (mounted) measure.current()
+    else setPlacement(null)
+  })
+  useEffect(() => {
+    if (!mounted) return undefined
+    const again = () => measure.current()
+    window.addEventListener('resize', again)
+    const row = anchor.current?.closest('[data-testid="repeat-controls"]')
+    const observer = typeof ResizeObserver === 'function' && row ? new ResizeObserver(again) : null
+    if (observer && row) observer.observe(row)
+    return () => {
+      window.removeEventListener('resize', again)
+      observer?.disconnect()
+    }
+  }, [mounted, anchor])
+  return placement
+}
+
+function GoalPopover(
+  props: RepeatOptionsProps & { readonly playing: boolean; readonly leaving?: boolean | undefined },
+) {
+  const { repeatTarget, multiplier, ladder, playing, leaving } = props
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  const popover = useFadePresence(open && !playing && !leaving, 160)
+  const fit = useStagePlacement(popover.mounted, trigger, panel)
+
+  useEffect(() => {
+    if (playing || leaving) setOpen(false)
+  }, [playing, leaving])
+  useEffect(() => {
+    if (!open) return
+    const away = (event: PointerEvent) => {
+      if (root.current && !root.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', away)
+    return () => document.removeEventListener('pointerdown', away)
+  }, [open])
+  useEffect(() => {
+    if (popover.phase === 'entering') panel.current?.querySelector<HTMLElement>('[tabindex="0"]')?.focus()
+  }, [popover.phase])
+
   return (
-    <div class={styles.repeatZone} {...zone}>
-      <div
-        class={`${styles.repeatPanel} ${styles.recedes}`}
-        role="group"
-        aria-label="Repeat passage"
-        data-testid="repeat-controls"
-        data-leaving={leaving || undefined}
+    <div
+      class={styles.goalWrap}
+      ref={root}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.stopPropagation()
+          setOpen(false)
+          trigger.current?.focus()
+        }
+      }}
+    >
+      <button
+        ref={trigger}
+        type="button"
+        class={styles.goalButton}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Repeat goal: ${goalWords(repeatTarget, ladder, multiplier)}. Open repeat options`}
+        onClick={() => setOpen((o) => !o)}
       >
-        <LoopSteppers
-          loop={loop}
-          currentOcc={browsedOcc ?? currentOcc}
-          lastOcc={model.occurrences.length - 1}
-          onLoopChange={(range) => session.setSelection({ range })}
-          barLabel={(occ) => `Bar ${barLabel(model, occ)}`}
-          edgeLabel={(range, edge) => edgeText(model, range, edge, hands)}
-        />
-        <div class={styles.repeatActions}>
-          <label class={styles.selectWrap}>
-            <span class="visually-hidden">Repeat until</span>
-            <select
-              class={styles.select}
-              value={repeatTarget === null ? '' : String(repeatTarget)}
-              onChange={(e) => {
-                const v = (e.currentTarget as HTMLSelectElement).value
-                session.setRepeatTarget(v === '' ? null : Number(v))
-              }}
-            >
-              {TARGETS.map((t) => (
-                <option key={String(t)} value={t === null ? '' : String(t)}>
-                  {t === null ? 'Repeat: no limit' : `Until ${t} clean in a row`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            class={styles.iconButton}
-            aria-label="Clear loop"
-            title="Clear loop"
-            onClick={() => session.setSelection({ range: null })}
-          >
-            <Icon name="close" size={22} />
-          </button>
-        </div>
-        <div class={styles.ladder}>
-          <label class={styles.selectWrap}>
-            <span class="visually-hidden">Speed ladder</span>
-            <select
-              class={styles.select}
-              data-testid="ladder-select"
-              value={ladder ? String(Math.round(ladder.goal * 1000) / 10) : ''}
-              onChange={(e) => {
-                const v = (e.currentTarget as HTMLSelectElement).value
-                session.setLadder(v === '' ? null : { goal: Number(v) / 100, step: LADDER_STEP })
-              }}
-            >
-              <option value="">Ladder: off</option>
-              {ladderGoals(multiplier, ladder?.goal ?? null).map((p) => (
-                <option key={p} value={String(p)}>
-                  {`Ladder to ${p}%`}
-                </option>
-              ))}
-            </select>
-          </label>
-          {ladder ? (
-            <span class={styles.ladderLine} data-testid="ladder-line" data-done={ladder.done || undefined}>
+        <Icon name="repeat" size={18} />
+        <span data-testid="target-line">{targetLine(repeatTarget)}</span>
+        {ladder ? (
+          <>
+            <span class={styles.goalDivider} aria-hidden="true" />
+            <Icon name="ladder" size={18} />
+            <span class={styles.goalLadder} data-testid="ladder-line" data-done={ladder.done || undefined}>
               {ladderLine(ladder, multiplier)}
             </span>
-          ) : null}
+          </>
+        ) : null}
+        <span class={styles.goalChevron} data-open={open || undefined}>
+          <Icon name="forward" size={14} />
+        </span>
+      </button>
+      {popover.mounted ? (
+        <div
+          ref={panel}
+          class={`${styles.goalPopover} ${fit?.side === 'up' ? styles.goalPopoverUp : ''}`}
+          role="dialog"
+          aria-label="Repeat options"
+          style={{
+            ...popover.style,
+            ...(fit ? { left: `${fit.left}px` } : {}),
+            ...(fit?.maxHeight != null ? { maxHeight: `${fit.maxHeight}px` } : {}),
+          }}
+        >
+          <RepeatOptions {...props} />
         </div>
-      </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function RepeatPanel(props: RepeatPanelProps) {
+  const {
+    session,
+    model,
+    loop,
+    hands,
+    repeatTarget,
+    multiplier,
+    ladder,
+    browsedOcc,
+    zone,
+    layout,
+    playing,
+    onOpenOptions,
+    optionsOpen,
+    leaving,
+  } = props
+  const currentOcc = useStoreValue(session.progress, (p) => p.occ)
+  const goalSet = repeatTarget !== null || ladder !== null
+  const panel = (
+    <div
+      class={`${styles.repeatPanel} ${layout === 'docked' ? '' : styles.recedes}`}
+      role="group"
+      aria-label="Repeat passage"
+      data-testid="repeat-controls"
+      data-layout={layout}
+      data-leaving={leaving || undefined}
+    >
+      {layout === 'float' ? (
+        <span class={styles.barsLabel} aria-hidden="true">
+          Bars
+        </span>
+      ) : null}
+      <LoopSteppers
+        class={styles.passage}
+        loop={loop}
+        currentOcc={browsedOcc ?? currentOcc}
+        lastOcc={model.occurrences.length - 1}
+        onLoopChange={(range) => session.setSelection({ range })}
+        barLabel={(occ) => `Bar ${barLabel(model, occ)}`}
+        edgeLabel={(range, edge) => edgeText(model, range, edge, hands)}
+        shortLabel={(range, edge) => edgeShortText(model, range, edge, hands)}
+      />
+      {layout === 'float' ? (
+        <GoalPopover
+          session={session}
+          repeatTarget={repeatTarget}
+          multiplier={multiplier}
+          ladder={ladder}
+          playing={playing}
+          leaving={leaving}
+        />
+      ) : (
+        <button
+          type="button"
+          class={styles.moreButton}
+          aria-haspopup="dialog"
+          aria-expanded={optionsOpen ?? false}
+          aria-label={`Repeat options: ${goalWords(repeatTarget, ladder, multiplier)}`}
+          title="Repeat options"
+          onClick={() => onOpenOptions?.()}
+        >
+          <Icon name="more" size={22} />
+          {goalSet ? <span class={styles.moreDot} data-testid="repeat-goal-dot" aria-hidden="true" /> : null}
+        </button>
+      )}
+      {layout === 'float' ? <span class={styles.exitDivider} aria-hidden="true" /> : null}
+      <button
+        type="button"
+        class={styles.iconButton}
+        aria-label="Exit repeat"
+        title="Exit repeat"
+        onClick={() => session.setSelection({ range: null })}
+      >
+        <Icon name="close" size={22} />
+      </button>
+    </div>
+  )
+  return layout === 'docked' ? (
+    panel
+  ) : (
+    <div class={styles.repeatZone} data-layout={layout} {...zone}>
+      {panel}
     </div>
   )
 }

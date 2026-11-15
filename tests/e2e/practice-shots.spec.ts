@@ -61,7 +61,7 @@ test.describe('practice screenshots', () => {
         await expect(page.getByTestId('repeat-controls')).toBeVisible()
         await page.waitForTimeout(400)
         await shot('repeat')
-        await page.getByTestId('repeat-controls').getByRole('button', { name: 'Clear loop', exact: true }).click()
+        await page.getByTestId('repeat-controls').getByRole('button', { name: 'Exit repeat', exact: true }).click()
 
         await setShowKeys(page)
         await page.getByRole('button', { name: 'Start', exact: true }).click()

@@ -33,6 +33,26 @@ describe('<LoopSteppers>', () => {
     expect(root.textContent).toContain('Bar 10')
   })
 
+  it('shows short numbers and keeps the full wording for screen readers', () => {
+    const onLoopChange = vi.fn()
+    view = mount(
+      <LoopSteppers
+        loop={{ fromOcc: 5, toOcc: 9 }}
+        currentOcc={7}
+        lastOcc={58}
+        onLoopChange={onLoopChange}
+        edgeLabel={(_, edge) => (edge === 'start' ? 'Bar 6, beat 3' : 'Bar 10')}
+        shortLabel={(_, edge) => (edge === 'start' ? '6·3' : '10')}
+      />,
+    )
+    const start = byLabel(view.container, 'Loop start')!
+    expect(start.querySelector('[data-edge] > [aria-hidden="true"]')?.textContent).toBe('6·3')
+    expect(start.querySelector('.visually-hidden')?.textContent).toBe('Bar 6, beat 3')
+    expect(byLabel(view.container, 'Loop end')?.querySelector('[data-edge] > [aria-hidden="true"]')?.textContent).toBe(
+      '10',
+    )
+  })
+
   it('with no loop enables only the outward buttons', () => {
     const { button } = setup(null, 10)
     expect(button(NAMES[0]).disabled).toBe(false)
