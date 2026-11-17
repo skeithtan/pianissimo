@@ -37,7 +37,10 @@ default 50 MB / 256 entries), `history` (`HistoryWriterOptions`), `now`.
 `position` Rational is authoritative), `lastPassage`, `repeatTarget`, `ladder?` (the speed
 ladder, `LadderSettings { goal, step }` multipliers or null; absent on records written before it,
 validated on restore: finite, goal in [0.05, 10], step in (0, 1]; `newPieceRecord` sets null),
-`rhythm?` (Keep time on for the piece, a boolean; absent = off, validated on restore). Attempt
+`rhythm?` (Keep time on for the piece, a boolean; absent = off, validated on restore),
+`repeatOpen?` (Repeat mode was on when the piece was last practiced, DECISIONS U98: Practice
+reopens it over `lastPassage`; a boolean, absent on older records = closed, validated on restore;
+`newPieceRecord` leaves it absent). Attempt
 records with `context.transport` 'strict' (Keep time) restore like any other. A `savedPassages`
 key left by records written before 2026-10-31 is ignored.
 Saving the resume position is a plain `updatePiece(id, { resume })` on a small record: call it

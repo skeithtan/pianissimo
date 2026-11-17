@@ -95,6 +95,7 @@ export function pieceProblem(v: unknown): string | null {
     ['repeatTarget', v['repeatTarget'] === null || (isInt(v['repeatTarget']) && (v['repeatTarget'] as number) >= 1)],
     ['ladder', v['ladder'] === undefined || v['ladder'] === null || ladderOk(v['ladder'])],
     ['rhythm', v['rhythm'] === undefined || isBool(v['rhythm'])],
+    ['repeatOpen', v['repeatOpen'] === undefined || isBool(v['repeatOpen'])],
   ])
 }
 

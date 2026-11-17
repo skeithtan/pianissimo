@@ -16,7 +16,8 @@
  *
  * Anything unrecognized is the Library. Overlays are part of the route so Back closes them and a
  * reload reopens them. A Practice preset (passage, hands, speed) is not in the URL: it rides in
- * `history.state` (see `HistoryState`).
+ * `history.state` (see `HistoryState`) for Back / Forward within the page; a reload does not apply
+ * it again (the piece's stored state already holds it, DECISIONS U98).
  */
 import type { PassageRange } from '../core/model/practice'
 import type { Rational } from '../core/music/rational'
@@ -36,7 +37,7 @@ export interface Route {
 
 /** What the app keeps in `history.state` (structured-cloneable, validated on read). */
 export interface HistoryState {
-  /** Preselection for a Practice entry (from a suggestion or Results). */
+  /** Preselection for a Practice entry (from a suggestion or Results); ignored at boot (U98). */
   readonly preset?: PracticePreset
   /**
    * This entry is an overlay opened on top of an entry holding the same route without the

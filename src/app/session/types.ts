@@ -119,6 +119,8 @@ export interface PiecePatch {
   readonly ladder?: LadderSettings | null
   /** Keep time (rhythm mode) for this piece. */
   readonly rhythm?: boolean
+  /** Repeat mode is on (DECISIONS U98): Practice reopens it over `lastPassage`. */
+  readonly repeatOpen?: boolean
 }
 
 export interface PieceSink {

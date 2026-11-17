@@ -175,10 +175,29 @@ describe('opening a URL', () => {
     expect(studyRequest.value).toBeNull()
   })
 
-  it('takes a Practice preset from history.state (what a reload keeps)', () => {
-    const preset = { passage: { fromOcc: 3, toOcc: 6 }, hands: 'left', multiplier: 0.6 }
-    start('#/practice/p1', { preset })
-    expect(practiceRequest.value).toEqual({ pieceId: 'p1', preset })
+  it('ignores a Practice preset in history.state at boot and cleans it (a reload, U98); Back / Forward still apply it', async () => {
+    const preset = { passage: { fromOcc: 3, toOcc: 6 }, hands: 'left' as const, multiplier: 0.6 }
+    const b = start('#/practice/p1', { preset })
+    expect(practiceRequest.value).toEqual({ pieceId: 'p1' })
+    await b.settle()
+    expect(b.entries).toEqual([{ hash: '#/practice/p1', state: {} }])
+    // An entry with a preset reached by Back / Forward within the page applies it.
+    openPractice({ pieceId: 'p2', preset })
+    await b.settle()
+    navigate('library')
+    await b.settle()
+    b.userBack()
+    await b.settle()
+    expect(practiceRequest.value).toEqual({ pieceId: 'p2', preset })
+  })
+
+  it('a reload into an overlay over a preset Practice entry keeps the overlay and its overlayFrom, without the preset', async () => {
+    const preset = { passage: { fromOcc: 3, toOcc: 6 } }
+    const b = start('#/practice/p1?settings', { preset, overlayFrom: true })
+    expect(practiceRequest.value).toEqual({ pieceId: 'p1' })
+    expect(settingsOpen.value).toBe(true)
+    await b.settle()
+    expect(b.entries).toEqual([{ hash: '#/practice/p1?settings', state: { overlayFrom: true } }])
   })
 
   it('a practice URL without a piece shows the view with no request (its empty state)', () => {

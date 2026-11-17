@@ -14,6 +14,11 @@
  *   and changing a Practice preset in place rewrite the current entry instead.
  * - `history.back()` is asynchronous. While it is pending nothing else is written; when its
  *   `popstate` arrives the signals (which may have moved on) are written to the URL again.
+ *
+ * A Practice preset in `history.state` applies on Back / Forward within the page, never at boot
+ * (DECISIONS U98): Practice stores a preset on the piece when it opens, so a reload reopens the
+ * piece as it was last left (the preset, or what the learner changed after it), and the entry's
+ * state is rewritten without the preset.
  */
 import { batch, effect } from '@preact/signals'
 import {
@@ -117,7 +122,7 @@ export function applyRoute(route: Route, preset: PracticePreset | undefined): vo
 
 /**
  * Start mirroring navigation to the URL. Reads the current URL first, so the first render shows
- * what a reload or deep link asked for. Returns a stop function.
+ * what a reload or deep link asked for (without a Practice preset, U98). Returns a stop function.
  */
 export function startRouter(win: RouterWindow = window): () => void {
   let stopped = false
@@ -149,8 +154,9 @@ export function startRouter(win: RouterWindow = window): () => void {
     }
   }
 
-  const fromUrl = (): void => {
-    applyRoute(parseHash(win.location.hash), readHistoryState(win.history.state).preset)
+  /** `withPreset` false at boot: a reload reopens the piece's stored state, not the preset (U98). */
+  const fromUrl = (withPreset = true): void => {
+    applyRoute(parseHash(win.location.hash), withPreset ? readHistoryState(win.history.state).preset : undefined)
   }
 
   const toUrl = (): void => {
@@ -212,7 +218,7 @@ export function startRouter(win: RouterWindow = window): () => void {
     fromUrl()
   }
 
-  fromUrl()
+  fromUrl(false)
   // Rewrite a hand-typed or aliased hash (`#/connection`, `#/nonsense`) to its canonical form.
   const initial = parseHash(win.location.hash)
   if (win.location.hash !== '' && win.location.hash !== formatHash(initial)) {

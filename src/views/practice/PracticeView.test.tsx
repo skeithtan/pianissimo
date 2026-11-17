@@ -304,6 +304,64 @@ describe('PracticeView', () => {
     }
   })
 
+  it('reopens Repeat mode over the stored loop and ignores the resume position (a reload, U98)', async () => {
+    const r = await rig()
+    await r.storage.updatePiece(r.pieceId, {
+      lastPassage: { fromOcc: 1, toOcc: 1 },
+      repeatOpen: true,
+      resume: { occ: 0, position: { n: 1, d: 4 }, hands: 'both', multiplier: 1, savedAt: 1 },
+    })
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    expect($(view.container, '[data-testid="repeat-controls"]')).not.toBeNull()
+    expect(byLabel(view.container, 'Loop start')?.textContent).toContain('Bar 2')
+    expect(byLabel(view.container, 'Loop end')?.textContent).toContain('Bar 2')
+    expect(r.strips[0]!.loop).toEqual({ fromOcc: 1, toOcc: 1 })
+    // Paused at the loop start, not at the resume position.
+    expect($(view.container, '[data-activity]')?.dataset['activity']).toBe('idle')
+    expect(r.strips[0]!.cursor).toBe(1)
+    // The resume position is kept for when Repeat is closed.
+    expect((await r.storage.getPiece(r.pieceId))?.resume?.position).toEqual({ n: 1, d: 4 })
+  })
+
+  it('opens with Repeat closed when it was closed, absent, or open without a loop (U98)', async () => {
+    for (const patch of [{ repeatOpen: true, lastPassage: null }, { lastPassage: { fromOcc: 1, toOcc: 1 } }]) {
+      const r = await rig()
+      await r.storage.updatePiece(r.pieceId, patch)
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={r.env} />)
+      await settle(r)
+      expect($(view.container, '[data-testid="repeat-controls"]')).toBeNull()
+      view.unmount()
+      view = null
+      r.storage.close()
+    }
+  })
+
+  it('a preset wins over the stored state and becomes it at once (U98)', async () => {
+    const r = await rig()
+    await r.storage.updatePiece(r.pieceId, {
+      lastPassage: { fromOcc: 1, toOcc: 1 },
+      repeatOpen: false,
+      lastHands: 'right',
+    })
+    practiceRequest.value = {
+      pieceId: r.pieceId,
+      preset: { passage: { fromOcc: 0, toOcc: 0 }, hands: 'left', multiplier: 0.5 },
+    }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    expect($(view.container, '[data-testid="repeat-controls"]')).not.toBeNull()
+    expect(byLabel(view.container, 'Loop start')?.textContent).toContain('Bar 1')
+    expect(await r.storage.getPiece(r.pieceId)).toMatchObject({
+      lastPassage: { fromOcc: 0, toOcc: 0 },
+      repeatOpen: true,
+      lastHands: 'left',
+      lastMultiplier: 0.5,
+    })
+  })
+
   it('a preset passage is preselected (never started); a scored attempt shows its result and links to Results', async () => {
     const r = await rig()
     practiceRequest.value = {

@@ -343,6 +343,15 @@ follows, the transport is silent for any hand (no accompaniment, no click) and M
 reach the follower; a change of source pauses a started play-through (`#syncFollowSource`) and
 the next Start rebuilds it. The hands are held off (U27) only without a piano and without a
 usable microphone.
+Repeat mode across reloads (U98): `PieceRecord.repeatOpen` (optional; absent = closed) is saved
+by the session whenever Repeat opens or closes (at once, with loop edits, the Repeat-until target
+and the ladder settings; never from the MIDI input path) and read by `PracticeScreen`, which
+opens the session with `repeat: true` over `lastPassage`, paused at the loop start, instead of
+from the resume position. A preset's opening state is saved on the piece when it opens, and
+`startRouter` does not apply a `history.state` preset at boot, so a reload reopens the stored
+state. Repeat closed by the no-piano rule is held, not saved (`#repeatHeld`), and reopens in
+`setInputAvailable(true)`: a reload always passes through "no piano" before the piano connects.
+Results, corrections, the streak and Play through are never stored.
 Speed ladder (U77): the piece's `ladder` (`LadderSettings { goal, step }`, null = off) is stored on
 `PieceRecord` and opened into `PracticeSession`, which publishes `ui.ladder` (`{ goal, step,
 start, failures, done }`); the pure rules are `app/session/ladder.ts`. After each completed

@@ -33,7 +33,8 @@ attempt.
 
 Controls: `togglePlay()`, `start()` (reading, a scored attempt, or Listen with hands 'none' —
 always both parts), `pause()`, `restart()`, `resume()`, `seek(occ)`, `seekPosition(pos)`,
-`requestHint()`, `setKeyboardVisible(v)`, `setRepeatMode(open, at?)`, `repeatFrom(occ)` (a fresh
+`requestHint()`, `setKeyboardVisible(v)`, `setRepeatMode(open, at?)` (saved on the piece as `repeatOpen`, U98; `SessionOptions.repeat` opens
+with it on over `selection.range`, clamped), `repeatFrom(occ)` (a fresh
 one-bar loop), `repeatAtCursor(occ?)` (the cursor's repeat button: pauses what plays, then opens
 Repeat at the bar the button was over: `occ` when the view reports one, the strip's bar under its
 fixed cursor line while browsing, else the cursor's bar), `setChromeRevealed(bool)` (the view's chrome is revealed, not in
@@ -227,9 +228,16 @@ Stores (subscribe from the view):
   owner), leaving the view (`user-stop`; a paused reading pass, also under an overlay, ends with
   `'suspend'`, so it is recorded without an abandon event). Reading interruptions offer Resume / Restart. Hiding
   the page only saves progress: it does not pause practice, Listen, or their transports.
-- **Persistence.** `lastHands/lastPassage/lastMultiplier` on selection change (debounced),
-  `repeatTarget`, `ladder`, `rhythm` (Keep time), `resume` on pause/seek/hide/dispose and every ≥ 5 s of reading (from the
-  frame, never per event); cleared at the end of the piece.
+- **Persistence.** `lastHands/lastPassage/lastMultiplier` on selection change (debounced for
+  hands and speed alone: the speed ladder's step runs from the MIDI path), `repeatOpen` (Repeat
+  mode on, DECISIONS U98) whenever Repeat opens or closes and `false` with `lastPassage: null`
+  when the loop is cleared; a save carrying a mode or loop change is immediate (taps and drags,
+  never the MIDI path; a reload right after must find it). `repeatTarget`, `ladder` (immediate,
+  discrete taps), `rhythm` (Keep time), `resume` on pause/seek/hide/dispose and every ≥ 5 s of
+  reading (from the frame, never per event); cleared at the end of the piece. The last result,
+  corrections, streak, ladder failures and play-through are never saved: a session opened with
+  `repeat: true` from the stored loop (`PracticeScreen`) starts paused at the loop start with no
+  result, the ladder restarting from the stored speed.
 - **Sound** (DECISIONS S4). `playbackDestination(settings, output, browserSound)`: Auto (the
   default) → the MIDI output when there is one, else browser sound; Connected piano → MIDI only;
   Browser sound → this device only. The MIDI backend is built synchronously from
@@ -388,7 +396,13 @@ itself (`onLost`: unplugged, a failing worker) pauses play-through with the reas
 locked (`#syncPlayMode` after a selection or input change; `setPlayThrough(false)` is refused;
 `ui.playThroughLocked`), refuses Repeat (`setRepeatMode(true)`, `repeatFrom`) and Keep time
 (`setRhythmMode(true)`); Keep time switched off by it is not saved (`#rhythmHeld`) and comes back
-with the piano. `#playThroughChosen` is the learner's own choice: when the piano returns,
+with the piano. Repeat closed by it (`#setPlayThrough(true)` while play-through is required) is
+not saved either (`#repeatHeld`, U98: the piece keeps `repeatOpen: true`, the loop stays
+remembered); when the piano returns (`setInputAvailable(true)`, after `#syncPlayMode`, before
+Keep time's return) Repeat reopens over the loop, paused at its start, unless play-through stayed
+on by the learner's choice or there is no loop, when `repeatOpen: false` is saved instead. The
+hold ends whenever Repeat opens and when the loop is cleared; the learner's own Play through with
+a piano closes Repeat and saves it closed. `#playThroughChosen` is the learner's own choice: when the piano returns,
 play-through stays on only if they chose it. A change of source (a piano connecting or leaving,
 the Follow choice) pauses a started play-through and drops it (`#syncFollowSource` →
 `#disposePlay(true)`), so the next Start rebuilds it for the new source; a piano unplugged while

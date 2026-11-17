@@ -280,7 +280,7 @@ describe('Play-through through the microphone', () => {
     expect(h.session.ui.get()).toMatchObject({ hands: 'left', playThrough: true, startAction: 'play' })
   })
 
-  it('without a piano, Repeat and Keep time wait for one; Keep time comes back with it', () => {
+  it('without a piano, Repeat and Keep time wait for one; both come back with it (U98)', () => {
     const { h } = micHarness(melody, { follow: false, selection: { range: { fromOcc: 0, toOcc: 0 } } })
     h.session.setRhythmMode(true)
     expect(h.session.ui.get()).toMatchObject({ repeat: true, rhythm: true })
@@ -289,12 +289,19 @@ describe('Play-through through the microphone', () => {
     // Play-through takes over: Repeat closes (the loop is remembered), Keep time waits.
     expect(h.session.ui.get()).toMatchObject({ repeat: false, rhythm: false, playThrough: true })
     expect(h.saves.slice(saved).some((s) => s.patch.rhythm === false)).toBe(false)
+    expect(h.saves.slice(saved).some((s) => s.patch.repeatOpen === false)).toBe(false)
     h.session.setRhythmMode(true)
     h.session.setRepeatMode(true)
     h.session.repeatFrom(1)
     expect(h.session.ui.get()).toMatchObject({ repeat: false, rhythm: false, playThrough: true })
     h.session.setInputAvailable(true)
-    expect(h.session.ui.get()).toMatchObject({ playThrough: false, rhythm: true, playThroughLocked: false })
+    expect(h.session.ui.get()).toMatchObject({
+      playThrough: false,
+      rhythm: true,
+      repeat: true,
+      playThroughLocked: false,
+    })
+    expect(h.session.loop).toEqual({ fromOcc: 0, toOcc: 0 })
   })
 
   it('no piano and no microphone: the hands are held (Listen), as before', () => {

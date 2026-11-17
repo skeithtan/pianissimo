@@ -1,7 +1,7 @@
 /**
  * The speed ladder (Repeat mode) in the real app: a one-bar loop at 50% with a ladder to 100%
  * and "Until 3 clean in a row"; the third clean pass climbs one 5% step, the card says so, and
- * the setting is still on after a reload.
+ * the setting is still on after a reload, with Repeat open over its loop (U98).
  */
 import { expect, test } from '@playwright/test'
 import { installFakeMidi, openSeededPractice, playWhenDue, seedPiece } from './practice-helpers'
@@ -67,9 +67,8 @@ test('three clean passes climb the ladder one step, and the ladder survives a re
   if (!(await heading.isVisible())) await open.click()
   await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
   const restored = page.getByTestId('repeat-controls')
-  const reopen = page.getByRole('button', { name: 'Repeat from here' })
-  await expect(restored.or(reopen)).toBeVisible()
-  if (!(await restored.isVisible())) await reopen.click()
+  // Repeat was on when the page went away: it comes back on its own (DECISIONS U98).
+  await expect(restored).toBeVisible()
   await expect(restored.getByTestId('ladder-line')).toContainText('→ 100%')
   await restored.getByRole('button', { name: /^Repeat goal: / }).click()
   const reopened = restored.getByRole('dialog', { name: 'Repeat options' })

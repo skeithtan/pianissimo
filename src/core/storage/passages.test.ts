@@ -68,4 +68,33 @@ describe('passage round trip', () => {
     expect((await target.getPiece(piece.id))?.lastPassage).toEqual(SUB)
     expect((await target.listAttempts({ pieceId: piece.id }))[0]?.context.passage).toEqual(SUB)
   })
+
+  it('keeps Repeat open with a note-level loop through updatePiece and a backup (DECISIONS U98)', async () => {
+    const s = await fresh()
+    const { piece } = await importPiece(s, 'v1')
+    expect(piece.repeatOpen).toBeUndefined()
+    await s.updatePiece(piece.id, { lastPassage: SUB, repeatOpen: true })
+    const stored = await s.getPiece(piece.id)
+    expect(stored?.repeatOpen).toBe(true)
+    expect(stored?.lastPassage).toEqual(SUB)
+
+    const target = await fresh()
+    const report = await target.restore(await s.exportAll())
+    expect(report.warnings).toEqual([])
+    const restored = await target.getPiece(piece.id)
+    expect(restored?.repeatOpen).toBe(true)
+    expect(restored?.lastPassage).toEqual(SUB)
+
+    await s.updatePiece(piece.id, { repeatOpen: false })
+    expect((await s.getPiece(piece.id))?.repeatOpen).toBe(false)
+  })
+
+  it('loads a record written before repeatOpen as closed', async () => {
+    const s = await fresh()
+    const { piece } = await importPiece(s, 'v1', { lastPassage: SUB })
+    const loaded = await s.getPiece(piece.id)
+    expect(loaded).toBeDefined()
+    expect(loaded?.repeatOpen).toBeUndefined()
+    expect(loaded?.lastPassage).toEqual(SUB)
+  })
 })

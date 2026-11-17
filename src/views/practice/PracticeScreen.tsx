@@ -210,11 +210,14 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   )
   const [session] = useState(() => {
     const presetRange = preset?.passage ?? null
-    // Practice opens with Repeat closed (reading from the resume position); the last loop is
-    // remembered for Repeat. A preset passage opens Repeat mode with that loop (U10).
-    const resume = !preset && piece.resume ? piece.resume : null
+    // A preset passage opens Repeat mode with that loop (U10). Otherwise Practice opens as the
+    // piece was last left (DECISIONS U98): Repeat mode on over the last loop, paused at its start,
+    // when it was on; else Repeat closed, reading from the resume position, the last loop
+    // remembered for Repeat. The stored resume position is left alone either way.
+    const repeat = preset ? presetRange !== null : piece.repeatOpen === true && piece.lastPassage !== null
+    const resume = !preset && !repeat && piece.resume ? piece.resume : null
     const multiplier = preset?.multiplier ?? piece.lastMultiplier ?? 1
-    return new PracticeSession(
+    const created = new PracticeSession(
       {
         pieceId: piece.id,
         model,
@@ -228,7 +231,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         repeatTarget: piece.repeatTarget,
         ladder: piece.ladder ?? null,
         rhythm: piece.rhythm === true,
-        repeat: presetRange !== null,
+        repeat,
       },
       {
         clock: env.clock,
@@ -248,6 +251,20 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         ...(env.loadMetronome ? { loadMetronome: env.loadMetronome } : {}),
       },
     )
+    if (preset) {
+      // The preset wins over the stored state, and becomes it at once (U98): a reload reopens
+      // what is on screen (the router does not apply a preset again at boot).
+      saver.save(
+        {
+          lastPassage: created.loop,
+          lastHands: created.selection.hands,
+          lastMultiplier: created.selection.multiplier,
+          repeatOpen: presetRange !== null,
+        },
+        true,
+      )
+    }
+    return created
   })
   const ui = useStore(session.ui)
   const appSettings = settings.value
@@ -357,6 +374,12 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       }
     }
     document.addEventListener('visibilitychange', onVisibility)
+    // Safari does not reliably report a reload as hidden: the page hide writes pending state too.
+    const onPageHide = () => {
+      session.suspend()
+      void saver.flush()
+    }
+    window.addEventListener('pagehide', onPageHide)
     // Settings and Connection open over Practice: keys belong to them while they are open.
     const offOverlay = effect(() => session.holdInput(settingsOpen.value || connectionOpen.value))
     // Without a connected piano the learner cannot play a hand: Listen only (U27).
@@ -370,6 +393,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       offOverlay()
       offInput()
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', onPageHide)
       portrait?.removeEventListener?.('change', onOrientation)
       session.dispose()
       saver.dispose()

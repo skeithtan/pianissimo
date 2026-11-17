@@ -64,6 +64,8 @@ export interface PieceRecord {
   readonly ladder?: LadderSettings | null
   /** Keep time (rhythm mode) is on for this piece; absent (older records) = off. */
   readonly rhythm?: boolean
+  /** Repeat mode was on when the piece was last practiced (DECISIONS U98); absent (older records) = closed. */
+  readonly repeatOpen?: boolean
 }
 
 export interface NewPieceOptions {

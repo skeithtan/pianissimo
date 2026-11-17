@@ -121,6 +121,16 @@ describe('record validators', () => {
     }
   })
 
+  it('accept Repeat open, closed or absent (older records, DECISIONS U98), and reject anything else', () => {
+    expect(pieceProblem(set(piece, { repeatOpen: true }))).toBeNull()
+    expect(pieceProblem(set(piece, { repeatOpen: false }))).toBeNull()
+    expect('repeatOpen' in piece).toBe(false)
+    expect(pieceProblem(clone(piece))).toBeNull()
+    for (const repeatOpen of ['yes', 1, null, {}]) {
+      expect(pieceProblem(set(piece, { repeatOpen }))).toBe('repeatOpen is missing or invalid')
+    }
+  })
+
   it('accept a strict (Keep time) attempt and reject an unknown transport', () => {
     const base = attemptRecord()
     const strict = set(base, {

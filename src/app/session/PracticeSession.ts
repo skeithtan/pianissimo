@@ -284,6 +284,12 @@ export class PracticeSession {
   #playThroughChosen = false
   /** Keep time was switched off (not saved) because play-through took over without a piano: back with the piano. */
   #rhythmHeld = false
+  /**
+   * Repeat mode was closed (not saved) because play-through took over without a piano (DECISIONS
+   * U98): it reopens over the remembered loop when the piano comes back. Cleared whenever Repeat
+   * opens and when the loop is cleared.
+   */
+  #repeatHeld = false
   /** Play-through once started (Start in play-through); null before and after the mode. */
   #play: PlayThrough | null = null
   /** A play-through was replaced (hands, output) while paused mid-piece: the main button reads Resume. */
@@ -1633,7 +1639,12 @@ export class PracticeSession {
         this.#setRhythm(false, !held)
         this.#rhythmHeld = held
       }
-      if (this.#repeat) this.setRepeatMode(false)
+      if (this.#repeat) {
+        // Without a piano Repeat comes back with it; the piece keeps it open meanwhile (U98). The
+        // learner's own play-through choice (with a piano) closes it for good.
+        if (this.#playRequired()) this.#repeatHeld = true
+        this.setRepeatMode(false)
+      }
       this.#stopListening()
       this.#pauseTransports()
       this.#awaitPrepared = false
@@ -1952,12 +1963,26 @@ export class PracticeSession {
     this.#inputAvailable = available
     this.#syncHeldHands()
     this.#syncPlayMode()
+    if (available && this.#repeatHeld) this.#returnHeldRepeat()
     if (available && this.#rhythmHeld) {
       this.#rhythmHeld = false
       if (!this.#playThrough && this.#sel.hands !== 'none') this.#setRhythm(true, false)
     }
     this.#syncFollowSource()
     this.#publishUi()
+  }
+
+  /**
+   * The piano came back while Repeat was held closed by the no-piano rule (DECISIONS U98): Repeat
+   * reopens over the remembered loop, paused at its start (nothing starts by itself). When it
+   * cannot (play-through stayed on by the learner's choice, or no loop), the piece's stored
+   * Repeat is closed so storage matches the screen.
+   */
+  #returnHeldRepeat(): void {
+    this.#repeatHeld = false
+    if (this.#repeat) return
+    if (!this.#playThrough && this.#loop) this.setRepeatMode(true)
+    if (!this.#repeat) this.#deps.piece.save({ repeatOpen: false }, true)
   }
 
   /**
@@ -2006,7 +2031,7 @@ export class PracticeSession {
   setRepeatTarget(target: number | null): void {
     if (target === this.#repeatTarget) return
     this.#repeatTarget = target
-    this.#deps.piece.save({ repeatTarget: target })
+    this.#deps.piece.save({ repeatTarget: target }, true)
     this.#publishUi()
   }
 
@@ -2024,7 +2049,7 @@ export class PracticeSession {
         : startLadder(ladder, speed)
       : null
     this.#ladderNext = null
-    this.#deps.piece.save({ ladder })
+    this.#deps.piece.save({ ladder }, true)
     this.#publishUi()
   }
 
@@ -2100,12 +2125,25 @@ export class PracticeSession {
     const modeChanged = repeat !== this.#repeat
     // While the hands are held without a piano (U27) the learner's own hands are saved, never 'none'.
     const handsChanged = this.#heldHands === null && base.hands !== prev.hands
-    if (persist && (handsChanged || base.multiplier !== prev.multiplier || !samePassage(loop, this.#loop))) {
-      this.#deps.piece.save({
-        lastHands: this.#heldHands ?? base.hands,
-        lastPassage: loop,
-        lastMultiplier: base.multiplier,
-      })
+    const loopChanged = !samePassage(loop, this.#loop)
+    // Repeat closed by the no-piano rule stays open on the piece until the piano returns (U98).
+    const heldClose = modeChanged && !repeat && this.#repeatHeld
+    if (repeat || !loop) this.#repeatHeld = false
+    // Repeat opened or closed, or the loop cleared, is saved on the piece (U98).
+    const saveMode = (modeChanged && !heldClose) || (loopChanged && !loop)
+    if (persist && (handsChanged || base.multiplier !== prev.multiplier || loopChanged || saveMode)) {
+      // A mode or loop change comes from a tap or a drag (never the MIDI path) and a reload right
+      // after must find it: written at once. Speed and hands alone stay debounced (the speed
+      // ladder's step runs from the MIDI path).
+      this.#deps.piece.save(
+        {
+          lastHands: this.#heldHands ?? base.hands,
+          lastPassage: loop,
+          lastMultiplier: base.multiplier,
+          ...(saveMode ? { repeatOpen: repeat } : {}),
+        },
+        saveMode || loopChanged,
+      )
     }
     this.#loop = loop
     this.#repeat = repeat
