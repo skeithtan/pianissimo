@@ -58,6 +58,45 @@ describe('getStorage', () => {
     expect(attach).not.toHaveBeenCalled() // already attached on open
   })
 
+  it('finishes library initialization once before exposing storage to concurrent callers', async () => {
+    const storage = await freshStorage()
+    let finish!: () => void
+    const initializeLibrary = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        }),
+    )
+    resetServicesForTests({ openStorage: () => Promise.resolve(storage), initializeLibrary })
+    let ready = false
+    const first = getStorage().then((value) => {
+      ready = true
+      return value
+    })
+    const second = getStorage()
+    await Promise.resolve()
+    expect(initializeLibrary).toHaveBeenCalledWith(storage)
+    expect(ready).toBe(false)
+    finish()
+    expect(await first).toBe(storage)
+    expect(await second).toBe(storage)
+    expect(initializeLibrary).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps storage usable when library initialization fails', async () => {
+    const storage = await freshStorage()
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    resetServicesForTests({
+      openStorage: () => Promise.resolve(storage),
+      initializeLibrary: () => Promise.reject(new Error('offline')),
+    })
+    expect(await getStorage()).toBe(storage)
+    expect(notices.value.map((notice) => notice.text)).toEqual([
+      'Your library could not finish loading. You can still add a score, or reload to try again.',
+    ])
+    errorLog.mockRestore()
+  })
+
   it('does not cache a failed open, so a later call retries', async () => {
     let fail = true
     resetServicesForTests({

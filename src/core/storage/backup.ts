@@ -38,7 +38,7 @@ import {
 import { clearVersionLayouts } from './pieces'
 import type { AbandonRecord, PieceRecord, SuggestionStateRecord } from './records'
 import type { BarStoreKey, Db } from './schema'
-import { DB_VERSION, SETTINGS_KEY } from './schema'
+import { DB_VERSION, INITIAL_LIBRARY_KEY, SETTINGS_KEY } from './schema'
 import { normalizeSettings } from './settings'
 import { observed, runTx } from './tx'
 import {
@@ -475,10 +475,13 @@ export async function restoreBackup(db: Db, bytes: Uint8Array, options: RestoreO
       'abandonEvents',
       'layoutCache',
       'layoutMeta',
+      'libraryState',
     ],
     'readwrite',
   )
   await runTx(tx, async () => {
+    // An explicit restore, including an intentionally empty backup, chooses this library.
+    await tx.objectStore('libraryState').put('complete', INITIAL_LIBRARY_KEY)
     const localPackages = new Set<string>(await tx.objectStore('packages').getAllKeys())
     const localPieces = await tx.objectStore('pieces').getAll()
     const localPieceIds = new Set<string>(localPieces.map((p) => p.id))

@@ -3,6 +3,7 @@ import type { ScorePackage, SourceFileRecord } from '../model/score'
 import { SCORE_PACKAGE_FORMAT } from '../model/score'
 import type { PiecePatch, PieceRecord } from './records'
 import type { Db, PianissimoDB, StoreName } from './schema'
+import { INITIAL_LIBRARY_KEY } from './schema'
 import { deepEqual } from './merge'
 import { observed, runTx } from './tx'
 import { pieceProblem } from './validate'
@@ -31,7 +32,11 @@ export function getPiece(db: Db, id: string): Promise<PieceRecord | undefined> {
 
 export async function putPiece(db: Db, piece: PieceRecord): Promise<void> {
   assertPiece(piece)
-  await db.put('pieces', piece)
+  const tx = db.transaction(['pieces', 'libraryState'], 'readwrite')
+  await runTx(tx, async () => {
+    await tx.objectStore('pieces').put(piece)
+    await tx.objectStore('libraryState').put('complete', INITIAL_LIBRARY_KEY)
+  })
 }
 
 /**
@@ -82,6 +87,19 @@ export interface ImportCommit {
   readonly replaceSharedPackage?: boolean
 }
 
+/** Validate the shared source/package/piece contract before opening a write transaction. */
+export function assertImport(input: ImportCommit): void {
+  const { source, pkg, piece } = input
+  assertPiece(piece)
+  assertPackage(pkg)
+  if (source.bytes.byteLength === 0) {
+    throw new TypeError('The source file is empty (or its buffer was already transferred to a worker)')
+  }
+  if (piece.scoreVersionId !== pkg.model.scoreVersionId) {
+    throw new TypeError('Piece and package disagree about the score version')
+  }
+}
+
 /**
  * Persist an import atomically (spec "Storage and recovery"): the source, the package and the
  * piece are written in one transaction, so a failed import (quota, abort, crash) leaves every
@@ -99,17 +117,10 @@ export interface ImportCommit {
 export async function commitImport(db: Db, input: ImportCommit): Promise<void> {
   const { source, pkg } = input
   let piece = input.piece
-  assertPiece(piece)
-  assertPackage(pkg)
+  assertImport(input)
   const version = pkg.model.scoreVersionId
-  if (source.bytes.byteLength === 0) {
-    throw new TypeError('The source file is empty (or its buffer was already transferred to a worker)')
-  }
-  if (piece.scoreVersionId !== version) {
-    throw new TypeError('Piece and package disagree about the score version')
-  }
 
-  const tx = db.transaction(['pieces', 'sources', 'packages', 'layoutCache', 'layoutMeta'], 'readwrite')
+  const tx = db.transaction(['pieces', 'sources', 'packages', 'layoutCache', 'layoutMeta', 'libraryState'], 'readwrite')
   await runTx(tx, async () => {
     const pieces = tx.objectStore('pieces')
     const [previous, stored, users, storedSource] = await Promise.all([
@@ -139,6 +150,7 @@ export async function commitImport(db: Db, input: ImportCommit): Promise<void> {
       }
     }
     writes.push(observed(pieces.put(piece)))
+    writes.push(observed(tx.objectStore('libraryState').put('complete', INITIAL_LIBRARY_KEY)))
     await Promise.all(writes)
     if (previous && previous.scoreVersionId !== version) {
       await releaseVersionIfUnused(tx, previous.scoreVersionId)

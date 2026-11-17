@@ -276,7 +276,12 @@ spacing, elevation), controls, fades (`useFadePresence`), `WrongNoteFlash` (stat
 vignette, U2/U30), `HandToggles` (U4), `ScoreOverview` + `LoopSteppers` (U6), `TempoControl` (U7),
 `BeatUnitIcon`. Props: `src/ui/README.md`.
 `app/services.ts`: lazily created singletons. `getStorage()` opens IndexedDB once and attaches
-the history lifecycle; `getMidiService()` / `getMidi()` own the one `MidiAdapter` and never
+the history lifecycle, then awaits `app/initialPieces.ensureInitialPieces`. That module fetches
+three small bundled MusicXML archives only for a genuinely new library and builds them through
+the existing import worker. `needsInitialPieces` / `initializeLibrary` use the internal v2
+`libraryState` marker; source/package/piece writes and completion are atomic. Upgraded databases
+are already complete, and deletes never reset the marker. Bootstrap failure leaves storage
+usable with a notice and retries on reload. `getMidiService()` / `getMidi()` own the one `MidiAdapter` and never
 request access by themselves. `startServices()` (from `boot.ts`) loads settings (memory
 fallback with a notice), then reconnects a remembered route only when permission is already
 'granted'. `MidiService` publishes a snapshot (access, permission, ports, selected input /
@@ -297,7 +302,14 @@ updates the UI. `review.ts` applies `applyHandAssignment` / `withUserTempo` and 
 `summarizeImport(...).readiness`; only ready packages are stored (L1). Per-piece suggestions: `PieceSuggestionsModel`
 (`loadSuggestions` + `sessionDismissals`, per-piece disable, Practice this passage →
 `openPractice` preset, refresh on `history.subscribe`) rendered by the shared `SuggestionList`.
-New imports navigate to Practice and start after layout preparation. Add unlocks the shared browser AudioContext during the click without loading samples.
+The Library shows compact ordinary rows, with a Continue practice feature only for a recent
+piece with a saved resume position or active Repeat. Stored ranges are normalized before
+labeling. Each card owns one suggestions model; empty/disabled suggestion state is checked
+before loading a package/history, and useful content renders outside management Options.
+Import review keeps the ready summary compact and technical checks under Import details;
+blockers and consequential warnings remain visible. Add and open saves then navigates to
+Practice paused; the later Start/Play gesture owns audio and microphone activation. Duplicate
+imports offer Open existing piece and a secondary Add another copy with shared reviewed metadata.
 Dependencies are injectable via `LibraryDeps` (tests: `views/library/testkit.ts`). Export and
 restore are in Settings → Backup (`views/settings/BackupSection`, its own `LibraryModel`); the
 Library refreshes its list when Settings close (L7).
@@ -407,12 +419,13 @@ attempt's context history and "other settings". `ScorecardPanel` and `HistoryPan
 presentational. "Practice again" / "Practice this passage" call `openPractice` with
 `{passage, hands, multiplier}` and never start practice.
 `views/shared/suggestions`: presentational `SuggestionList` / `SuggestionCard` (props:
-`suggestions`, `improved`, `disabled`, `compact`, `headingLevel`, `title`, `showHeading`, `onPractice`,
+`suggestions`, `improved`, `disabled`, `compact`, `headingLevel`, `title`, `showHeading`, `hideEmpty`, `onPractice`,
 `onDismiss`, `onDisableSuggestions`, `onEnableSuggestions`, `disableLabel`, `renderPreview`), text
 helpers, and `sessionDismissals`, the shared `SessionDismissals` instance used by Library and
 Results.
 Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `practiceRequest`;
-`autoStart` is a one-shot import handoff consumed after notation preparation (L6).
+`autoStart` remains a one-shot request consumed after notation preparation; Library imports
+no longer send it (L6).
 `openResults({ pieceId, attemptId? })` sets `resultsRequest` (both in `app/navigation.ts`); since
 U99 nothing in the app calls it (the Results route stays for `#/results/…` deep links).
 

@@ -40,6 +40,32 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** Longest title and composer a rename keeps (the inputs use them as `maxLength`). */
+export const TITLE_MAX_LENGTH = 120
+export const COMPOSER_MAX_LENGTH = 120
+
+export interface PieceName {
+  readonly title: string
+  /** Undefined when the composer is empty: the field is removed from the piece record. */
+  readonly composer: string | undefined
+}
+
+function tidy(text: string, max: number): string {
+  const collapsed = text.trim().replace(/\s+/g, ' ')
+  // By code points, so a cut never splits a surrogate pair; trimmed again in case it ends on a space.
+  return Array.from(collapsed).slice(0, max).join('').trim()
+}
+
+/**
+ * The library name a rename stores: both fields trimmed, inner runs of whitespace collapsed to
+ * one space and capped in length. An empty title stays empty (the caller refuses it); an empty
+ * composer becomes undefined.
+ */
+export function normalizePieceName(name: { readonly title: string; readonly composer: string }): PieceName {
+  const composer = tidy(name.composer, COMPOSER_MAX_LENGTH)
+  return { title: tidy(name.title, TITLE_MAX_LENGTH), composer: composer === '' ? undefined : composer }
+}
+
 export class LibraryModel {
   readonly state: Signal<LibraryState> = signal({ status: 'loading' })
   readonly storageStatus: Signal<StorageStatus | null> = signal(null)
@@ -77,11 +103,15 @@ export class LibraryModel {
     }
   }
 
-  /** Record that the piece was opened now (Library order and "last opened"). */
-  async markOpened(pieceId: string): Promise<void> {
+  /**
+   * Record that the piece was opened now (Library order and "last opened"). `notBefore` keeps the
+   * time after a just-added piece's `createdAt`, so its row never reads "Not opened yet" even when
+   * the clock has not moved since the import (`neverOpened`).
+   */
+  async markOpened(pieceId: string, notBefore = 0): Promise<void> {
     try {
       const storage = await this.#deps.getStorage()
-      await storage.updatePiece(pieceId, { lastOpenedAt: this.#deps.now() })
+      await storage.updatePiece(pieceId, { lastOpenedAt: Math.max(this.#deps.now(), notBefore) })
     } catch {
       // Ordering only; never block opening the piece.
     }
@@ -101,6 +131,20 @@ export class LibraryModel {
   async study(pieceId: string): Promise<void> {
     await this.markOpened(pieceId)
     openStudy({ pieceId })
+  }
+
+  /**
+   * Rename a library entry: its title and composer only (`normalizePieceName`). The score package
+   * and the source file keep the score's own metadata, and the piece keeps its place in the list
+   * (`lastOpenedAt` is untouched). An empty composer removes the field.
+   */
+  async rename(pieceId: string, name: { title: string; composer: string }): Promise<void> {
+    const next = normalizePieceName(name)
+    if (next.title === '') throw new Error('A piece needs a title.')
+    const storage = await this.#deps.getStorage()
+    const updated = await storage.updatePiece(pieceId, { title: next.title, composer: next.composer })
+    if (!updated) throw new Error('This piece is no longer in the library.')
+    await this.refresh()
   }
 
   /** Delete a piece with its results and history (one transaction, storage cascades). */

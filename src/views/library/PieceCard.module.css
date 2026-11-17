@@ -1,0 +1,225 @@
+/* The whole row opens Practice through one real button, `.stretched` (the chevron, or Continue
+   practice on the featured card): its ::after covers the card. Every other control in the card
+   (`.above`, `.options`, `.suggestions`) sits above that layer, so its own dead space never opens
+   Practice. Nothing interactive is nested. */
+.card {
+  position: relative;
+  min-width: 0;
+  padding: var(--space-5);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-l);
+}
+
+.card[data-featured] {
+  background: var(--bg-sunken);
+}
+
+.stretched::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-l);
+  cursor: pointer;
+}
+
+/* The card gives the press feedback. A transform on the button would make it the ::after's
+   containing block and shrink the target to the button mid-press. */
+.card .stretched:active:not(:disabled) {
+  transform: none;
+}
+
+/* Keyboard focus rings the whole card, which is the target, not the small chevron. */
+.card .stretched:focus-visible {
+  outline: none;
+}
+
+.card:has(.stretched:focus-visible) {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .card:has(.stretched:hover) {
+    background-image: linear-gradient(var(--hover), var(--hover));
+  }
+
+  .card .chevron:hover:not(:disabled) {
+    background: transparent;
+  }
+}
+
+.card:has(.stretched:active) {
+  background-image: linear-gradient(var(--hover), var(--hover)), linear-gradient(var(--hover), var(--hover));
+}
+
+.above,
+.options,
+.suggestions {
+  position: relative;
+  z-index: 1;
+}
+
+/* An open menu paints over the following rows' controls, which sit at z-index 1 too. */
+.options[data-open] {
+  z-index: 20;
+}
+
+.main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* A tap on the row never starts a text selection. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-l);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.card[data-featured] .title {
+  font-size: var(--text-2xl);
+}
+
+.composer,
+.status,
+.context {
+  color: var(--fg-muted);
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-s);
+}
+
+.status {
+  font-size: var(--text-xs);
+}
+
+.context {
+  margin-top: var(--space-3);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.card[data-featured] .main {
+  flex-wrap: wrap;
+}
+
+/* Button overrides are scoped under .card so they win regardless of stylesheet order. */
+.card .iconButton {
+  width: var(--touch);
+  padding: 0;
+}
+
+/* Decorative: the card is the touch target, so the glyph needs no 48 px box of its own. */
+.card .chevron {
+  min-width: 0;
+  width: var(--space-5);
+  padding: 0;
+  margin-left: var(--space-1);
+  color: var(--fg-muted);
+}
+
+.menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  width: min(320px, calc(100vw - 64px));
+  padding: var(--space-2);
+  border-radius: var(--radius-m);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.menu button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.menu p {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.suggestions {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+/* Ordinary rows stay on one line; the featured card stacks its actions under the text. */
+@media (max-width: 760px) {
+  .main {
+    gap: var(--space-3);
+  }
+
+  .card[data-featured] .main {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .card[data-featured] .actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .card[data-featured] .options {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-4);
+  }
+
+  .card[data-featured] .title {
+    font-size: var(--text-xl);
+  }
+
+  .actions {
+    gap: 0;
+  }
+
+  .actions > button:not(.chevron) {
+    padding-inline: var(--space-2);
+    font-size: var(--text-s);
+  }
+
+  .card[data-featured] .actions > :first-child {
+    margin-right: var(--space-1);
+  }
+}
+
+/* The glyph goes when space is tight; the button stays, focusable, with its stretched target. It
+   keeps a sliver of a box (not zero): tools that act on the element's own frame (Voice Control,
+   a screen reader's focus, automated clicks) still find it. */
+@media (max-width: 480px) {
+  .card .chevron {
+    width: var(--space-1);
+    margin-left: 0;
+  }
+
+  .card .chevron svg {
+    display: none;
+  }
+}

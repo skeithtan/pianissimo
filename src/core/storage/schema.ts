@@ -8,14 +8,17 @@ import type { AbandonRecord, LayoutMeta, LayoutPayload, PieceRecord, SuggestionS
 
 export const DEFAULT_DB_NAME = 'pianissimo'
 /** IndexedDB schema version. Bump together with a branch in `upgrade`. */
-export const DB_VERSION = 1
+export const DB_VERSION = 2
 /** Single settings record key. */
 export const SETTINGS_KEY = 'app'
+/** Installation-local state: deletion and backup contents never reset it. */
+export const INITIAL_LIBRARY_KEY = 'initial-library'
 
 /** Compound key `[pieceId, barKey]` of the per-bar stores (`barKey` from `core/history`). */
 export type BarStoreKey = [pieceId: string, barKey: string]
 
 export interface PianissimoDB extends DBSchema {
+  libraryState: { key: string; value: 'pending' | 'complete' }
   pieces: { key: string; value: PieceRecord; indexes: { lastOpenedAt: number; scoreVersionId: string } }
   /** Original source files, keyed by score version id. */
   sources: { key: string; value: SourceFileRecord }
@@ -69,6 +72,12 @@ export function openPianissimoDb(name: string = DEFAULT_DB_NAME): Promise<Db> {
         const meta = db.createObjectStore('layoutMeta', { keyPath: 'key' })
         meta.createIndex('scoreVersionId', 'scoreVersionId')
         meta.createIndex('lastUsedAt', 'lastUsedAt')
+      }
+      if (oldVersion < 2) {
+        const state = db.createObjectStore('libraryState')
+        // An old empty library may be empty because its owner deleted everything.
+        // Only a database created by this version is eligible for initial pieces.
+        void state.put(oldVersion === 0 ? 'pending' : 'complete', INITIAL_LIBRARY_KEY)
       }
     },
     blocking() {

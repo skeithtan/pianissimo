@@ -36,7 +36,7 @@ async function openPractice(page: Page, viewport: { width: number; height: numbe
 async function reloadPractice(page: Page): Promise<void> {
   await page.reload()
   const heading = page.locator('h1', { hasText: 'Two Hands' })
-  const open = page.getByRole('button', { name: 'Practice Two Hands' })
+  const open = page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ })
   await expect(heading.or(open)).toBeVisible()
   if (!(await heading.isVisible())) await open.click()
   await expect(page).toHaveURL(new RegExp(`#/practice/${PIECE_ID}`))
@@ -270,7 +270,7 @@ test('leaving to the Library and opening the piece again keeps Repeat on over it
   await page.getByRole('button', { name: 'Back to Library' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Library' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Practice Two Hands' }).click()
+  await page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ }).click()
   await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
   await expect(panelOf(page)).toBeVisible()
   await expect(loopStart(page)).toContainText('Bar 2')

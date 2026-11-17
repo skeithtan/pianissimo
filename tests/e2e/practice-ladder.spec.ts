@@ -62,7 +62,7 @@ test('three clean passes climb the ladder one step, and the ladder survives a re
   // The ladder is saved on the piece: still on after a reload.
   await page.reload()
   const heading = page.locator('h1', { hasText: 'Two Hands' })
-  const open = page.getByRole('button', { name: 'Practice Two Hands' })
+  const open = page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ })
   await expect(heading.or(open)).toBeVisible()
   if (!(await heading.isVisible())) await open.click()
   await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })

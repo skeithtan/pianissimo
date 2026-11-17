@@ -215,6 +215,41 @@ describe('ImportFlow', () => {
     expect(pkg?.model.hands.byVoice[v.key]).toBe('R')
   })
 
+  it('adds a duplicate with the stored practice tempo instead of the unreviewed source defaults', async () => {
+    const first = savingFlow()
+    await first.flow.openFile(file('no-tempo.musicxml'))
+    const original = review(first.flow)
+    await first.flow.save({ ...initialDraft(original.result.summary, original.result.package.model), bpmText: '84' })
+    const existing = first.saved[0]!.piece
+    await deps.storage.updatePiece(existing.id, { lastMultiplier: 0.75 })
+    const copy = savingFlow()
+    await copy.flow.openFile(file('no-tempo.musicxml'))
+    expect(review(copy.flow).result.summary.tempo.present).toBe(false)
+
+    await copy.flow.saveCopy(existing.id)
+
+    expect(copy.flow.phase.value.kind).toBe('idle')
+    expect(copy.saved).toHaveLength(1)
+    expect(copy.saved[0]!.piece.id).not.toBe(existing.id)
+    expect(copy.saved[0]!.piece.userTempo).toEqual(existing.userTempo)
+    expect(copy.saved[0]!.piece.lastMultiplier).toBe(1)
+    expect(copy.saved[0]!.piece.resume).toBeNull()
+    const pieces = await deps.storage.listPieces()
+    expect(pieces).toHaveLength(2)
+    expect(pieces.every((piece) => piece.userTempo?.beatBpm === 84)).toBe(true)
+    expect((await deps.storage.getPiece(existing.id))?.lastMultiplier).toBe(0.75)
+  })
+
+  it('does not add a duplicate when its existing piece has disappeared', async () => {
+    const { flow, saved } = savingFlow()
+    await flow.openFile(file('two-hands.musicxml'))
+    await flow.saveCopy('missing')
+    expect(review(flow).saving).toBe(false)
+    expect(review(flow).saveError).toContain('existing piece changed')
+    expect(saved).toHaveLength(0)
+    expect(await deps.storage.listPieces()).toEqual([])
+  })
+
   it('cancel releases the client and the retained file; a later file still imports', async () => {
     const flow = new ImportFlow(deps)
     await flow.openFile(file('two-parts.musicxml'))

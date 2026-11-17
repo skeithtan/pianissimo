@@ -37,7 +37,7 @@ export function mxlFile(fixture: string, asName: string): UploadFile {
 
 /** Picks a score through the Library's real file input (a label around a hidden input). */
 export async function importFile(page: Page, file: UploadFile): Promise<void> {
-  await page.locator('label', { hasText: 'Import MusicXML' }).first().locator('input[type="file"]').setInputFiles(file)
+  await page.locator('label', { hasText: 'Add score' }).first().locator('input[type="file"]').setInputFiles(file)
 }
 
 /** The open modal sheet (import, delete, restore, ...). */
@@ -46,7 +46,7 @@ export const sheet = (page: Page) => page.locator('dialog[open]')
 /** Import a fixture, then return from the automatic Practice opening to the Library. */
 export async function addToLibrary(page: Page, file: UploadFile): Promise<void> {
   await importFile(page, file)
-  await sheet(page).getByRole('button', { name: 'Add to library' }).click()
+  await sheet(page).getByRole('button', { name: 'Add and open' }).click()
   // Saving opens Practice; these Library workflows explicitly return to the list.
   await expect(sheet(page)).toHaveCount(0)
   await expect(page.getByText('is in your library')).toBeVisible()

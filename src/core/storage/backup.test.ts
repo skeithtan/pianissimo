@@ -247,6 +247,18 @@ describe('restore into an empty browser', () => {
     expect((await target.getPiece(off.id))?.ladder).toBeNull()
   })
 
+  it('a renamed piece keeps its library name through export and restore; the package keeps the score title', async () => {
+    const source = await fresh()
+    const { piece } = await importPiece(source, 'ren', { title: 'Etude' })
+    await source.updatePiece(piece.id, { title: 'Study in C', composer: undefined })
+    const target = await fresh()
+    await target.restore(await source.exportAll())
+    const restored = await target.getPiece(piece.id)
+    expect(restored?.title).toBe('Study in C')
+    expect(restored).not.toHaveProperty('composer')
+    expect((await target.getPackage('ren'))?.model.meta.title).toBe('Etude')
+  })
+
   it('a Keep time (strict) attempt and the piece setting survive export and restore', async () => {
     const source = await fresh()
     const { piece } = await importPiece(source, 'kt', { rhythm: true })

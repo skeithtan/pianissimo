@@ -4,8 +4,7 @@
  * Saving closes the sheet (L6); the library shows the notice.
  */
 import { useEffect, useMemo, useState } from 'preact/hooks'
-import { connectionStatus, settings } from '../../app/state'
-import { isWebAudioSupported, sharedAudioContext } from '../../core/playback/webaudio/context'
+import { openPractice } from '../../app/navigation'
 import type { PieceRecord } from '../../core/storage/records'
 import { Button, Notice, Sheet } from '../../ui/controls'
 import { Icon } from '../../ui/icons'
@@ -17,16 +16,19 @@ import { STAGE_TEXT, type FlowPhase, type ImportFlow, type StorageStatus } from 
 import { initialDraft, reviewGate, type ReviewDraft } from './review'
 import { candidateTitle, describePart, playableParts } from './selection'
 import styles from './library.module.css'
+import importStyles from './import.module.css'
 
 export function ImportSheet({
   flow,
   pieces,
   onClose,
+  onOpenExisting,
 }: {
   flow: ImportFlow | null
   /** The library, to point out a score that is already in it. */
   pieces: readonly PieceRecord[]
   onClose: () => void
+  onOpenExisting?: (pieceId: string) => void
 }) {
   const phase = flow?.phase.value ?? { kind: 'idle' as const }
   const open = flow !== null && phase.kind !== 'idle'
@@ -37,8 +39,20 @@ export function ImportSheet({
     onClose()
   }
   return (
-    <Sheet title="Import MusicXML" open={open} onClose={closeUnlessSaving} wide>
-      {flow ? <FlowBody flow={flow} phase={phase} pieces={pieces} onClose={onClose} /> : null}
+    <Sheet title="Add score" open={open} onClose={closeUnlessSaving} wide>
+      {flow ? (
+        <FlowBody
+          flow={flow}
+          phase={phase}
+          pieces={pieces}
+          onClose={onClose}
+          onOpenExisting={(pieceId) => {
+            onClose()
+            if (onOpenExisting) onOpenExisting(pieceId)
+            else openPractice({ pieceId })
+          }}
+        />
+      ) : null}
     </Sheet>
   )
 }
@@ -48,11 +62,13 @@ function FlowBody({
   phase,
   pieces,
   onClose,
+  onOpenExisting,
 }: {
   flow: ImportFlow
   phase: FlowPhase
   pieces: readonly PieceRecord[]
   onClose: () => void
+  onOpenExisting: (pieceId: string) => void
 }) {
   switch (phase.kind) {
     case 'idle':
@@ -62,7 +78,7 @@ function FlowBody({
     case 'choose':
       return <Choose flow={flow} phase={phase} />
     case 'review':
-      return <Review flow={flow} phase={phase} pieces={pieces} />
+      return <Review flow={flow} phase={phase} pieces={pieces} onOpenExisting={onOpenExisting} />
     case 'failed':
       return <Failed flow={flow} phase={phase} onClose={onClose} />
   }
@@ -183,10 +199,12 @@ function Review({
   flow,
   phase,
   pieces,
+  onOpenExisting,
 }: {
   flow: ImportFlow
   phase: Extract<FlowPhase, { kind: 'review' }>
   pieces: readonly PieceRecord[]
+  onOpenExisting: (pieceId: string) => void
 }) {
   const { summary, package: pkg } = phase.result
   const [draft, setDraft] = useState<ReviewDraft>(() => initialDraft(summary, pkg.model))
@@ -198,43 +216,47 @@ function Review({
   const save = () => {
     setTriedSave(true)
     if (!gate.canSave) return
-    // Unlock browser sound in this click, before storage and score preparation outlive the
-    // user gesture. This creates only the shared context; samples still load in Practice.
-    const appSettings = settings.peek()
-    const browserSound =
-      appSettings.sound.destination === 'browser' ||
-      (appSettings.sound.destination === 'auto' && !connectionStatus.peek().outputName)
-    if ((browserSound || appSettings.metronome.enabled) && isWebAudioSupported()) {
-      try {
-        sharedAudioContext()
-      } catch {
-        // Practice reports unavailable sound without preventing the score from being saved.
-      }
-    }
     void flow.save(draft)
+  }
+  if (duplicate) {
+    return (
+      <div class={styles.flow}>
+        <div class={importStyles.duplicate}>
+          <p class={styles.muted}>Already in your library</p>
+          <h3>{duplicate.title}</h3>
+          {duplicate.composer ? <p class={styles.composer}>{duplicate.composer}</p> : null}
+          <p>Open the piece you already have to keep your place and practice history.</p>
+        </div>
+        {phase.saveError ? <Notice tone="danger">{phase.saveError}</Notice> : null}
+        <details class={importStyles.details}>
+          <summary>Add a separate library entry</summary>
+          <div class={importStyles.detailsBody}>
+            <p class={styles.muted}>
+              Another copy starts with fresh practice history and shares this score’s hands and tempo.
+            </p>
+            <div>
+              <Button disabled={phase.saving} onClick={() => void flow.saveCopy(duplicate.id)}>
+                {phase.saving ? 'Saving…' : 'Add another copy'}
+              </Button>
+            </div>
+          </div>
+        </details>
+        <div class={styles.flowActions}>
+          <Button disabled={phase.saving} onClick={() => flow.cancel()}>
+            Cancel
+          </Button>
+          <Button variant="primary" icon="forward" disabled={phase.saving} onClick={() => onOpenExisting(duplicate.id)}>
+            Open existing piece
+          </Button>
+        </div>
+      </div>
+    )
   }
   return (
     <div class={styles.flow}>
-      <p class={styles.fileName}>{phase.fileName}</p>
-      {duplicate ? (
-        <Notice tone="info">
-          This score is already in your library as “{duplicate.title}”. Adding it again creates a second piece that
-          shares that score, including its hands and practice tempo. Changes made here are not applied.
-        </Notice>
-      ) : null}
-      <ImportSummaryView summary={summary} draft={draft} gate={gate} onDraft={setDraft} />
+      <ImportSummaryView summary={summary} draft={draft} gate={gate} onDraft={setDraft} compact />
       <div class={styles.footer}>
         {phase.saveError ? <Notice tone="danger">{phase.saveError}</Notice> : null}
-        {!gate.canSave ? (
-          <div role="status">
-            <strong>Before scored practice:</strong>
-            <ul class={styles.blockers}>
-              {gate.blockers.map((b) => (
-                <li key={b}>{b}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
         <div class={styles.flowActions}>
           {phase.choiceOffered ? (
             <Button onClick={() => flow.backToChoice()} disabled={phase.saving}>
@@ -246,7 +268,7 @@ function Review({
             </Button>
           )}
           <Button variant="primary" icon="check" disabled={!gate.canSave || phase.saving} onClick={save}>
-            {phase.saving ? 'Saving…' : 'Add to library'}
+            {phase.saving ? 'Saving…' : 'Add and open'}
           </Button>
         </div>
       </div>

@@ -23,6 +23,7 @@ default 50 MB / 256 entries), `history` (`HistoryWriterOptions`), `now`.
 | Area | Methods |
 | --- | --- |
 | Library | `listPieces()` (latest opened first), `getPiece(id)`, `putPiece(piece)`, `updatePiece(id, patch)` (atomic read-modify-write; `undefined` removes `userTempo`/`composer`), `deletePiece(id)` |
+| Initial library | `needsInitialPieces()` checks installation-local eligibility; `initializeLibrary(inputs)` atomically installs one to three ordinary imports and seals eligibility, returning whether it installed them |
 | Import | `commitImport({ source, pkg, piece, replaceSharedPackage? })` (one transaction; see Shared versions), `getPackage(scoreVersionId)`, `putPackage(pkg)` (after hands are confirmed or a tempo is supplied), `getSource(scoreVersionId)` |
 | Settings | `loadSettings()` (validated and merged over `DEFAULT_SETTINGS`), `saveSettings(settings)` (returns the normalized value) |
 | Results | `addAttempts(records)`, `listAttempts({ pieceId } \| { contextKey } \| both, scoreVersionId? })`, `getAttempt(id)`, `loadResults(pieceId)` → `ContextResults[]` for the piece's current version |
@@ -68,7 +69,7 @@ record is dropped alone. Scheduling is injectable for tests. Ordinary-reading at
 the measure histories but their records are not stored unless `keepReadingAttempts` is set;
 Preview records nothing.
 
-## Database "pianissimo", version 1
+## Database "pianissimo", version 2
 
 | Store | Key | Value / indexes |
 | --- | --- | --- |
@@ -76,6 +77,7 @@ Preview records nothing.
 | `sources` | `scoreVersionId` | `SourceFileRecord` (original bytes) |
 | `packages` | `scoreVersionId` | `ScorePackage` |
 | `settings` | `"app"` | `AppSettings` |
+| `libraryState` | `"initial-library"` | `"pending"` or `"complete"`; installation-local, excluded from backup |
 | `attempts` | `id` | `AttemptRecord`; indexes `pieceId`, `contextKey` |
 | `measureHistory` | `[pieceId, barKey]` | `BarRecord`; index `pieceId` |
 | `suggestionState` | `pieceId` | `{ pieceId, disabled, suggestions[] }` |
@@ -86,6 +88,16 @@ Preview records nothing.
 Heavy data (package, source) is separate from the small piece records so the library lists
 without loading scores. Upgrades add branches on `oldVersion` in `schema.ts` and never drop
 user stores. A connection told to upgrade by another tab closes itself.
+
+Only a database created from version zero starts with pending initial-library eligibility.
+Upgrading any existing database marks it complete, even when it has no pieces. Initialization
+commits all pieces, sources, packages, and the complete marker in one transaction. Concurrent
+tabs serialize on that marker; failed writes leave no partial library and can retry. Ordinary
+imports, `putPiece`, and successful restores also complete the marker. Deleting one or every
+piece never resets it, so an empty library stays empty across reloads and future updates.
+The app's initial-piece service fetches bundled sources and normalizes them in the existing
+import worker before calling this storage API. Those pieces use ordinary IDs and records,
+including ordinary deletion, history, and backup behavior.
 
 ## Guarantees
 

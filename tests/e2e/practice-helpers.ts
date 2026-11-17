@@ -120,6 +120,7 @@ export async function seedPiece(page: Page, settingsPatch: Partial<AppSettings> 
       })
       await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(['pieces', 'packages', 'settings'], 'readwrite')
+        tx.objectStore('pieces').clear()
         tx.objectStore('pieces').put(piece)
         tx.objectStore('packages').put(pkg, (pkg as { model: { scoreVersionId: string } }).model.scoreVersionId)
         tx.objectStore('settings').put(settings, 'app')
@@ -169,7 +170,7 @@ export async function setShowKeys(page: Page, on = true): Promise<void> {
 
 /** From the Library to the Practice view of the seeded piece. */
 export async function openSeededPractice(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Practice Two Hands' }).click()
+  await page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ }).click()
   await expect(page.locator('h1', { hasText: 'Two Hands' })).toBeVisible()
   await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
   await expect(page.getByText(/Preparing the score/)).toHaveCount(0, { timeout: 60_000 })

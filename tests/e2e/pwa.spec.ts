@@ -138,13 +138,13 @@ test('after one online visit the app relaunches and works offline', async ({ pag
   expect(failed).toEqual([])
 
   // Practice boots offline (no piano here, so it waits for Start).
-  await page.getByRole('button', { name: 'Practice Two Hands' }).click()
+  await page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ }).click()
   await expect(page.locator('.pn-strip')).toBeVisible()
   await page.getByRole('button', { name: 'Back to Library' }).click()
 
   // An import works offline too (the import worker).
   await importFile(page, fixtureFile('repeats.musicxml'))
-  await sheet(page).getByRole('button', { name: 'Add to library' }).click()
+  await sheet(page).getByRole('button', { name: 'Add and open' }).click()
   await expect(sheet(page)).toHaveCount(0)
   await expect(page.getByText('is in your library')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
@@ -171,7 +171,7 @@ test('an open app moves to a new deploy only where nothing is interrupted', asyn
   const marker = () => page.evaluate(() => (window as { pnMarker?: boolean }).pnMarker === true).catch(() => false)
 
   // On the Practice screen a newer worker takes over, but the page stays put.
-  await page.getByRole('button', { name: 'Practice Two Hands' }).click()
+  await page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ }).click()
   await expect(page.locator('.pn-strip')).toBeVisible()
   await page.evaluate(() => ((window as { pnMarker?: boolean }).pnMarker = true))
   const next = await deploy('deploy 2')

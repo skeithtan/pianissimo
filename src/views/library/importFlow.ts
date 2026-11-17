@@ -17,8 +17,9 @@ import type { ImportCandidate } from '../../core/import/candidates'
 import type { ImportClient } from '../../core/import/client'
 import { ImportError } from '../../core/import/errors'
 import { DEFAULT_IMPORT_LIMITS } from '../../core/import/limits'
+import { summarizeImport } from '../../core/import/summary'
 import type { BuildResult, ImportStage, InspectResult } from '../../core/import/pipeline'
-import type { Diagnostic } from '../../core/model/score'
+import type { Diagnostic, ScorePackage } from '../../core/model/score'
 import {
   estimateStorage,
   isQuotaError,
@@ -323,7 +324,6 @@ export class ImportFlow {
   async save(draft: ReviewDraft): Promise<void> {
     const p = this.phase.peek()
     if (p.kind !== 'review' || p.saving) return
-    const token = this.#job
     let piece: PieceRecord
     let pkg
     try {
@@ -334,6 +334,34 @@ export class ImportFlow {
       this.phase.value = { ...p, saveError: errorMessage(error).message }
       return
     }
+    await this.#commit(p, pkg, piece)
+  }
+
+  /** A duplicate keeps the existing reviewed score; never offer edits that storage would ignore. */
+  async saveCopy(pieceId: string): Promise<void> {
+    const p = this.phase.peek()
+    if (p.kind !== 'review' || p.saving) return
+    const token = this.#job
+    this.phase.value = { ...p, saving: true, saveError: null }
+    try {
+      const storage = await this.#deps.getStorage()
+      const existing = await storage.getPiece(pieceId)
+      if (!existing || existing.scoreVersionId !== p.result.package.model.scoreVersionId) {
+        throw new Error('The existing piece changed. Close this import and choose the file again.')
+      }
+      const pkg = await storage.getPackage(existing.scoreVersionId)
+      if (!pkg || !summarizeImport(pkg.model).readiness.scoredPractice) {
+        throw new Error('The existing score is unavailable or needs review. Open that piece before adding a copy.')
+      }
+      if (!this.#live(token)) return
+      await this.#commit(p, pkg, this.#pieceFor(pkg, existing.userTempo))
+    } catch (error) {
+      if (this.#live(token)) this.phase.value = { ...p, saving: false, saveError: errorMessage(error).message }
+    }
+  }
+
+  async #commit(p: Extract<FlowPhase, { kind: 'review' }>, pkg: ScorePackage, piece: PieceRecord): Promise<void> {
+    const token = this.#job
     this.phase.value = { ...p, saving: true, saveError: null }
     try {
       const storage = await this.#deps.getStorage()

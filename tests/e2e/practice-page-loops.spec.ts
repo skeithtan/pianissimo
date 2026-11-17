@@ -8,7 +8,7 @@ async function openLoop(page: Page, width: number, height: number): Promise<void
   await installFakeMidi(page)
   await page.goto('./')
   await page
-    .locator('label', { hasText: 'Import MusicXML' })
+    .locator('label', { hasText: 'Add score' })
     .first()
     .locator('input[type="file"]')
     .setInputFiles({
@@ -16,9 +16,11 @@ async function openLoop(page: Page, width: number, height: number): Promise<void
       mimeType: 'application/xml',
       buffer: Buffer.from(generateLongScore(12)),
     })
-  await page.getByRole('button', { name: 'Add to library', exact: true }).click()
+  await page.getByRole('button', { name: 'Add and open', exact: true }).click()
   await expect(page.locator('.pn-page')).toBeVisible({ timeout: 60_000 })
-  await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  // "Add and open" opens Practice paused; pause only if something is still playing.
+  const pause = page.getByRole('button', { name: 'Pause', exact: true })
+  if (await pause.isVisible()) await pause.click()
   await page.getByRole('button', { name: 'Repeat from here', exact: true }).click()
   await expect(page.locator('.pn-loop.pn-on')).toHaveCount(1)
 }

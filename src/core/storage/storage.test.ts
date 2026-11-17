@@ -29,6 +29,7 @@ describe('schema', () => {
       'attempts',
       'layoutCache',
       'layoutMeta',
+      'libraryState',
       'measureHistory',
       'packages',
       'pieces',

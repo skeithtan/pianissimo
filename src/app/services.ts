@@ -23,6 +23,7 @@ import {
   type StorageOptions,
 } from '../core/storage'
 import { getFeatures } from './features'
+import { ensureInitialPieces } from './initialPieces'
 import { connectionOpen, currentView } from './navigation'
 import { MidiService } from './services/midiService'
 import {
@@ -44,6 +45,7 @@ export interface ServicesEnv {
   readonly navigator?: MidiNavigatorLike | undefined
   readonly openStorage?: (options: StorageOptions) => Promise<PianissimoStorage>
   readonly now?: () => number
+  readonly initializeLibrary?: (storage: PianissimoStorage) => Promise<void>
 }
 
 let env: ServicesEnv = {}
@@ -95,8 +97,18 @@ export function getStorage(): Promise<PianissimoStorage> {
   if (!storagePromise) {
     const options: StorageOptions = { appVersion: APP_VERSION, history: historyFailureNotices() }
     const open = env.openStorage ?? ((o: StorageOptions) => openStorage(undefined, o))
-    const pending = open(options).then((storage) => {
+    const pending = open(options).then(async (storage) => {
       storage.history.attachLifecycle()
+      try {
+        await (env.initializeLibrary ?? ensureInitialPieces)(storage)
+      } catch (error) {
+        console.error('Library initialization failed', error)
+        pushNotice({
+          kind: 'warning',
+          text: 'Your library could not finish loading. You can still add a score, or reload to try again.',
+          timeoutMs: null,
+        })
+      }
       return storage
     })
     storagePromise = pending
@@ -173,5 +185,5 @@ export function resetServicesForTests(next: ServicesEnv = {}): void {
   midiService?.dispose()
   midiService = null
   storagePromise = null
-  env = next
+  env = { initializeLibrary: async () => {}, ...next }
 }

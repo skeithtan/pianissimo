@@ -1,0 +1,93 @@
+.ready {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.overview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-6);
+  margin: 0;
+}
+
+.overview > div {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.overview dt {
+  color: var(--fg-muted);
+  font-size: var(--text-s);
+}
+
+.overview dd {
+  margin: 0;
+}
+
+.tempo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tempo svg {
+  width: 22px;
+  height: 28px;
+}
+
+.details {
+  border-top: 1px solid var(--border);
+}
+
+.details > summary {
+  min-height: var(--touch);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.details > summary::before {
+  content: '›';
+  display: inline-block;
+  font-size: var(--text-xl);
+  transform: rotate(0deg);
+}
+
+.details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.detailsBody {
+  display: grid;
+  gap: var(--space-5);
+  padding-bottom: var(--space-3);
+}
+
+.issues {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+
+.duplicate {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.duplicate h3,
+.duplicate p {
+  margin: 0;
+}

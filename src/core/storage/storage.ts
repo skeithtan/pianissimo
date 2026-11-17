@@ -30,6 +30,7 @@ import type { LayoutCacheLimits, PiecePatch, PieceRecord } from './records'
 import { DEFAULT_DB_NAME, SETTINGS_KEY, openPianissimoDb } from './schema'
 import { normalizeSettings } from './settings'
 import type { ClearOptions } from './historyStore'
+import { initializeLibrary, needsInitialPieces } from './initialLibrary'
 
 export interface StorageOptions {
   /** Recorded in exported backups. */
@@ -47,6 +48,8 @@ export interface PianissimoStorage {
   close(): void
 
   // Library
+  needsInitialPieces(): Promise<boolean>
+  initializeLibrary(inputs: readonly ImportCommit[]): Promise<boolean>
   listPieces(): Promise<PieceRecord[]>
   getPiece(id: string): Promise<PieceRecord | undefined>
   putPiece(piece: PieceRecord): Promise<void>
@@ -107,6 +110,8 @@ export async function openStorage(
       db.close()
     },
 
+    needsInitialPieces: () => needsInitialPieces(db),
+    initializeLibrary: (inputs) => initializeLibrary(db, inputs),
     listPieces: () => listPieces(db),
     getPiece: (id) => getPiece(db, id),
     putPiece: (piece) => putPiece(db, piece),
@@ -141,11 +146,20 @@ export async function openStorage(
       const piece = await getPiece(db, pieceId)
       const none: SuggestionSelection = { active: [], improved: [], disabled: false }
       if (!piece) return none
-      const [pkg, settings, pieceHistory] = await Promise.all([
-        getPackage(db, piece.scoreVersionId),
+      // Ingest persists suggestion state with its evidence. Check that small record before
+      // cloning a score or caching its histories just to discover there is nothing to show.
+      await settleHistory()
+      const [state, settings] = await Promise.all([
+        db.get('suggestionState', pieceId),
         db.get('settings', SETTINGS_KEY).then(normalizeSettings),
-        history.getHistory(pieceId),
       ])
+      if (!settings.suggestions.enabled || state?.disabled) {
+        // A piece whose package is missing has always returned the ordinary empty result.
+        const exists = (await db.getKey('packages', piece.scoreVersionId)) !== undefined
+        return { ...none, disabled: exists }
+      }
+      if (!state?.suggestions.some((s) => s.context.scoreVersionId === piece.scoreVersionId)) return none
+      const [pkg, pieceHistory] = await Promise.all([getPackage(db, piece.scoreVersionId), history.getHistory(pieceId)])
       if (!pkg) return none
       return selectSuggestions(pieceHistory, pkg.model.occurrences, {
         scoreVersionId: piece.scoreVersionId,

@@ -30,6 +30,8 @@ export interface SuggestionListProps {
   readonly title?: string
   /** Show the section heading (default true). Omit it when the parent already labels the list. */
   readonly showHeading?: boolean
+  /** Omit the empty explanation when a Library entry already hides an empty list. */
+  readonly hideEmpty?: boolean
   /** "Practice this passage": open Practice with `suggestion.passage`, `hands` and `multiplier`. */
   readonly onPractice: (suggestion: Suggestion) => void
   /** "Dismiss for this session". Omit to hide the button. */
@@ -193,6 +195,7 @@ export function SuggestionList({
   headingLevel = 2,
   title = 'Suggested practice',
   showHeading = true,
+  hideEmpty = false,
   onPractice,
   onDismiss,
   onDisableSuggestions,
@@ -230,12 +233,14 @@ export function SuggestionList({
           {onEnableSuggestions ? <Button onClick={onEnableSuggestions}>Turn on suggestions</Button> : null}
         </div>
       ) : suggestions.length === 0 ? (
-        <div class={styles.empty} data-state="none">
-          <p>
-            Nothing to suggest right now. A bar appears here when mistakes recur across several comparable passes, never
-            after a single bad one.
-          </p>
-        </div>
+        hideEmpty ? null : (
+          <div class={styles.empty} data-state="none">
+            <p>
+              Nothing to suggest right now. A bar appears here when mistakes recur across several comparable passes,
+              never after a single bad one.
+            </p>
+          </div>
+        )
       ) : (
         <ul class={styles.cards}>
           {suggestions.map((s) => (

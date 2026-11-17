@@ -70,17 +70,25 @@ const titles = (root: HTMLElement) =>
   $$(root, 'li h2')
     .filter((h) => !h.closest('dialog'))
     .map((h) => h.textContent)
+/** The text of the row (its article, sheets excluded) whose heading is `title`. */
+const rowText = (root: HTMLElement, title: string) =>
+  $$(root, 'article').find((a) => $(a, 'h2')?.textContent === title)?.textContent ?? ''
 const fixture = (name: string) => bytesFile(name, fixtureBytes(name))
 const dialog = (root: HTMLElement) => ($$(root, 'dialog') as HTMLDialogElement[]).find((d) => d.open) ?? null
 const button = (root: ParentNode, text: string) =>
   $$(root as HTMLElement, 'button').find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined
+const clickOption = (root: HTMLElement, text: string) => {
+  if (!button(root, text))
+    click($$(root, 'button').find((b) => b.getAttribute('aria-label')?.startsWith('Options for ')))
+  click(button(root, text))
+}
 
 describe('Library list', () => {
   it('shows a clear empty state with the import call to action, and no backup tools', async () => {
     const root = await open()
     expect(byText(root, 'Your library is empty')).not.toBeNull()
-    expect(fileButton(root, 'Import MusicXML')).not.toBeNull()
-    const input = fileButton(root, 'Import MusicXML')!.querySelector('input')!
+    expect(fileButton(root, 'Add score')).not.toBeNull()
+    const input = fileButton(root, 'Add score')!.querySelector('input')!
     expect(input.getAttribute('accept')).toContain('.musicxml')
     expect(input.getAttribute('accept')).toContain('.mxl')
     // Backup and restore live in Settings → Backup.
@@ -100,10 +108,10 @@ describe('Library list', () => {
   it('accepts any file on iPad (content is sniffed)', async () => {
     deps = { ...deps, isAppleMobile: () => true }
     const root = await open()
-    expect(fileButton(root, 'Import MusicXML')!.querySelector('input')!.hasAttribute('accept')).toBe(false)
+    expect(fileButton(root, 'Add score')!.querySelector('input')!.hasAttribute('accept')).toBe(false)
   })
 
-  it('lists pieces latest first with composer, last opened and last speed, and opens one in Practice', async () => {
+  it('lists ordinary pieces latest first with title, composer and when each was opened, and opens one in Practice', async () => {
     await importPiece(deps.storage, 'v1', {
       title: 'Etude',
       lastOpenedAt: deps.clock - 2 * 86_400_000,
@@ -112,21 +120,179 @@ describe('Library list', () => {
     await importPiece(deps.storage, 'v2', { title: 'Nocturne', lastOpenedAt: deps.clock - 60_000 })
     const root = await open()
     expect(titles(root)).toEqual(['Nocturne', 'Etude'])
-    expect(root.textContent).toContain('Opened 1 minute ago')
-    expect(root.textContent).toContain('Opened 2 days ago')
-    expect(root.textContent).toContain('75% speed')
+    expect(rowText(root, 'Nocturne')).toContain('Opened 1 minute ago')
+    expect(rowText(root, 'Etude')).toContain('Opened 2 days ago')
+    expect(root.textContent).not.toContain('Not opened yet')
+    expect(root.textContent).not.toContain('75% speed')
+    expect(root.textContent).not.toContain('Continue practice')
+    expect(root.textContent).not.toContain('Nothing to suggest')
+    expect(button(root, 'Delete…')).toBeUndefined()
     expect(root.textContent).toContain('Anon')
+    // No piece count under the heading and no caption explaining Study.
+    expect($(root, 'header h1')?.textContent).toBe('Library')
+    expect($(root, 'header')!.textContent).not.toMatch(/piece/)
+    expect(root.textContent).not.toMatch(/\d+ pieces?\b/)
+    expect(root.textContent).not.toContain('Study lets you')
+
+    // The row's primary action is a chevron: no visible word, the same accessible name.
+    const practice = byLabel(root, 'Practice Etude')!
+    expect(practice.tagName).toBe('BUTTON')
+    expect(practice.textContent?.trim()).toBe('')
+    expect($(practice, 'svg')).not.toBeNull()
+    expect(button(root, 'Practice')).toBeUndefined()
 
     deps.clock += 5000
-    click(byLabel(root, 'Practice Etude'))
+    click(practice)
     await until(() => currentView.value === 'practice', 'navigation')
     expect(practiceRequest.value).toEqual({ pieceId: 'piece-v1' })
     expect((await deps.storage.getPiece('piece-v1'))?.lastOpenedAt).toBe(deps.clock)
   })
 
+  it('says "Not opened yet" for a piece that was added and never opened', async () => {
+    // An import stores the same creation and last-opened time; the initial pieces one a little earlier.
+    await importPiece(deps.storage, 'v1', { title: 'Etude', createdAt: deps.clock, lastOpenedAt: deps.clock })
+    await importPiece(deps.storage, 'v2', { title: 'Nocturne', createdAt: deps.clock, lastOpenedAt: deps.clock - 1 })
+    await importPiece(deps.storage, 'v3', {
+      title: 'Prelude',
+      createdAt: deps.clock - 3 * 86_400_000,
+      lastOpenedAt: deps.clock - 2 * 86_400_000,
+    })
+    const root = await open()
+    expect(rowText(root, 'Etude')).toContain('Not opened yet')
+    expect(rowText(root, 'Nocturne')).toContain('Not opened yet')
+    expect(rowText(root, 'Prelude')).toContain('Opened 2 days ago')
+    expect(rowText(root, 'Prelude')).not.toContain('Not opened yet')
+  })
+
+  it('features a saved practice context without treating an unopened import as a session', async () => {
+    await importPiece(deps.storage, 'v1', {
+      title: 'Etude',
+      lastOpenedAt: deps.clock - 60_000,
+      lastHands: 'right',
+      lastMultiplier: 0.75,
+      lastPassage: { fromOcc: 1, toOcc: 2 },
+      repeatOpen: true,
+    })
+    await importPiece(deps.storage, 'v2', { title: 'New piece', createdAt: deps.clock, lastOpenedAt: deps.clock })
+    const root = await open()
+    await until(() => (root.textContent ?? '').includes('Repeat bars 2–3'), 'saved loop context')
+    expect(titles(root)).toEqual(['Etude', 'New piece'])
+    // The featured card's one context line is its status: no "Opened …" line, no chevron.
+    expect(rowText(root, 'Etude')).toContain('Repeat bars 2–3 · right hand · 75% speed')
+    expect(rowText(root, 'Etude')).not.toContain('Opened')
+    expect(byLabel(root, 'Practice Etude')).toBeNull()
+    expect(rowText(root, 'New piece')).toContain('Not opened yet')
+    expect(byLabel(root, 'Continue practice Etude')?.textContent?.trim()).toBe('Continue practice')
+    expect(byLabel(root, 'Practice New piece')).not.toBeNull()
+    click(byLabel(root, 'Continue practice Etude'))
+    await until(() => currentView.value === 'practice', 'continue')
+    expect(practiceRequest.value).toEqual({ pieceId: 'piece-v1' })
+  })
+
+  it('keeps Options closed until requested and closes it on Escape', async () => {
+    await importPiece(deps.storage, 'v1', { title: 'Etude' })
+    const root = await open()
+    const options = byLabel(root, 'Options for Etude')!
+    // Icon only: no visible word, the name, state and menu link stay.
+    expect(options.textContent?.trim()).toBe('')
+    expect($(options, 'svg')).not.toBeNull()
+    expect(button(root, 'Options')).toBeUndefined()
+    expect(options.getAttribute('aria-controls')).toBe('piece-piece-v1-options')
+    expect(options.getAttribute('aria-expanded')).toBe('false')
+    expect(button(root, 'Delete…')).toBeUndefined()
+    click(options)
+    expect(button(root, 'Delete…')).toBeDefined()
+    expect(options.getAttribute('aria-expanded')).toBe('true')
+    expect(document.getElementById('piece-piece-v1-options')?.getAttribute('aria-label')).toBe('Manage Etude')
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(options.getAttribute('aria-expanded')).toBe('false')
+    expect(button(root, 'Delete…')).toBeUndefined()
+  })
+
+  describe('a tap outside an open Options menu', () => {
+    const pointer = (element: Element | null, type: string) => {
+      if (!element) throw new Error(`${type}: element not found`)
+      act(() => {
+        element.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true }))
+      })
+    }
+    /** A whole tap, as a finger or mouse makes it: pointerdown, pointerup, click. */
+    const tap = (element: Element | null) => {
+      pointer(element, 'pointerdown')
+      pointer(element, 'pointerup')
+      click(element)
+    }
+    const expanded = (root: HTMLElement, title: string) =>
+      byLabel(root, `Options for ${title}`)?.getAttribute('aria-expanded')
+
+    beforeEach(async () => {
+      await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })
+      await importPiece(deps.storage, 'v2', { title: 'Nocturne', lastOpenedAt: deps.clock })
+    })
+
+    it('only closes the menu: it opens neither the row it lands on nor Study', async () => {
+      const root = await open()
+      tap(byLabel(root, 'Options for Nocturne'))
+      expect(expanded(root, 'Nocturne')).toBe('true')
+
+      // On another row's Study button.
+      tap(byLabel(root, 'Study Etude'))
+      await settle()
+      expect(expanded(root, 'Nocturne')).toBe('false')
+      expect(currentView.value).toBe('library')
+      expect(studyRequest.value).toBeNull()
+
+      // On another row's stretched Practice target (the chevron's ::after covers the row).
+      tap(byLabel(root, 'Options for Nocturne'))
+      expect(expanded(root, 'Nocturne')).toBe('true')
+      tap(byLabel(root, 'Practice Etude'))
+      await settle()
+      expect(expanded(root, 'Nocturne')).toBe('false')
+      expect(currentView.value).toBe('library')
+      expect(practiceRequest.value).toBeNull()
+      expect((await deps.storage.getPiece('piece-v1'))?.lastOpenedAt).toBe(deps.clock - 60_000)
+
+      // With the menu closed, the next tap opens Practice.
+      tap(byLabel(root, 'Practice Etude'))
+      await until(() => currentView.value === 'practice', 'navigation')
+      expect(practiceRequest.value).toEqual({ pieceId: 'piece-v1' })
+    })
+
+    it("on another row's Options button closes this menu and opens that one in the same tap", async () => {
+      const root = await open()
+      tap(byLabel(root, 'Options for Nocturne'))
+      expect(expanded(root, 'Nocturne')).toBe('true')
+      tap(byLabel(root, 'Options for Etude'))
+      expect(expanded(root, 'Nocturne')).toBe('false')
+      expect(expanded(root, 'Etude')).toBe('true')
+      expect(byLabel(root, 'Manage Etude')).not.toBeNull()
+      expect(byLabel(root, 'Manage Nocturne')).toBeNull()
+      // The same row's Options button still closes its own menu.
+      tap(byLabel(root, 'Options for Etude'))
+      expect(expanded(root, 'Etude')).toBe('false')
+      expect(currentView.value).toBe('library')
+    })
+
+    it('that turns into a scroll (no click) does not swallow a later click', async () => {
+      const root = await open()
+      tap(byLabel(root, 'Options for Nocturne'))
+      const practice = byLabel(root, 'Practice Etude')
+      pointer(practice, 'pointerdown')
+      expect(expanded(root, 'Nocturne')).toBe('false')
+      pointer(practice, 'pointercancel')
+      // A click with no pointerdown of its own (a keyboard activation) still works.
+      click(practice)
+      await until(() => currentView.value === 'practice', 'navigation')
+      expect(practiceRequest.value).toEqual({ pieceId: 'piece-v1' })
+    })
+  })
+
   it('Study opens the piece in the Study view and counts as opening it (U72)', async () => {
     await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })
     const root = await open()
+    expect(byLabel(root, 'Study Etude')?.textContent?.trim()).toBe('Study')
     deps.clock += 5000
     click(byLabel(root, 'Study Etude'))
     await until(() => currentView.value === 'study', 'navigation')
@@ -139,7 +305,7 @@ describe('Library list', () => {
     deps = { ...deps, getStorage: () => Promise.reject(new Error('blocked')) }
     const root = await open()
     expect(root.textContent).toMatch(/does not allow saving/)
-    const input = fileButton(root, 'Import MusicXML')!.querySelector('input')!
+    const input = fileButton(root, 'Add score')!.querySelector('input')!
     expect(input.disabled).toBe(true)
   })
 
@@ -147,7 +313,7 @@ describe('Library list', () => {
     const { piece } = await importPiece(deps.storage, 'v1', { title: 'Etude' })
     await deps.storage.addAttempts([attemptFor(piece.id, [[1, 'clean']])])
     const root = await open()
-    click(button(root, 'Delete…'))
+    clickOption(root, 'Delete…')
     await settle()
     const d = dialog(root)!
     expect(d.textContent).toMatch(/cannot be undone/)
@@ -155,7 +321,7 @@ describe('Library list', () => {
     await settle(250)
     expect(await deps.storage.listPieces()).toHaveLength(1)
 
-    click(button(root, 'Delete…'))
+    clickOption(root, 'Delete…')
     await settle()
     click(button(dialog(root)!, 'Delete piece'))
     await until(() => byText(root, 'Your library is empty') !== null, 'empty library')
@@ -171,7 +337,7 @@ describe('Library list', () => {
     expect((await deps.storage.loadPieceHistory(piece.id)).suggestions).toHaveLength(1)
     const root = await open()
 
-    click(button(root, 'Clear practice history…'))
+    clickOption(root, 'Clear practice history…')
     await settle()
     let d = dialog(root)!
     click(button(d, 'Clear history'))
@@ -180,7 +346,7 @@ describe('Library list', () => {
     expect(await deps.storage.listAttempts({ pieceId: piece.id })).toHaveLength(3) // results kept
 
     await settle(250)
-    click(button(root, 'Clear practice history…'))
+    clickOption(root, 'Clear practice history…')
     await settle()
     d = dialog(root)!
     const box = $(d, 'input[type="checkbox"]') as HTMLInputElement
@@ -191,18 +357,131 @@ describe('Library list', () => {
   })
 })
 
-describe('Import flow (UI)', () => {
-  it('imports a ready score and opens it in Practice with an automatic start request', async () => {
+describe('Rename a piece', () => {
+  /** The input inside the sheet field whose label starts with `label`. */
+  const field = (root: ParentNode, label: string) =>
+    ($$(root as HTMLElement, 'label')
+      .find((l) => l.textContent?.trim().startsWith(label))
+      ?.querySelector('input') ?? null) as HTMLInputElement | null
+  const save = (d: HTMLElement) => button(d, 'Save')!
+  async function openRename(root: HTMLElement, title: string): Promise<HTMLDialogElement> {
+    click(byLabel(root, `Options for ${title}`))
+    click(button(byLabel(root, `Manage ${title}`)!, 'Rename…'))
+    await settle()
+    return dialog(root)!
+  }
+
+  it('is the first option and opens a sheet prefilled from the piece each time', async () => {
+    await importPiece(deps.storage, 'v1', { title: 'Etude' })
     const root = await open()
-    pick(fileButton(root, 'Import MusicXML'), fixture('two-hands.musicxml'))
-    await until(() => button(root, 'Add to library') !== undefined, 'summary')
+    click(byLabel(root, 'Options for Etude'))
+    expect($$(byLabel(root, 'Manage Etude')!, 'button')[0]?.textContent?.trim()).toBe('Rename…')
+    click(byLabel(root, 'Options for Etude'))
+
+    let d = await openRename(root, 'Etude')
+    expect(d.getAttribute('aria-label')).toBe('Rename piece')
+    const title = field(d, 'Title')!
+    const composer = field(d, 'Composer')!
+    expect(title.value).toBe('Etude')
+    expect(composer.value).toBe('Anon')
+    expect(title.required).toBe(true)
+    expect(title.maxLength).toBe(120)
+    expect(composer.maxLength).toBe(120)
+    expect(title.hasAttribute('autofocus')).toBe(true)
+    // The title has focus with its text selected, so typing replaces it.
+    expect(document.activeElement).toBe(title)
+    expect([title.selectionStart, title.selectionEnd]).toEqual([0, 'Etude'.length])
+    // "Optional" is hint text under the field, not a placeholder.
+    expect(composer.placeholder).toBe('')
+    expect(composer.closest('label')?.querySelector('small')?.textContent).toBe('Optional')
+
+    expect(save(d).disabled).toBe(true) // nothing changed
+    type(title, '  Etude ')
+    expect(save(d).disabled).toBe(true) // unchanged after normalization
+    type(title, '   ')
+    expect(save(d).disabled).toBe(true) // blank title
+    type(title, 'Study')
+    expect(save(d).disabled).toBe(false)
+    type(composer, '')
+    expect(save(d).disabled).toBe(false)
+
+    // Canceling forgets the draft: the next open starts from the piece again.
+    click(button(d, 'Cancel'))
+    await until(() => dialog(root) === null, 'sheet closed')
+    await settle(250)
+    d = await openRename(root, 'Etude')
+    expect(field(d, 'Title')!.value).toBe('Etude')
+    expect(field(d, 'Composer')!.value).toBe('Anon')
+    expect(await deps.storage.getPiece('piece-v1')).toMatchObject({ title: 'Etude', composer: 'Anon' })
+  })
+
+  it('saves on submit: the row, its button labels and the next open show the new name, in the same order', async () => {
+    await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })
+    await importPiece(deps.storage, 'v2', { title: 'Nocturne', lastOpenedAt: deps.clock })
+    const root = await open()
+    expect(titles(root)).toEqual(['Nocturne', 'Etude'])
+
+    let d = await openRename(root, 'Etude')
+    type(field(d, 'Title'), '  Study   in C ')
+    type(field(d, 'Composer'), 'Carl Czerny')
+    // Enter in a field submits the form.
+    act(() => {
+      $(d, 'form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    await until(() => dialog(root) === null, 'sheet closed')
+    expect(titles(root)).toEqual(['Nocturne', 'Study in C'])
+    expect(byLabel(root, 'Practice Study in C')).not.toBeNull()
+    expect(byLabel(root, 'Study Study in C')).not.toBeNull()
+    expect(byLabel(root, 'Options for Study in C')).not.toBeNull()
+    expect(byLabel(root, 'Practice Etude')).toBeNull()
+    expect(root.textContent).toContain('Carl Czerny')
+    expect(notices.value).toEqual([]) // the updated row is the feedback
+    expect(await deps.storage.getPiece('piece-v1')).toMatchObject({
+      title: 'Study in C',
+      composer: 'Carl Czerny',
+      lastOpenedAt: deps.clock - 60_000,
+    })
+
+    await settle(250)
+    d = await openRename(root, 'Study in C')
+    expect(field(d, 'Title')!.value).toBe('Study in C')
+    expect(field(d, 'Composer')!.value).toBe('Carl Czerny')
+    expect(save(d).disabled).toBe(true)
+  })
+
+  it('shows why a rename failed and keeps the sheet open', async () => {
+    await importPiece(deps.storage, 'v1', { title: 'Etude' })
+    const storage = deps.storage
+    deps = {
+      ...deps,
+      getStorage: async () => ({ ...storage, updatePiece: () => Promise.reject(new Error('Disk full.')) }),
+    }
+    const root = await open()
+    const d = await openRename(root, 'Etude')
+    type(field(d, 'Title'), 'Study')
+    click(save(d))
+    await until(() => $(d, '[role="alert"]') !== null, 'error notice')
+    expect($(d, '[role="alert"]')!.textContent).toBe('It could not be renamed: Disk full.')
+    expect(dialog(root)).toBe(d)
+    expect(field(d, 'Title')!.value).toBe('Study')
+    expect(save(d).disabled).toBe(false) // can try again
+    expect(titles(root)).toEqual(['Etude'])
+    expect((await storage.getPiece('piece-v1'))?.title).toBe('Etude')
+  })
+})
+
+describe('Import flow (UI)', () => {
+  it('imports a ready score and opens it in Practice paused', async () => {
+    const root = await open()
+    pick(fileButton(root, 'Add score'), fixture('two-hands.musicxml'))
+    await until(() => button(root, 'Add and open') !== undefined, 'summary')
     const d = dialog(root)!
-    expect(d.getAttribute('aria-label')).toBe('Import MusicXML')
+    expect(d.getAttribute('aria-label')).toBe('Add score')
     expect(d.textContent).toContain('Hands')
     expect(d.textContent).toContain('From the score')
     expect(d.textContent).toContain('Score check')
-    expect(button(d, 'Add to library')!.disabled).toBe(false)
-    click(button(d, 'Add to library'))
+    expect(button(d, 'Add and open')!.disabled).toBe(false)
+    click(button(d, 'Add and open'))
     // Saving closes the sheet and opens the stored score, without waiting for persistence.
     await until(() => notices.value.some((n) => /“Two Hands” is in your library\./.test(n.text)), 'saved')
     await until(() => dialog(root) === null, 'sheet closed')
@@ -211,10 +490,16 @@ describe('Import flow (UI)', () => {
     const pieces = await deps.storage.listPieces()
     expect(pieces).toHaveLength(1)
     expect(currentView.value).toBe('practice')
-    expect(practiceRequest.value).toEqual({ pieceId: pieces[0]!.id, autoStart: true })
+    expect(practiceRequest.value).toEqual({ pieceId: pieces[0]!.id })
+    // Add and open opens the piece: it is marked opened (after its creation, though the clock
+    // has not moved), so its row never says "Not opened yet".
+    expect(pieces[0]!.createdAt).toBe(deps.clock)
+    expect(pieces[0]!.lastOpenedAt).toBeGreaterThan(pieces[0]!.createdAt)
+    expect(rowText(root, 'Two Hands')).toContain('Opened just now')
+    expect(root.textContent).not.toContain('Not opened yet')
   })
 
-  it('unlocks browser sound in the Add click before saving and opening Practice', async () => {
+  it('leaves browser sound untouched while saving and opening Practice', async () => {
     const resume = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal(
       'AudioContext',
@@ -224,23 +509,23 @@ describe('Import flow (UI)', () => {
       },
     )
     const root = await open()
-    pick(fileButton(root, 'Import MusicXML'), fixture('two-hands.musicxml'))
-    await until(() => button(root, 'Add to library') !== undefined, 'summary')
+    pick(fileButton(root, 'Add score'), fixture('two-hands.musicxml'))
+    await until(() => button(root, 'Add and open') !== undefined, 'summary')
     expect(existingAudioContext()).toBeNull()
-    click(button(dialog(root)!, 'Add to library'))
-    expect(existingAudioContext()).not.toBeNull()
-    expect(resume).toHaveBeenCalledOnce()
+    click(button(dialog(root)!, 'Add and open'))
+    expect(existingAudioContext()).toBeNull()
+    expect(resume).not.toHaveBeenCalled()
     await until(() => currentView.value === 'practice', 'practice')
   })
 
-  it('keeps Add to library disabled until a split voice is confirmed', async () => {
+  it('keeps Add and open disabled until a split voice is confirmed', async () => {
     const root = await open()
-    pick(fileButton(root, 'Import MusicXML'), fixture('split-voice.musicxml'))
-    await until(() => button(root, 'Add to library') !== undefined, 'summary')
+    pick(fileButton(root, 'Add score'), fixture('split-voice.musicxml'))
+    await until(() => button(root, 'Add and open') !== undefined, 'summary')
     const d = dialog(root)!
-    expect(button(d, 'Add to library')!.disabled).toBe(true)
+    expect(button(d, 'Add and open')!.disabled).toBe(true)
     expect(d.textContent).toContain('Needs your confirmation')
-    expect(d.textContent).toMatch(/Choose which hand plays voice 2/)
+    expect(d.textContent).toContain('Choose a hand, then confirm.')
     expect(d.textContent).toContain('Split between staves')
     // Choose the right hand for voice 2, then confirm.
     const group = byLabel(d, 'Hand for Voice 2')!
@@ -248,8 +533,8 @@ describe('Import flow (UI)', () => {
     click(button(d, 'Confirm hands'))
     expect(d.textContent).toContain('From the score')
     expect(d.textContent).toMatch(/Right hand\s*Voice 1 and voice 2/)
-    expect(button(d, 'Add to library')!.disabled).toBe(false)
-    click(button(d, 'Add to library'))
+    expect(button(d, 'Add and open')!.disabled).toBe(false)
+    click(button(d, 'Add and open'))
     await until(() => notices.value.some((n) => /is in your library/.test(n.text)), 'saved')
     const [piece] = await deps.storage.listPieces()
     const pkg = await deps.storage.getPackage(piece!.scoreVersionId)
@@ -258,10 +543,10 @@ describe('Import flow (UI)', () => {
 
   it('shows a cross-staff voice as one hand with no confirmation, and lets the user change it', async () => {
     const root = await open()
-    pick(fileButton(root, 'Import MusicXML'), fixture('cross-staff.musicxml'))
-    await until(() => button(root, 'Add to library') !== undefined, 'summary')
+    pick(fileButton(root, 'Add score'), fixture('cross-staff.musicxml'))
+    await until(() => button(root, 'Add and open') !== undefined, 'summary')
     const d = dialog(root)!
-    expect(button(d, 'Add to library')!.disabled).toBe(false)
+    expect(button(d, 'Add and open')!.disabled).toBe(false)
     expect(button(d, 'Confirm hands')).toBeUndefined()
     expect(d.textContent).toContain('From the score')
     expect(d.textContent).toMatch(/Left hand\s*Voice 5 · 8 notes/)
@@ -272,7 +557,7 @@ describe('Import flow (UI)', () => {
     click($$(group, '[role="radio"]').find((b) => b.textContent === 'Right hand'))
     click(button(d, 'Done'))
     expect(d.textContent).toMatch(/Right hand\s*Voice 1 and voice 5 · 10 notes/)
-    click(button(d, 'Add to library'))
+    click(button(d, 'Add and open'))
     await until(() => notices.value.some((n) => /is in your library/.test(n.text)), 'saved')
     const [piece] = await deps.storage.listPieces()
     const pkg = await deps.storage.getPackage(piece!.scoreVersionId)
@@ -281,19 +566,19 @@ describe('Import flow (UI)', () => {
 
   it('requires a practice tempo for a score without one', async () => {
     const root = await open()
-    pick(fileButton(root, 'Import MusicXML'), fixture('no-tempo.musicxml'))
-    await until(() => button(root, 'Add to library') !== undefined, 'summary')
+    pick(fileButton(root, 'Add score'), fixture('no-tempo.musicxml'))
+    await until(() => button(root, 'Add and open') !== undefined, 'summary')
     const d = dialog(root)!
     expect(d.textContent).toContain('Practice tempo')
     expect(d.textContent).toContain('Required')
-    expect(button(d, 'Add to library')!.disabled).toBe(true)
+    expect(button(d, 'Add and open')!.disabled).toBe(true)
     const input = byLabel(d, 'Beats per minute') as HTMLInputElement
     type(input, '500')
     expect(d.textContent).toMatch(/between 20 and 300/)
     type(input, '80')
     expect(d.querySelector('[role="alert"]')).toBeNull()
     click($$(byLabel(d, 'Beat unit')!, '[role="radio"]').find((b) => b.textContent === 'Half'))
-    click(button(d, 'Add to library'))
+    click(button(d, 'Add and open'))
     await until(() => notices.value.some((n) => /is in your library/.test(n.text)), 'saved')
     const [piece] = await deps.storage.listPieces()
     expect(piece?.userTempo).toEqual({ beatBpm: 80, beatUnit: { n: 1, d: 2 } })
@@ -301,7 +586,7 @@ describe('Import flow (UI)', () => {
 
   it('asks which part is the piano, then can go back to change it', async () => {
     const root = await open()
-    pick(fileButton(root, 'Import MusicXML'), fixture('two-parts.musicxml'))
+    pick(fileButton(root, 'Add score'), fixture('two-parts.musicxml'))
     await until(() => button(root, 'Continue') !== undefined, 'choice')
     const d = dialog(root)!
     expect(d.textContent).toContain('Which part is the piano?')
@@ -317,7 +602,7 @@ describe('Import flow (UI)', () => {
     deps.client.hold = true
     deps.client.lateResults = true
     const root = await open()
-    pick(fileButton(root, 'Import MusicXML'), fixture('two-hands.musicxml'))
+    pick(fileButton(root, 'Add score'), fixture('two-hands.musicxml'))
     await until(() => button(root, 'Cancel import') !== undefined, 'progress')
     expect($(root, '[role="progressbar"]')).not.toBeNull()
     click(button(root, 'Cancel import'))
@@ -326,29 +611,29 @@ describe('Import flow (UI)', () => {
     deps.client.releaseAll()
     await settle(100)
     expect(dialog(root)).toBeNull()
-    expect(button(root, 'Add to library')).toBeUndefined()
+    expect(button(root, 'Add and open')).toBeUndefined()
     expect(deps.client.disposed).toBeGreaterThan(0)
   })
 
   it('explains a rejected file and offers another pick', async () => {
     const root = await open()
-    pick(fileButton(root, 'Import MusicXML'), fixture('unrelated.xml'))
+    pick(fileButton(root, 'Add score'), fixture('unrelated.xml'))
     await until(() => /could not be imported/.test(dialog(root)?.textContent ?? ''), 'failure')
     const d = dialog(root)!
     expect(fileButton(d, 'Choose another file')).not.toBeNull()
     pick(fileButton(d, 'Choose another file'), fixture('two-hands.musicxml'))
-    await until(() => button(root, 'Add to library') !== undefined, 'summary')
+    await until(() => button(root, 'Add and open') !== undefined, 'summary')
   })
 })
 
 describe('Review hands and tempo of a stored piece (L5)', () => {
   async function importThroughSheet(root: HTMLElement, name: string, bpm?: string) {
-    pick(fileButton(root, 'Import MusicXML'), fixture(name))
-    await until(() => button(root, 'Add to library') !== undefined, 'summary')
+    pick(fileButton(root, 'Add score'), fixture(name))
+    await until(() => button(root, 'Add and open') !== undefined, 'summary')
     const d = dialog(root)!
     if (button(d, 'Confirm hands')) click(button(d, 'Confirm hands'))
     if (bpm) type(byLabel(d, 'Beats per minute'), bpm)
-    click(button(d, 'Add to library'))
+    click(button(d, 'Add and open'))
     await until(() => notices.value.some((n) => /is in your library/.test(n.text)), 'saved')
     await settle(250)
     const [piece] = await deps.storage.listPieces()
@@ -363,7 +648,7 @@ describe('Review hands and tempo of a stored piece (L5)', () => {
     await deps.storage.putLayout('layout-key', piece.scoreVersionId, { any: 1 } as never, 10)
     expect(await deps.storage.getLayout('layout-key')).toBeDefined()
 
-    click(button(root, 'Review hands and tempo…'))
+    clickOption(root, 'Review hands and tempo…')
     await until(() => button(dialog(root) ?? root, 'Save changes') !== undefined, 'review')
     const d = dialog(root)!
     expect(d.getAttribute('aria-label')).toBe(`Hands and tempo of “${piece.title}”`)
@@ -388,7 +673,7 @@ describe('Review hands and tempo of a stored piece (L5)', () => {
   it('changes a practice tempo the user entered, validated like at import', async () => {
     const root = await open()
     await importThroughSheet(root, 'no-tempo.musicxml', '80')
-    click(button(root, 'Review hands and tempo…'))
+    clickOption(root, 'Review hands and tempo…')
     await until(() => button(dialog(root) ?? root, 'Save changes') !== undefined, 'review')
     const d = dialog(root)!
     const input = byLabel(d, 'Beats per minute') as HTMLInputElement
@@ -403,7 +688,10 @@ describe('Review hands and tempo of a stored piece (L5)', () => {
     expect(piece!.userTempo).toEqual({ beatBpm: 96, beatUnit: { n: 1, d: 4 } })
     const pkg = (await deps.storage.getPackage(piece!.scoreVersionId))!
     expect(pkg.model.tempo.segments[0]).toMatchObject({ beatBpm: 96, source: 'user' })
-    expect(root.textContent).toContain('Your tempo: quarter = 96')
+    await until(() => dialog(root) === null, 'review closed')
+    clickOption(root, 'Review hands and tempo…')
+    await until(() => button(dialog(root) ?? root, 'Save changes') !== undefined, 'updated review')
+    expect((byLabel(dialog(root)!, 'Beats per minute') as HTMLInputElement).value).toBe('96')
   })
 })
 
@@ -446,17 +734,19 @@ describe('Suggested practice (Library)', () => {
     let root = await open()
     await until(() => button(root, 'Not now') !== undefined, 'suggestion')
     click(button(root, 'Not now'))
-    await until(() => /Nothing to suggest right now/.test(root.textContent ?? ''), 'dismissed')
+    await until(() => button(root, 'Practice this passage') === undefined, 'dismissed')
+    expect(root.textContent).not.toContain('Nothing to suggest')
     // Still dismissed when the Library is opened again in this session.
     view!.unmount()
     root = await open()
-    await until(() => /Nothing to suggest right now/.test(root.textContent ?? ''), 'still dismissed')
+    await settle()
+    expect(button(root, 'Practice this passage')).toBeUndefined()
     sessionDismissals.clear()
 
-    click(button(root, 'Turn off suggestions for this piece'))
-    await until(() => /Suggested practice is turned off/.test(root.textContent ?? ''), 'disabled')
+    clickOption(root, 'Turn off suggestions for this piece')
+    await until(() => byLabel(root, 'Options for Etude')?.getAttribute('aria-expanded') === 'false', 'disabled')
     expect((await deps.storage.loadPieceHistory(piece.id)).disabled).toBe(true)
-    click(button(root, 'Turn on suggestions'))
+    clickOption(root, 'Turn on suggestions for this piece')
     await until(() => button(root, 'Practice this passage') !== undefined, 'enabled again')
   })
 
@@ -468,6 +758,7 @@ describe('Suggested practice (Library)', () => {
     } as never)
     updateSettings({ suggestions: { enabled: false } } as never)
     const root = await open()
+    click(byLabel(root, 'Options for Etude'))
     await until(() => /turned off in Settings/.test(root.textContent ?? ''), 'global off')
   })
 })

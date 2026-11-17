@@ -38,7 +38,7 @@ test.describe('practice screenshots', () => {
           await download
           await route.continue()
         })
-        await page.getByRole('button', { name: 'Practice Two Hands' }).click()
+        await page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ }).click()
         const skeleton = page.getByTestId('score-skeleton')
         try {
           await expect(skeleton).toBeVisible()

@@ -16,19 +16,19 @@ const CASES = [
 for (const c of CASES) {
   test(`imports a ${c.ext} file picked in the Library and keeps it`, async ({ page }) => {
     await page.goto('./')
-    await expect(page.getByRole('heading', { name: 'Your library is empty' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Ode to Joy', exact: true })).toBeVisible()
     await importFile(page, c.file())
-    await expect(sheet(page).getByRole('button', { name: 'Add to library' })).toBeEnabled()
+    await expect(sheet(page).getByRole('button', { name: 'Add and open' })).toBeEnabled()
     await expect(sheet(page)).toContainText('From the score')
-    await sheet(page).getByRole('button', { name: 'Add to library' }).click()
+    await sheet(page).getByRole('button', { name: 'Add and open' }).click()
     await expect(sheet(page)).toHaveCount(0)
     await page.getByRole('button', { name: 'Back to Library' }).click()
     await expect(page.getByRole('heading', { level: 2, name: 'Two Hands' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Practice Two Hands' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ })).toBeVisible()
 
     await page.reload()
     await expect(page.getByRole('heading', { level: 2, name: 'Two Hands' })).toBeVisible()
-    expect(await idbAll(page, 'pieces')).toHaveLength(1)
+    expect(await idbAll(page, 'pieces')).toHaveLength(4)
   })
 }
 
@@ -36,7 +36,12 @@ test('the same score twice warns that it is already in the library', async ({ pa
   await page.goto('./')
   await addToLibrary(page, fixtureFile('two-hands.musicxml'))
   await importFile(page, fixtureFile('two-hands.musicxml', 'copy.musicxml'))
-  await expect(sheet(page)).toContainText('already in your library')
+  await expect(sheet(page)).toContainText('Already in your library')
+  await sheet(page).getByRole('button', { name: 'Open existing piece' }).click()
+  await expect(sheet(page)).toHaveCount(0)
+  await expect(page.locator('.pn-strip')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
+  expect(await idbAll(page, 'pieces')).toHaveLength(4)
 })
 
 test('an unrelated XML file is rejected with a clear message and nothing is stored', async ({ page }) => {
@@ -44,9 +49,9 @@ test('an unrelated XML file is rejected with a clear message and nothing is stor
   await importFile(page, fixtureFile('unrelated.xml'))
   await expect(sheet(page)).toContainText('could not be imported')
   await expect(sheet(page)).toContainText(/MusicXML/)
-  await expect(sheet(page).getByRole('button', { name: 'Add to library' })).toHaveCount(0)
+  await expect(sheet(page).getByRole('button', { name: 'Add and open' })).toHaveCount(0)
   await expect(sheet(page).getByRole('button', { name: 'Choose another file' })).toBeVisible()
-  expect(await idbAll(page, 'pieces')).toHaveLength(0)
+  expect(await idbAll(page, 'pieces')).toHaveLength(3)
 })
 
 test('a damaged .mxl archive is rejected with a clear message', async ({ page }) => {
@@ -60,6 +65,7 @@ test('a damaged .mxl archive is rejected with a clear message', async ({ page })
 
 test('canceling a long import terminates the real worker and nothing appears afterwards', async ({ page }) => {
   await page.goto('./')
+  await expect(page.getByRole('heading', { name: 'Ode to Joy', exact: true })).toBeVisible()
   let workers = 0
   const closed = new Promise<void>((resolve) => {
     page.on('worker', (w) => {
@@ -81,10 +87,10 @@ test('canceling a long import terminates the real worker and nothing appears aft
   // Let any queued task of the page run, then check that nothing came back.
   await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
   await expect(sheet(page)).toHaveCount(0)
-  await expect(page.getByRole('heading', { name: 'Your library is empty' })).toBeVisible()
-  expect(await idbAll(page, 'pieces')).toHaveLength(0)
+  await expect(page.getByRole('heading', { name: 'Ode to Joy', exact: true })).toBeVisible()
+  expect(await idbAll(page, 'pieces')).toHaveLength(3)
 
   // The importer is free again: a new import works.
   await importFile(page, fixtureFile('two-hands.musicxml'))
-  await expect(sheet(page).getByRole('button', { name: 'Add to library' })).toBeEnabled()
+  await expect(sheet(page).getByRole('button', { name: 'Add and open' })).toBeEnabled()
 })

@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('opening a piece changes the URL; Back and Forward walk the pages', async ({ page }) => {
-  await page.getByRole('button', { name: 'Practice Two Hands' }).click()
+  await page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ }).click()
   await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
   expect(await hash(page)).toBe(`#/practice/${PIECE_ID}`)
 

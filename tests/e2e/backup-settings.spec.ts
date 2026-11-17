@@ -59,6 +59,7 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   await expect(sheet(page)).toHaveCount(0)
 
   // Delete the piece (with its results).
+  await page.getByRole('button', { name: 'Options for Two Hands', exact: true }).click()
   await page.getByRole('button', { name: 'Delete…' }).click()
   await sheet(page).getByRole('button', { name: 'Delete piece' }).click()
   await expect(page.getByRole('heading', { name: 'Your library is empty' })).toBeVisible()
@@ -109,7 +110,7 @@ test('export, delete the piece, restore the backup: the piece and its results ar
 
 test('restoring a file that is not a backup changes nothing and says why', async ({ page }, info) => {
   await page.goto('./')
-  await expect(page.getByRole('heading', { name: 'Your library is empty' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Ode to Joy', exact: true })).toBeVisible()
   await openBackup(page)
   await sheet(page)
     .locator('label', { hasText: 'Restore from backup' })
@@ -121,7 +122,7 @@ test('restoring a file that is not a backup changes nothing and says why', async
   info.annotations.push({ type: 'note', description: 'validation errors are shown' })
   await sheet(page).locator('[data-testid="restore"]').getByRole('button', { name: 'Close' }).click()
   await expect(sheet(page).getByText('could not be restored')).toHaveCount(0)
-  expect(await idbAll(page, 'pieces')).toHaveLength(0)
+  expect(await idbAll(page, 'pieces')).toHaveLength(3)
 })
 
 test.describe('settings survive a reload', () => {
@@ -132,7 +133,7 @@ test.describe('settings survive a reload', () => {
 
   test('naming and theme settings are stored and still applied after reloading', async ({ page }) => {
     await page.goto('./')
-    await expect(page.getByRole('heading', { name: 'Your library is empty' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Ode to Joy', exact: true })).toBeVisible()
     await openSettings(page)
 
     // Note names: fixed do with ti, no octave numbers.

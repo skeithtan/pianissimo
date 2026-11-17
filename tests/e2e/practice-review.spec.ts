@@ -65,11 +65,11 @@ async function openLongLoop(page: Page, settings: Partial<AppSettings> = {}): Pr
   await installFakeMidi(page)
   await seedPiece(page, settings)
   await page
-    .locator('label', { hasText: 'Import MusicXML' })
+    .locator('label', { hasText: 'Add score' })
     .first()
     .locator('input[type="file"]')
     .setInputFiles({ name: 'review-loop.musicxml', mimeType: 'application/xml', buffer: Buffer.from(LONG) })
-  await page.getByRole('button', { name: 'Add to library', exact: true }).click()
+  await page.getByRole('button', { name: 'Add and open', exact: true }).click()
   await expect(page.locator('.pn-strip, .pn-page').first()).toBeVisible({ timeout: 60_000 })
   const pause = page.getByRole('button', { name: 'Pause', exact: true })
   if (await pause.isVisible()) await pause.click()

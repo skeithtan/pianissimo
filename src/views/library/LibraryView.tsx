@@ -8,15 +8,14 @@ import { useEffect, useMemo, useState } from 'preact/hooks'
 import { openPractice, settingsOpen } from '../../app/navigation'
 import { pushNotice } from '../../app/state'
 import { Notice } from '../../ui/controls'
-import { Icon } from '../../ui/icons'
 import { LibraryDepsContext, defaultLibraryDeps, useLibraryDeps, type LibraryDeps } from './deps'
 import { FileButton, SCORE_ACCEPT } from './FileButton'
-import { plural } from './format'
 import { ImportFlow } from './importFlow'
 import { ImportSheet } from './ImportSheet'
 import { LibraryModel } from './libraryModel'
 import { PieceCard } from './PieceCard'
-import styles from './library.module.css'
+import { continuingPiece } from './continuation'
+import styles from './LibraryPage.module.css'
 
 /** The registered view (no props). */
 export function LibraryView() {
@@ -36,7 +35,6 @@ function LibraryPage() {
   const deps = useLibraryDeps()
   const model = useMemo(() => new LibraryModel(deps), [deps])
   const [flow, setFlow] = useState<ImportFlow | null>(null)
-  const [expanded, setExpanded] = useState<string | null | undefined>(undefined)
 
   // A restore in Settings (Backup) can add pieces: the list refreshes whenever Settings close.
   const settingsShown = settingsOpen.value
@@ -50,15 +48,18 @@ function LibraryPage() {
 
   const state = model.state.value
   const pieces = state.status === 'ready' ? state.pieces : []
-  // The most recently opened piece starts expanded, so its suggestions are in view.
-  const open = expanded === undefined ? (pieces[0]?.id ?? null) : expanded
+  const continuing = continuingPiece(pieces)
+  const ordered = continuing ? [continuing, ...pieces.filter((piece) => piece.id !== continuing.id)] : pieces
 
   const startImport = (file: File) => {
     flow?.close()
     const next = new ImportFlow(deps, (piece) => {
-      void model.refresh()
       pushNotice({ kind: 'success', text: `“${piece.title}” is in your library.` })
-      openPractice({ pieceId: piece.id, autoStart: true })
+      // Add and open opens the piece: its row says "Opened", like every other way of opening it.
+      void model.markOpened(piece.id, piece.createdAt + 1).then(() => {
+        void model.refresh()
+        openPractice({ pieceId: piece.id })
+      })
     })
     setFlow(next)
     void next.openFile(file)
@@ -76,25 +77,18 @@ function LibraryPage() {
 
   return (
     <div class={styles.page}>
-      <header class={styles.hero}>
-        <div>
-          <h1>Library</h1>
-          <p class={styles.lede}>
-            {state.status === 'ready' && pieces.length > 0
-              ? `${plural(pieces.length, 'piece')}.`
-              : 'Import a MusicXML score, confirm its hands and tempo, and start reading.'}
-          </p>
-        </div>
+      <header class={styles.header}>
+        <h1>Library</h1>
         {pieces.length > 0 ? (
-          <div class={styles.heroActions}>
+          <div>
             <FileButton
-              variant="primary"
-              icon="upload"
+              variant="secondary"
+              icon="plus"
               accept={accept}
               disabled={unavailable}
               onFile={(f) => startImport(f)}
             >
-              Import MusicXML
+              Add score
             </FileButton>
           </div>
         ) : null}
@@ -109,20 +103,20 @@ function LibraryPage() {
 
       {pieces.length > 0 ? (
         <ul class={styles.list} aria-label="Pieces">
-          {pieces.map((piece, i) => (
-            <PieceCard
-              key={piece.id}
-              index={i}
-              piece={piece}
-              model={model}
-              expanded={open === piece.id}
-              onToggle={() => setExpanded(open === piece.id ? null : piece.id)}
-            />
+          {ordered.map((piece) => (
+            <PieceCard key={piece.id} piece={piece} model={model} featured={continuing?.id === piece.id} />
           ))}
         </ul>
       ) : null}
 
-      <ImportSheet flow={flow} pieces={pieces} onClose={closeFlow} />
+      <ImportSheet
+        flow={flow}
+        pieces={pieces}
+        onClose={closeFlow}
+        onOpenExisting={(pieceId) => {
+          void model.open(pieceId)
+        }}
+      />
     </div>
   )
 }
@@ -138,20 +132,18 @@ function EmptyState({
 }) {
   return (
     <section class={styles.empty} aria-labelledby="library-empty">
-      <span class={styles.emptyIcon} aria-hidden="true">
-        <Icon name="music" size={32} />
-      </span>
       <h2 id="library-empty">Your library is empty</h2>
-      <p>
-        Import a piano score as MusicXML — a .musicxml, compressed .mxl or MusicXML .xml file. Most notation programs
-        export it (File → Export → MusicXML). The file stays on this device.
-      </p>
-      <div class={styles.emptyActions}>
-        <FileButton variant="primary" icon="upload" accept={accept} disabled={disabled} onFile={onFile}>
-          Import MusicXML
+      <div>
+        <FileButton variant="primary" icon="plus" accept={accept} disabled={disabled} onFile={onFile}>
+          Add score
         </FileButton>
       </div>
-      <p>Moving from another device? Restore a backup from Settings → Backup.</p>
+      <p>Choose a MusicXML file: .musicxml, .mxl, or .xml.</p>
+      <details class={styles.help}>
+        <summary>Help adding a score</summary>
+        <p>Most notation programs export MusicXML from File → Export. A PDF or photo cannot be imported.</p>
+        <p>Moving from another device? Restore a backup from Settings → Backup.</p>
+      </details>
     </section>
   )
 }

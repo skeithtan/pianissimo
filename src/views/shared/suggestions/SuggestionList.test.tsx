@@ -157,6 +157,13 @@ describe('<SuggestionList>', () => {
     expect($(root, '[data-state="none"]')?.textContent).toContain('Nothing to suggest')
   })
 
+  it('can show improvement without an empty-list explanation in the Library', () => {
+    const improved = select(play(history(), 12, ['clean', 'clean', 'clean'])).improved
+    const root = show({ suggestions: [], improved, hideEmpty: true })
+    expect(root.textContent).toContain('Improved (1)')
+    expect(root.textContent).not.toContain('Nothing to suggest')
+  })
+
   it('compact mode drops the legend and tightens the cards', () => {
     const { active } = select(history())
     const roomy = show({ suggestions: active })

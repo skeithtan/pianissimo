@@ -86,6 +86,8 @@ const paths: Record<string, () => JSX.Element> = {
   upload: () => <path d="M12 16V4M7 9l5-5 5 5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />,
   download: () => <path d="M12 4v12M7 11l5 5 5-5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />,
   trash: () => <path d="M4 7h16M10 11v6M14 11v6M5 7l1 13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1l1-13M9 7V4h6v3" />,
+  /** Rename / edit: a pencil pointing down-left, rounded eraser end with a ferrule line. */
+  pencil: () => <path d="M4 20l1.2-4.4L15.6 5.2a2.3 2.3 0 0 1 3.2 3.2L8.4 18.8zM13.4 7.4l3.2 3.2" />,
   target: () => (
     <g>
       <circle cx="12" cy="12" r="8" />

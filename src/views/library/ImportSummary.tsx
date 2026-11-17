@@ -12,7 +12,7 @@ import { useState } from 'preact/hooks'
 import type { ImportSummary as Summary, SummaryVoice } from '../../core/import/summary'
 import type { Hand } from '../../core/model/score'
 import { BeatUnitIcon } from '../../ui/BeatUnitIcon'
-import { Button, Segmented } from '../../ui/controls'
+import { Button, Notice, Segmented } from '../../ui/controls'
 import { Icon } from '../../ui/icons'
 import { formatBpm } from '../../ui/speed'
 import {
@@ -25,6 +25,7 @@ import {
   type ReviewGate,
 } from './review'
 import styles from './library.module.css'
+import importStyles from './import.module.css'
 
 const HAND_OPTIONS = [
   { value: 'L', label: 'Left hand' },
@@ -38,6 +39,7 @@ export function ImportSummaryView({
   onDraft,
   tempoEntry = !summary.tempo.present,
   editHands = false,
+  compact = false,
 }: {
   summary: Summary
   draft: ReviewDraft
@@ -47,9 +49,25 @@ export function ImportSummaryView({
   tempoEntry?: boolean
   /** Show every voice's hand control from the start (reviewing a stored piece, L5). */
   editHands?: boolean
+  /** Import starts with the useful facts; the full report remains available on demand. */
+  compact?: boolean
 }) {
   const c = summary.counts
   const bars = c.occurrences === c.measures ? `${c.measures}` : `${c.measures} (${c.occurrences} played)`
+  const needsHands = !summary.handsConfirmed
+  const assignedHands = handLines(summary.voices, draft.hands).filter((line) => line.notes > 0)
+  const facts = (
+    <dl class={styles.facts} aria-label="Score contents">
+      <Fact label="Bars" value={bars} />
+      <Fact label="Notes" value={String(c.performedNotes)} />
+      <Fact label="Chords" value={String(c.chords)} />
+      <Fact label="Voices" value={String(c.voices)} />
+      <Fact label="Ties" value={String(c.tiedContinuations)} />
+      <Fact label="Tuplet notes" value={String(c.tupletNotes)} />
+    </dl>
+  )
+  const hands = <HandsSection summary={summary} draft={draft} onDraft={onDraft} editHands={editHands} />
+  const tempo = <TempoSection summary={summary} draft={draft} gate={gate} onDraft={onDraft} tempoEntry={tempoEntry} />
   return (
     <div class={styles.summary}>
       <header class={styles.summaryHead}>
@@ -62,19 +80,116 @@ export function ImportSummaryView({
         </p>
       </header>
 
-      <dl class={styles.facts} aria-label="Score contents">
-        <Fact label="Bars" value={bars} />
-        <Fact label="Notes" value={String(c.performedNotes)} />
-        <Fact label="Chords" value={String(c.chords)} />
-        <Fact label="Voices" value={String(c.voices)} />
-        <Fact label="Ties" value={String(c.tiedContinuations)} />
-        <Fact label="Tuplet notes" value={String(c.tupletNotes)} />
-      </dl>
-
-      <HandsSection summary={summary} draft={draft} onDraft={onDraft} editHands={editHands} />
-      <TempoSection summary={summary} draft={draft} gate={gate} onDraft={onDraft} tempoEntry={tempoEntry} />
-      <ScoreChecks summary={summary} />
+      {compact ? (
+        <>
+          {summary.diagnostics.errors > 0 ? (
+            <Notice tone="danger">
+              <strong>This score needs a correction before it can be added.</strong>
+              <ul class={importStyles.issues}>
+                {summary.diagnostics.list
+                  .filter((d) => d.severity === 'error')
+                  .map((d, i) => (
+                    <li key={i}>
+                      {d.measure ? `Bar ${d.measure}: ` : ''}
+                      {d.message}
+                    </li>
+                  ))}
+              </ul>
+            </Notice>
+          ) : null}
+          {needsHands ? hands : null}
+          {tempoEntry ? tempo : null}
+          {gate.canSave ? (
+            <p class={importStyles.ready}>
+              <Icon name="check" size={18} />
+              Ready to open
+            </p>
+          ) : null}
+          <dl class={importStyles.overview}>
+            {!needsHands ? (
+              <div>
+                <dt>Hands</dt>
+                <dd>
+                  {assignedHands.length === 2
+                    ? 'Both hands assigned'
+                    : assignedHands[0]?.hand === 'R'
+                      ? 'Right hand assigned'
+                      : 'Left hand assigned'}
+                </dd>
+              </div>
+            ) : null}
+            {!tempoEntry && summary.tempo.initial ? (
+              <div>
+                <dt>Tempo from the score</dt>
+                <dd
+                  class={importStyles.tempo}
+                  aria-label={`${summary.tempo.initial.beatUnitName} = ${formatBpm(summary.tempo.initial.beatBpm)}`}
+                >
+                  <BeatUnitIcon unit={summary.tempo.initial.beatUnit} />
+                  <span>= {formatBpm(summary.tempo.initial.beatBpm)}</span>
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+          <ImportIssues summary={summary} />
+          <details class={importStyles.details}>
+            <summary>Import details</summary>
+            <div class={importStyles.detailsBody}>
+              {!needsHands ? hands : null}
+              {!tempoEntry ? tempo : null}
+              {facts}
+              <ScoreChecks summary={summary} />
+            </div>
+          </details>
+        </>
+      ) : (
+        <>
+          {facts}
+          {hands}
+          {tempo}
+          <ScoreChecks summary={summary} />
+        </>
+      )}
     </div>
+  )
+}
+
+/** Report anything that changes what the player can practice before the optional technical report. */
+function ImportIssues({ summary }: { summary: Summary }) {
+  // Hand and tempo questions already have dedicated controls above.
+  const warnings = summary.diagnostics.list.filter(
+    (d) => d.severity === 'warning' && d.code !== 'tempo-missing' && d.code !== 'hand-ambiguous',
+  )
+  if (!warnings.length && !summary.unsupported.length && !summary.timingIssues.length && !summary.tempo.conflicts)
+    return null
+  return (
+    <Notice tone="warning">
+      <strong>Before you play</strong>
+      <ul class={importStyles.issues}>
+        {summary.unsupported.map((passage, i) => (
+          <li key={`unsupported-${i}`}>
+            {passage.bars.includes('–') ? 'Bars' : 'Bar'} {passage.bars}: {passage.message} You can view this passage,
+            but it cannot be scored.
+          </li>
+        ))}
+        {summary.timingIssues.length ? (
+          <li>
+            Timing is not scored across {summary.timingIssues.length === 1 ? 'the timing mark' : 'the timing marks'} in{' '}
+            {summary.timingIssues.length === 1 ? 'bar' : 'bars'}{' '}
+            {summary.timingIssues.map((issue) => issue.bar).join(', ')}.
+          </li>
+        ) : null}
+        {summary.tempo.conflicts ? (
+          <li>Some playback tempos differ from the printed marks. The printed tempos are used.</li>
+        ) : null}
+        {warnings.map((warning, i) => (
+          <li key={`warning-${i}`}>
+            {warning.measure ? `Bar ${warning.measure}: ` : ''}
+            {warning.message}
+          </li>
+        ))}
+      </ul>
+    </Notice>
   )
 }
 
@@ -258,8 +373,7 @@ function TempoSection({
         />
       </div>
       <p class={styles.muted}>
-        The score has no numerical tempo (a word such as “Andante” is not enough to time your playing). Enter the tempo
-        to practice at. You can still change the speed in Practice.
+        This score has no numerical tempo. Choose a tempo and beat unit to begin. You can adjust the speed in Practice.
       </p>
       <div class={styles.tempoEntry}>
         <Segmented<BeatUnitChoice>
