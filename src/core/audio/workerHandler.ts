@@ -17,7 +17,7 @@ export function createFollowerWorkerHandler(
     try {
       switch (request.type) {
         case 'configure': {
-          follower = createAudioFollower(request.model, options)
+          follower = createAudioFollower(request.model, request.hands ? { ...options, hands: request.hands } : options)
           follower.reset(request.position ?? ZERO)
           paused = false
           return

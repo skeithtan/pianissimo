@@ -208,10 +208,17 @@ describe('audio follower on synthetic performances', () => {
       const sr = 44100
       const audio = renderNotes(perf.notes, { sampleRate: sr })
       const hop = sr / 100
+      // A jump starts after the hands come off the keys: a moment of silence, then the first
+      // attack at the new place (splicing into the middle of a ringing note would add an attack
+      // of the note before it).
       const play = (follower: ReturnType<typeof createAudioFollower>, fromOnset: number, toOnset: number): number => {
-        const from = Math.round((perf.onsets[fromOnset]!.time - 0.1) * sr)
-        const to = Math.round((perf.onsets[toOnset]!.time - 0.05) * sr)
         let group = -1
+        if (fromOnset > 0) {
+          const quiet = new Float32Array(hop)
+          for (let k = 0; k < 30; k++) group = follower.push(quiet, sr, 0).group
+        }
+        const from = Math.round((perf.onsets[fromOnset]!.time - (fromOnset > 0 ? 0.005 : 0.1)) * sr)
+        const to = Math.round((perf.onsets[toOnset]!.time - 0.05) * sr)
         for (let s = from; s + hop <= to; s += hop) group = follower.push(audio.subarray(s, s + hop), sr, s / sr).group
         return group
       }

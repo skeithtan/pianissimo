@@ -189,6 +189,14 @@ export class FakeStrip implements StripSink {
     this.corrections = marks
     this.correctionCalls++
   }
+  /** Every `setReview` call (U97), in order. */
+  reviews: boolean[] = []
+  setReview(on: boolean): void {
+    this.reviews.push(on)
+  }
+  get reviewing(): boolean {
+    return this.reviews[this.reviews.length - 1] ?? false
+  }
   /** Calls of `flushFrame` (the session applies strip changes inside its own frame). */
   flushes = 0
   flushFrame(): void {
@@ -301,6 +309,8 @@ export function harness(
       history: { queueAttempt: (r) => attempts.push(r), queueAbandon: (e) => abandons.push(e) },
       piece: { save: (patch, immediate = false) => saves.push({ patch, immediate }) },
       createMidiBackend: () => backend,
+      // The record arrives at the final key (pass `finalSlipMs` to test the P24 hold).
+      finalSlipMs: 0,
       ...opts.deps,
     },
   )

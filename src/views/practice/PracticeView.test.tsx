@@ -5,6 +5,7 @@ import { act } from 'preact/test-utils'
 import { connectionOpen, currentView, practiceRequest, resultsRequest, settingsOpen } from '../../app/navigation'
 import { connectionStatus, notices, resetAppStateForTests, settings, updateSettings } from '../../app/state'
 import { FakeMidi, FakeStrip, ManualFrames } from '../../app/session/testkit'
+import type { MicFollowerLike } from '../../app/session/types'
 import { newPieceRecord } from '../../core/storage/records'
 import { openFresh } from '../../core/storage/testkit'
 import type { PianissimoStorage } from '../../core/storage'
@@ -326,14 +327,56 @@ describe('PracticeView', () => {
     tap(r, 64)
     r.clock.advance(1000)
     tap(r, 65)
+    r.clock.advance(100) // the final chord stays open for a slip a moment (P24)
     await settle(r, 2)
-    const card = $(view.container, '[data-testid="attempt-result"]')
+    // The result docks at the bottom of the stage (U97) and the strip reviews the passage.
+    const card = $(view.container, '[data-testid="result-dock"] [data-testid="attempt-result"]')
     expect(card?.dataset['passed']).toBe('true')
-    expect(card?.textContent).toContain('No wrong notes')
-    expect(card?.textContent).toContain('3.0 s')
-    click(byText(card!, 'Details'))
+    expect(card?.textContent).toContain('Clean pass')
+    expect(r.strips[0]!.reviewing).toBe(true)
+    click(byLabel(card!, 'Details'))
     expect(resultsRequest.value?.pieceId).toBe(r.pieceId)
     expect(resultsRequest.value?.attemptId).toMatch(/piece-1/)
+  })
+
+  it('the same wrong key three passes running shows on the result pill, following the naming settings (P24, U97)', async () => {
+    const r = await rig()
+    practiceRequest.value = {
+      pieceId: r.pieceId,
+      preset: { passage: { fromOcc: 0, toOcc: 0 }, hands: 'both', multiplier: 1 },
+    }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    click(byLabel(view.container, 'Start'))
+    await settle(r)
+    const phase = () => $(view!.container, '[data-activity]')?.dataset['phase']
+    const note = () => $(view!.container, '[data-testid="result-note"]')?.textContent ?? null
+    // Bar 1: C D E F over the low C; a C♯ slips in before the D on every pass.
+    const pass = async () => {
+      for (let k = 0; k < 400 && phase() !== 'ready'; k++) act(() => r.clock.advance(20))
+      tap(r, 60, 48)
+      act(() => r.clock.advance(300))
+      tap(r, 61)
+      act(() => r.clock.advance(700))
+      tap(r, 62)
+      act(() => r.clock.advance(1000))
+      tap(r, 64)
+      act(() => r.clock.advance(1000))
+      tap(r, 65)
+      act(() => r.clock.advance(100))
+      await settle(r, 2)
+    }
+    await pass()
+    await pass()
+    expect($(view.container, '[data-testid="attempt-result"]')).not.toBeNull()
+    expect(note()).toBeNull()
+    await pass()
+    expect(note()).toBe('D♭ instead of D♮ in bar 1, three passes running')
+    // A naming change rewords the line on the card already shown.
+    act(() => {
+      settings.value = { ...settings.value, naming: { ...settings.value.naming, system: 'fixed-do' } }
+    })
+    expect(note()).toBe('re♭ instead of re♮ in bar 1, three passes running')
   })
 
   it('prepares the other label room ahead while idle, never while something plays', async () => {
@@ -737,6 +780,28 @@ describe('PracticeView', () => {
     expect(strip.cursor).toBeGreaterThanOrEqual(1)
   })
 
+  it('on a tablet a touch on the score while focused reveals the chrome and still seeks (U13, U93)', async () => {
+    const r = await rig()
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    const overview = $(view.container, '[role="slider"][aria-label="Piece overview"]')!
+    click(byLabel(view.container, 'Start'))
+    await settle(r)
+    act(() => r.clock.advance(RECEDE_DELAY_MS))
+    await settle(r, 1)
+    expect($(view.container, '[data-activity]')!.dataset['recede']).toBe('true')
+    act(() => {
+      $(view!.container, '[data-repeat-bounds]')!.dispatchEvent(
+        Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'touch' }),
+      )
+    })
+    act(() => r.strips.at(-1)!.options.onSeekRequest?.(1))
+    await settle(r, 1)
+    expect($(view.container, '[data-activity]')!.dataset['recede']).toBeUndefined()
+    expect(overview.getAttribute('aria-valuetext')).toMatch(/^Bar 2 of 2/)
+  })
+
   it('has no passage bar; Settings is in the header, Speed in the footer, Labels in its menu (U12, U76)', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
@@ -840,11 +905,11 @@ describe('PracticeView', () => {
     expect(strip.cursorAction).toBe(false)
   })
 
-  it('without a connected piano the hands are off and unavailable, a tap explains, and they return with the piano (U27)', async () => {
+  it('without a piano and without a microphone the hands are off and unavailable, a tap explains, and they return with the piano (U27, P22)', async () => {
     connectionStatus.value = { state: 'disconnected' }
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
-    view = mount(<PracticeViewWith env={r.env} />)
+    view = mount(<PracticeViewWith env={{ ...r.env, micSupported: () => false }} />)
     await settle(r)
     const left = byLabel(view.container, 'Left hand')!
     expect(left.getAttribute('aria-pressed')).toBe('false')
@@ -1025,13 +1090,74 @@ describe('PracticeView', () => {
     })
   })
 
-  it('the Play through switch is disabled without a connected piano (P12, U27)', async () => {
+  it('the Play through switch is disabled without a piano and without a microphone (P12, U27, P22)', async () => {
     connectionStatus.value = { state: 'disconnected' }
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
-    view = mount(<PracticeViewWith env={r.env} />)
+    view = mount(<PracticeViewWith env={{ ...r.env, micSupported: () => false }} />)
     await settle(r)
     expect(playThroughSwitch(view.container).disabled).toBe(true)
+  })
+
+  it('without a piano, Start plays through the microphone at once: no Settings visit (P22, U92)', async () => {
+    connectionStatus.value = { state: 'disconnected' }
+    const r = await rig()
+    const opened: { hands: string | undefined }[] = []
+    const mic: MicFollowerLike = {
+      start: async () => undefined,
+      reset: () => undefined,
+      pause: () => undefined,
+      resume: () => undefined,
+      dispose: () => undefined,
+    }
+    practiceRequest.value = { pieceId: r.pieceId }
+    view = mount(
+      <PracticeViewWith
+        env={{
+          ...r.env,
+          micSupported: () => true,
+          createMicFollower: (_model, _onEstimate, _onLost, hands) => {
+            opened.push({ hands })
+            return mic
+          },
+        }}
+      />,
+    )
+    await settle(r)
+    // The hands are available and the main button starts a play-through.
+    const left = byLabel(view.container, 'Left hand')!
+    expect(left.getAttribute('aria-pressed')).toBe('true')
+    expect(left.hasAttribute('aria-disabled')).toBe(false)
+    expect($(view.container, '[data-activity]')?.dataset['activity']).toBe('playing')
+    const start = byLabel(view.container, 'Start') as HTMLButtonElement
+    expect(start.disabled).toBe(false)
+    // In the menu: Play through on and locked with its note; Follow shows Microphone, Piano unavailable.
+    const menu = openMenu(view.container)
+    const playRow = $$(menu, 'label').find((el) => el.textContent?.trim().startsWith('Play through'))!
+    const play = playRow.querySelector<HTMLInputElement>('input[role="switch"]')!
+    expect(play.checked).toBe(true)
+    expect(play.disabled).toBe(true)
+    expect(playRow.querySelector('small')?.textContent).toBe('No piano connected: following the microphone.')
+    const segments = $$(menu, '[role="radio"]')
+    const piano = segments.find((el) => el.textContent === 'Piano') as HTMLButtonElement
+    const microphone = segments.find((el) => el.textContent === 'Microphone')!
+    expect(piano.disabled).toBe(true)
+    expect(microphone.getAttribute('aria-checked')).toBe('true')
+    click(byLabel($(view.container, 'footer')!, 'Menu'))
+    click(start)
+    await settle(r)
+    expect(opened).toEqual([{ hands: 'both' }])
+    expect(byLabel(view.container, 'Pause')).not.toBeNull()
+    // One hand: the microphone follows that hand (rebuilt on the hand change).
+    click(byLabel(view.container, 'Pause'))
+    await settle(r, 1)
+    click(byLabel(view.container, 'Right hand'))
+    await settle(r, 1)
+    // Paused mid-piece, the main button reads Resume.
+    click(byLabel(view.container, 'Resume'))
+    await settle(r)
+    expect(opened.at(-1)).toEqual({ hands: 'left' })
+    expect(byLabel(view.container, 'Pause')).not.toBeNull()
   })
 
   describe('footer menu (U76)', () => {
@@ -1154,6 +1280,15 @@ describe('PracticeView', () => {
     act(() => r.clock.advance(REVEAL_MS))
     await settle(r, 1)
     expect(screen().dataset['recede']).toBe('true')
+    // On a tablet a mouse press on the score far from the cursor line does not (a phone's does, U93).
+    act(() => {
+      $(view!.container, '[data-repeat-bounds]')!.dispatchEvent(
+        Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'mouse', clientX: 9999 }),
+      )
+    })
+    await settle(r, 1)
+    expect(screen().dataset['recede']).toBe('true')
+    expect($(view.container, '[data-testid="practice-bar-slot"]')).toBeNull()
     // Safari pointer clicks need not focus the play button: Tab can originate on the document.
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
@@ -1440,27 +1575,80 @@ describe('PracticeView', () => {
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('false')
     })
 
-    it('playing closes the menu and dims the bar controls, but Pause and the overview stay', async () => {
-      sideways = true
+    /** A pointer press on the score, far from the cursor line. */
+    const pressStage = (root: HTMLElement, pointerType: 'mouse' | 'touch') =>
+      act(() => {
+        $(root, '[data-repeat-bounds]')!.dispatchEvent(
+          Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType, clientX: 9999 }),
+        )
+      })
+
+    for (const side of [false, true])
+      it(`${side ? 'on its side' : 'upright'}: focus mode hides the whole bar; a press on the score or a pause brings it back (U93)`, async () => {
+        sideways = side
+        const r = await phoneRig()
+        const root = r.root
+        const screen = () => $(root, '[data-activity]')!
+        const slot = $(root, '[data-testid="practice-bar-slot"]')!
+        expect(bar(root).parentElement?.parentElement).toBe(slot)
+        click(byLabel(bar(root), 'Menu'))
+        await settle(r, 1)
+        expect(dialog()).not.toBeNull()
+        click(byLabel(bar(root), 'Start'))
+        await settle(r)
+        expect(byLabel(bar(root), 'Menu')?.getAttribute('aria-expanded')).toBe('false')
+        // The bar stays for the recede delay, so Pause does not vanish under the finger.
+        expect(bar(root).inert).toBe(false)
+        act(() => r.clock.advance(RECEDE_DELAY_MS))
+        await settle(r, 1)
+        expect(screen().dataset['recede']).toBe('true')
+        expect(bar(root).inert, 'hidden controls take no focus or taps').toBe(true)
+        // On its side the overview goes with the bar; upright it keeps its own row.
+        expect(byLabel(bar(root), 'Piece overview') !== null).toBe(side)
+        expect($$(root, '[aria-label="Piece overview"]')).toHaveLength(1)
+        // Any press on the score brings the bar back, a mouse too (the bar holds Pause).
+        for (const pointer of ['mouse', 'touch'] as const) {
+          pressStage(root, pointer)
+          await settle(r, 1)
+          expect(screen().dataset['recede'], pointer).toBeUndefined()
+          expect(bar(root).inert, pointer).toBe(false)
+          act(() => r.clock.advance(REVEAL_MS))
+          await settle(r, 1)
+          expect(screen().dataset['recede'], pointer).toBe('true')
+        }
+        pressStage(root, 'touch')
+        await settle(r, 1)
+        click(byLabel(bar(root), 'Pause'))
+        await settle(r, 1)
+        expect(screen().dataset['recede']).toBeUndefined()
+        expect(bar(root).inert).toBe(false)
+        expect(byLabel(bar(root), 'Resume') ?? byLabel(bar(root), 'Start')).not.toBeNull()
+      })
+
+    it('the tap that brings the hidden bar back does not seek; a tap while it shows does (U93)', async () => {
       const r = await phoneRig()
       const root = r.root
-      click(byLabel(bar(root), 'Menu'))
-      await settle(r, 1)
-      expect(dialog()).not.toBeNull()
+      const overview = byLabel(root, 'Piece overview')!
+      const strip = r.strips.at(-1)!
       click(byLabel(bar(root), 'Start'))
       await settle(r)
       act(() => r.clock.advance(RECEDE_DELAY_MS))
       await settle(r, 1)
       expect($(root, '[data-activity]')?.dataset['recede']).toBe('true')
-      expect(byLabel(bar(root), 'Pause')).not.toBeNull()
-      expect(byLabel(bar(root), 'Piece overview')).not.toBeNull()
-      expect(byLabel(bar(root), 'Menu')?.getAttribute('aria-expanded')).toBe('false')
-      // A tap on the bar brings its controls back (U13).
-      act(() => {
-        bar(root).dispatchEvent(new Event('pointerdown', { bubbles: true }))
-      })
+      expect(overview.getAttribute('aria-valuetext')).toMatch(/^Bar 1 of 2/)
+      // The view reports the tap on release, after the press reached the stage.
+      pressStage(root, 'touch')
+      act(() => strip.options.onSeekRequest?.(1))
       await settle(r, 1)
       expect($(root, '[data-activity]')?.dataset['recede']).toBeUndefined()
+      expect(overview.getAttribute('aria-valuetext'), 'the revealing tap only reveals').toMatch(/^Bar 1 of 2/)
+      expect(byLabel(bar(root), 'Pause')).not.toBeNull()
+      // With the bar showing, a tap seeks as before.
+      pressStage(root, 'touch')
+      act(() => strip.options.onSeekRequest?.(1))
+      await settle(r, 1)
+      expect(overview.getAttribute('aria-valuetext')).toMatch(/^Bar 2 of 2/)
+      expect(byLabel(bar(root), 'Pause')).not.toBeNull()
     })
 
     it('upright, Repeat has its own row under the overview: selector, ⋯ (a sheet) and ✕; it folds while playing', async () => {
@@ -1496,9 +1684,7 @@ describe('PracticeView', () => {
       await settle(r, 1)
       expect($(root, '[data-activity]')?.dataset['recede']).toBe('true')
       expect(slot.inert).toBe(true)
-      act(() => {
-        bar(root).dispatchEvent(new Event('pointerdown', { bubbles: true }))
-      })
+      pressStage(root, 'touch')
       await settle(r, 1)
       expect(slot.inert).toBe(false)
     })

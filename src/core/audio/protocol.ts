@@ -5,10 +5,19 @@
  */
 import type { ScoreModel } from '../model/score'
 import type { Rational } from '../music/rational'
+import type { AudioHands } from './templates'
 
 export type FollowerRequest =
-  /** A (new) follower for this score, expecting the first group at or after `position` (null: the start). */
-  | { readonly type: 'configure'; readonly model: ScoreModel; readonly position: Rational | null }
+  /**
+   * A (new) follower for this score, expecting the first group at or after `position` (null: the
+   * start), listening for `hands` (absent: both; one hand follows that hand's groups only, P22).
+   */
+  | {
+      readonly type: 'configure'
+      readonly model: ScoreModel
+      readonly position: Rational | null
+      readonly hands?: AudioHands
+    }
   /** Expect the first group at or after `position` next (a seek). */
   | { readonly type: 'reset'; readonly position: Rational }
   /** Samples are ignored until `resume`. */

@@ -7,7 +7,12 @@
  * in place (the menu closes). Only a window too narrow for one row (640 px or less) wraps the
  * tools into their own row, which collapses in portrait focus mode (U60). The hand/play row stays
  * available.
+ *
+ * `FooterBar` is the footer's shell on its own (the one-row grid, the narrow-window wrap, the
+ * surface): Practice's `Footer` fills it, and so does Study's (DECISIONS U90), so the two screens
+ * share one footer layout rather than two copies of it.
  */
+import type { ComponentChildren } from 'preact'
 import type { PracticeSession, SessionUi } from '../../app/session'
 import { pushNotice } from '../../app/state'
 import type { PersistentLabelMode } from '../../core/model/settings'
@@ -18,12 +23,46 @@ import { FooterMenu, type MetronomeRow } from './FooterMenu'
 import type { RecedeZone } from './recede'
 import styles from './practice.module.css'
 
-/** The hand toggles without a connected piano (U27): the tooltip, and the toast a tap shows. */
+/**
+ * The hand toggles without a connected piano when this browser cannot use the microphone either
+ * (U27, DECISIONS P22; with a microphone the hands stay available): the tooltip, and the toast a
+ * tap shows.
+ */
 export const HANDS_UNAVAILABLE = 'Piano not connected'
 export const HANDS_UNAVAILABLE_NOTICE =
-  'Piano not connected. Connect a piano to play a hand yourself. Until then Pianissimo plays the piece for you.'
+  'Piano not connected, and this browser cannot use the microphone. Connect a piano to play a hand yourself. Until then Pianissimo plays the piece for you.'
 
 const QUARTER = rat(1, 4)
+
+export interface FooterBarProps {
+  /** The start edge (Speed). */
+  readonly start: ComponentChildren
+  /** The end edge (the Menu button). */
+  readonly end: ComponentChildren
+  /** The centered cluster around the main button, with its notes under it. */
+  readonly center: ComponentChildren
+  /** Practice's receding zone attributes (U13); Study never recedes and passes none. */
+  readonly zone?: RecedeZone | undefined
+  /** The side tools are receded: they take no input. */
+  readonly receded?: boolean
+}
+
+/** The footer's layout: start and end tools around a centered cluster, one row on any tablet. */
+export function FooterBar({ start, end, center, zone, receded = false }: FooterBarProps) {
+  return (
+    <footer class={styles.footer} {...zone}>
+      <div class={styles.footerToolsSlot} data-testid="footer-tools-slot" inert={receded}>
+        <div class={styles.footerToolsClip}>
+          <div class={styles.footerTools}>
+            <div class={styles.footerSide}>{start}</div>
+            <div class={`${styles.footerSide} ${styles.footerEnd}`}>{end}</div>
+          </div>
+        </div>
+      </div>
+      <div class={styles.footerCenter}>{center}</div>
+    </footer>
+  )
+}
 
 export interface FooterProps {
   readonly ui: SessionUi
@@ -55,54 +94,52 @@ export function Footer({
   onMetronome,
 }: FooterProps) {
   return (
-    <footer class={styles.footer} {...zone}>
-      <div class={styles.footerToolsSlot} data-testid="footer-tools-slot" inert={receded}>
-        <div class={styles.footerToolsClip}>
-          <div class={styles.footerTools}>
-            <div class={styles.footerSide}>
-              <TempoControl
-                multiplier={ui.multiplier}
-                sourceBeatBpm={tempo?.beatBpm ?? 0}
-                beatUnit={tempo?.beatUnit ?? QUARTER}
-                onChange={(multiplier) => session.setSelection({ multiplier })}
-                noTempo={tempo === null}
-                onRequestTempo={onRequestTempo}
-                placement="up"
-              />
-            </div>
-            <div class={`${styles.footerSide} ${styles.footerEnd}`}>
-              <FooterMenu
-                ui={ui}
-                session={session}
-                receded={receded}
-                labels={labels}
-                onLabels={onLabels}
-                hasTempo={tempo !== null}
-                metronome={metronome}
-                onMetronome={onMetronome}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class={styles.footerCenter}>
-        <HandToggles
-          hands={ui.hands}
-          onHandsChange={(hands) => session.setSelection({ hands })}
-          handsUnavailable={ui.handsAvailable ? undefined : HANDS_UNAVAILABLE}
-          onHandsUnavailable={() => pushNotice({ kind: 'info', text: HANDS_UNAVAILABLE_NOTICE })}
-          playing={ui.playing}
-          onPlayPause={() => session.togglePlay()}
-          playLabel={playLabel}
-          playDisabled={!ui.playing && !ui.startEnabled && ui.activity !== 'listening'}
-          handClass={styles.recedes}
+    <FooterBar
+      zone={zone}
+      receded={receded}
+      start={
+        <TempoControl
+          multiplier={ui.multiplier}
+          sourceBeatBpm={tempo?.beatBpm ?? 0}
+          beatUnit={tempo?.beatUnit ?? QUARTER}
+          onChange={(multiplier) => session.setSelection({ multiplier })}
+          noTempo={tempo === null}
+          onRequestTempo={onRequestTempo}
+          placement="up"
         />
-        {!ui.playing && ui.startReason ? (
-          <p class={styles.startReason} role="note">
-            {ui.startReason}
-          </p>
-        ) : null}
-      </div>
-    </footer>
+      }
+      end={
+        <FooterMenu
+          ui={ui}
+          session={session}
+          receded={receded}
+          labels={labels}
+          onLabels={onLabels}
+          hasTempo={tempo !== null}
+          metronome={metronome}
+          onMetronome={onMetronome}
+        />
+      }
+      center={
+        <>
+          <HandToggles
+            hands={ui.hands}
+            onHandsChange={(hands) => session.setSelection({ hands })}
+            handsUnavailable={ui.handsAvailable ? undefined : HANDS_UNAVAILABLE}
+            onHandsUnavailable={() => pushNotice({ kind: 'info', text: HANDS_UNAVAILABLE_NOTICE })}
+            playing={ui.playing}
+            onPlayPause={() => session.togglePlay()}
+            playLabel={playLabel}
+            playDisabled={!ui.playing && !ui.startEnabled && ui.activity !== 'listening'}
+            handClass={styles.recedes}
+          />
+          {!ui.playing && ui.startReason ? (
+            <p class={styles.startReason} role="note">
+              {ui.startReason}
+            </p>
+          ) : null}
+        </>
+      }
+    />
   )
 }

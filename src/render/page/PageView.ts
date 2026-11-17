@@ -514,6 +514,15 @@ export class PageView {
     this.schedule()
   }
 
+  /**
+   * The review after a completed pass (U97): the page does not zoom (its systems already show the
+   * passage); it only lets the passage read clean, hiding the loop handles and ✕ (`pn-review`,
+   * the strip's CSS) until the next pass begins.
+   */
+  setReview(on: boolean): void {
+    this.root.classList.toggle('pn-review', on)
+  }
+
   setCorrections(marks: readonly CorrectionMark[]): void {
     const key = correctionsKey(marks)
     if (key === this.corrKey) return
@@ -608,7 +617,11 @@ export class PageView {
     this.opts.onLoopSelectModeChange?.(mode)
   }
 
-  /** Manual scrolling (browsing) is possible while enabled. The owner pauses playback on browse. */
+  /**
+   * Manual scrolling (browsing) is possible while enabled. Playback goes on while the page is
+   * browsed (its cursor moves with the notation, U52, U95); the page stops following until
+   * "Return to current position" or the next Start.
+   */
   setBrowseEnabled(enabled: boolean): void {
     this.browseEnabled = enabled
     this.root.classList.toggle('pn-browse-enabled', enabled)

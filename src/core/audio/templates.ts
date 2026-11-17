@@ -2,12 +2,14 @@
  * What the audio follower expects to hear (DECISIONS P16): the score's onset groups and, per
  * group, the semitone energies its notes add when they are struck. Pure and worker-safe.
  */
-import type { ScoreModel } from '../model/score'
+import type { HandSelection, ScoreModel } from '../model/score'
 import { type Rational, cmp, key, toNumber } from '../music/rational'
 import { LOBE_SPAN, PIANO_HIGH, PIANO_LOW, SEMITONES, frameSize, semitoneOfFrequency, windowLobe } from './features'
 
 /** Partials per note (fewer when they pass PARTIAL_MAX_HZ or Nyquist). */
 export const PARTIALS = 16
+/** Exponent of the partials' power roll-off (power h^−ROLL_OFF for partial h). */
+export const ROLL_OFF = 2.5
 export const PARTIAL_MAX_HZ = 6000
 
 /** The notes struck together at one position of the performance. */
@@ -17,15 +19,22 @@ export interface AttackGroup {
   readonly pitches: readonly number[]
 }
 
+/** Which hands the follower listens for (DECISIONS P22): the learner's hands, never 'none'. */
+export type AudioHands = Exclude<HandSelection, 'none'>
+
 /**
  * The onset groups of `model` in performance order: every position where a note is struck, with
- * the distinct pitches struck there. As the practice timeline for both hands does, tie
- * continuations, grace notes and cue notes are left out, so the positions are the timeline's.
+ * the distinct pitches struck there. As the practice timeline does, tie continuations, grace
+ * notes and cue notes are left out, and with `hands` 'right' or 'left' only the notes assigned to
+ * that hand count (the timeline's `n.hand` rule), so the positions are the timeline's for the same
+ * hands (DECISIONS P22: one-hand play-through through the microphone).
  */
-export function attackGroups(model: ScoreModel): AttackGroup[] {
+export function attackGroups(model: ScoreModel, hands: AudioHands = 'both'): AttackGroup[] {
   const buckets = new Map<string, { position: Rational; pitches: Set<number> }>()
+  const hand = hands === 'right' ? 'R' : hands === 'left' ? 'L' : null
   for (const n of model.notes) {
     if (n.tieContinuation || n.grace || n.cue) continue
+    if (hand !== null && n.hand !== hand) continue
     if (n.midi < PIANO_LOW || n.midi > PIANO_HIGH) continue
     const k = key(n.onset)
     let b = buckets.get(k)
@@ -39,16 +48,19 @@ export function attackGroups(model: ScoreModel): AttackGroup[] {
 
 /**
  * Semitone energies of one struck pitch, as the analyzer bins them at `sampleRate`: 16 partials
- * at 1/h power, each spread over FFT bins by the analysis window; the strongest semitone is 1.
- * A real piano's partials are stronger or weaker than this from note to note and from piano to
- * piano; the matcher compares log-compressed rises, which forgives most of that.
+ * at h^−2.5 power (`ROLL_OFF`), each spread over FFT bins by the analysis window; the strongest
+ * semitone is 1. A real piano's partials are stronger or weaker than this from note to note and
+ * from piano to piano; the matcher compares log-compressed rises, which forgives most of that.
+ * Measured on a real acoustic piano through a phone microphone (DECISIONS P21) the third and higher
+ * partials of a mid-range note lie 15–30 dB under the fundamental, far under the 1/h power used
+ * before, which made every template expect rises where nothing rose.
  */
 export function pitchTemplate(
   midi: number,
   sampleRate: number,
   lobe: (d: number) => number = windowLobe(frameSize(sampleRate)),
   /** Partials and the exponent of their power roll-off (tests sound notes with other spectra). */
-  shape: { readonly partials: number; readonly rollOff: number } = { partials: PARTIALS, rollOff: 1 },
+  shape: { readonly partials: number; readonly rollOff: number } = { partials: PARTIALS, rollOff: ROLL_OFF },
 ): Float64Array {
   const n = frameSize(sampleRate)
   const binHz = sampleRate / n

@@ -21,6 +21,7 @@ practice", "Execution and rendering architecture", "Storage and recovery" (resum
 | `accompanimentAllowed`, `hasSoundOutput` | Output rules (`output.ts`: `playbackDestination` resolves Auto / Connected piano / Browser sound; graded accompaniment needs browser sound or a verified echo-free MIDI output). |
 | `createPieceSaver(write, timers)` | Debounced `updatePiece` writes; `immediate` for pause/seek/hide. |
 | `Store` / `ReadonlyStore` | Tiny observable used for the view stores. |
+| `repeatedMistakes`, `repeatedMistakeLine`, `REPEATED_MISTAKE_PASSES`, `RepeatedMistake` | Repeated mistakes (`mistakes.ts`, P24, below). |
 
 ### `PracticeSession`
 
@@ -36,12 +37,33 @@ always both parts), `pause()`, `restart()`, `resume()`, `seek(occ)`, `seekPositi
 one-bar loop), `repeatAtCursor(occ?)` (the cursor's repeat button: pauses what plays, then opens
 Repeat at the bar the button was over: `occ` when the view reports one, the strip's bar under its
 fixed cursor line while browsing, else the cursor's bar), `setChromeRevealed(bool)` (the view's chrome is revealed, not in
-focus mode; default true), `setInputAvailable(bool)` (no piano input: the hands
-are held in Listen without saving `lastHands`, U27), `setRepeatTarget(n)`, `setLadder(ladder | null)` (speed ladder, below), `setRhythmMode(on)` (Keep time, below), `dismissResult()`,
+focus mode; default true), `setInputAvailable(bool)` (no piano input: play-through follows the
+microphone and is on while a hand is selected, P22; only when the microphone is impossible too are
+the hands held in Listen without saving `lastHands`, U27), `setRepeatTarget(n)`, `setLadder(ladder | null)` (speed ladder, below), `setRhythmMode(on)` (Keep time, below), `dismissResult()`,
 `setSelection({hands?, range?, multiplier?})`, `updateSettings(settings)`,
 `beforeApplyLabels(next)` (register with `onBeforeApplyLabels`), `layoutChanging()`
 (re-prepare), `viewChanged()` (zoom / orientation; never interrupts, P5 revised), `suspend()` (save progress when hidden without pausing), `dispose()`.
-Strip: `attachStrip(strip)`, `detachStrip()`, `attachFlash(handle)`, `onVisibleLabels(added)`.
+Strip: `attachStrip(strip)`, `detachStrip()`, `attachFlash(handle)`, `onVisibleLabels(added)`,
+`browseStarted()`, `browseReleased()` (U41, U95).
+
+Loop changes while Repeat plays (U94, `#select`): a `range-change` while the main button shows
+Pause (or a browse hold waits) keeps playing. `#continueFrom()` reads where playback is, exact,
+before anything changes (the next note of a running attempt or lead-in; the onset at or after the
+cursor for Listen or music playing on; null at Ready). Listen rebuilds its transport over the new
+loop from there when it lies inside it, else from the loop start (`#replayListen`). With a hand
+on, the attempt in progress ends as 'range-change', then `#seekLeadIn(from, now, {play: true,
+reason})` plays a lead-in from a position inside the new loop (or before it, when a lead-in was
+reading toward the loop), and otherwise the next attempt waits at the loop start at Ready (Keep
+time always; an attempt still at Ready too). Paused, a loop change only moves the loop.
+
+Browsing (U41, U95): `browseStarted()` (the view's `onBrowse(true)`) while something plays (Pause
+showing, Ready and a finished pass's music included) pauses it and discards the attempt or reading
+pass in progress, and records a hold (`#browseHold`, with `#continueFrom()`); `ui.playing` stays
+true during the hold. `browseReleased()` (`StripOptions.onBrowseRelease`: last finger up or
+canceled, 250 ms wheel idle, or a handle drag that scrolled) then calls `start()`, which adopts the
+browsed note as below. Any Pause (`pause()`, an overlay, a lost input or output, `detachStrip`,
+`dispose`) or a Start ends the hold; a loop change during it resolves it by U94 and calls
+`returnToCurrent()`. The page layout (`browsedPosition()` null while browsing) pauses nothing.
 
 Start adopts the notation's optional `browsedPosition()` before resuming playback, then calls
 `returnToCurrent()` to restore cursor following. The fixed strip returns the onset underneath
@@ -94,8 +116,8 @@ any Repeat pass), physical state is forgotten, `markPrepared` runs at once and
 `strip.wrapTo?(loopStart)` pans back (U35). The next attempt (`#prepareAttempt`: Repeat reset,
 Restart, Start) replaces a lead-in transport with the loop's own one, so Repeat wraps to the loop
 start. Restart during the lead-in prepares an attempt at the loop start; a seek to the loop start
-drops the lead-in (the attempt waits at the loop start as before); a speed change keeps it; any
-other selection change ends it (stopped, like Repeat mode). Lead-in reading traversals are not
+drops the lead-in (the attempt waits at the loop start as before); a speed change keeps it; a
+loop change goes on by U94 (below); any other selection change ends it (stopped, like Repeat mode). Lead-in reading traversals are not
 recorded.
 
 Teacher corrections (`corrections.ts`): when a scored attempt completes, `correctionMarks(record,
@@ -116,6 +138,33 @@ Interrupted or abandoned attempts draw none. They stay while the result card sho
 (`#clearCorrections`) on Start, Restart, `dismissResult()`, a selection change, a seek and
 `dispose()`. A Repeat pass that starts over by itself keeps them through Ready until the first
 press of the new pass (any key: the attempt starts running). A re-attached strip gets them again.
+
+The review (U97, `#syncReview`, run in `#syncLock` from every frame and on `attachStrip`): the
+optional `strip.setReview?(on)` is on exactly while a completed pass's result shows
+(`#lastResult` set, a loop present, not play-through), so it ends with the marks above (and on
+Hide, which schedules a frame). It is never called from the MIDI input path: the first press of
+the next pass is matched at once and the strip hears about it in the next frame. A re-attached
+strip gets the review again (and shows it without animation). The card's note line is the
+first of `lastResult.repeatedMistakes`, worded by the view (below).
+
+Repeated mistakes (`mistakes.ts`, DECISIONS P24): `#onRecord` keeps the last
+`REPEATED_MISTAKE_HISTORY` (8) scored records of the current comparison context (cleared when it
+changes) and, for a completed one, marks it pending with the timeline it ran on; the next UI
+publish (the frame, never the input path) works out `repeatedMistakes(records, timeline, model)`
+and sets `lastResult.repeatedMistakes` (absent when none): the same wrong pitch at the same group
+in `REPEATED_MISTAKE_PASSES` (3) passes running, the latest included (a pass stopped before the
+group is skipped, one that reached it without that key ends the run), most passes first. Each
+`RepeatedMistake` = `{ group, occ, bar, expectedPitches, expectedPitch, expectedNote, wrongPitch,
+passes }`; `expectedPitch` / `expectedNote` is the required note the key most likely stood for
+(same letter a semitone away, else an octave away, else the nearest). `repeatedMistakeLine(m,
+model, naming)` words it for the result card's note line (the view calls it on render, U97): "F instead of F♯ in bar 12, three passes running"
+(score spelling with its accidental, ♮ against the same letter, octave numbers only for a wrong
+octave, counts in words up to ten). Chord slips (P24) reach the session as `wrong` events of the
+group just completed: they flash and pulse like any wrong key, but no cue is computed (the cue
+points toward the current group). `SessionDeps.finalSlipMs` (default `CHORD_SLIP_MS`) is the
+engine's final-chord hold; the test harness passes 0 so scenario tests see the record at the
+final key. Tests: `mistakes.test.ts`, `PracticeSession.mistakes.test.ts`;
+`PracticeSession.required.test.ts` sweeps one-hand presses through the session (P23).
 
 Stores (subscribe from the view):
 
@@ -304,7 +353,7 @@ pedal → `revealAtCursor()`), the patience deadline joins `#scheduleTick`, and 
 the follower's group (targets, accepted marks, the amber tint for wrong presses, never the red
 marker, pulse or cue), the transport position, the guide and the resume position. Pause / Resume
 freeze and re-anchor the patience clock; seeks keep playing from the first group at or after the
-position; browsing pauses; speed applies live; new hands rebuild the transport at the same group;
+position; browsing holds until the release (U95); speed applies live; new hands rebuild the transport at the same group;
 the range end leaves it idle at the end (the next Start begins at the start of the piece). The
 engine records nothing while the mode is on. Turning it on first records the reading pass so far
 (a paused reading engine is reconfigured on its keep-progress path and drained while the mode is
@@ -312,25 +361,41 @@ still off); what the engine ends during play-through, and when it goes off, stay
 `#play` goes and the engine seeks to the follower's group, so reading continues there. Tests:
 `PracticeSession.play.test.ts`.
 
-### Through the microphone (DECISIONS P15, P16)
+### Through the microphone (DECISIONS P15, P16, P22)
 
-With `settings.mic.follow` on and `deps.createMicFollower` present, play-through with both hands
-also follows the microphone: `#startPlay` opens it (`#startMic`, the browser may ask; a refusal
-leaves play-through on but not playing, the reason in `ui.micStatus`) before `#playFrom`. The
-follower reports each time it hears the player at a new onset group; `#onMicEstimate` maps a
+What a play-through follows (`#followsMic`): the microphone when no piano input is connected,
+and with one when `settings.mic.follow` (the Practice menu's Follow choice) is on, provided
+`deps.createMicFollower` exists and `deps.micSupported?.()` is not false (`#micPossible`).
+`#micActive` (it follows and a hand is selected) makes the play-through **silent for any hand**:
+`#playSilent` builds the transport with no events and no output, so one hand needs no verified
+output, and `#playMetronome` keeps the click silent (`ui.metronomeMuted`). `#startPlay` opens the
+microphone (`#startMic`, with the selected hand: the follower then listens for that hand's
+groups, which are the play timeline's; the browser may ask; a refusal leaves play-through on but
+not playing, the reason in `ui.micStatus`, and the next Start asks again) before `#playFrom`.
+The follower reports each time it hears the player at a new onset group; `#onMicEstimate` maps a
 report with confidence ≥ 0.5 to `groupReached(timeline, position)` and calls
 `follower.audioReached(g, now)` for the current group or later, so `#processPlay` releases the
 gates up to it (a report behind the cursor, the player repeating a bar, changes nothing).
 `#playFrom` resets it to the current group and resumes it (it listens afresh), `#pausePlay`
-pauses it, `#seekPlay` resets it, `#disposePlay` closes it (`#disposeMic`). A speed change is
-not passed on: the follower follows the order of the notes, not time. `#playMetronome` keeps
-the metronome silent while the microphone follows (the clicks would come out beside it;
-`ui.metronomeMuted`). A
-microphone that stops by itself (`onLost`: unplugged, a failing worker) pauses play-through
-with the reason in `ui.micStatus` (`#onMicLost`); the next Start opens it again. The microphone
-stands in for a piano input: `#syncHeldHands` keeps the hands available without one, and
-`startPlan` gets `hasInput` / `mic` to block reading, scored practice and one-hand play-through
-with a reason. Tests: `PracticeSession.mic.test.ts`.
+pauses it, `#seekPlay` resets it, `#disposePlay` closes it (`#disposeMic`); new hands rebuild
+the play-through and reopen it for them. A speed change is not passed on: the follower follows
+the order of the notes, not time. While the microphone follows, MIDI notes never reach the
+follower (`PlayThrough.mic`; the hint pedal still names notes). A microphone that stops by
+itself (`onLost`: unplugged, a failing worker) pauses play-through with the reason in
+`ui.micStatus` (`#onMicLost`); the next Start opens it again.
+
+**No piano (P22).** `#playRequired` (no input and a hand selected) keeps play-through on and
+locked (`#syncPlayMode` after a selection or input change; `setPlayThrough(false)` is refused;
+`ui.playThroughLocked`), refuses Repeat (`setRepeatMode(true)`, `repeatFrom`) and Keep time
+(`setRhythmMode(true)`); Keep time switched off by it is not saved (`#rhythmHeld`) and comes back
+with the piano. `#playThroughChosen` is the learner's own choice: when the piano returns,
+play-through stays on only if they chose it. A change of source (a piano connecting or leaving,
+the Follow choice) pauses a started play-through and drops it (`#syncFollowSource` →
+`#disposePlay(true)`), so the next Start rebuilds it for the new source; a piano unplugged while
+the microphone already follows changes nothing. The hands are held (U27) only when neither a
+piano nor a microphone is possible (`#syncHeldHands`). `startPlan` gets `hasInput`,
+`micSupported` and `mic` (`#micActive`). `ui.follow`, `ui.pianoConnected`, `ui.micSupported`
+and `ui.playThroughLocked` drive the menu's Follow row. Tests: `PracticeSession.mic.test.ts`.
 
 ## Tests
 

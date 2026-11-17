@@ -71,6 +71,9 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
+  /* Never a scroll container: the music moves by transform only. Something brought into view
+     inside it (the cursor near the edge in the review, U97) must not scroll the strip itself. */
+  overflow: clip;
   background: var(--pn-paper);
   color: var(--pn-ink);
   touch-action: none;
@@ -106,6 +109,13 @@
   top: 0;
   transform-origin: 0 0;
   will-change: transform;
+  transition: transform var(--pn-scroll-ms) var(--pn-ease);
+}
+
+/* The review after a completed pass (StripView.setReview, U97): the zoom itself is driven frame by
+   frame (under pn-instant); once it has landed the music holds still and the cursor glides over it
+   to a new place (the wrap back to the loop start). */
+.pn-review .pn-cursor {
   transition: transform var(--pn-scroll-ms) var(--pn-ease);
 }
 
@@ -745,8 +755,15 @@
   height: 22px;
 }
 
-.pn-loop-locked .pn-loop-ctl {
+.pn-loop-locked .pn-loop-ctl,
+.pn-review .pn-loop-ctl {
   opacity: 0;
+  pointer-events: none;
+}
+
+/* Reviewing (U97): the passage reads clean (no handles or ✕; the Repeat panel still edits the
+   loop) and the playhead cannot be dragged. */
+.pn-review .pn-cursor-grip {
   pointer-events: none;
 }
 

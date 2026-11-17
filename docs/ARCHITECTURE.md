@@ -120,13 +120,13 @@ wiring, P16 redesign). It follows attacks, not time: the position moves only whe
 struck that fits an onset group near it, so a player who stops is waited for and no tempo is
 involved. `features.ts` (`SemitoneAnalyzer`) turns mono samples into the energy of each piano
 semitone every 10 ms (4096-sample frames under a skewed window; in-repo radix-2 FFT);
-`templates.ts` lists the score's onset groups (`attackGroups`, the practice timeline's groups
-for both hands) and the semitone energies each adds when struck (`attackTemplates`);
+`templates.ts` lists the score's onset groups (`attackGroups(model, hands?)`, the practice
+timeline's groups for both hands, or for one hand by the timeline's `n.hand` rule, P22) and the semitone energies each adds when struck (`attackTemplates`);
 `matcher.ts` (`OnsetMatcher`) opens an event when semitones rise over their baselines, scores it
 against the groups near the position (cosine of the observed rise with each group's expected
 rise over the sound already there) and keeps a Viterbi score per position, so skipped notes,
 chords arriving in parts, a jump of a few bars and getting lost are one mechanism; `index.ts`
-exposes `createAudioFollower(model)` (`push(samples, sampleRate, time)` → the group heard last,
+exposes `createAudioFollower(model, { hands? })` (`push(samples, sampleRate, time)` → the group heard last,
 its position in whole notes and a confidence; `reset(position)`; `listen()`).
 `groups.ts` (`groupReached(timeline, position)`) is the only part the session bundles.
 `protocol.ts` + `workerHandler.ts` are the worker side (`workers/follower.worker.ts` binds
@@ -139,8 +139,11 @@ cancellation, noise suppression or gain control; one channel) → an `AudioConte
 AudioWorklet `public/mic-processor.js` (512-sample blocks posted to the main thread) → the
 follower worker; estimates reach the session's `#onMicEstimate`, a capture that ends by itself
 or a failing worker reaches `#onMicLost`. `SessionDeps.createMicFollower` injects it (tests use
-a fake); the session owns its lifetime (opened on Start in play-through with both hands, closed
-when play-through ends or the hands change).
+a fake), with the selected hand (P22: one hand follows that hand's groups);
+`microphoneSupported()` (`SessionDeps.micSupported`) says whether the browser can open one at
+all. The session owns its lifetime: opened on Start in a play-through that follows the
+microphone (always without a piano input, with one when `settings.mic.follow`), closed when
+play-through ends, the hands change or the source changes.
 
 ### core/naming
 `labelFor(note, naming)` → `{name, accidental, octave, text}` from the resolved sounding pitch
@@ -315,9 +318,16 @@ once the strip is attached and persistent-label fades have finished. `practiceMo
 tempo; `createPieceSaver` debounces piece updates.
 Starting playback resolves the optional `StripSink.browsedPosition()` to an exact seek and
 calls `returnToCurrent()` to restore following, including after asynchronous sound loading.
-The strip reports the nearest onset beneath its fixed cursor while browsing. The page reports
+The strip reports the nearest onset beneath its fixed cursor while browsing. Browsing cannot go
+back past the piece's first cursor stop (`clampTranslate`, U96); forward it stops with the content's
+right edge under the cursor line. The page reports
 no alternate position because its cursor moves with the notation. Explicit accepted cursor
 seeks also end browsing (U52). Existing Repeat seek and Listen range rules still apply.
+A strip browse that begins while something plays holds the sound (`browseStarted`, the attempt
+is discarded, U41) and its release (`StripOptions.onBrowseRelease` → `browseReleased`: the last
+finger up or canceled, 250 ms after the last wheel event, or a handle drag that scrolled) runs
+that same Start path; the page layout's scroll pauses nothing (U95). A loop changed while
+Repeat plays keeps playing from the reached position inside the new loop, else its start (U94).
 Play-through (P12): `setPlayThrough(on)` closes Repeat mode and pauses reading; Start builds a
 `#play` slot beside the engine, like Listen's: a gated transport over the whole piece (silent
 for both hands, the automatic part for one) and a `PlayFollower`. Human events then go to the
@@ -326,6 +336,13 @@ follower instead of the engine (`#onMidi`), follower `release` events release tr
 transport position, the amber tint for wrong presses and the guide. `ui.activity` is
 `'playing'`, `ui.playThrough` true, `startAction` `'play'`; the engine records nothing while the
 mode is on and resumes reading at the follower's group when it is switched off.
+What it follows (P22): without a piano input the microphone, and play-through is then on and
+locked while a hand is selected (`#syncPlayMode`; `ui.playThroughLocked`); with one, the keys
+unless `settings.mic.follow` (`ui.follow`, the menu's Follow choice, U92). While the microphone
+follows, the transport is silent for any hand (no accompaniment, no click) and MIDI notes never
+reach the follower; a change of source pauses a started play-through (`#syncFollowSource`) and
+the next Start rebuilds it. The hands are held off (U27) only without a piano and without a
+usable microphone.
 Speed ladder (U77): the piece's `ladder` (`LadderSettings { goal, step }`, null = off) is stored on
 `PieceRecord` and opened into `PracticeSession`, which publishes `ui.ladder` (`{ goal, step,
 start, failures, done }`); the pure rules are `app/session/ladder.ts`. After each completed
@@ -347,7 +364,7 @@ AudioContext synchronously inside the tap when it will click (iPadOS gesture rul
 `transport.play(t)` with one timestamp after releasing every gate, so the music never holds. The
 transport reports each arrival (`transportArrived`); the engine judges, closes missed groups and
 builds the record. The session renders only gentle feedback (soft wash for `missed`, amber
-marker for `'late'`) and the result card's timing row (`timingAccuracy`). Keep time is exclusive
+marker for `'late'`) and the result card's timing line (`timingAccuracy`). Keep time is exclusive
 with play-through and disables Repeat lead-ins. The view adds a footer-menu switch with a badge
 on the Menu button, the `CountIn` overlay on the stage and the tolerance choice in Settings →
 Hints (`KeepTimeGroup`).
@@ -367,7 +384,9 @@ Only the stage height changes, so the existing score view remeasures without re-
 hands' notes at the cursor for the hint lifetime, a third label-opacity source merged with the
 persistent and temporary ones) and the keyboard guide, on any device including a phone; nothing
 of practice is offered or recorded. On phone-size screens (`views/shared/usePhone`) both Practice
-and Study trade their header and footer for one top bar and a menu sheet (U74, U80), and the
+and Study trade their header and footer for one top bar and a menu sheet (U74, U80); on tablets
+and desktops Study uses Practice's footer shell (`FooterBar`, `FooterMenuPopover`, `PlayButton`)
+with Go to the start and the hint around Play and a "Study menu" (U90), and the
 portrait page is capped at the stage's width and fitted to it (`pageMaxWidth`, `fitWidth`, R17);
 there a pinch magnifies the page as engraved (`imageZoom`, 1× to 4×, never saved, U83) and the
 app itself never zooms (`gesture*` events canceled in `app/boot.ts`, `touch-action` on the root).
@@ -394,7 +413,8 @@ Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `prac
   action button live in a screen-space layer (R13). Label font is loaded before metrics (R14).
 - Practice: no PassageBar; `views/practice` footer holds Speed on the start side, the hand
   toggles + play in the middle, and a Menu button on the end side (an anchored popover,
-  `FooterMenu.tsx`, with Note names, Play through and Show keys, U76); a Repeat panel (`RepeatPanel.tsx`:
+  `FooterMenu.tsx`, with Note names, Play through and Show keys, U76; the shell is `FooterBar` and
+  `FooterMenuPopover`, which Study's footer shares, U90); a Repeat panel (`RepeatPanel.tsx`:
   passage selector `LoopSteppers`, goal popover or phone sheet `RepeatOptions`, Exit repeat) floats over
   the Stage in Repeat mode, or has its own folding row under the overview on an upright phone (U12–U14, U89).
   `render/keyboard` draws all 88 keys (U15). `app/session/output.ts` resolves Auto (S4).
@@ -417,9 +437,21 @@ Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `prac
   within the 120 ms grace fast-forwards the transport (P9, E12). In Repeat mode a seek before
   the loop sets up a lead-in on one transport that hands over to the scored attempt at the loop
   start (U38, `SessionUi.leadIn`). Completed scored records carry per-group outcomes (E15) that
-  `app/session/corrections.ts` turns into `StripView.setCorrections` marks (U39). While nothing
+  `app/session/corrections.ts` turns into `StripView.setCorrections` marks (U39); a wrong key
+  pressed with a chord (within `CHORD_SLIP_MS`, also after a pass's final chord) is that chord's,
+  and `app/session/mistakes.ts` finds the same wrong key at the same group three passes running
+  (`AttemptSummary.repeatedMistakes`, P24; the result card words the first with
+  `repeatedMistakeLine` on its note line, U97). While nothing
   plays the session previews held keys against the current group (U37). Strip extras:
   `wrapTo` (loop wrap pan), `setEarlyMarker` (amber tint), the cursor bar bounded to the staves.
+  The review after a completed pass (U97): while `lastResult` shows, the session (from its frame,
+  never the input path) calls the optional `StripSink.setReview(true)`; `StripView` blends its
+  playing frame into a review frame (`render/strip/review.ts`: the whole loop beside the fixed
+  signatures, never above the playing zoom nor below 0.6, above the result card's height from
+  `setReviewInset`) frame by frame on transforms only, holds the music still and moves the cursor
+  over it; `setReview(false)` blends back to the exact playing frame. The result card
+  (`AttemptResult` in `views/practice/Banners.tsx`) docks at the bottom of the stage and
+  `views/practice/reviewInset.ts` hands its height to the strip.
   Theme tokens in `src/ui/global.css`: a four-step surface ramp (`--bg` / `--bg-elevated` /
   `--bg-sunken` / `--bg-raised`) that steps lighter with elevation in dark mode, and the accent
   as text (`--accent`) versus fill (`--accent-fill` + `--accent-fg`) (A12, A17, Olive U49).

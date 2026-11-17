@@ -167,7 +167,7 @@ test.describe('practice assistance and repeat', () => {
 
     const card = page.getByTestId('attempt-result')
     await expect(card).toBeVisible()
-    await expect(card).toContainText('No wrong notes')
+    await expect(card).not.toContainText('wrong note') // U97: no "No wrong notes" line; the headline says it
     await expect(page.getByText('Release the keys to begin.')).toBeVisible()
     await expect(page.getByTestId('ready')).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Again' })).toHaveCount(0) // Repeat restarts by itself
@@ -255,21 +255,23 @@ test.describe('practice assistance and repeat', () => {
 
 test.describe('practice without a piano', () => {
   // No fake Web MIDI here: headless browsers have none, like a device with no piano.
-  test('Listen plays through this device (Auto, S4)', async ({ page }) => {
+  test('Listen plays through this device (Auto, S4); the hands stay available for the microphone (P22)', async ({
+    page,
+  }) => {
     const samples: string[] = []
     page.on('request', (r) => {
       if (r.url().includes('/samples/')) samples.push(r.url())
     })
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
     await openSeededPractice(page)
-    // Without a piano both hands are off and unavailable (U27): Listen is the only choice, and a
-    // tap on a hand explains why (`force`: Playwright treats aria-disabled as disabled).
+    // Without a piano a hand plays through the microphone (P22): the hands stay selectable and
+    // the main button reads Start. Both hands off is Listen, as ever.
     const left = page.getByRole('button', { name: 'Left hand' })
-    await expect(left).toHaveAttribute('aria-pressed', 'false')
-    await expect(left).toHaveAttribute('aria-disabled', 'true')
-    await expect(page.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-disabled', 'true')
-    await left.click({ force: true })
-    await expect(page.getByText(/Connect a piano to play a hand yourself/)).toBeVisible()
+    await expect(left).toHaveAttribute('aria-pressed', 'true')
+    await expect(left).not.toHaveAttribute('aria-disabled', 'true')
+    await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeEnabled()
+    await left.click()
+    await page.getByRole('button', { name: 'Right hand' }).click()
     const listen = page.getByRole('button', { name: 'Listen', exact: true })
     await expect(listen).toBeEnabled()
     expect(samples).toEqual([]) // nothing is fetched before the gesture
@@ -279,10 +281,27 @@ test.describe('practice without a piano', () => {
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
   })
+
+  test('without a microphone either, the hands are off and unavailable: Listen (U27)', async ({ page }) => {
+    // A browser that cannot open a microphone (no getUserMedia).
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true })
+    })
+    await seedPiece(page, { route: DEFAULT_SETTINGS.route })
+    await openSeededPractice(page)
+    // A tap on a hand explains why (`force`: Playwright treats aria-disabled as disabled).
+    const left = page.getByRole('button', { name: 'Left hand' })
+    await expect(left).toHaveAttribute('aria-pressed', 'false')
+    await expect(left).toHaveAttribute('aria-disabled', 'true')
+    await expect(page.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-disabled', 'true')
+    await left.click({ force: true })
+    await expect(page.getByText(/Connect a piano to play a hand yourself/)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Listen', exact: true })).toBeEnabled()
+  })
 })
 
-test.describe('browsing while playing (U41)', () => {
-  test('scrolling the score during an attempt stops it and records nothing', async ({ page }) => {
+test.describe('browsing while playing (U41, U95)', () => {
+  test('scrolling the score during an attempt discards it, holds, and plays on at the release', async ({ page }) => {
     await installFakeMidi(page)
     await seedPiece(page)
     await openSeededPractice(page)
@@ -297,10 +316,14 @@ test.describe('browsing while playing (U41)', () => {
     await page.mouse.move(box.x + box.width * 0.5, y)
     await page.mouse.down()
     await page.mouse.move(box.x + box.width * 0.8, y, { steps: 8 })
-    await page.mouse.up()
+    // Held while the button is down: the main button still reads Pause.
     await expect(strip).toHaveClass(/pn-browsing/)
-    // The attempt stopped: Start is offered again, and nothing of it reaches storage.
-    await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+    await page.mouse.up()
+    // Released: playback goes on from the note under the cursor line and follows it again; the
+    // discarded attempt never reaches storage.
+    await expect(strip).not.toHaveClass(/pn-browsing/)
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
     await page.waitForTimeout(1500)
     expect(await idbAll(page, 'attempts')).toHaveLength(0)
   })

@@ -157,80 +157,125 @@ test('a tablet held upright has the footer it has on its side: one row', async (
 })
 
 /**
- * A phone-size screen (U80) has one top bar instead of the header and footer, and nothing in it
- * collapses: Start / Pause and (on its side) the overview live there. The other controls dim.
+ * A phone-size screen (U80) has one top bar instead of the header and footer. In focus mode the
+ * whole bar slides up, fades and its row collapses like the tablet header (U93), the overview with
+ * it on its side; the score takes the height, and a press on the score brings the bar back.
  */
-for (const size of [
-  { name: 'phone upright', width: 390, height: 844, sideways: false },
-  { name: 'phone on its side', width: 844, height: 390, sideways: true },
-]) {
-  test(`${size.name}: the top bar stays while playing, the score keeps its height, the menu holds the tools`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: size.width, height: size.height })
-    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
-    await open(page)
-    await expect(screen(page)).toHaveAttribute('data-compact', 'true')
-    await expect(page.locator('footer')).toHaveCount(0)
-    await expect(header(page)).toHaveCount(0)
-    const bar = page.getByTestId('practice-bar')
-    for (const name of ['Back to Library', 'Left hand', 'Start', 'Right hand', 'Menu']) {
-      const box = (await bar.getByRole('button', { name, exact: true }).boundingBox())!
-      expect(box, name).not.toBeNull()
-      // The hands are drawn at 40 px with a 44 px hit area around them (a pseudo-element).
-      expect(Math.min(box.width, box.height), name).toBeGreaterThanOrEqual(name.endsWith('hand') ? 40 : 44)
-    }
-    const overview = page.getByRole('slider', { name: 'Piece overview' })
-    await expect(overview).toBeVisible()
-    if (size.sideways) {
-      // The overview sits in the bar, in the title's place; no keyboard guide.
-      await expect(bar.getByRole('slider', { name: 'Piece overview' })).toBeVisible()
-      await expect(page.getByTestId('guide-slot')).toHaveAttribute('data-open', 'false')
-    }
-    const stageBefore = await height(stage(page))
-    expect(stageBefore).toBeGreaterThanOrEqual(size.height - 150)
-    const playBefore = (await page.getByRole('button', { name: 'Start', exact: true }).boundingBox())!
+test.describe('phone top bar', () => {
+  test.use({ hasTouch: true })
 
-    await page.getByRole('button', { name: 'Start', exact: true }).click()
-    await expect(screen(page)).toHaveAttribute('data-recede', 'true')
-    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
-    expect(Math.abs((await height(stage(page))) - stageBefore)).toBeLessThan(2)
-    const pause = (await page.getByRole('button', { name: 'Pause', exact: true }).boundingBox())!
-    expect(Math.abs(pause.y - playBefore.y)).toBeLessThan(2)
-    await expect(overview).toBeVisible()
-    await expect(bar.getByRole('button', { name: 'Menu', exact: true })).toHaveCSS('opacity', '0.12')
+  for (const size of [
+    { name: 'phone upright', width: 393, height: 852, sideways: false, reducedMotion: 'reduce' },
+    { name: 'phone on its side', width: 852, height: 360, sideways: true, reducedMotion: 'no-preference' },
+  ] as const) {
+    test(`${size.name}: focus mode hides the top bar, the score takes its height, a tap on the score brings it back`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: size.width, height: size.height })
+      await page.emulateMedia({ colorScheme: 'dark', reducedMotion: size.reducedMotion })
+      await open(page)
+      await expect(screen(page)).toHaveAttribute('data-compact', 'true')
+      await expect(page.locator('footer')).toHaveCount(0)
+      await expect(header(page)).toHaveCount(0)
+      const slot = page.getByTestId('practice-bar-slot')
+      const bar = page.getByTestId('practice-bar')
+      for (const name of ['Back to Library', 'Left hand', 'Start', 'Right hand', 'Menu']) {
+        const box = (await bar.getByRole('button', { name, exact: true }).boundingBox())!
+        expect(box, name).not.toBeNull()
+        // The hands are drawn at 40 px with a 44 px hit area around them (a pseudo-element).
+        expect(Math.min(box.width, box.height), name).toBeGreaterThanOrEqual(name.endsWith('hand') ? 40 : 44)
+      }
+      const overview = page.getByRole('slider', { name: 'Piece overview' })
+      await expect(overview).toBeVisible()
+      if (size.sideways) {
+        // The overview sits in the bar, in the title's place; no keyboard guide.
+        await expect(bar.getByRole('slider', { name: 'Piece overview' })).toBeVisible()
+        await expect(page.getByTestId('guide-slot')).toHaveAttribute('data-open', 'false')
+      }
+      const score = page.locator(size.sideways ? '.pn-strip' : '.pn-page')
+      await expect(score).toBeVisible()
+      const engraved = await score.elementHandle()
+      const barHeight = await height(slot)
+      expect(barHeight).toBeGreaterThanOrEqual(50)
+      const stageBefore = await height(stage(page))
+      expect(stageBefore).toBeGreaterThanOrEqual(size.height - 150)
 
-    // A tap on the bar brings the dimmed controls back; the menu sheet holds Speed and the rest.
-    await bar.click({ position: { x: 2, y: 2 } })
-    await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
-    await page.getByRole('button', { name: 'Pause', exact: true }).click()
-    await bar.getByRole('button', { name: 'Menu', exact: true }).click()
-    const menu = page.getByRole('dialog', { name: 'Menu' })
-    await expect(menu).toBeVisible()
-    await expect(menu.getByText('Speed')).toBeVisible()
-    for (const name of ['Play through', 'Keep time']) await expect(menu.getByRole('switch', { name })).toBeVisible()
-    await expect(menu.getByRole('switch', { name: 'Show keys' })).toHaveCount(size.sideways ? 0 : 1)
-    await expect(menu.getByRole('radiogroup', { name: 'Note names on the score' })).toBeVisible()
-    await menu.getByRole('button', { name: /Open speed options/ }).click()
-    const speed = page.getByRole('dialog', { name: 'Playback speed' })
-    await expect(speed).toBeVisible()
-    const input = speed.getByRole('textbox', { name: 'Custom speed' })
-    await input.click()
-    await input.fill('80%')
-    await expect(input).toHaveValue('80%')
-    const box = (await input.boundingBox())!
-    expect(box.x).toBeGreaterThanOrEqual(0)
-    expect(box.y).toBeGreaterThanOrEqual(0)
-    expect(box.x + box.width).toBeLessThanOrEqual(size.width)
-    expect(box.y + box.height).toBeLessThanOrEqual(size.height)
-    await input.press('Escape')
-    await expect(speed).toHaveCount(0)
-    await page.keyboard.press('Escape')
-    await expect(menu).toHaveCount(0)
-    // Paused mid-piece, the main button reads Resume.
-    await expect(bar.getByRole('button', { name: /^(Start|Resume)$/ })).toBeVisible()
-  })
-}
+      await page.getByRole('button', { name: 'Start', exact: true }).click()
+      await expect(screen(page)).toHaveAttribute('data-recede', 'true')
+      await expect.poll(() => height(slot)).toBeLessThan(1)
+      await expect.poll(() => height(stage(page))).toBeGreaterThan(stageBefore + barHeight - 2)
+      await expect(bar).toHaveCSS('opacity', '0')
+      expect(await bar.evaluate((el) => el.hasAttribute('inert'))).toBe(true)
+      // Upright the overview keeps its own row; on its side it went with the bar.
+      if (!size.sideways) await expect(overview).toBeVisible()
+      // The score was not engraved again: the stage only grew taller.
+      expect(await engraved!.evaluate((el) => el.isConnected)).toBe(true)
+
+      // A tap on the score brings the bar back and only that: it does not seek (U93), here on a
+      // point of bar 2 while the reading cursor waits in bar 1.
+      const position = page.locator('[aria-label="Piece overview"]')
+      await expect(position).toHaveAttribute('aria-valuetext', /^Bar 1 of 2/)
+      const svgBox = (await score.locator('svg').first().boundingBox())!
+      const stageBox = (await stage(page).boundingBox())!
+      const bar2 = () => ({
+        x: Math.round(svgBox.x + svgBox.width * 0.8 - stageBox.x),
+        y: Math.round(Math.min(svgBox.y + svgBox.height / 2, stageBox.y + stageBox.height - 10) - stageBox.y),
+      })
+      await stage(page).tap({ position: bar2() })
+      await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
+      await expect.poll(() => height(slot)).toBeGreaterThan(barHeight - 2)
+      await expect(bar).toHaveCSS('opacity', '1')
+      await expect(position).toHaveAttribute('aria-valuetext', /^Bar 1 of 2/)
+      // A mouse press anywhere on the score does too (the hidden bar holds Pause), without seeking.
+      await page.waitForTimeout(REVEAL_MS + 300)
+      await expect(screen(page)).toHaveAttribute('data-recede', 'true')
+      // The score moved up with the stage's top: measure again.
+      Object.assign(svgBox, (await score.locator('svg').first().boundingBox())!)
+      Object.assign(stageBox, (await stage(page).boundingBox())!)
+      await stage(page).click({ position: bar2() })
+      await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
+      await expect.poll(() => height(slot)).toBeGreaterThan(barHeight - 2)
+      await expect(position).toHaveAttribute('aria-valuetext', /^Bar 1 of 2/)
+      // With the bar showing, a tap seeks as before.
+      await expect.poll(() => height(stage(page))).toBeLessThan(stageBefore + 2)
+      Object.assign(svgBox, (await score.locator('svg').first().boundingBox())!)
+      Object.assign(stageBox, (await stage(page).boundingBox())!)
+      await stage(page).tap({ position: bar2() })
+      await expect(position).toHaveAttribute('aria-valuetext', /^Bar 2 of 2/)
+      await bar.getByRole('button', { name: 'Pause', exact: true }).click()
+      await expect(bar.getByRole('button', { name: /^(Start|Resume)$/ })).toBeVisible()
+      await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
+      expect(await bar.evaluate((el) => el.hasAttribute('inert'))).toBe(false)
+      await expect.poll(() => height(stage(page))).toBeLessThan(stageBefore + 2)
+      expect(await engraved!.evaluate((el) => el.isConnected)).toBe(true)
+
+      // The menu sheet holds Speed and the rest.
+      await bar.getByRole('button', { name: 'Menu', exact: true }).click()
+      const menu = page.getByRole('dialog', { name: 'Menu' })
+      await expect(menu).toBeVisible()
+      await expect(menu.getByText('Speed')).toBeVisible()
+      for (const name of ['Play through', 'Keep time']) await expect(menu.getByRole('switch', { name })).toBeVisible()
+      await expect(menu.getByRole('switch', { name: 'Show keys' })).toHaveCount(size.sideways ? 0 : 1)
+      await expect(menu.getByRole('radiogroup', { name: 'Note names on the score' })).toBeVisible()
+      await menu.getByRole('button', { name: /Open speed options/ }).click()
+      const speed = page.getByRole('dialog', { name: 'Playback speed' })
+      await expect(speed).toBeVisible()
+      const input = speed.getByRole('textbox', { name: 'Custom speed' })
+      await input.click()
+      await input.fill('80%')
+      await expect(input).toHaveValue('80%')
+      const box = (await input.boundingBox())!
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.y).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.width).toBeLessThanOrEqual(size.width)
+      expect(box.y + box.height).toBeLessThanOrEqual(size.height)
+      await input.press('Escape')
+      await expect(speed).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await expect(menu).toHaveCount(0)
+    })
+  }
+})
 
 for (const size of [
   { width: 1180, height: 820 },

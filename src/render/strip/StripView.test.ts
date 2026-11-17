@@ -9,7 +9,7 @@ import {
   type SegmentData,
 } from '../types'
 import { type Rational, rat } from '../../core/music/rational'
-import { StripView, type StripOptions } from './StripView'
+import { StripView, WHEEL_RELEASE_MS, type StripOptions } from './StripView'
 
 const MEASURE = 200
 const STAVES = [
@@ -568,6 +568,90 @@ describe('StripView passage selection', () => {
     v.flushNow()
     expect(browse).toEqual([true, false])
     expect(transformX(content)).toBe(210)
+  })
+
+  it.each(['pointerup', 'pointercancel'])('reports the release of a browse drag on %s (U95)', (type) => {
+    const events: string[] = []
+    const { v } = view(40, {
+      onBrowse: (b) => events.push(b ? 'browse' : 'return'),
+      onBrowseRelease: () => events.push('release'),
+    })
+    v.setBrowseEnabled(true)
+    const root = host.querySelector('.pn-strip')!
+    const p = (t: string, id: number, x: number) =>
+      root.dispatchEvent(new PointerEvent(t, { pointerId: id, clientX: x, clientY: 150, bubbles: true }))
+    // A tap browses nothing: no release.
+    p('pointerdown', 2, 600)
+    p('pointerup', 2, 600)
+    expect(events).toEqual([])
+    p('pointerdown', 2, 600)
+    p('pointermove', 2, 300)
+    expect(events).toEqual(['browse'])
+    // A second finger joins (a pinch): the release waits for the last finger.
+    p('pointerdown', 3, 700)
+    p(type, 2, 300)
+    expect(events).toEqual(['browse'])
+    p(type, 3, 700)
+    expect(events).toEqual(['browse', 'release'])
+    expect(v.isBrowsing()).toBe(true)
+  })
+
+  it('reports the release of a wheel browse after a short idle (U95)', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let releases = 0
+    const { v } = view(40, { onBrowseRelease: () => releases++ })
+    v.setBrowseEnabled(true)
+    const root = host.querySelector('.pn-strip')!
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 100, bubbles: true }))
+    vi.advanceTimersByTime(WHEEL_RELEASE_MS - 50)
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 100, bubbles: true }))
+    vi.advanceTimersByTime(WHEEL_RELEASE_MS - 50)
+    expect(releases).toBe(0)
+    vi.advanceTimersByTime(50)
+    expect(releases).toBe(1)
+    expect(v.isBrowsing()).toBe(true)
+  })
+
+  it('cannot browse back past the first cursor stop by drag, wheel or edge scroll (U96)', () => {
+    const { v } = view(40)
+    v.setBrowseEnabled(true)
+    const root = host.querySelector('.pn-strip')!
+    const content = host.querySelector('.pn-content')!
+    // Forward a little, then drag far to the right: the view stops where the piece starts.
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 100, bubbles: true }))
+    v.flushNow()
+    expect(transformX(content)).toBe(210 - 100)
+    const p = (t: string, x: number) =>
+      root.dispatchEvent(new PointerEvent(t, { pointerId: 2, clientX: x, clientY: 150, bubbles: true }))
+    p('pointerdown', 100)
+    p('pointermove', 800)
+    p('pointermove', 880)
+    p('pointerup', 880)
+    v.flushNow()
+    expect(transformX(content)).toBe(210)
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: -500, bubbles: true }))
+    v.flushNow()
+    expect(transformX(content)).toBe(210)
+  })
+
+  it('applies the same limit at another zoom and when zooming while browsing (U96)', () => {
+    const { v } = view(40)
+    v.setBrowseEnabled(true)
+    v.setZoom(1.5)
+    v.flushNow()
+    const root = host.querySelector('.pn-strip')!
+    const content = host.querySelector('.pn-content')!
+    const start = transformX(content)
+    expect(start + 90 * 1.5).toBeCloseTo(300)
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 400, bubbles: true }))
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: -2000, bubbles: true }))
+    v.flushNow()
+    expect(transformX(content)).toBeCloseTo(start)
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 400, bubbles: true }))
+    v.setZoom(1)
+    root.dispatchEvent(new WheelEvent('wheel', { deltaX: -5000, bubbles: true }))
+    v.flushNow()
+    expect(transformX(content)).toBeCloseTo(210)
   })
 
   it('resolves the exact onset under the rendered cursor while browsing at a zoom', () => {
@@ -1458,6 +1542,29 @@ describe('StripView loop handle drag', () => {
     expect(changes).toEqual([{ fromOcc: 2, toOcc: 5 }])
   })
 
+  it('a handle drag that scrolled the music browses, commits the loop, then reports the release (U95)', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb))
+    vi.stubGlobal('cancelAnimationFrame', () => undefined)
+    const events: string[] = []
+    const { v, layout } = view(40, {
+      onLoopChange: () => events.push('loop'),
+      onBrowse: (b) => events.push(b ? 'browse' : 'return'),
+      onBrowseRelease: () => events.push('release'),
+    })
+    v.setBrowseEnabled(true)
+    v.setLoop({ fromOcc: 2, toOcc: 4 })
+    v.flushNow()
+    const [, end] = [...host.querySelectorAll('.pn-handle')] as HTMLElement[]
+    pointer(end!, 'pointerdown', client(layout.occurrences[4]!.x1))
+    pointer(end!, 'pointermove', client(880))
+    for (let i = 0; i < 20; i++) frames.splice(0).forEach((cb) => cb(0))
+    expect(events).toEqual([])
+    pointer(end!, 'pointerup', client(880))
+    expect(events).toEqual(['browse', 'loop', 'release'])
+    vi.unstubAllGlobals()
+  })
+
   it('commits once when the capture is lost after the release', () => {
     const changes: unknown[] = []
     const { v, layout } = view(40, { onLoopChange: (r) => changes.push(r) })
@@ -1510,5 +1617,239 @@ describe('StripView loop handle drag', () => {
     expect(end!.classList.contains('pn-grab')).toBe(true)
     pointer(end!, 'pointerup', client(layout.occurrences[6]!.x1), 7)
     expect(changes).toEqual([{ fromOcc: 2, toOcc: 6 }])
+  })
+})
+
+describe('StripView review after a completed pass (U97)', () => {
+  const scaleOf = (el: Element): number => Number(/scale\(([\d.]+)\)/.exec((el as HTMLElement).style.transform)?.[1])
+  const content = (): HTMLElement => host.querySelector<HTMLElement>('.pn-content')!
+  const cursor = (): HTMLElement => host.querySelector<HTMLElement>('.pn-cursor')!
+  const root = (): HTMLElement => host.querySelector<HTMLElement>('.pn-strip')!
+  let now = 0
+  beforeEach(() => {
+    now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+  })
+
+  /** Bars 10–13 (800 px) looped, the cursor at the loop start, zoom 1. */
+  function looped(opts: StripOptions = {}, range = { fromOcc: 10, toOcc: 13 }) {
+    const made = view(40, opts)
+    made.v.setLoop(range)
+    made.v.setCursor(range.fromOcc, { smooth: false })
+    made.v.flushNow()
+    return made
+  }
+
+  /** Screen x of layout x as last applied. */
+  const screenX = (x: number): number => transformX(content()) + x * scaleOf(content())
+
+  it('zooms out over REVIEW_OUT_MS to fit the whole loop beside the signatures, centered', () => {
+    const { v, layout } = looped()
+    expect(scaleOf(content())).toBe(1)
+    v.setReview(true)
+    v.flushNow() // first frame: the animation starts from the playing frame
+    expect(scaleOf(content())).toBe(1)
+    expect(root().classList.contains('pn-review')).toBe(true)
+    // Both ends are mounted before anything moves: the whole loop is there already.
+    for (const n of [20, 27]) expect(host.querySelector(`[data-n="${n}"]`)).not.toBeNull()
+    now += 300
+    v.flushNow()
+    const mid = scaleOf(content())
+    expect(mid).toBeLessThan(1)
+    expect(root().classList.contains('pn-instant')).toBe(true) // driven per frame, no CSS transition
+    now += 400
+    v.flushNow()
+    // Room: 900 − 2 × 24 px, beside the 60 + 32 px signatures: 852 / (92 + 800).
+    const s = 852 / 892
+    expect(scaleOf(content())).toBeCloseTo(s, 3)
+    expect(mid).toBeGreaterThan(s)
+    const x0 = screenX(layout.occurrences[10]!.x0)
+    const x1 = screenX(layout.occurrences[13]!.x1)
+    expect(x0).toBeGreaterThanOrEqual(24 + 92 * s - 0.5)
+    expect(x1).toBeLessThanOrEqual(876 + 0.5)
+    // The cursor sits on the loop start's note in the review, not at the fixed anchor.
+    expect(transformX(cursor())).toBeCloseTo(screenX(layout.occurrences[10]!.x0 + 40), 0)
+    // The zoom preference is untouched; the cursor width follows once landed.
+    expect(v.zoom()).toBe(1)
+    expect(root().style.getPropertyValue('--pn-zoom')).toBe(String(scaleOf(content())))
+  })
+
+  it('holds the music still while the cursor moves over it, then zooms back to the exact playing frame', () => {
+    const { v, layout } = looped()
+    v.setReview(true)
+    v.flushNow()
+    now += 1000
+    v.flushNow()
+    const still = content().style.transform
+    v.setCursor(11.5, { smooth: false })
+    v.flushNow()
+    expect(content().style.transform).toBe(still)
+    expect(transformX(cursor())).toBeCloseTo(screenX(layout.occurrences[11]!.x0 + 120), 0)
+    // The wrap back to the loop start only moves the cursor (no pan).
+    v.wrapTo(10)
+    v.flushNow()
+    expect(content().style.transform).toBe(still)
+    expect(root().classList.contains('pn-wrap')).toBe(false)
+    // The next pass begins: back in, over REVIEW_IN_MS, to zoom 1 with the cursor at the anchor.
+    v.setReview(false)
+    v.flushNow()
+    now += 200
+    v.flushNow()
+    expect(scaleOf(content())).toBeGreaterThan(852 / 892)
+    expect(scaleOf(content())).toBeLessThan(1)
+    // The music moves on meanwhile: the blend keeps the cursor note under the cursor line.
+    v.setCursor(10.25, { smooth: false })
+    v.flushNow()
+    const x = layout.occurrences[10]!.x0 + 40 + 0.25 * 2 * 80
+    expect(transformX(cursor())).toBeCloseTo(screenX(x), 0)
+    now += 400
+    v.flushNow()
+    expect(scaleOf(content())).toBe(1)
+    expect(transformX(cursor())).toBe(300)
+    expect(transformX(content()) + x).toBeCloseTo(300)
+    expect(root().classList.contains('pn-review')).toBe(false)
+    expect(root().style.getPropertyValue('--pn-zoom')).toBe('1')
+  })
+
+  it('stops at the review floor for a long loop and shows it from its start', () => {
+    const { v, layout } = looped({}, { fromOcc: 2, toOcc: 30 })
+    v.setReview(true)
+    v.flushNow()
+    now += 1000
+    v.flushNow()
+    expect(scaleOf(content())).toBe(0.6)
+    expect(screenX(layout.occurrences[2]!.x0)).toBeCloseTo(24 + 92 * 0.6)
+  })
+
+  it('never zooms in past the playing zoom for a short loop', () => {
+    const { v, layout } = looped({ initialZoom: 0.8 }, { fromOcc: 10, toOcc: 10 })
+    v.setReview(true)
+    v.flushNow()
+    now += 1000
+    v.flushNow()
+    expect(scaleOf(content())).toBe(0.8)
+    // Centered in the room right of the signatures.
+    const mid = screenX((layout.occurrences[10]!.x0 + layout.occurrences[10]!.x1) / 2)
+    expect(mid).toBeCloseTo((24 + 92 * 0.8 + 876) / 2)
+  })
+
+  it('keeps the bottom inset free for the result card', () => {
+    const { v } = looped()
+    v.setReviewInset(120)
+    v.setReview(true)
+    v.flushNow()
+    now += 1000
+    v.flushNow()
+    const s = scaleOf(content())
+    // The staves (100–240, layout top 60) end above 300 − 120 px.
+    const ty = Number(/translate3d\(-?[\d.]+px, (-?[\d.]+)px/.exec(content().style.transform)?.[1])
+    expect(ty + (240 - 60) * s).toBeLessThanOrEqual(180)
+    // A top inset (the Repeat panel) too: the staves sit between both.
+    v.setReviewInset(100, 60)
+    v.flushNow()
+    const s2 = scaleOf(content())
+    const ty2 = Number(/translate3d\(-?[\d.]+px, (-?[\d.]+)px/.exec(content().style.transform)?.[1])
+    expect(ty2 + (100 - 60) * s2).toBeGreaterThanOrEqual(60)
+    expect(ty2 + (240 - 60) * s2).toBeLessThanOrEqual(200)
+  })
+
+  it('switches at once with reduced motion', () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('reduce'), addEventListener() {} }))
+    const { v } = looped()
+    v.setReview(true)
+    v.flushNow()
+    expect(scaleOf(content())).toBeCloseTo(852 / 892, 3)
+    v.setReview(false)
+    v.flushNow()
+    expect(scaleOf(content())).toBe(1)
+    vi.unstubAllGlobals()
+  })
+
+  it('pans and pinches the review only: nothing browsed, the zoom preference kept', () => {
+    const browse: boolean[] = []
+    const zooms: number[] = []
+    const { v } = looped({ onBrowse: (b) => browse.push(b), onZoomChange: (z) => zooms.push(z) })
+    v.setBrowseEnabled(true)
+    v.setReview(true)
+    v.flushNow()
+    now += 1000
+    v.flushNow()
+    const before = transformX(content())
+    const ev = (type: string, id: number, x: number) =>
+      root().dispatchEvent(new PointerEvent(type, { pointerId: id, clientX: x, clientY: 150, bubbles: true }))
+    ev('pointerdown', 1, 600)
+    ev('pointermove', 1, 500)
+    ev('pointerup', 1, 500)
+    v.flushNow()
+    expect(transformX(content())).toBeCloseTo(before - 100)
+    expect(browse).toEqual([])
+    ev('pointerdown', 1, 400)
+    ev('pointerdown', 2, 500)
+    ev('pointermove', 2, 400 + 50)
+    ev('pointerup', 2, 450)
+    ev('pointerup', 1, 400)
+    v.flushNow()
+    // Halved, held at the strip's minimum zoom.
+    expect(scaleOf(content())).toBe(0.5)
+    expect(zooms).toEqual([])
+    expect(v.zoom()).toBe(1)
+    // Back in: the playing zoom from before.
+    v.setReview(false)
+    v.flushNow()
+    now += 1000
+    v.flushNow()
+    expect(scaleOf(content())).toBe(1)
+    expect(transformX(cursor())).toBe(300)
+  })
+
+  it('a gesture during the zoom lands it at once; a re-attached strip starts in the review', () => {
+    const { v } = looped()
+    v.setReview(true)
+    v.flushNow()
+    now += 100
+    v.flushNow()
+    expect(scaleOf(content())).toBeGreaterThan(0.96)
+    root().dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 600, clientY: 150, bubbles: true }))
+    v.flushNow()
+    expect(scaleOf(content())).toBeCloseTo(852 / 892, 3)
+    root().dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientX: 600, clientY: 150, bubbles: true }))
+    // A new strip told to review before its first frame shows the end state.
+    const layout = testLayout(40)
+    const fresh = new StripView(host, layout, {})
+    views.push(fresh)
+    fresh.setLoop({ fromOcc: 10, toOcc: 13 })
+    fresh.setCursor(10, { smooth: false })
+    fresh.setReview(true)
+    fresh.flushNow()
+    const el = host.querySelectorAll<HTMLElement>('.pn-content')[1]!
+    expect(scaleOf(el)).toBeCloseTo(852 / 892, 3)
+  })
+
+  it('refits on a resize and drops the review frame without a loop', () => {
+    let observe: (() => void) | null = null
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          observe = cb
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    const { v } = looped()
+    v.setReview(true)
+    v.flushNow()
+    now += 1000
+    v.flushNow()
+    const rect = host.getBoundingClientRect()
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({ ...rect, width: 600, right: 600 })
+    observe!()
+    v.flushNow()
+    expect(scaleOf(content())).toBeCloseTo(552 / 892, 3)
+    v.setLoop(null)
+    v.flushNow()
+    expect(scaleOf(content())).toBe(1)
+    vi.unstubAllGlobals()
   })
 })

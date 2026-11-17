@@ -616,8 +616,9 @@ describe('Strict transport: a slip on a fast run (look-ahead within the toleranc
     const s = session(RUN, 100, {}, 800)
     s.go()
     s.d.tap(RUN_PITCHES[0]!)
-    s.at(START + 20)
-    // Current group 1; group 3 is 130 ms away, beyond the tolerance.
+    s.at(START + 30)
+    // Current group 1 (past half the gap, so not a slip of group 0, P24); group 3 is 120 ms away,
+    // beyond the tolerance.
     s.d.tap(RUN_PITCHES[3]!)
     expect(s.d.of('wrong').map((w) => [w.group, w.pitch, w.reason])).toEqual([[1, RUN_PITCHES[3], 'pitch']])
     s.at(START + 60)

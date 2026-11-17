@@ -155,13 +155,16 @@ describe('Play-through mode', () => {
     expect(h.strip.targets).toEqual([2])
   })
 
-  it('browsing while playing pauses', async () => {
+  it('browsing while playing holds until the release (U95)', async () => {
     const h = harness(melody)
     await playThrough(h)
     h.session.browseStarted()
     h.frames.flush()
-    expect(h.session.ui.get().playing).toBe(false)
-    expect(h.session.ui.get().activity).toBe('playing')
+    // Sound holds, the main button still reads Pause.
+    expect(h.session.ui.get()).toMatchObject({ playing: true, phase: 'paused', activity: 'playing' })
+    await h.session.browseReleased()
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ playing: true, phase: 'running' })
   })
 
   it('a seek while playing keeps playing from the first onset at or after it', async () => {

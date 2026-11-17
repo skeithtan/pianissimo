@@ -47,8 +47,12 @@ test.describe('note-level practice', () => {
         await page.mouse.move(x, y)
         await page.mouse.down()
         await page.mouse.move(x - 70, y, { steps: 5 })
-        await page.mouse.up()
         await expect(page.locator('.pn-strip')).toHaveClass(/pn-browsing/)
+        await page.mouse.up()
+        // The release plays on from the note under the cursor line (U95); then a Pause stops it.
+        await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-browsing/)
+        await expect(page.locator('.pn-strip')).toHaveClass(/pn-loop-locked/)
+        await page.getByRole('button', { name: 'Pause', exact: true }).click()
       }
       await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
       await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-loop-locked/)

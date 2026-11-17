@@ -57,7 +57,7 @@ const twoHands = buildScore({
 })
 
 describe('PracticeSession: reading (both hands)', () => {
-  it('browsing while reading pauses at the same note and records nothing of that pass (U41)', async () => {
+  it('browsing while reading holds at the same note, records nothing of that pass and plays on at the release (U41, U95)', async () => {
     const h = harness(melody)
     await h.session.start()
     h.play(60, 62)
@@ -68,8 +68,13 @@ describe('PracticeSession: reading (both hands)', () => {
     h.frames.flush()
     expect(h.session.engine.state.phase).toBe('paused')
     expect(h.session.engine.state.groupIndex).toBe(group)
-    expect(h.session.ui.get().playing).toBe(false)
+    // The hold reads Pause: the release continues.
+    expect(h.session.ui.get().playing).toBe(true)
     expect(h.attempts).toHaveLength(0)
+    await h.session.browseReleased()
+    h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('running')
+    expect(h.session.engine.state.groupIndex).toBe(group)
   })
 
   it('starts paused, reads from the first group on Start and follows correct presses', async () => {
@@ -509,6 +514,7 @@ describe('PracticeSession: accidental correction', () => {
     const h = harness(twoHands, { hands: 'right', range: { fromOcc: 0, toOcc: 0 } })
     await h.session.start()
     h.tap(60)
+    h.step(200) // not with the C (a chord slip, P24)
     h.tap(59) // B for D: unrelated
     expect(h.session.feedback.get().cue).toBeNull()
     h.tap(61) // C♯ / D♭ for D: an accidental slip
@@ -552,7 +558,7 @@ describe('PracticeSession: scored attempts', () => {
     expect(h.session.ui.get().lastResult).toMatchObject({ passed: true, wrongAttacks: 0, streak: 1 })
   })
 
-  it('browsing while an attempt runs stops it and records nothing of it (U41)', async () => {
+  it('browsing while an attempt runs stops it and records nothing of it (U41, U95)', async () => {
     const h = harness(melody, { range: { fromOcc: 0, toOcc: 0 } })
     await h.session.start()
     h.frames.flush()
@@ -564,7 +570,8 @@ describe('PracticeSession: scored attempts', () => {
     h.session.browseStarted()
     h.frames.flush()
     expect(h.session.engine.state.phase).toBe('interrupted')
-    expect(h.session.ui.get().playing).toBe(false)
+    // Held until the release (U95), or a Start as here.
+    expect(h.session.ui.get().playing).toBe(true)
     expect(h.attempts).toHaveLength(0)
     // The next attempt starts at the loop start and is recorded as usual.
     await h.session.start()
@@ -583,14 +590,19 @@ describe('PracticeSession: scored attempts', () => {
     expect(h.attempts[0]!.completion).toBe('completed')
   })
 
-  it('browsing at Ready changes nothing (U41)', async () => {
+  it('browsing at Ready holds the attempt and the release prepares it again (U95)', async () => {
     const h = harness(melody, { range: { fromOcc: 0, toOcc: 0 } })
     await h.session.start()
     h.frames.flush()
     expect(h.session.engine.state.phase).toBe('ready')
     h.session.browseStarted()
     h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('interrupted')
+    expect(h.session.ui.get().playing).toBe(true)
+    await h.session.browseReleased()
+    h.frames.flush()
     expect(h.session.engine.state.phase).toBe('ready')
+    expect(h.attempts).toHaveLength(0)
   })
 
   it('Repeat resets to Ready only after the keys are released', async () => {
@@ -1992,6 +2004,7 @@ describe('PracticeSession: teacher corrections after an attempt', () => {
     await h.session.start()
     h.frames.flush()
     h.play(60)
+    h.step(200)
     h.tap(61)
     h.play(62)
     h.step(1600)
@@ -2088,5 +2101,91 @@ describe('PracticeSession: teacher corrections after an attempt', () => {
     expect(fresh.corrections).toHaveLength(2)
     h.session.dispose()
     expect(fresh.corrections).toEqual([])
+  })
+})
+
+describe('PracticeSession: the review after a completed pass (U97)', () => {
+  const timed: ScoreModel = buildScore({
+    notes: [
+      { at: 0, midi: 60 },
+      { at: 1, midi: 62 },
+      { at: 2, midi: 64 },
+      { at: 3, midi: 65 },
+      { at: 4, midi: 67 },
+      { at: 5, midi: 69 },
+      { at: 6, midi: 71 },
+      { at: 7, midi: 72 },
+    ],
+    bars: 2,
+    tempo: { bpm: 60 },
+  })
+
+  async function pass(h: Harness, wrong = false): Promise<void> {
+    await h.session.start()
+    h.frames.flush()
+    h.play(60)
+    if (wrong) h.tap(61)
+    h.play(62, 64, 65)
+    h.step(1000) // the notated tail finishes; Repeat prepares the next pass
+  }
+
+  it('reviews while the result shows and zooms back in at the first press of the next pass', async () => {
+    const h = harness(timed, { range: { fromOcc: 0, toOcc: 0 } })
+    expect(h.strip.reviewing).toBe(false)
+    await pass(h, true)
+    expect(h.session.ui.get().lastResult).not.toBeNull()
+    expect(h.strip.reviewing).toBe(true)
+    // Ready for the next pass, the review holds (as the marks do).
+    expect(h.session.engine.state.phase).toBe('ready')
+    h.step(2000)
+    expect(h.strip.reviews.filter((on) => on)).toHaveLength(1)
+    // The first press is matched at once and the review ends in the same frame.
+    h.play(60)
+    expect(h.session.engine.state.phase).toBe('running')
+    expect(h.session.engine.state.groupIndex).toBe(1)
+    expect(h.strip.reviewing).toBe(false)
+    expect(h.strip.reviews).toEqual([false, true, false])
+  })
+
+  it('never asks the strip from the input path: a key press only records, the frame tells the strip', async () => {
+    const h = harness(timed, { range: { fromOcc: 0, toOcc: 0 } })
+    await pass(h)
+    expect(h.strip.reviewing).toBe(true)
+    h.midi.on(60, h.clock.now)
+    // Matched before any frame ran; the strip still reviews until the frame.
+    expect(h.session.engine.state.phase).toBe('running')
+    expect(h.strip.reviewing).toBe(true)
+    h.frames.flush()
+    expect(h.strip.reviewing).toBe(false)
+  })
+
+  it('ends with Hide, Start, Restart, a seek, a loop change and leaving Repeat', async () => {
+    const cases: [string, (h: Harness) => unknown][] = [
+      ['hide', (h) => h.session.dismissResult()],
+      ['start', (h) => h.session.start()],
+      ['restart', (h) => h.session.restart()],
+      ['seek', (h) => h.session.seek(1)],
+      ['loop', (h) => h.session.setSelection({ range: { fromOcc: 0, toOcc: 1 } })],
+      ['exit', (h) => h.session.setSelection({ range: null })],
+    ]
+    for (const [name, act] of cases) {
+      const h = harness(timed, { range: { fromOcc: 0, toOcc: 0 } })
+      await pass(h)
+      expect(h.strip.reviewing, name).toBe(true)
+      await act(h)
+      h.frames.flush()
+      expect(h.strip.reviewing, name).toBe(false)
+    }
+  })
+
+  it('reviews after a clean pass too, and hands the review to a strip attached again', async () => {
+    const h = harness(timed, { range: { fromOcc: 0, toOcc: 0 } })
+    await pass(h)
+    expect(h.session.ui.get().lastResult?.passed).toBe(true)
+    expect(h.strip.reviewing).toBe(true)
+    const fresh = new FakeStrip()
+    h.session.layoutChanging()
+    h.session.attachStrip(fresh)
+    expect(fresh.reviews).toEqual([true])
   })
 })

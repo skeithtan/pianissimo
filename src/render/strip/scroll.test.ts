@@ -64,8 +64,8 @@ describe('scrollTranslate', () => {
   it('allows the first and final notes to reach the same fixed anchor', () => {
     expect(scrollTranslate({ ...base, cursorX: 50 })).toBe(250)
     expect(scrollTranslate({ ...base, cursorX: 9990 })).toBe(300 - 9990)
-    expect(clampTranslate(500, 10_000, 900, 1)).toBe(300)
-    expect(clampTranslate(500, 10_000, 900, 1, 0.5)).toBe(450)
+    expect(clampTranslate(500, 0, 10_000, 900, 1)).toBe(300)
+    expect(clampTranslate(500, 0, 10_000, 900, 1, 0.5)).toBe(450)
     expect(scrollTranslate({ ...base, contentWidth: 200, cursorX: 190 })).toBe(110)
   })
   it('respects zoom', () => {
@@ -96,5 +96,26 @@ describe('verticalTranslate', () => {
   it('centers the staves when zoomed beyond the viewport, clamped', () => {
     expect(verticalTranslate(layout, 300, 1)).toBe(-30)
     expect(verticalTranslate(layout, 300, 3)).toBe(Math.max(300 - 1200, 150 - 540))
+  })
+})
+
+describe('clampTranslate: the first cursor stop is the backward limit (U96)', () => {
+  it('never lets the cursor line pass the first stop, at any zoom', () => {
+    // Anchor 300 on a 900 px viewport; first stop at x = 90.
+    expect(clampTranslate(5000, 90, 10_000, 900, 1)).toBe(300 - 90)
+    expect(clampTranslate(5000, 90, 10_000, 900, 2)).toBe(300 - 180)
+    // At the limit exactly, and when already past it on the content side, nothing changes.
+    expect(clampTranslate(210, 90, 10_000, 900, 1)).toBe(210)
+    expect(clampTranslate(-1000, 90, 10_000, 900, 1)).toBe(-1000)
+  })
+  it('keeps the forward limit: the content right edge under the cursor line', () => {
+    expect(clampTranslate(-99_999, 90, 10_000, 900, 1)).toBe(300 - 10_000)
+  })
+  it('stays consistent when the content is shorter than the first stop', () => {
+    expect(clampTranslate(0, 90, 50, 900, 1)).toBe(210)
+  })
+  it('matches scrollTranslate at the start of the piece', () => {
+    const s = { cursorX: 90, contentWidth: 10_000, viewportWidth: 900, scale: 1.5 }
+    expect(clampTranslate(9999, 90, 10_000, 900, 1.5)).toBe(scrollTranslate(s))
   })
 })

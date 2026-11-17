@@ -3,7 +3,9 @@
  * plays through browser sound, the score shows as a page in portrait and a strip in landscape,
  * note names come on request, and nothing of practice is offered or recorded. On a phone-size
  * screen there is no footer (U74): Play and Menu are in the header and the other controls,
- * Show keys too, are in the untitled menu sheet. A tablet keeps the footer.
+ * Show keys too, are in the untitled menu sheet. A tablet has Practice's footer (U90): Speed, Go to
+ * the start, Play, Name the notes at the cursor and a Menu button whose popover ("Study menu")
+ * holds Note names, Metronome and Show keys.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
@@ -180,16 +182,39 @@ test.describe('Study on a phone on its side', () => {
 test.describe('Study on a tablet', () => {
   test.use({ viewport: { width: 820, height: 1180 }, hasTouch: true })
 
-  test('keeps the footer controls and Settings in the header: no menu', async ({ page }) => {
+  test("has Practice's footer with the Study menu, and Settings in the header (U90)", async ({ page }) => {
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
     await openStudy(page)
     await expect(page.locator('.pn-strip')).toBeVisible(COLD)
     await expect(screen(page)).not.toHaveAttribute('data-compact', 'true')
-    await expect(page.getByRole('button', { name: 'Menu', exact: true })).toHaveCount(0)
+    await expect(page.locator('header').getByRole('button', { name: 'Menu', exact: true })).toHaveCount(0)
     const footer = screen(page).locator('footer')
-    for (const name of ['Play', 'Go to the start', 'Name the notes at the cursor', 'Show keys'])
+    for (const name of ['Play', 'Go to the start', 'Name the notes at the cursor', 'Menu'])
       await expect(footer.getByRole('button', { name, exact: true })).toBeVisible()
-    await expect(footer.getByRole('radiogroup', { name: 'Note names on the score' })).toBeVisible()
+    await expect(footer.getByRole('button', { name: 'Faster by 5 percent' })).toBeVisible()
+    // One row: Speed, the three center buttons and Menu share a line.
+    const top = async (name: string) => (await footer.getByRole('button', { name, exact: true }).boundingBox())!
+    const play = await top('Play')
+    for (const name of ['Go to the start', 'Name the notes at the cursor', 'Menu']) {
+      const box = await top(name)
+      expect(Math.abs(box.y + box.height / 2 - (play.y + play.height / 2))).toBeLessThan(8)
+    }
+    await expect(footer.getByRole('radiogroup', { name: 'Note names on the score' })).toHaveCount(0)
+
+    await footer.getByRole('button', { name: 'Menu', exact: true }).click()
+    const studyMenu = page.getByRole('dialog', { name: 'Study menu' })
+    await expect(studyMenu).toBeVisible()
+    await expect(studyMenu.getByRole('radiogroup', { name: 'Note names on the score' })).toBeVisible()
+    await expect(studyMenu.getByRole('switch', { name: 'Metronome' })).toBeVisible()
+    const keys = studyMenu.getByRole('switch', { name: 'Show keys' })
+    await expect(keys).toBeVisible()
+    await expect(studyMenu.getByRole('switch', { name: 'Play through' })).toHaveCount(0)
+    await expect(studyMenu.getByRole('switch', { name: 'Keep time' })).toHaveCount(0)
+    await keys.click()
+    await expect(keys).toBeChecked()
+    await expect(page.getByTestId('guide-slot')).toHaveAttribute('data-open', 'true')
+    await page.keyboard.press('Escape')
+    await expect(studyMenu).toHaveCount(0)
     await expect(page.locator('header').getByRole('button', { name: 'Settings' })).toBeVisible()
   })
 })

@@ -5,7 +5,15 @@ import type { AttemptSummary, GuideState, PracticeSession, SessionUi } from '../
 import { Store } from '../../app/session/store'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { $, byLabel, byText, click, mount, type Mounted } from '../shared/testing'
-import { Banners, RESULT_FADE_MS, ladderResultText, type BannersProps } from './Banners'
+import {
+  AttemptResult,
+  Banners,
+  RESULT_FADE_MS,
+  ladderResultText,
+  resultTitle,
+  type AttemptResultProps,
+  type BannersProps,
+} from './Banners'
 import { CountIn } from './CountIn'
 import { timingText } from './format'
 import { GuidePanel } from './live'
@@ -48,6 +56,10 @@ const UI: SessionUi = {
   inputDisconnected: false,
   playThrough: false,
   micStatus: null,
+  follow: 'piano',
+  pianoConnected: true,
+  micSupported: true,
+  playThroughLocked: false,
   rhythm: false,
   countIn: null,
   metronomeScope: 'general',
@@ -72,17 +84,33 @@ const RESULT: AttemptSummary = {
 const noop = () => undefined
 
 function banners(ui: Partial<SessionUi>, extra: Partial<BannersProps> = {}) {
+  return <Banners ui={{ ...UI, ...ui }} onRestart={noop} onResume={noop} onConnection={noop} {...extra} />
+}
+
+function result(ui: Partial<SessionUi>, extra: Partial<AttemptResultProps> = {}) {
   return (
-    <Banners
+    <AttemptResult
       ui={{ ...UI, ...ui }}
-      onRestart={noop}
-      onResume={noop}
+      model={{ notes: [] }}
+      naming={DEFAULT_SETTINGS.naming}
       onResults={noop}
-      onDismissResult={noop}
-      onConnection={noop}
+      onRestart={noop}
+      onDismiss={noop}
       {...extra}
     />
   )
+}
+
+/** F (65) for F♯ (66) in bar 12, three passes running (P24); no score note: spelled from the pitch. */
+const MISTAKE = {
+  group: 4,
+  occ: 11,
+  bar: '12',
+  expectedPitches: [62, 66],
+  expectedPitch: 66,
+  expectedNote: 0,
+  wrongPitch: 65,
+  passes: 3,
 }
 
 const DISCONNECT = {
@@ -148,21 +176,80 @@ describe('Banners', () => {
       }),
     )
     expect($(view.container, '[data-testid="interruption"]')).toBeNull()
+    view.unmount()
+    view = mount(result({ activity: 'playing', playThrough: true, lastResult: RESULT }))
     expect(view.container.textContent).not.toContain('Clean pass')
     expect(byLabel(view.container, 'Hide result')).toBeNull()
   })
 
   it('the result card says what the speed ladder did, in one line', () => {
     const line = () => $(view!.container, '[data-testid="ladder-result"]')?.textContent
-    view = mount(banners({ repeat: true, lastResult: { ...RESULT, ladder: { climbedTo: 0.65 } }, multiplier: 0.6 }))
+    view = mount(result({ repeat: true, lastResult: { ...RESULT, ladder: { climbedTo: 0.65 } }, multiplier: 0.6 }))
     expect(line()).toBe('Speed up: next at 65%')
-    view.rerender(banners({ repeat: true, lastResult: { ...RESULT, ladder: { droppedTo: 0.55 } }, multiplier: 0.6 }))
+    view.rerender(result({ repeat: true, lastResult: { ...RESULT, ladder: { droppedTo: 0.55 } }, multiplier: 0.6 }))
     expect(line()).toBe('Back to 55%')
-    view.rerender(banners({ repeat: true, lastResult: { ...RESULT, ladder: { done: true } }, multiplier: 1 }))
+    view.rerender(result({ repeat: true, lastResult: { ...RESULT, ladder: { done: true } }, multiplier: 1 }))
     expect(line()).toBe('Goal reached: 100%')
-    view.rerender(banners({ repeat: true, lastResult: RESULT }))
+    view.rerender(result({ repeat: true, lastResult: RESULT }))
     expect(line()).toBeUndefined()
     expect(ladderResultText({ ...RESULT, ladder: {} }, 1)).toBeNull()
+  })
+
+  it('heads the card with what kept the pass from being clean, the count of wrong notes in its badge', () => {
+    expect(resultTitle(RESULT)).toBe('Clean pass')
+    expect(resultTitle({ ...RESULT, passed: false, wrongAttacks: 1 })).toBe('1 wrong note')
+    expect(resultTitle({ ...RESULT, passed: false, wrongAttacks: 3, assistance: 'names' })).toBe('3 wrong notes')
+    const timing = { groups: 4, onTime: 3, early: 0, late: 1, missed: 0 }
+    expect(resultTitle({ ...RESULT, passed: false, timing })).toBe('Timing slipped')
+    expect(resultTitle({ ...RESULT, passed: false, assistance: 'keyboard' })).toBe('Played with help')
+    expect(resultTitle({ ...RESULT, passed: false })).toBe('Completed')
+    view = mount(result({ lastResult: { ...RESULT, passed: false, wrongAttacks: 2, streak: 0 } }))
+    const card = $(view.container, '[data-testid="attempt-result"]')!
+    expect(card.dataset['tone']).toBe('wrong')
+    expect(card.textContent).toContain('2 wrong notes')
+    expect($(card, '[aria-hidden="true"]')?.textContent).toBe('2')
+    expect(card.textContent).not.toContain('in a row')
+  })
+
+  it('shows the Repeat goal as dots, Again only once the goal is met, and the repeated mistake on the note line', () => {
+    view = mount(result({ repeat: true, repeatTarget: 3, lastResult: { ...RESULT, streak: 2 } }))
+    const goal = () => $(view!.container, '[role="img"]')
+    expect(goal()?.getAttribute('aria-label')).toBe('2 of 3 clean toward the goal')
+    expect(goal()?.querySelectorAll('[data-on]')).toHaveLength(2)
+    // In Repeat mode the next pass starts by playing: no Again until the goal ends Repeat.
+    expect(byText(view.container, 'Again')).toBeNull()
+    expect($(view.container, '[data-testid="result-note"]')).toBeNull()
+    view.rerender(
+      result({
+        repeat: true,
+        repeatTarget: 3,
+        lastResult: {
+          ...RESULT,
+          streak: 3,
+          targetReached: true,
+          repeatedMistakes: [MISTAKE, { ...MISTAKE, wrongPitch: 67, passes: 3, bar: '13' }],
+        },
+      }),
+    )
+    expect(goal()?.querySelectorAll('[data-on]')).toHaveLength(3)
+    expect(view.container.textContent).toContain('Goal reached. Repeat is off.')
+    expect(byText(view.container, 'Again')).not.toBeNull()
+    // The first (most passes) repeated mistake, worded with the naming settings.
+    expect($(view.container, '[data-testid="result-note"]')?.textContent).toBe(
+      'F instead of F♯ in bar 12, three passes running',
+    )
+    view.rerender(
+      result(
+        { repeat: true, repeatTarget: 3, lastResult: { ...RESULT, repeatedMistakes: [MISTAKE] } },
+        { naming: { ...DEFAULT_SETTINGS.naming, system: 'fixed-do' } },
+      ),
+    )
+    expect($(view.container, '[data-testid="result-note"]')?.textContent).toBe(
+      'fa instead of fa♯ in bar 12, three passes running',
+    )
+    // No target: no dots.
+    view.rerender(result({ repeat: true, repeatTarget: null, lastResult: RESULT }))
+    expect(goal()).toBeNull()
   })
 
   it('has no end-of-piece banner', () => {
@@ -173,29 +260,31 @@ describe('Banners', () => {
 
   it('the result card fades in, keeps the last result while fading out after Hide, then unmounts', () => {
     vi.useFakeTimers()
-    const onDismissResult = vi.fn()
-    view = mount(banners({}, { onDismissResult }))
+    const onDismiss = vi.fn()
+    view = mount(result({}, { onDismiss }))
     expect($(view.container, '[data-testid="attempt-result"]')).toBeNull()
 
-    view.rerender(banners({ lastResult: RESULT }, { onDismissResult }))
+    view.rerender(result({ lastResult: RESULT }, { onDismiss }))
     const card = () => $(view!.container, '[data-testid="attempt-result"]')
     expect(card()?.dataset['phase']).toBe('entering')
     advance(50)
     expect(card()?.dataset['phase']).toBe('visible')
     expect(card()?.dataset['passed']).toBe('true')
+    expect(card()?.dataset['tone']).toBe('clean')
     expect(card()?.textContent).toContain('Clean pass')
     expect(card()?.textContent).toContain('2 clean in a row')
-    expect(card()?.textContent).toContain('No wrong notes')
-    expect(card()?.textContent).toContain('3.0 s')
-    expect(card()?.textContent).toContain('100% right first time')
-    expect(card()?.textContent).toContain('No help')
+    // The details live in Results now (U97): no time, first-try share, help or marks count.
+    for (const gone of ['3.0 s', 'right first time', 'No help', 'marks on the score', 'No wrong notes'])
+      expect(card()?.textContent).not.toContain(gone)
+    expect(byLabel(card()!, 'Details')).not.toBeNull()
+    expect(byText(card()!, 'Again')).not.toBeNull()
 
     click(byLabel(card()!, 'Hide result'))
-    expect(onDismissResult).toHaveBeenCalledOnce()
+    expect(onDismiss).toHaveBeenCalledOnce()
     // The session clears the result; the card fades out still showing it.
-    view.rerender(banners({ lastResult: null }, { onDismissResult }))
+    view.rerender(result({ lastResult: null }, { onDismiss }))
     expect(card()?.dataset['phase']).toBe('leaving')
-    expect(card()?.textContent).toContain('No wrong notes')
+    expect(card()?.textContent).toContain('Clean pass')
     advance(RESULT_FADE_MS - 1)
     expect(card()).not.toBeNull()
     advance(2)
@@ -216,7 +305,7 @@ describe('Keep time on the result card and the stage (P13)', () => {
 
   it('shows timing accuracy in place of the completion time, keeping the streak and ladder lines', () => {
     view = mount(
-      banners({
+      result({
         activity: 'scored',
         rhythm: true,
         repeat: true,
@@ -225,16 +314,16 @@ describe('Keep time on the result card and the stage (P13)', () => {
     )
     const card = $(view.container, '[data-testid="attempt-result"]')!
     expect($(card, '[data-testid="timing-result"]')?.textContent).toBe('On time 38 of 42 · 3 late · 1 missed')
-    expect(card.textContent).toContain('Timing')
+    expect(card.textContent).toContain('Timing slipped')
     expect(card.textContent).not.toContain('expected')
     expect(card.textContent).toContain('2 clean in a row')
     expect($(card, '[data-testid="ladder-result"]')?.textContent).toBe('Back to 55%')
   })
 
-  it('a gated result keeps its time line', () => {
-    view = mount(banners({ activity: 'scored', lastResult: RESULT }))
+  it('a gated result shows no timing line and no completion time (Details has it)', () => {
+    view = mount(result({ activity: 'scored', lastResult: RESULT }))
     expect($(view.container, '[data-testid="timing-result"]')).toBeNull()
-    expect(view.container.textContent).toContain('expected')
+    expect(view.container.textContent).not.toContain('expected')
   })
 
   it('shows no Ready banner in Keep time: the count-in replaces it', () => {

@@ -3,7 +3,14 @@ import type { FollowerRequest, FollowerResponse } from '../../core/audio/protoco
 import { buildScore } from '../../core/engine/testkit'
 import { rat } from '../../core/music/rational'
 import type { MicEstimate } from '../session/types'
-import { type FollowerWorkerLike, MIC_FAILED, MIC_LOST, type MicCapture, createMicFollower } from './micFollower'
+import {
+  type FollowerWorkerLike,
+  MIC_FAILED,
+  MIC_LOST,
+  type MicCapture,
+  createMicFollower,
+  microphoneSupported,
+} from './micFollower'
 
 const model = buildScore({
   notes: [
@@ -27,7 +34,7 @@ class FakeWorker implements FollowerWorkerLike {
   }
 }
 
-function setup(captureFails?: Error) {
+function setup(captureFails?: Error, hands?: 'both' | 'right' | 'left') {
   const worker = new FakeWorker()
   const port: MicCapture['port'] = { onmessage: null }
   let closed = 0
@@ -46,6 +53,7 @@ function setup(captureFails?: Error) {
     (e) => estimates.push(e),
     (reason) => lost.push(reason),
     { createWorker: () => worker, capture, log: (m) => logs.push(m) },
+    hands,
   )
   return {
     worker,
@@ -60,7 +68,33 @@ function setup(captureFails?: Error) {
   }
 }
 
+describe('microphoneSupported', () => {
+  const fn = () => {}
+  const full = {
+    isSecureContext: true,
+    navigator: { mediaDevices: { getUserMedia: fn } },
+    AudioContext: fn,
+    AudioWorkletNode: fn,
+  }
+  it('needs a secure context, getUserMedia, AudioContext and AudioWorkletNode', () => {
+    expect(microphoneSupported(full as never)).toBe(true)
+    expect(microphoneSupported({ ...full, isSecureContext: false } as never)).toBe(false)
+    expect(microphoneSupported({ ...full, navigator: {} } as never)).toBe(false)
+    expect(microphoneSupported({ ...full, AudioWorkletNode: undefined } as never)).toBe(false)
+    expect(microphoneSupported({ ...full, AudioContext: undefined } as never)).toBe(false)
+  })
+})
+
 describe('createMicFollower', () => {
+  it('tells the worker which hand to follow (DECISIONS P22); both hands stay the default', async () => {
+    const one = setup(undefined, 'left')
+    await one.mic.start(rat(0))
+    expect(one.worker.posted[0]).toEqual({ type: 'configure', model, position: rat(0), hands: 'left' })
+    const both = setup(undefined, 'both')
+    await both.mic.start(rat(0))
+    expect(both.worker.posted[0]).toEqual({ type: 'configure', model, position: rat(0) })
+  })
+
   it('configures the worker, opens the capture and relays samples and estimates', async () => {
     const { worker, port, mic, estimates, closed, woken } = setup()
     await mic.start(rat(1, 4))

@@ -5,6 +5,10 @@
  * There is no caption (U12): `aria-pressed`, the L / R badge, the tooltip and the main button's
  * label (Start / Listen) say what the selection means. Without a connected piano the hands are
  * unavailable (`handsUnavailable`): both toggles show off, and a tap explains instead of toggling.
+ *
+ * `PlayButton` is the large accent Play / Pause circle on its own (68 px, 44 px `compact`): the
+ * cluster uses it, and so does Study's footer (DECISIONS U90), which puts its own two actions
+ * where the hands are.
  */
 import type { HandSelection } from '../core/model/score'
 import { Icon } from './icons'
@@ -93,6 +97,24 @@ function HandToggle({
   )
 }
 
+export interface PlayButtonProps {
+  readonly playing: boolean
+  /** The accessible name and the tooltip (Start / Listen / Play / Pause). */
+  readonly label: string
+  readonly disabled?: boolean | undefined
+  readonly compact?: boolean
+  readonly onClick: () => void
+}
+
+/** The primary accent circle: a play triangle, or pause bars while `playing`. */
+export function PlayButton({ playing, label, disabled, compact = false, onClick }: PlayButtonProps) {
+  return (
+    <button type="button" class={styles.play} aria-label={label} title={label} disabled={disabled} onClick={onClick}>
+      <Icon name={playing ? 'pause' : 'play'} size={compact ? 24 : 32} />
+    </button>
+  )
+}
+
 /** Centered transport cluster: [left hand] [Start / Pause] [right hand]. */
 export function HandToggles({
   hands,
@@ -122,16 +144,7 @@ export function HandToggles({
         onToggle={() => onHandsChange(handsFromToggles(!left, right))}
         onUnavailable={onHandsUnavailable}
       />
-      <button
-        type="button"
-        class={styles.play}
-        aria-label={label}
-        title={label}
-        disabled={playDisabled}
-        onClick={onPlayPause}
-      >
-        <Icon name={playing ? 'pause' : 'play'} size={compact ? 24 : 32} />
-      </button>
+      <PlayButton playing={playing} label={label} disabled={playDisabled} compact={compact} onClick={onPlayPause} />
       <HandToggle
         hand="right"
         on={right}

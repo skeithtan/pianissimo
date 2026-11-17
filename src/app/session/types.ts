@@ -10,6 +10,7 @@ import type { HandSelection, ScoreModel } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import type { AppSettings } from '../../core/model/settings'
 import type { Phase } from '../../core/engine'
+import type { RepeatedMistake } from './mistakes'
 import type { BrowserAudioModule, MetronomeModule, OutputBackend, TimerApi } from '../../core/playback'
 import type { LadderSettings, ResumePosition } from '../../core/storage/records'
 import type { GuideKey } from '../../render/keyboard/types'
@@ -61,6 +62,12 @@ export interface StripSink {
    * "Too soon", "Too late"; `./corrections.ts`); `[]` clears them.
    */
   setCorrections?(marks: readonly CorrectionMark[]): void
+  /**
+   * The review after a completed pass (DECISIONS U97): on while its result shows, the strip zooms
+   * out to show the whole loop; off, it zooms back in to the playing frame. Optional: the page
+   * layout has none (its systems already show the passage).
+   */
+  setReview?(on: boolean): void
   visibleLabels(): number[]
   isBrowsing(): boolean
   /** Onset under a browsed fixed cursor, or null when browsing does not move the cursor. */
@@ -128,6 +135,12 @@ export interface SessionDeps {
   readonly piece: PieceSink
   /** `performance.timeOrigin` for record timestamps. */
   readonly timeOrigin?: number
+  /**
+   * How long a scored pass's completed final group stays open for a key pressed with that chord
+   * (the engine's `finalSlipMs`, DECISIONS P24). Default `CHORD_SLIP_MS`; the test harness passes 0
+   * so scenario tests see the record at the final key, as before.
+   */
+  readonly finalSlipMs?: number
   /** Lazy loaders (tests inject fakes; MIDI-only use never calls `loadBrowserAudio`). */
   readonly loadBrowserAudio?: () => Promise<BrowserAudioModule>
   /**
@@ -140,10 +153,15 @@ export interface SessionDeps {
   /** Builds the MIDI output backend (tests inject a recording backend). */
   readonly createMidiBackend?: (output: MidiOutputLike, channel: number, humanGuard: boolean) => MidiBackendLike
   /**
-   * Builds the microphone follower for play-through (DECISIONS P15; `app/audio/micFollower.ts`,
-   * tests inject a fake). Absent: the microphone setting has no effect.
+   * Builds the microphone follower for play-through (DECISIONS P15, P22; `app/audio/micFollower.ts`,
+   * tests inject a fake). Absent: play-through never follows the microphone (Study, tests).
    */
   readonly createMicFollower?: CreateMicFollower
+  /**
+   * Can this browser open a microphone at all (`microphoneSupported`; default true when
+   * `createMicFollower` is supplied)? Without it and without a piano, the hands are held (U27).
+   */
+  readonly micSupported?: () => boolean
 }
 
 /** A position estimate from the microphone follower (float whole notes, confidence 0..1). */
@@ -169,12 +187,15 @@ export interface MicFollowerLike {
 /**
  * `onEstimate`: the player was heard at a new place. `onLost`: the microphone stopped by itself
  * (unplugged, taken by the system) with a reason for the learner; the follower is of no more use.
+ * `hands`: the hands the learner plays (absent: both); with one hand the follower listens for that
+ * hand's onset groups only, the practice timeline's for the same hands (DECISIONS P22).
  * The follower needs no tempo and no speed: it follows the order of the notes only (DECISIONS P16).
  */
 export type CreateMicFollower = (
   model: ScoreModel,
   onEstimate: (estimate: MicEstimate) => void,
   onLost: (reason: string) => void,
+  hands?: Exclude<HandSelection, 'none'>,
 ) => MicFollowerLike
 
 /** What the session needs from `MidiOutputBackend` beyond `OutputBackend`. */
@@ -218,6 +239,13 @@ export interface AttemptSummary {
    * place of the completion time. Absent for gated attempts.
    */
   readonly timing?: AttemptTiming
+  /**
+   * The same wrong key at the same place in this pass and the passes before it (at least
+   * `REPEATED_MISTAKE_PASSES` running, same comparison context), most passes first; absent when
+   * none (DECISIONS P24). Word one with `repeatedMistakeLine(m, model, naming)`: the result card's
+   * note line shows the first (U97).
+   */
+  readonly repeatedMistakes?: readonly RepeatedMistake[]
 }
 
 /** How a Keep time attempt kept time: groups judged and how many were on time, early, late, missed. */
@@ -258,8 +286,9 @@ export interface SessionUi {
   readonly playing: boolean
   readonly hands: HandSelection
   /**
-   * False while no piano input is connected (U27): the hand toggles are off and unavailable and
-   * the session is in Listen; the learner's hands come back with the piano.
+   * False while no piano input is connected and this browser cannot use the microphone either
+   * (U27, P22): the hand toggles are off and unavailable and the session is in Listen; the
+   * learner's hands come back with the piano.
    */
   readonly handsAvailable: boolean
   readonly range: PassageRange | null
@@ -301,6 +330,20 @@ export interface SessionUi {
    * following, or why it could not start; null otherwise.
    */
   readonly micStatus: string | null
+  /**
+   * What a play-through follows (DECISIONS P22): `'mic'` without a piano input, or with one when
+   * `settings.mic.follow` is on (and the browser can use a microphone); else `'piano'`.
+   */
+  readonly follow: 'piano' | 'mic'
+  /** A piano input is connected (the Follow choice offers Piano). */
+  readonly pianoConnected: boolean
+  /** This browser can open a microphone (the Follow choice offers Microphone). */
+  readonly micSupported: boolean
+  /**
+   * No piano is connected, so play-through is how a hand plays (P22): with a hand selected it is
+   * on and cannot be switched off.
+   */
+  readonly playThroughLocked: boolean
   /**
    * Keep time (rhythm mode, DECISIONS P13) is on: every Start is a scored attempt played against
    * the music (strict transport), after a one-bar count-in. Exclusive with play-through.

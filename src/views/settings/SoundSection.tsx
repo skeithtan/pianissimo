@@ -114,15 +114,16 @@ export function SoundSection({ features }: { features: FeatureReport }) {
 
       <Group title="Microphone">
         <Toggle
-          label="Follow an acoustic piano"
-          description="In Play through with both hands, the cursor follows what this device's microphone hears, so no MIDI connection is needed. The browser asks for the microphone on the first Start."
+          label="Follow the microphone with a piano connected"
+          description="Without a piano, Play through always follows the microphone. With one, it follows the piano's keys unless this is on. Same as Follow in the Practice menu."
           checked={mic.follow}
           onChange={(follow) => updateSettings({ mic: { follow } })}
         />
         <Help>
-          Position only: wrong notes are not judged, and the microphone is closed outside Play through. The cursor waits
-          as long as you do and moves when it hears the next notes, at any speed. Keep the device near the piano. The
-          metronome stays silent while the microphone follows.
+          Position only: wrong notes are not judged, and the microphone is closed outside Play through. The browser asks
+          for it on the first Start. The cursor waits as long as you do and moves when it hears the next notes, at any
+          speed. Keep the device near the piano. While the microphone follows, Pianissimo plays nothing: no other hand,
+          no metronome.
         </Help>
       </Group>
     </>

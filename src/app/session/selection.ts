@@ -86,13 +86,19 @@ export interface StartContext {
   readonly hasTempo: boolean
   /** A piano input is connected (default true). Without one only a microphone play-through can start. */
   readonly hasInput?: boolean
+  /**
+   * This browser can open a microphone (default true; DECISIONS P22). Without a piano and without
+   * one, nothing a hand plays can be followed.
+   */
+  readonly micSupported?: boolean
 }
 
 export interface StartPlanOptions {
   /**
    * Play-through mode is on (DECISIONS P12): with a hand selected the action is `'play'`, with
    * the same blockers as reading (tempo, one-hand output, accompaniment allowed, notes exist);
-   * never a scored blocker. Hands 'none' stays Listen.
+   * never a scored blocker; through the microphone one hand needs no output (P22). Hands 'none'
+   * stays Listen.
    */
   readonly playThrough?: boolean
   /**
@@ -102,11 +108,15 @@ export interface StartPlanOptions {
    */
   readonly rhythm?: boolean
   /**
-   * The microphone follower is on (DECISIONS P15): play-through with both hands needs no piano
-   * input; everything else without a piano is blocked with a reason.
+   * Play-through follows the microphone (DECISIONS P15, P22): it needs no piano input, and with
+   * one hand the app plays nothing (no output or echo check needed). Without a piano everything
+   * but play-through is blocked with a reason.
    */
   readonly mic?: boolean
 }
+
+/** Why Start cannot run without a piano and without a microphone (DECISIONS P22). */
+export const NO_PIANO_NO_MIC = 'Connect a piano to play a hand: this browser cannot use the microphone here.'
 
 export function startPlan(
   timeline: Timeline,
@@ -129,6 +139,11 @@ export function startPlan(
     }
   }
   if (ctx.hasInput === false) {
+    // Without a piano a hand plays through the microphone (the session keeps play-through on);
+    // anything else, or no microphone at all, says why.
+    if (ctx.micSupported === false || (action === 'play' && !opts.mic)) {
+      return { action, enabled: false, reason: NO_PIANO_NO_MIC }
+    }
     if (action !== 'play') {
       return {
         action,
@@ -136,17 +151,10 @@ export function startPlan(
         reason: `${action === 'scored' ? 'Scored practice' : 'Reading'} needs a connected piano. Play through follows the microphone instead.`,
       }
     }
-    if (sel.hands !== 'both' || !opts.mic) {
-      return {
-        action,
-        enabled: false,
-        reason: opts.mic
-          ? 'One-hand play-through needs the piano: the microphone follows both hands only.'
-          : 'Play-through needs a connected piano.',
-      }
-    }
   }
-  if (sel.hands !== 'both') {
+  // One hand through the microphone: the app plays nothing (the microphone must never hear it).
+  const silent = action === 'play' && opts.mic === true
+  if (sel.hands !== 'both' && !silent) {
     if (!ctx.hasOutput) {
       return {
         action,

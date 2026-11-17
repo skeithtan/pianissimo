@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loopStepAvailability, stepLoop, type LoopRange } from './loopStep'
 
-const LAST = 58 // the 59-occurrence reference piece
+const LAST = 60 // the 61-occurrence reference piece
 
 describe('loopStepAvailability', () => {
   it('with no loop mid-piece only the outward buttons are enabled', () => {

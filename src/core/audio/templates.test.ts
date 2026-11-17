@@ -4,6 +4,7 @@ import { buildTimeline } from '../engine'
 import { buildScore } from '../engine/testkit'
 import { toNumber } from '../music/rational'
 import { SEMITONES } from './features'
+import { createAudioFollower } from './index'
 import { attackGroups, attackTemplates, groupPositions, pitchTemplate } from './templates'
 
 function argmax(v: ArrayLike<number>): number {
@@ -38,6 +39,44 @@ describe('attackGroups', () => {
       expect(groups.map((g) => g.pitches)).toEqual(timeline.groups.map((g) => g.pitches))
     },
   )
+
+  it('keeps only the selected hand’s notes (DECISIONS P22)', () => {
+    const model = buildScore({
+      notes: [
+        { at: 0, midi: 60 },
+        { at: 0, midi: 48, hand: 'L' },
+        { at: 1, midi: 50, hand: 'L' },
+        { at: 2, midi: 64 },
+      ],
+    })
+    expect(attackGroups(model, 'right').map((g) => g.pitches)).toEqual([[60], [64]])
+    expect(attackGroups(model, 'left').map((g) => g.pitches)).toEqual([[48], [50]])
+    expect(attackGroups(model, 'both')).toEqual(attackGroups(model))
+  })
+
+  it.each(['two-hands', 'ties', 'rolls', 'repeats', 'cue-notes', 'tuplets'])(
+    'has the practice timeline’s positions and pitches for one hand (%s)',
+    async (name) => {
+      const { model } = (await importFixture(`${name}.musicxml`)).package
+      for (const hands of ['right', 'left'] as const) {
+        const timeline = buildTimeline(model, { hands, range: null, multiplier: 1 })
+        const groups = attackGroups(model, hands)
+        expect(groups.map((g) => toNumber(g.position))).toEqual(timeline.groups.map((g) => toNumber(g.position)))
+        expect(groups.map((g) => g.pitches)).toEqual(timeline.groups.map((g) => g.pitches))
+      }
+    },
+  )
+
+  it('lets the follower count one hand’s groups', () => {
+    const model = buildScore({
+      notes: [
+        { at: 0, midi: 60 },
+        { at: 1, midi: 50, hand: 'L' },
+      ],
+    })
+    expect(createAudioFollower(model, { hands: 'left' }).groups.map((g) => g.pitches)).toEqual([[50]])
+    expect(createAudioFollower(model).groups.length).toBe(2)
+  })
 })
 
 describe('pitch templates', () => {
@@ -45,10 +84,11 @@ describe('pitch templates', () => {
     const a4 = pitchTemplate(69, 44100)
     expect(argmax(a4)).toBe(48)
     expect(a4[48]).toBe(1)
-    // The octave partial lands 12 semitones up, the fifth above it 19 up.
-    expect(a4[48 + 12]!).toBeGreaterThan(0.3)
-    expect(a4[48 + 12]!).toBeLessThan(0.7)
-    expect(a4[48 + 19]!).toBeGreaterThan(0.15)
+    // The octave partial lands 12 semitones up, the fifth above it 19 up (power h^−2.5:
+    // 0.18 and 0.06 of the fundamental).
+    expect(a4[48 + 12]!).toBeGreaterThan(0.1)
+    expect(a4[48 + 12]!).toBeLessThan(0.3)
+    expect(a4[48 + 19]!).toBeGreaterThan(0.04)
     expect(a4[48 + 12]!).toBeGreaterThan(a4[48 + 19]!)
     // Nothing a tritone away.
     expect(a4[48 + 6]!).toBeLessThan(0.01)
@@ -75,9 +115,12 @@ describe('pitch templates', () => {
       }
       return dot / Math.sqrt(na * nb)
     }
+    // (With the partials rolling off at h^−2.5 the fundamental's window lobe dominates: a
+    // neighbor of middle C resembles it at 0.52 in raw energy, 0.33 with partials at 1/h; from G4 up
+    // under 0.1 either way.)
     for (const midi of [60, 67, 72, 79]) {
       const t = pitchTemplate(midi, 48000)
-      expect(cosine(t, pitchTemplate(midi + 1, 48000))).toBeLessThan(0.5)
+      expect(cosine(t, pitchTemplate(midi + 1, 48000))).toBeLessThan(0.6)
       expect(cosine(t, pitchTemplate(midi + 2, 48000))).toBeLessThan(0.2)
     }
   })

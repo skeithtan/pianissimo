@@ -1,8 +1,9 @@
 /**
- * Status over the preserved score: a piano disconnect, sound loading,
- * interruptions, Ready/waiting, and the compact result after each attempt (spec "Repeating
- * passages": "After each attempt, show a compact result while preserving the score"). Rendered
- * into the stage's top overlay column, under the Repeat panel; never recedes (U13).
+ * Status over the preserved score: a piano disconnect, sound loading, interruptions,
+ * Ready/waiting (`Banners`, rendered into the stage's top overlay column, under the Repeat panel;
+ * never recedes, U13), and the compact result after each attempt (`AttemptResult`, spec
+ * "Repeating passages": "After each attempt, show a compact result while preserving the score"),
+ * docked at the bottom of the stage, clear of the passage the strip reviews (U97).
  *
  * One disconnect notice at a time: while the piano input is gone, its banner shows and nothing
  * else about the disconnect does (no sound-status line for the lost output, no "Piano
@@ -11,13 +12,15 @@
  * interruption (the footer's main button offers Resume / Start, user 2026-11-02). There is no
  * end-of-piece banner: the footer's main button offers Start.
  */
-import { useRef } from 'preact/hooks'
-import type { AttemptSummary, SessionUi } from '../../app/session'
+import { useMemo, useRef } from 'preact/hooks'
+import { repeatedMistakeLine, type AttemptSummary, type SessionUi } from '../../app/session'
+import type { ScoreModel } from '../../core/model/score'
+import type { NamingSettings } from '../../core/model/settings'
 import { Button } from '../../ui/controls'
 import { useFadePresence, type FadePhase } from '../../ui/fade'
 import { Icon } from '../../ui/icons'
 import { formatSpeedPercent } from '../../ui/speed'
-import { assistanceText, firstPassText, timeLine, timingText, wrongText } from './format'
+import { timingText, wrongText } from './format'
 import styles from './practice.module.css'
 
 /** The result card fades and rises in, fades and sinks out (CSS `.result[data-phase]` mirrors it). */
@@ -27,8 +30,6 @@ export interface BannersProps {
   readonly ui: SessionUi
   readonly onRestart: () => void
   readonly onResume: () => void
-  readonly onResults: (attemptId: string) => void
-  readonly onDismissResult: () => void
   readonly onConnection: () => void
 }
 
@@ -37,11 +38,6 @@ export function Banners(p: BannersProps) {
   // Play-through grades nothing and is never interrupted like an attempt (DECISIONS P12).
   const playing = ui.activity === 'playing'
   const r = playing ? null : ui.lastResult
-  // While it fades out, the card keeps showing the last result it had.
-  const last = useRef<AttemptSummary | null>(r)
-  if (r) last.current = r
-  const presence = useFadePresence(!!r, RESULT_FADE_MS)
-  const shown = r ?? last.current
   const interruption = !playing && ui.interruption && ui.interruption.reason !== 'disconnect' ? ui.interruption : null
   return (
     <>
@@ -94,18 +90,6 @@ export function Banners(p: BannersProps) {
           <span>Ready. The clock starts with your first note.</span>
         </div>
       ) : null}
-      {presence.mounted && shown ? (
-        <ResultCard
-          r={shown}
-          phase={presence.phase}
-          corrections={ui.corrections}
-          multiplier={ui.multiplier}
-          showAgain={!ui.repeat || shown.targetReached}
-          onResults={p.onResults}
-          onRestart={p.onRestart}
-          onDismiss={p.onDismissResult}
-        />
-      ) : null}
     </>
   )
 }
@@ -124,97 +108,164 @@ export function ladderResultText(r: AttemptSummary, multiplier: number): string 
 }
 
 /**
- * The compact attempt result: a card with a status rail (success for a clean pass), the outcome
- * as its title, the streak under it, the facts as a label / value grid, actions at the end.
+ * The result card's headline (U97): "Clean pass", else what kept the pass from being clean, the
+ * first of: wrong notes ("2 wrong notes"), timing (Keep time), help; "Completed" otherwise.
+ */
+export function resultTitle(r: AttemptSummary): string {
+  if (r.passed) return 'Clean pass'
+  if (r.wrongAttacks > 0) return wrongText(r.wrongAttacks)
+  if (r.timing && r.timing.onTime < r.timing.groups) return 'Timing slipped'
+  if (r.assistance !== 'none') return 'Played with help'
+  return 'Completed'
+}
+
+export interface AttemptResultProps {
+  readonly ui: SessionUi
+  /** The practiced score and the naming settings word a repeated mistake (P24) on the card. */
+  readonly model: Pick<ScoreModel, 'notes'>
+  readonly naming: NamingSettings
+  readonly onResults: (attemptId: string) => void
+  readonly onRestart: () => void
+  readonly onDismiss: () => void
+}
+
+/**
+ * The result after a completed attempt (U97, revising U33), docked at the bottom of the stage: it
+ * fades and rises in, keeps the last result while it fades out, and shows nothing while playing
+ * through (P12).
+ */
+export function AttemptResult(p: AttemptResultProps) {
+  const { ui } = p
+  const r = ui.activity === 'playing' ? null : ui.lastResult
+  // While it fades out, the card keeps showing the last result it had.
+  const last = useRef<AttemptSummary | null>(r)
+  if (r) last.current = r
+  const presence = useFadePresence(!!r, RESULT_FADE_MS)
+  const shown = r ?? last.current
+  // Worded here, on a render, never in the input path; it follows the naming settings live.
+  const first = shown?.repeatedMistakes?.[0]
+  const note = useMemo(() => (first ? repeatedMistakeLine(first, p.model, p.naming) : null), [first, p.model, p.naming])
+  if (!presence.mounted || !shown) return null
+  return (
+    <ResultCard
+      r={shown}
+      note={note}
+      phase={presence.phase}
+      multiplier={ui.multiplier}
+      goal={ui.repeat ? ui.repeatTarget : null}
+      showAgain={!ui.repeat || shown.targetReached}
+      onResults={p.onResults}
+      onRestart={p.onRestart}
+      onDismiss={p.onDismiss}
+    />
+  )
+}
+
+/**
+ * One slim row: a badge (a check for a clean pass, else the number of wrong notes), the headline
+ * with the Repeat goal as dots, one status line (Keep time's timing, the streak, what the speed
+ * ladder did, the goal reached), an optional second line (`note`: the latest pass's most repeated
+ * mistake, P24, "F instead of F♯ in bar 12, three passes running"), then Again, Details and Hide. The time, the first-try share and the help used
+ * live in Details (Results); the marks on the score speak for themselves.
  */
 function ResultCard({
   r,
+  note,
   phase,
-  corrections,
   multiplier,
+  goal,
   showAgain,
   onResults,
   onRestart,
   onDismiss,
 }: {
   r: AttemptSummary
+  /** A repeated mistake, worded (P24), or null. */
+  note: string | null
   phase: FadePhase
-  /** Teacher corrections drawn on the score (U39). */
-  corrections: number
   multiplier: number
+  /** The Repeat target ("until N clean") shown as dots, or null. */
+  goal: number | null
   showAgain: boolean
   onResults: (attemptId: string) => void
   onRestart: () => void
   onDismiss: () => void
 }) {
-  // A Keep time attempt shows how it kept time in place of its completion time.
   const timing = r.timing ? timingText(r.timing) : null
-  const time = timing ? null : timeLine(r)
-  const firstPass = firstPassText(r)
   const ladder = ladderResultText(r, multiplier)
+  const dots = goal !== null && goal > 1 ? goal : null
+  const filled = dots === null ? 0 : r.targetReached ? dots : Math.min(r.streak, dots)
+  const tone = r.passed ? 'clean' : r.wrongAttacks > 0 ? 'wrong' : 'plain'
+  const status = [
+    timing ? (
+      <span key="timing" data-testid="timing-result">
+        {timing}
+      </span>
+    ) : null,
+    r.streak > 1 ? <span key="streak">{r.streak} clean in a row</span> : null,
+    ladder ? (
+      <span key="ladder" data-testid="ladder-result">
+        {ladder}
+      </span>
+    ) : null,
+    r.targetReached ? <span key="goal">Goal reached. Repeat is off.</span> : null,
+  ].filter((part) => part !== null)
   return (
-    <div class={styles.result} role="status" data-testid="attempt-result" data-passed={r.passed} data-phase={phase}>
-      <div class={styles.resultHead}>
-        <span class={styles.resultIcon} aria-hidden="true">
-          <Icon name={r.passed ? 'check' : 'restart'} size={20} />
-        </span>
-        <div class={styles.resultTitles}>
-          <p class={styles.resultTitle}>{r.passed ? 'Clean pass' : 'Completed'}</p>
-          {r.streak > 1 ? <p class={styles.resultSubtitle}>{r.streak} clean in a row</p> : null}
-        </div>
-      </div>
-      <button type="button" class={styles.resultClose} aria-label="Hide result" onClick={onDismiss}>
-        <Icon name="close" size={18} />
-      </button>
-      <dl class={styles.resultFacts}>
-        <div>
-          <dt>Mistakes</dt>
-          <dd>{wrongText(r.wrongAttacks)}</dd>
-        </div>
-        {timing ? (
-          <div>
-            <dt>Timing</dt>
-            <dd data-testid="timing-result">{timing}</dd>
-          </div>
-        ) : null}
-        {time ? (
-          <div>
-            <dt>Time</dt>
-            <dd>{time}</dd>
-          </div>
-        ) : null}
-        {firstPass ? (
-          <div>
-            <dt>First try</dt>
-            <dd>{firstPass}</dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>Help</dt>
-          <dd>{assistanceText(r)}</dd>
-        </div>
-        {corrections > 0 ? (
-          <div>
-            <dt>To improve</dt>
-            <dd>{corrections === 1 ? '1 mark on the score' : `${corrections} marks on the score`}</dd>
-          </div>
-        ) : null}
-      </dl>
-      {ladder ? (
-        <p class={styles.resultNote} data-testid="ladder-result">
-          {ladder}
+    <div
+      class={styles.result}
+      role="status"
+      data-testid="attempt-result"
+      data-passed={r.passed}
+      data-tone={tone}
+      data-phase={phase}
+    >
+      <span class={styles.resultBadge} aria-hidden="true">
+        {tone === 'clean' ? (
+          <Icon name="check" size={22} />
+        ) : tone === 'wrong' ? (
+          <span class={styles.resultCount}>{r.wrongAttacks > 99 ? '99+' : r.wrongAttacks}</span>
+        ) : (
+          <Icon name="restart" size={20} />
+        )}
+      </span>
+      <div class={styles.resultText}>
+        <p class={styles.resultTitle}>
+          <span>{resultTitle(r)}</span>
+          {dots !== null ? (
+            <span class={styles.resultGoal} role="img" aria-label={`${filled} of ${dots} clean toward the goal`}>
+              {Array.from({ length: dots }, (_, i) => (
+                <span key={i} class={styles.resultDot} data-on={i < filled || undefined} />
+              ))}
+            </span>
+          ) : null}
         </p>
-      ) : null}
-      {r.targetReached ? <p class={styles.resultNote}>Target reached. Repeat is off.</p> : null}
+        {status.length ? (
+          <p class={styles.resultStatus}>{status.flatMap((part, i) => (i ? [' · ', part] : [part]))}</p>
+        ) : null}
+        {note ? (
+          <p class={styles.resultNote} data-testid="result-note">
+            {note}
+          </p>
+        ) : null}
+      </div>
       <div class={styles.resultActions}>
-        <Button icon="chart" onClick={() => onResults(r.id)}>
-          Details
-        </Button>
         {showAgain ? (
-          <Button variant="primary" icon="restart" onClick={onRestart}>
+          <Button variant="primary" icon="restart" class={styles.resultAgain} onClick={onRestart}>
             Again
           </Button>
         ) : null}
+        <button
+          type="button"
+          class={styles.resultIconButton}
+          aria-label="Details"
+          title="Details"
+          onClick={() => onResults(r.id)}
+        >
+          <Icon name="chart" size={20} />
+        </button>
+        <button type="button" class={styles.resultIconButton} aria-label="Hide result" title="Hide" onClick={onDismiss}>
+          <Icon name="close" size={20} />
+        </button>
       </div>
     </div>
   )

@@ -94,7 +94,7 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   for (const group of [[62], [64], [65], [67, 71, 74, 43]]) await playWhenDue(page, ...group)
   await playWhenDue(page, 48)
   const card = page.getByTestId('attempt-result')
-  await expect(card).toContainText('No wrong notes')
+  await expect(card).not.toContainText('wrong note') // U97: the headline says it
   await card.getByRole('button', { name: 'Details' }).click()
   await expect(page.locator('main')).toHaveAttribute('data-view', 'results')
   const history = page.locator('[data-panel="history"]')

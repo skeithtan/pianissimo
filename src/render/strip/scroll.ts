@@ -66,16 +66,23 @@ export function scrollTranslate(s: ScrollInput): number {
   return s.viewportWidth * (s.anchor ?? 1 / 3) - s.cursorX * s.scale
 }
 
-/** Free browsing can bring either end of the score under the fixed cursor. */
+/**
+ * Free browsing keeps the fixed cursor line between the piece's first cursor stop `firstX` (where
+ * the cursor rests at the start, to the right of the clefs, key and time signature: nothing can
+ * be played before it) and the content's right edge `contentWidth`.
+ */
 export function clampTranslate(
   tx: number,
+  firstX: number,
   contentWidth: number,
   viewportWidth: number,
   scale: number,
   anchor = 1 / 3,
 ): number {
   const screenAnchor = viewportWidth * anchor
-  return Math.min(screenAnchor, Math.max(screenAnchor - contentWidth * scale, tx))
+  const max = screenAnchor - firstX * scale
+  const min = Math.min(max, screenAnchor - contentWidth * scale)
+  return Math.min(max, Math.max(min, tx))
 }
 
 /**

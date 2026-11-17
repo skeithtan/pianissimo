@@ -8,6 +8,7 @@ export { accompanimentAllowed, hasSoundOutput } from './output'
 export { metronomeOn, metronomePatch, metronomeScope, type MetronomeScope } from './metronome'
 export { createPieceSaver, type PieceSaver } from './persistence'
 export { practiceModel, practiceTempoMissing } from './model'
+export { REPEATED_MISTAKE_PASSES, repeatedMistakeLine, repeatedMistakes, type RepeatedMistake } from './mistakes'
 export {
   HAND_TEXT,
   clampPassage,

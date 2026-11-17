@@ -10,13 +10,15 @@
  * Back, the title (or, with the phone on its side, the piece overview), the hand toggles around
  * Start and a Menu button whose sheet holds Speed, Note names, Play through, Keep time, Show keys
  * (not on its side: no keyboard guide there), the connection status and Settings. The score takes the rest, and in portrait the page is engraved
- * to the stage's width and fitted to it (R17).
+ * to the stage's width and fitted to it (R17). In focus mode the bar slides up and fades like the
+ * tablet header, its row giving the score its height; any press on the score brings it back, and
+ * that press does not seek (U93).
  *
  * The `PracticeSession` owns every live behavior; this component only wires it to Preact and
  * re-renders on its coarse `ui` store. Per-frame state (cursor, correction cue, keyboard guide) goes to
  * small subscribed children.
  */
-import { createMicFollowerDep } from '../../app/audio/micFollower'
+import { createMicFollowerDep, microphoneSupported } from '../../app/audio/micFollower'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { effect } from '@preact/signals'
 import {
@@ -64,7 +66,7 @@ import type { LabelRoom, PreparedLayout, PrepareOptions } from '../../render'
 import { MemoryLayoutCache } from '../../render/cache'
 import type { PracticeEnv, StripHandle } from './env'
 import { GuidePanel, OverviewBar, StageCue } from './live'
-import { Banners } from './Banners'
+import { AttemptResult, Banners } from './Banners'
 import { CountIn } from './CountIn'
 import { Footer, HANDS_UNAVAILABLE, HANDS_UNAVAILABLE_NOTICE } from './Footer'
 import { KEEPS_AHEAD, PracticeMenuItems, type MetronomeRow } from './FooterMenu'
@@ -73,6 +75,7 @@ import { ScoreSkeleton } from './ScoreSkeleton'
 import { TempoSheet } from './TempoSheet'
 import { useBrowsedBar } from './browse'
 import { useRecede } from './recede'
+import { useReviewInset } from './reviewInset'
 import { useOrientation, useStageWidth } from './useOrientation'
 import { useStore } from './useStore'
 import styles from './practice.module.css'
@@ -238,7 +241,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         },
         piece: saver,
         timeOrigin: env.timeOrigin,
-        createMicFollower: createMicFollowerDep,
+        createMicFollower: env.createMicFollower ?? createMicFollowerDep,
+        micSupported: env.micSupported ?? (() => microphoneSupported()),
         ...(env.loadBrowserAudio ? { loadBrowserAudio: env.loadBrowserAudio } : {}),
         ...(env.hasWebAudio ? { hasWebAudio: env.hasWebAudio } : {}),
         ...(env.loadMetronome ? { loadMetronome: env.loadMetronome } : {}),
@@ -257,6 +261,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const stripRef = useRef<StripHandle | null>(null)
   /** The page's image-zoom magnification (U83), kept across re-engravings, not saved. */
   const magnifyRef = useRef(1)
+  /** The press now on the score brought a phone's hidden top bar back: its tap does not seek (U93). */
+  const revealOnlyTap = useRef(false)
   const autoStarted = useRef(false)
   const maxChars = maxLabelWidthChars(appSettings.naming)
   // Labels Off engraves tight, with room for hints only; a mode showing names leaves room for all
@@ -299,9 +305,13 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   }
   const lastOcc = model.occurrences.length - 1
   const browsed = useBrowsedBar(host, stripRef, lastOcc, env.frames)
+  // The strip's review after a pass keeps the result card's height free under the score (U97).
+  const resultDock = useRef<HTMLDivElement>(null)
+  const topOverlays = useRef<HTMLDivElement>(null)
   // Portrait shows the page (systems, moving cursor), landscape the strip (DECISIONS "Portrait
   // page mode"). The page is engraved for the stage width at its own zoom (`view.pageZoom`).
   const mode = useOrientation() === 'portrait' ? 'page' : 'strip'
+  const reviewInset = useReviewInset(resultDock, topOverlays, stripRef, mode)
   const stageWidth = useStageWidth(host)
   // A phone's page opens fitted to the stage's width, never scrolling sideways (R17), and a
   // pinch magnifies it like a photo without re-engraving (U83), so it is always engraved at
@@ -441,12 +451,18 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
               magnifyRef.current = m
             },
             returnLabel: 'Return to current position',
-            // Browsing while something plays stops it and drops that attempt (U41).
+            // Browsing while something plays holds it and drops that attempt (U41); the release
+            // continues from the note under the cursor line (U95).
             onBrowse: (browsing) => {
               if (browsing) session.browseStarted()
               browsed.onBrowse(browsing)
             },
-            onSeekRequest: (occ) => session.seek(occ),
+            onBrowseRelease: () => void session.browseReleased(),
+            // A tap seeks, except the one that brought a phone's hidden top bar back (U93).
+            onSeekRequest: (occ) => {
+              if (revealOnlyTap.current) revealOnlyTap.current = false
+              else session.seek(occ)
+            },
             // The dragged playhead lands on a note; practice continues from there (U23).
             onCursorSeek: (position) => session.seekPosition(position),
             cursorDragLabel: (position) => positionText(model, position),
@@ -465,6 +481,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         )
         stripRef.current = strip
         shown.current = key
+        strip.setReviewInset?.(reviewInset.current?.bottom ?? 0, reviewInset.current?.top ?? 0)
         session.attachStrip(strip)
         strip.respaceFrom?.(snapshot)
         setPrep({ state: 'ready' })
@@ -573,6 +590,9 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     if (!autoStart || autoStarted.current || prep.state !== 'ready' || !ui.startEnabled) return
     autoStarted.current = true
     onAutoStart?.()
+    // Never opens the microphone by itself (DECISIONS P22): a microphone play-through waits for
+    // the learner's own Start (and the browser's prompt then).
+    if (ui.startAction === 'play' && ui.follow === 'mic') return
     void session.start()
   }, [autoStart, prep.state, ui.startEnabled, session, onAutoStart])
 
@@ -657,6 +677,24 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     />
   )
 
+  const resultDockEl = (
+    <div
+      ref={resultDock}
+      class={mode === 'page' ? styles.resultRow : styles.resultDock}
+      data-testid="result-dock"
+      data-mode={mode}
+    >
+      <AttemptResult
+        ui={ui}
+        model={model}
+        naming={appSettings.naming}
+        onRestart={() => session.restart()}
+        onResults={(attemptId) => openResults({ pieceId: piece.id, attemptId })}
+        onDismiss={() => session.dismissResult()}
+      />
+    </div>
+  )
+
   return (
     <div
       class={styles.screen}
@@ -667,37 +705,41 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       data-sideways={sideways ? 'true' : undefined}
     >
       {phone ? (
-        // The phone's top bar (U80). It never collapses: the overview (on its side) and Start /
-        // Pause live here; the other controls dim with the chrome and a tap brings them back.
-        // The connection status is in the menu.
-        <div class={styles.bar} data-testid="practice-bar" {...recede.zone}>
-          {back}
-          {sideways ? (
-            <>
-              <h1 class={styles.srOnly}>{piece.title}</h1>
-              <OverviewBar session={session} model={model} range={ui.range} view={stripRef} inline />
-            </>
-          ) : (
-            titleText
-          )}
-          {hands}
-          <button
-            type="button"
-            class={`${styles.iconButton} ${styles.menuButton} ${styles.recedes}`}
-            aria-label="Menu"
-            data-keeps-ahead
-            title="Menu"
-            aria-haspopup="dialog"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(true)}
-          >
-            <Icon name="menu" size={22} />
-            {ui.rhythm ? (
-              <span class={styles.menuBadge} data-testid="keep-time-badge" aria-hidden="true">
-                <Icon name="metronome" size={12} />
-              </span>
-            ) : null}
-          </button>
+        // The phone's top bar (U80). In focus mode it slides up, fades and its row collapses like
+        // the tablet header (U93), the overview with it on its side; a tap on the score brings it
+        // back without seeking. The connection status is in the menu.
+        <div class={styles.headerSlot} data-testid="practice-bar-slot">
+          <div class={styles.headerClip}>
+            <div class={styles.bar} data-testid="practice-bar" inert={recede.receded} {...recede.zone}>
+              {back}
+              {sideways ? (
+                <>
+                  <h1 class={styles.srOnly}>{piece.title}</h1>
+                  <OverviewBar session={session} model={model} range={ui.range} view={stripRef} inline />
+                </>
+              ) : (
+                titleText
+              )}
+              {hands}
+              <button
+                type="button"
+                class={`${styles.iconButton} ${styles.menuButton} ${styles.recedes}`}
+                aria-label="Menu"
+                data-keeps-ahead
+                title="Menu"
+                aria-haspopup="dialog"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen(true)}
+              >
+                <Icon name="menu" size={22} />
+                {ui.rhythm ? (
+                  <span class={styles.menuBadge} data-testid="keep-time-badge" aria-hidden="true">
+                    <Icon name="metronome" size={12} />
+                  </span>
+                ) : null}
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         <div class={styles.headerSlot} data-testid="practice-header-slot">
@@ -758,14 +800,19 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       <div
         class={styles.stage}
         data-repeat-bounds
-        // A pointer near the cursor line, or a tap anywhere, leaves focus mode (U13, U14). The
-        // events still reach the strip.
+        // A pointer near the cursor line, or a tap anywhere, leaves focus mode (U13, U14); on a
+        // phone any press does, since the hidden bar holds Pause (U93). The events still reach
+        // the strip, but on a phone a tap that brings the hidden bar back does not seek (U93 e):
+        // set in the capture phase, before the view's own handlers, for its tap on release.
+        onPointerDownCapture={() => {
+          revealOnlyTap.current = phone && ui.playing && recede.receded
+        }}
         onPointerMove={(event) => {
           if (ui.playing && nearCursor(event, stripRef.current)) recede.zone.onPointerMove()
         }}
         onPointerDown={(event) => {
           if (!ui.playing) return
-          if (event.pointerType === 'touch' || nearCursor(event, stripRef.current)) recede.zone.onPointerDown()
+          if (phone || event.pointerType === 'touch' || nearCursor(event, stripRef.current)) recede.zone.onPointerDown()
         }}
       >
         <div ref={host} class={styles.stripHost} data-testid="strip-host" data-mode={mode} />
@@ -782,7 +829,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             {ui.startReason}
           </p>
         ) : null}
-        <div class={styles.banners}>
+        <div ref={topOverlays} class={styles.banners}>
           {repeatPresence.mounted && !dockedRepeat ? (
             <RepeatPanel
               session={session}
@@ -805,12 +852,14 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             ui={ui}
             onRestart={() => session.restart()}
             onResume={() => session.resume()}
-            onResults={(attemptId) => openResults({ pieceId: piece.id, attemptId })}
-            onDismissResult={() => session.dismissResult()}
             onConnection={() => navigate('connection')}
           />
         </div>
+        {/* The result after a pass, over the bottom of the strip, which keeps it clear (U97). */}
+        {mode === 'strip' ? resultDockEl : null}
       </div>
+      {/* The page scrolls under anything over it: there the result takes a row of its own. */}
+      {mode === 'page' ? resultDockEl : null}
 
       <GuidePanel session={session} fadeMs={appSettings.hints.fadeMs} naming={appSettings.naming} />
 

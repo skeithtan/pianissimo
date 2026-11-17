@@ -8,14 +8,27 @@ import { type Rational, ZERO, cmp, toNumber } from '../music/rational'
 import type { ScoreModel } from '../model/score'
 import { SemitoneAnalyzer } from './features'
 import { type MatcherOptions, OnsetMatcher } from './matcher'
-import { type AttackGroup, attackGroups, attackTemplates } from './templates'
+import { type AttackGroup, type AudioHands, attackGroups, attackTemplates } from './templates'
 
 export { Fft, HOP_SEC, SEMITONES, SemitoneAnalyzer, frameSize, hopSize } from './features'
 export { groupReached } from './groups'
 export { OnsetMatcher, type MatcherOptions } from './matcher'
-export { attackGroups, attackTemplates, pitchTemplate, type AttackGroup, type AttackTemplate } from './templates'
+export {
+  attackGroups,
+  attackTemplates,
+  pitchTemplate,
+  type AttackGroup,
+  type AttackTemplate,
+  type AudioHands,
+} from './templates'
 
-export type AudioFollowerOptions = MatcherOptions
+export interface AudioFollowerOptions extends MatcherOptions {
+  /**
+   * The hands the player plays (default both): with one hand only that hand's onset groups are
+   * followed, the practice timeline's for the same hands (DECISIONS P22).
+   */
+  readonly hands?: AudioHands
+}
 
 export interface AudioEstimate {
   /** Index of the onset group heard last (−1: none yet). */
@@ -59,7 +72,7 @@ const BEFORE_FIRST = 1e-3
  * sample rate seen (they bin partials as the analyzer does).
  */
 export function createAudioFollower(model: ScoreModel, options: AudioFollowerOptions = {}): AudioFollower {
-  const groups = attackGroups(model)
+  const groups = attackGroups(model, options.hands)
   const positions = groups.map((g) => toNumber(g.position))
   let analyzer: SemitoneAnalyzer | null = null
   let matcher: OnsetMatcher | null = null

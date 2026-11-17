@@ -104,7 +104,9 @@ test.describe('practice page mode (portrait)', () => {
     await installFakeMidi(page)
   })
 
-  test('Listen resumes following its moving cursor after scrolling pauses playback', async ({ page }) => {
+  test('Listen plays on while the page is scrolled, and Return follows its moving cursor again (U95)', async ({
+    page,
+  }) => {
     await seedLongPiece(page)
     await page.getByRole('button', { name: `Practice ${TITLE}` }).click()
     await expect(page.locator('.pn-page')).toBeVisible({ timeout: 60_000 })
@@ -117,9 +119,10 @@ test.describe('practice page mode (portrait)', () => {
     await page.mouse.move(stage.x + stage.width * 0.8, stage.y + stage.height / 2)
     await page.mouse.wheel(0, 900)
     await expect(page.locator('.pn-page')).toHaveClass(/pn-browsing/)
-    await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
     await expect.poll(() => scrollTop(page)).toBeGreaterThan(200)
-    await page.getByRole('button', { name: 'Play', exact: true }).click()
+    // Scrolling the page moves no musical position (U52): playback goes on (U95).
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Return to current position' }).click()
     await expect(page.locator('.pn-page')).not.toHaveClass(/pn-browsing/)
     await expect.poll(() => scrollTop(page)).toBeLessThan(10)
     await expect

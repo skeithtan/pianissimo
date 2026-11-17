@@ -30,9 +30,7 @@ test('the library opens without the notation engine or the piano samples', async
   expect(requested.filter((u) => /opensheetmusicdisplay|osmd|vexflow|salamander|samples\/|\.mp3/i.test(u))).toEqual([])
 })
 
-test('adding a score opens Practice and starts Listen without a piano, and keeps it after a reload', async ({
-  page,
-}) => {
+test('adding a score opens Practice ready to start without a piano, and keeps it after a reload', async ({ page }) => {
   await page.goto('./')
   await importFile(page, fixture('two-hands.musicxml'))
   await expect(sheet(page).getByRole('button', { name: 'Add to library' })).toBeEnabled()
@@ -40,7 +38,9 @@ test('adding a score opens Practice and starts Listen without a piano, and keeps
   await sheet(page).getByRole('button', { name: 'Add to library' }).click()
   await expect(sheet(page)).toHaveCount(0)
   await expect(page.getByText('“Two Hands” is in your library.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+  // Nothing starts by itself: Play through follows the microphone, which needs the user's own Start.
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toHaveCount(0)
   await expect(page.locator('.pn-strip')).toBeVisible()
   await page.getByRole('button', { name: 'Back to Library' }).click()
   await expect(page.getByRole('heading', { level: 2, name: 'Two Hands' })).toBeVisible()

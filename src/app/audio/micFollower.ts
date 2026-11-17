@@ -2,11 +2,12 @@
  * The microphone follower (DECISIONS P15, P16): opens the microphone with `getUserMedia`,
  * captures it through an AudioWorklet (`public/mic-processor.js`) and streams the samples to a
  * worker that runs `core/audio`'s score follower; where it hears the player comes back to the
- * session, which releases play-through gates from it. Both hands only (the session never lets
- * the microphone hear the app's own playback). Everything browser-specific is injectable for
- * tests.
+ * session, which releases play-through gates from it. With one hand selected it follows that
+ * hand's onset groups only (DECISIONS P22; the session plays nothing while the microphone
+ * follows). Everything browser-specific is injectable for tests.
  */
 import type { FollowerRequest, FollowerResponse } from '../../core/audio/protocol'
+import type { AudioHands } from '../../core/audio/templates'
 import type { ScoreModel } from '../../core/model/score'
 import type { CreateMicFollower, MicEstimate, MicFollowerLike } from '../session/types'
 
@@ -14,6 +15,26 @@ export const MIC_NOT_SUPPORTED = 'This browser cannot use the microphone here.'
 export const MIC_DENIED = 'Microphone access was not allowed. Allow it for this site, then press Start again.'
 export const MIC_FAILED = 'The microphone could not be started.'
 export const MIC_LOST = 'The microphone stopped. Press Start to listen again.'
+
+/**
+ * Can this browser open the microphone at all (DECISIONS P22): a secure context with
+ * `getUserMedia`, `AudioContext` and `AudioWorkletNode`. False means no microphone play-through
+ * is possible here; true does not promise permission (asked on the first Start).
+ */
+export function microphoneSupported(g: typeof globalThis = globalThis): boolean {
+  const scope = g as {
+    isSecureContext?: boolean
+    navigator?: { mediaDevices?: { getUserMedia?: unknown } }
+    AudioContext?: unknown
+    AudioWorkletNode?: unknown
+  }
+  if (scope.isSecureContext === false) return false
+  return (
+    typeof scope.navigator?.mediaDevices?.getUserMedia === 'function' &&
+    typeof scope.AudioContext === 'function' &&
+    typeof scope.AudioWorkletNode === 'function'
+  )
+}
 
 /** What the follower needs from a worker. */
 export interface FollowerWorkerLike {
@@ -133,6 +154,8 @@ export function createMicFollower(
   onEstimate: (estimate: MicEstimate) => void,
   onLost: (reason: string) => void = () => {},
   options: MicFollowerOptions = {},
+  /** The hands the player plays (absent: both); one hand follows that hand's groups only (P22). */
+  hands?: AudioHands,
 ): MicFollowerLike {
   const log = options.log ?? ((message: string, detail?: unknown) => console.error(message, detail))
   let worker: FollowerWorkerLike | null = null
@@ -168,7 +191,7 @@ export function createMicFollower(
         log(`Microphone follower worker failed: ${event.message ?? 'no message'}`)
         if (worker === w) lose(MIC_FAILED)
       }
-      w.postMessage({ type: 'configure', model, position })
+      w.postMessage({ type: 'configure', model, position, ...(hands && hands !== 'both' ? { hands } : {}) })
       let c: MicCapture
       try {
         c = await (options.capture ?? captureMicrophone)(() => lose(MIC_LOST))
@@ -207,5 +230,5 @@ export function createMicFollower(
   }
 }
 
-export const createMicFollowerDep: CreateMicFollower = (model, onEstimate, onLost) =>
-  createMicFollower(model, onEstimate, onLost)
+export const createMicFollowerDep: CreateMicFollower = (model, onEstimate, onLost, hands) =>
+  createMicFollower(model, onEstimate, onLost, {}, hands)

@@ -333,7 +333,7 @@ describe('Acceptance: Loop boundaries', () => {
     })
     const t = buildTimeline(synthetic, { hands: 'both', range: { fromOcc: 1, toOcc: 1 }, multiplier: 1 })
     const d = new EngineDriver(t, { mode: 'scored', pieceId: 'p', prepared: true })
-    d.tap(D4).tap(C3).tap(E4).tap(G4)
+    d.tap(D4).tap(C3).wait(200).tap(E4).tap(G4)
     const m = d.records()[0]!.measures[0]!
     expect(m).toMatchObject({ occ: 1, complete: true, wrongAttacks: 2, wrongAttacksExcludingBoundary: 1 })
   })

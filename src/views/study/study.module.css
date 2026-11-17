@@ -1,6 +1,6 @@
 /* Study view (DECISIONS U72). Theme tokens only (U8); touch targets ≥ 44 px; motion tokens.
-   Header / overview / stage (flex, full width) / keyboard guide / footer. The footer stacks the
-   reading aids (Note names, Hint, Keys) over the transport row (Speed, Go to the start, Play).
+   Header / overview / stage (flex, full width) / keyboard guide / footer. The footer is
+   Practice's (U90): Speed | Go to the start, Play, Name the notes at the cursor | Menu.
    A phone-size screen has no footer: see `data-compact` below. Nothing recedes: a phone on a
    music stand needs its controls where they are. */
 
@@ -100,124 +100,36 @@
 }
 
 /* ── Footer ─────────────────────────────────────────────────────────────── */
-.footer {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-1);
-  padding: var(--space-2) calc(12px + var(--safe-r)) calc(var(--space-2) + var(--safe-b)) calc(12px + var(--safe-l));
-  background: var(--practice-surface);
-}
-.tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  column-gap: var(--space-2);
-  row-gap: var(--space-1);
-}
-.transport {
+/* The footer is Practice's (`FooterBar` and its rules in practice.module.css, U90). Study's center
+   cluster: its two actions where Practice has its hands, around the same Play button. */
+.cluster {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-2) var(--space-3);
+  gap: var(--space-4);
 }
-.play {
+/* Shaped like an unpressed hand toggle (58 px circle, gray outline), but in the text color: an
+   action, never "off". */
+.round {
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: 58px;
+  height: 58px;
   padding: 0;
-  border: 0;
   border-radius: 50%;
-  background: var(--accent-fill);
-  color: var(--accent-fg);
+  border: 2px solid var(--border);
+  background: transparent;
+  color: var(--fg);
   cursor: pointer;
   touch-action: manipulation;
   transition:
-    transform var(--dur-fast) var(--ease-out),
-    background var(--dur-base) var(--ease-standard);
+    background var(--dur-base) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-out);
 }
-.play:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent-fill) 88%, var(--fg));
-}
-.play:active:not(:disabled) {
-  transform: scale(0.94);
-}
-.play:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.play:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
-}
-.note {
-  margin: 0;
-  text-align: center;
-  font-size: var(--text-xs);
-  color: var(--fg-muted);
-}
-/* The compact Note names control is 34 px tall; with its caption the group is a ≥ 44 px target. */
-.labels {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-height: var(--touch);
-  padding: 2px 0;
-}
-.labels [role='radiogroup'] {
-  min-height: 34px;
-  padding: 2px;
-}
-.labels [role='radio'] {
-  min-height: 30px;
-  padding: 0 var(--space-3);
-  border-radius: calc(var(--radius-m) - 2px);
-}
-.toolCaption {
-  font-size: var(--text-xs);
-  font-weight: 550;
-  line-height: var(--leading-tight);
-}
-.tool {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 52px;
-  min-height: 52px;
-  padding: var(--space-1) var(--space-2);
-  border: 0;
-  border-radius: var(--radius-m);
-  background: transparent;
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--text-xs);
-  font-weight: 550;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background var(--dur-fast) var(--ease-standard),
-    color var(--dur-fast) var(--ease-standard);
-}
-.tool:hover:not(:disabled) {
+.round:hover {
   background: var(--hover);
 }
-.tool[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
-}
-.tool:disabled {
-  color: var(--fg-muted);
-  opacity: 0.55;
-  cursor: default;
-}
-.tool:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+.round:active {
+  transform: scale(0.93);
 }
 
 /* ── Phone-size screens (`data-compact`, usePhone, U74) ──────────────────── */
@@ -384,9 +296,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .play,
+  .round,
   .headerPlay,
-  .tool,
   .iconButton {
     transition: none;
   }

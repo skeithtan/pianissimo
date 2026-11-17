@@ -65,7 +65,7 @@ export interface ScoreOverviewProps {
    * dragging, whenever the dragged edge's bar changes, and with the final value on release.
    */
   readonly onLoopChange?: (loop: LoopRange) => void
-  /** Spoken position, e.g. "Bar 12 of 59". Default counts occurrences. */
+  /** Spoken position, e.g. "Bar 12 of 61". Default counts occurrences. */
   readonly describe?: (occ: number, count: number) => string
   readonly disabled?: boolean
 }

@@ -6,6 +6,7 @@
 import { getFeatures } from '../../app/features'
 import { getMidiService, getStorage } from '../../app/services'
 import type { FrameApi, MidiSource, StripSink } from '../../app/session'
+import type { CreateMicFollower } from '../../app/session/types'
 import {
   browserTimers,
   loadBrowserAudio,
@@ -63,6 +64,8 @@ export interface StripHandle extends StripSink {
   whenRespaced?(): Promise<void>
   /** Hides labels (fading) on a view about to be respaced to show them. */
   holdLabels?(on: boolean): void
+  /** Screen px at the bottom (result card) and top (overlays) the review after a pass keeps free (U97). */
+  setReviewInset?(bottom: number, top?: number): void
 }
 
 /** Which score view the Practice screen shows: the landscape strip or the portrait page. */
@@ -106,6 +109,12 @@ export interface PracticeEnv {
    * click module would otherwise create it after an awaited import. Never throws.
    */
   readonly primeAudio?: () => void
+  /**
+   * The microphone follower and whether this browser can open a microphone (DECISIONS P22).
+   * Absent: the real ones (`app/audio/micFollower.ts`); view tests inject fakes.
+   */
+  readonly createMicFollower?: CreateMicFollower
+  readonly micSupported?: () => boolean
 }
 
 let renderer: OsmdRenderer | null = null

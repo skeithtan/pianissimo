@@ -80,6 +80,8 @@ export class AttemptLog {
   readonly #acc = new Map<number, MeasureAcc>()
   readonly #closed = new Set<number>()
   readonly #completedGroups = new Set<number>()
+  /** Completed groups counted in `groupsFirstPass` (a later chord slip retracts one). */
+  readonly #firstPass = new Set<number>()
   /** Groups reached in this attempt/traversal, in the order reached. */
   readonly #groups = new Map<number, GroupAcc>()
 
@@ -125,20 +127,32 @@ export class AttemptLog {
   }
 
   /**
-   * A wrong attack of MIDI `pitch` at the current expected group, attributed to it and to its
-   * measure. Too-early ones (right pitch) are not listed in the group's wrong pitches.
+   * A wrong attack of MIDI `pitch` attributed to `group` and to its measure. Too-early ones
+   * (right pitch) are not listed in the group's wrong pitches. A wrong attack of a group already
+   * completed (a chord slip, P24) retracts its first pass; when that group's measure has already
+   * closed, the measure-level count goes to `fallback` (the current group and bar), so no bar
+   * evidence is lost.
    */
-  wrong(group: number, occ: number, syntheticBoundary: boolean, early: boolean, pitch: number): void {
+  wrong(
+    group: number,
+    occ: number,
+    syntheticBoundary: boolean,
+    early: boolean,
+    pitch: number,
+    fallback?: { readonly group: number; readonly occ: number; readonly synthetic: boolean },
+  ): void {
     this.wrongAttacks++
     if (early) this.earlyAttacks++
     const g = this.#group(group)
     g.wrong++
     if (early) g.early++
     else g.wrongPitches.push(pitch)
-    const m = this.#measure(occ)
+    if (this.#firstPass.delete(group)) this.groupsFirstPass--
+    const own = !fallback || !this.#closed.has(occ)
+    const m = this.#measure(own ? occ : fallback.occ)
     m.wrong++
-    if (!syntheticBoundary) m.wrongExcludingBoundary++
-    m.errorGroups.add(group)
+    if (!(own ? syntheticBoundary : fallback.synthetic)) m.wrongExcludingBoundary++
+    m.errorGroups.add(own ? group : fallback.group)
   }
 
   /** A press of a pitch tied into the current group: its own class, not a wrong attack (E16). */
@@ -163,7 +177,10 @@ export class AttemptLog {
     g.spreadMs = detail.spreadMs ?? 0
     if (detail.offsetMs !== undefined) g.offsetMs = detail.offsetMs
     this.#measure(occ).completed++
-    if (firstPass) this.groupsFirstPass++
+    if (firstPass) {
+      this.groupsFirstPass++
+      this.#firstPass.add(group)
+    }
     if (this.clockStart !== null) this.onsets.push({ group, t: (time - this.clockStart) / 1000 })
   }
 

@@ -11,7 +11,7 @@ import type { PianissimoStorage } from '../../core/storage'
 import type { PreparedLayout, RespaceSnapshot } from '../../render'
 import { ManualClock } from '../../core/playback/testkit'
 import { importFixture } from '../../../tests/unit/import/fixtures'
-import { $, $$, byLabel, byText, click, mount, type Mounted } from '../shared/testing'
+import { $, $$, byLabel, byText, click, mount, press, type Mounted } from '../shared/testing'
 import type { PracticeEnv, PracticeStripOptions, StripHandle } from '../practice/env'
 import { StudyViewWith } from './StudyView'
 import { PHONE_LANDSCAPE_QUERY, PHONE_QUERY } from '../shared/usePhone'
@@ -155,6 +155,23 @@ async function openPiece(r: Rig): Promise<void> {
   await settle(r)
 }
 
+/** The tablet footer's popover (U90), when open. */
+const studyMenu = () => document.querySelector<HTMLElement>('[role="dialog"][aria-label="Study menu"]')
+const footerMenuButton = () => byLabel($(view!.container, 'footer')!, 'Menu') as HTMLButtonElement
+
+/** Opens the footer's Study menu and returns its popover. */
+function openStudyMenu(): HTMLElement {
+  if (footerMenuButton().getAttribute('aria-expanded') !== 'true') click(footerMenuButton())
+  return studyMenu()!
+}
+
+/** The switch of a menu row, by its label. */
+function menuSwitch(menu: HTMLElement, name: string): HTMLInputElement {
+  return $$(menu, 'label')
+    .find((el) => el.textContent?.trim() === name)!
+    .querySelector<HTMLInputElement>('input[role="switch"]')!
+}
+
 describe('StudyView (U72)', () => {
   it('without a request shows an empty state that leads back to the Library and lists recent pieces', async () => {
     const r = await rig()
@@ -182,13 +199,14 @@ describe('StudyView (U72)', () => {
     expect($(view!.container, 'h1')?.textContent).toBe('Two Hands')
     expect(r.strips).toHaveLength(1)
     expect(r.rooms).toEqual(['hints'])
-    // Playback: Play, Go to the start, Speed; names and keys as reading aids.
+    // Playback: Play, Go to the start, Speed; names and keys as reading aids (in the menu, U90).
     expect(byLabel(view!.container, 'Play')).not.toBeNull()
     expect((byLabel(view!.container, 'Play') as HTMLButtonElement).disabled).toBe(false)
     expect(byLabel(view!.container, 'Go to the start')).not.toBeNull()
     expect(byLabel(view!.container, 'Name the notes at the cursor')).not.toBeNull()
-    expect(byLabel(view!.container, 'Show keys')).not.toBeNull()
-    expect(byLabel(view!.container, 'Note names on the score')).not.toBeNull()
+    const menu = openStudyMenu()
+    expect(menuSwitch(menu, 'Show keys')).toBeTruthy()
+    expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
     // Nothing of Practice: hands, Start, Listen, Repeat, the cursor's repeat button, loop handles.
     expect(byLabel(view!.container, 'Left hand')).toBeNull()
     expect(byLabel(view!.container, 'Right hand')).toBeNull()
@@ -249,10 +267,60 @@ describe('StudyView (U72)', () => {
     expect(strip.opacity.size).toBe(0)
   })
 
+  it("has Practice's footer: Speed, then Go to the start, Play and the hint, then Menu (U90)", async () => {
+    const r = await rig()
+    await openPiece(r)
+    const footers = $$(view!.container, 'footer')
+    expect(footers).toHaveLength(1)
+    const footer = footers[0]!
+    expect($(footer, '[data-testid="footer-tools-slot"]')).not.toBeNull()
+    expect(byLabel(footer, 'Faster by 5 percent')).not.toBeNull()
+    const center = byLabel(footer, 'Play')!.parentElement!
+    expect([...center.children].map((el) => el.getAttribute('aria-label'))).toEqual([
+      'Go to the start',
+      'Play',
+      'Name the notes at the cursor',
+    ])
+    // Plain actions, not toggles: no pressed state.
+    expect(byLabel(footer, 'Go to the start')!.hasAttribute('aria-pressed')).toBe(false)
+    expect(byLabel(footer, 'Name the notes at the cursor')!.hasAttribute('aria-pressed')).toBe(false)
+    const menu = footerMenuButton()
+    expect(menu.getAttribute('aria-haspopup')).toBe('dialog')
+    expect(menu.getAttribute('aria-expanded')).toBe('false')
+    // The old footer tools are gone from the footer itself.
+    expect(byLabel(footer, 'Show keys')).toBeNull()
+    expect(byLabel(footer, 'Metronome')).toBeNull()
+    expect(byLabel(footer, 'Note names on the score')).toBeNull()
+  })
+
+  it('the Study menu holds Note names, Metronome and Show keys, stays open while playing, and Escape closes it (U90)', async () => {
+    const r = await rig()
+    await openPiece(r)
+    expect(studyMenu()).toBeNull()
+    const menu = openStudyMenu()
+    expect(footerMenuButton().getAttribute('aria-expanded')).toBe('true')
+    expect(
+      [...menu.children].map(
+        (row) => row.textContent?.trim().match(/^(Note names|Play through|Keep time|Metronome|Show keys)/)?.[0],
+      ),
+    ).toEqual(['Note names', 'Metronome', 'Show keys'])
+    expect(menu.querySelectorAll('input[role="switch"]')).toHaveLength(2)
+    expect(menu.contains(document.activeElement)).toBe(true)
+    // Playback does not close it: Study never recedes.
+    click(byLabel(view!.container, 'Play'))
+    await settle(r, 3)
+    expect(byLabel(view!.container, 'Pause')).not.toBeNull()
+    expect(footerMenuButton().getAttribute('aria-expanded')).toBe('true')
+    expect(studyMenu()).not.toBeNull()
+    press(studyMenu(), 'Escape')
+    expect(footerMenuButton().getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(footerMenuButton())
+  })
+
   it('the Note names control re-engraves with room for labels, gliding from the tight view', async () => {
     const r = await rig()
     await openPiece(r)
-    click($$(view!.container, '[role="radio"]').find((el) => el.textContent === 'All'))
+    click($$(openStudyMenu(), '[role="radio"]').find((el) => el.textContent === 'All'))
     expect(settings.value.labels.mode).toBe('all')
     expect(r.strips[0]!.held).toEqual([true])
     await settle(r, 2)
@@ -267,42 +335,44 @@ describe('StudyView (U72)', () => {
     expect(r.strips[1]!.opacity.size).toBeGreaterThan(0)
   })
 
-  it('Show keys opens the keyboard guide slot', async () => {
+  it("the menu's Show keys switch opens the keyboard guide slot", async () => {
     const r = await rig()
     await openPiece(r)
     const slot = () => $(view!.container, '[data-testid="guide-slot"]')
     expect(slot()?.dataset['open']).toBe('false')
-    click(byLabel(view!.container, 'Show keys'))
+    const keys = menuSwitch(openStudyMenu(), 'Show keys')
+    expect(keys.checked).toBe(false)
+    click(keys)
     await settle(r, 1)
     expect(slot()?.dataset['open']).toBe('true')
-    expect(byLabel(view!.container, 'Hide keys')).not.toBeNull()
+    expect(menuSwitch(studyMenu()!, 'Show keys').checked).toBe(true)
   })
 
-  it('the Metronome tool follows and edits metronome.enabled, priming audio once when it turns on (U87)', async () => {
+  it("the menu's Metronome switch follows and edits metronome.enabled, priming audio once when it turns on (U87)", async () => {
     let primed = 0
     const r = await rig()
     r.env = { ...r.env, primeAudio: () => primed++ }
     await openPiece(r)
-    const tool = () => byLabel(view!.container, 'Metronome') as HTMLButtonElement
-    expect(tool().getAttribute('aria-pressed')).toBe('false')
-    expect(tool().disabled).toBe(false)
-    click(tool())
+    const metronome = () => menuSwitch(openStudyMenu(), 'Metronome')
+    expect(metronome().checked).toBe(false)
+    expect(metronome().disabled).toBe(false)
+    click(metronome())
     await settle(r, 1)
     expect(settings.value.metronome.enabled).toBe(true)
-    expect(tool().getAttribute('aria-pressed')).toBe('true')
+    expect(metronome().checked).toBe(true)
     expect(primed).toBe(1)
-    click(tool())
+    click(metronome())
     await settle(r, 1)
     expect(settings.value.metronome.enabled).toBe(false)
-    expect(tool().getAttribute('aria-pressed')).toBe('false')
+    expect(metronome().checked).toBe(false)
     expect(primed).toBe(1)
   })
 
-  it('the Metronome tool is disabled without Web Audio (U87)', async () => {
+  it("the menu's Metronome switch is disabled without Web Audio (U87)", async () => {
     const r = await rig()
     r.env = { ...r.env, hasWebAudio: () => false }
     await openPiece(r)
-    expect((byLabel(view!.container, 'Metronome') as HTMLButtonElement).disabled).toBe(true)
+    expect(menuSwitch(openStudyMenu(), 'Metronome').disabled).toBe(true)
   })
 
   it('Settings opens over the score and Back leads to the Library', async () => {

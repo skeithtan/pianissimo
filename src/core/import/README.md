@@ -39,8 +39,8 @@ syntax and imported score text retain their original punctuation.
 - **Pitch (M1).** `<pitch>` is sounding; written = sounding − ottava shift, applied once. Ottava
   scope is per staff and `number`, half-open [start, stop) in source positions. A span is split
   where a repeat jumps; `startOcc`/`endOcc` are the bars holding the first and last displaced
-  positions (the reference piece's 8va stop is written at the start of bar 4 but displaces only bar 3, so
-  its span is bar 3: `startOcc = endOcc = 2`).
+  positions (the reference piece's first 8va stop is written at the start of bar 4 but displaces only bar 3, so
+  its span is bar 3: `startOcc = endOcc = 2`; the second is bar 58).
 - **Context after a jump** (key, meter, clef, tempo, dynamics, ottava) is what the *written* score
   states at the jump target, not the last performed value. `renderXml` re-states key/time/clef/
   divisions where they differ and closes/reopens octave-shift brackets so they stay balanced.
@@ -68,7 +68,7 @@ syntax and imported score text retain their original punctuation.
   sound/metronome disagreement is a `tempo-conflict` warning and the printed **metronome mark
   wins**. Several statements at one position: the last (document order) wins; a hidden
   (print-object="no" or sound-only) restatement of a printed mark is the file's playback
-  realization (info `tempo-realized`; the reference piece does this at bars 39 and 57). Sound-only
+  realization (info `tempo-realized`; the reference piece does this at bar 39). Sound-only
   changes keep the last displayed beat unit. Tempo is read from all parts (also unselected).
   No numeric tempo → empty map + `tempo-missing`; the first tempo is used before its bar.
 - **Sections (I12).** `ScoreModel.sections` (optional, only when found): `<rehearsal>` marks, and
@@ -141,7 +141,7 @@ syntax and imported score text retain their original punctuation.
 | renderXml read by OSMD 2.2.1 (measures, notes, ottava brackets and displaced notes match the model) | done (reader + OSMD's displacement rule; drawing is render/'s gate) |
 | Worker + client (progress, cancellation, one job, release) | done, tested with an in-process fake worker; real `Worker` in browsers not yet exercised (e2e, WP8) |
 | Fixtures (`tests/fixtures/scores/`, 24 files) and `generateLongScore(500)` | done |
-| Reference-piece facts (59 bars, 8va written bars 3–4 / displacing bar 3, rolls bars 23 and 59, P1:5 ambiguous, 66 BPM) | done |
+| Reference-piece facts (61 bars, 8va written bars 3–4 / displacing bar 3 and written bars 58–59 / displacing bar 58, rolls bars 23 and 61, P1:5 ambiguous, 66 BPM) | done |
 | 500-measure import time | done (~0.7 s in Node; 🔒 iPad timing) |
 
 ## Remaining work

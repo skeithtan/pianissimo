@@ -23,7 +23,7 @@ describe('wrong pitches', () => {
   it('lists every wrong key of a group in order, repeats included (too-early pitches: see accompaniment)', () => {
     const m = buildScore({ notes: [0, 1, 2].map((at) => ({ at, midi: C4 + 2 * at })) })
     const d = scored(m)
-    d.tap(B3, B3, C4).tap(F4)
+    d.tap(B3, B3, C4).wait(200).tap(F4)
     d.engine.interrupt('user-stop', d.now)
     const r = d.records()[0]!
     expect(r.completion).toBe('abandoned')

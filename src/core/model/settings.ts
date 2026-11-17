@@ -141,10 +141,14 @@ export const MIN_RHYTHM_TOLERANCE_MS = 40
 export const MAX_RHYTHM_TOLERANCE_MS = 500
 
 /**
- * The microphone follower (DECISIONS P15): in Play-through with both hands the cursor follows
- * what this device's microphone hears (an acoustic piano), so no MIDI input is needed.
+ * The microphone follower (DECISIONS P15, P22). Without a piano input, play-through always follows
+ * what this device's microphone hears (an acoustic piano); no setting is needed for that.
  */
 export interface MicSettings {
+  /**
+   * Follow the microphone even when a piano is connected (default off: the piano's keys). The
+   * Practice menu's Follow choice (Piano / Microphone) and Settings → Sound edit this one value.
+   */
   readonly follow: boolean
 }
 

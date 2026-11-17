@@ -93,7 +93,7 @@ describe('Acceptance: Ottava scope and visibility (engine side)', () => {
 
   it('both hands: every applicable active span, including a staff that is holding or resting', () => {
     const d = driver(twoSpans)
-    d.tap(C3, C5)
+    d.tap(C3, C5).wait(200)
     d.tap(C4)
     expect(d.state.ottavaWarning).toEqual([0, 1])
   })
@@ -108,7 +108,7 @@ describe('Acceptance: Ottava scope and visibility (engine side)', () => {
     const d = driver(twoSpans)
     d.tap(C3, C5).tap(D5)
     expect(d.state.groupIndex).toBe(2)
-    d.tap(C4)
+    d.wait(200).tap(C4)
     expect(d.state.ottavaWarning).toEqual([1])
   })
 

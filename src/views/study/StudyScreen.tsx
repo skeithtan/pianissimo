@@ -1,9 +1,11 @@
 /**
  * The Study screen (DECISIONS U72): the score and its playback, nothing to practice. A
  * header (back, title, Settings), the whole-piece overview, the notation stage (the landscape
- * strip or the portrait page, as in Practice), the keyboard-guide slot and a footer: Note names,
- * the "Name the notes at the cursor" hint, Show keys and the Metronome tool (U87), then Speed, Go to the start and Play /
- * Pause.
+ * strip or the portrait page, as in Practice), the keyboard-guide slot and Practice's footer
+ * (`FooterBar`, U90): Speed at the start edge; Go to the start, Play / Pause (the same `PlayButton`)
+ * and "Name the notes at the cursor" in the middle, where Practice has its hands; the Menu button at
+ * the end edge, whose popover ("Study menu") holds Note names, the Metronome switch (U87) and Show
+ * keys and stays open while the piece plays.
  *
  * On a phone-size screen (`usePhone`, U74) there is no footer at all: the header carries Play /
  * Pause and a menu button, and every other control (Speed, Metronome, Note names, Show keys, the hint, Go to
@@ -33,9 +35,12 @@ import type { PrepareOptions, PreparedLayout } from '../../render'
 import { MemoryLayoutCache } from '../../render/cache'
 import { pageWidthFor } from '../../render/page/geometry'
 import { Button, Segmented, Sheet, Toggle } from '../../ui/controls'
+import { PlayButton } from '../../ui/HandToggles'
 import { Icon, type IconName } from '../../ui/icons'
 import { TempoControl } from '../../ui/TempoControl'
 import type { PracticeEnv, StripHandle } from '../practice/env'
+import { FooterBar } from '../practice/Footer'
+import { FooterMenuPopover, LABEL_OPTIONS, footerMenuClasses } from '../practice/FooterMenu'
 import { GuidePanel, OverviewBar } from '../practice/live'
 import { labelRoom, prepareOptionsFor, sameParams, type LayoutParamsKey } from '../practice/PracticeScreen'
 import { ScoreSkeleton } from '../practice/ScoreSkeleton'
@@ -43,6 +48,7 @@ import { TempoSheet } from '../practice/TempoSheet'
 import { useOrientation, useStageWidth } from '../practice/useOrientation'
 import { useStore } from '../practice/useStore'
 import { usePhone, usePhoneLandscape } from '../shared/usePhone'
+import practiceStyles from '../practice/practice.module.css'
 import styles from './study.module.css'
 
 export interface StudyScreenProps {
@@ -54,12 +60,6 @@ export interface StudyScreenProps {
 
 /** The toast when the Hint button finds no note at the cursor (past the end of the piece). */
 export const NO_NOTES_HERE = 'No notes at the cursor to name.'
-
-const LABEL_OPTIONS = [
-  { value: 'off', label: 'Off', title: 'No persistent note names' },
-  { value: 'conditional', label: 'Conditional', title: 'Name notes outside your chosen range' },
-  { value: 'all', label: 'All', title: 'Name every note' },
-] as const
 
 const QUARTER = rat(1, 4)
 
@@ -84,31 +84,11 @@ function pickSettings(): SessionSettings {
   }
 }
 
-/** Icon-only footer tool: the name is the accessible label and the tooltip. */
-function Tool({
-  icon,
-  label,
-  pressed,
-  disabled,
-  onClick,
-}: {
-  icon: IconName
-  label: string
-  pressed?: boolean
-  disabled?: boolean
-  onClick: () => void
-}) {
+/** One of the two round actions beside Play, where Practice has its hand toggles (U90). */
+function RoundAction({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      class={styles.tool}
-      aria-label={label}
-      title={label}
-      aria-pressed={pressed === undefined ? undefined : pressed}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      <Icon name={icon} size={24} />
+    <button type="button" class={styles.round} aria-label={label} title={label} onClick={onClick}>
+      <Icon name={icon} size={30} />
     </button>
   )
 }
@@ -251,10 +231,11 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
               magnifyRef.current = m
             },
             returnLabel: 'Return to current position',
-            // Browsing while the piece plays pauses it (U41).
+            // Browsing while the piece plays holds it until the release (U41, U95).
             onBrowse: (browsing) => {
               if (browsing) session.browseStarted()
             },
+            onBrowseRelease: () => void session.browseReleased(),
             onSeekRequest: (occ) => session.seek(occ),
             onCursorSeek: (position) => session.seekPosition(position),
             cursorDragLabel: (position) => positionText(model, position),
@@ -332,8 +313,6 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
       compact
     />
   )
-  const keysLabel = ui.keyboardVisible ? 'Hide keys' : 'Show keys'
-  const toggleKeys = () => session.setKeyboardVisible(!ui.keyboardVisible)
   // The Metronome switch (DECISIONS U87, P20): Study is Listen-only, so the scope is the general one.
   const metronomeIsOn = !ui.metronomeMuted && metronomeOn(appSettings.metronome, ui.metronomeScope)
   const metronomeDisabled = ui.metronomeMuted || source === null || env.hasWebAudio?.() === false
@@ -428,49 +407,56 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
       {phone ? (
         <div class={styles.safeBottom} />
       ) : (
-        <footer class={styles.footer}>
-          <div class={styles.tools}>
-            <div class={styles.labels}>
-              {noteNames}
-              <span class={styles.toolCaption} aria-hidden="true">
-                Note names
-              </span>
-            </div>
-            <Tool icon="hint" label="Name the notes at the cursor" onClick={onHint} />
-            <Tool icon="keys" label={keysLabel} pressed={ui.keyboardVisible} onClick={toggleKeys} />
-            <Tool
-              icon="metronome"
-              label="Metronome"
-              pressed={metronomeIsOn}
-              disabled={metronomeDisabled}
-              onClick={() => toggleMetronome(!metronomeIsOn)}
-            />
-          </div>
-          <div class={styles.transport}>
-            {speed('up')}
-            <Tool icon="restart" label="Go to the start" onClick={toStart} />
-            <button
-              type="button"
-              class={styles.play}
-              aria-label={playLabel}
-              title={playLabel}
-              disabled={playDisabled}
-              onClick={() => session.togglePlay()}
-            >
-              <Icon name={ui.playing ? 'pause' : 'play'} size={32} />
-            </button>
-          </div>
-          {!ui.playing && ui.startReason ? (
-            <p class={styles.note} role="note">
-              {ui.startReason}
-            </p>
-          ) : null}
-          {ui.soundStatus ? (
-            <p class={styles.note} role="status">
-              {ui.soundStatus}
-            </p>
-          ) : null}
-        </footer>
+        <FooterBar
+          start={speed('up')}
+          end={
+            <FooterMenuPopover label="Study menu">
+              <div class={footerMenuClasses.row}>
+                <span class={footerMenuClasses.label} aria-hidden="true">
+                  Note names
+                </span>
+                {noteNames}
+              </div>
+              <Toggle
+                class={`${footerMenuClasses.row} ${footerMenuClasses.toggle}`}
+                label="Metronome"
+                checked={metronomeIsOn}
+                disabled={metronomeDisabled}
+                onChange={toggleMetronome}
+              />
+              <Toggle
+                class={`${footerMenuClasses.row} ${footerMenuClasses.toggle}`}
+                label="Show keys"
+                checked={ui.keyboardVisible}
+                onChange={(on) => session.setKeyboardVisible(on)}
+              />
+            </FooterMenuPopover>
+          }
+          center={
+            <>
+              <div class={styles.cluster}>
+                <RoundAction icon="restart" label="Go to the start" onClick={toStart} />
+                <PlayButton
+                  playing={ui.playing}
+                  label={playLabel}
+                  disabled={playDisabled}
+                  onClick={() => session.togglePlay()}
+                />
+                <RoundAction icon="hint" label="Name the notes at the cursor" onClick={onHint} />
+              </div>
+              {!ui.playing && ui.startReason ? (
+                <p class={practiceStyles.startReason} role="note">
+                  {ui.startReason}
+                </p>
+              ) : null}
+              {ui.soundStatus ? (
+                <p class={practiceStyles.startReason} role="status">
+                  {ui.soundStatus}
+                </p>
+              ) : null}
+            </>
+          }
+        />
       )}
 
       <Sheet title="Menu" untitled floating open={phone && menuOpen} onClose={() => setMenuOpen(false)}>

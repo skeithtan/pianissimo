@@ -152,6 +152,11 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   play mark lives only in the owning segment.
   A mid-bar clef change switches the sticky clef at its engraved change clef (else at its onset),
   not at the barline (`ADAPTER_VERSION` pn-7).
+  Browse bounds (U96): `clampTranslate(tx, firstX, contentWidth, viewport, scale, anchor)` keeps the
+  fixed cursor line between the piece's first cursor stop `firstX` (the cursor x at position zero,
+  fixed at construction; the same x `scrollTranslate` uses at the start) and the content's right edge.
+  Drag, wheel, handle-drag edge scroll and zoom while browsing all go through it, so the clefs, key and
+  time signature never slide under the line; at the limit the view equals the piece at its start.
   After browsing, `browsedPosition()` returns the exact nearest snap onset under the rendered
   fixed cursor, so the session can seek there before resuming and call `returnToCurrent()` to
   restore following. Keyboard seeks also start from that visible note and end browsing when
@@ -182,6 +187,21 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   pointer events. Fade in 300 ms staggered 40 ms left to right; replaced or cleared marks fade out
   in 200 ms and are removed on `animationend` (fallback timer 260 ms). Reduced motion: opacity
   only, no stagger.
+- **Review after a completed pass** (`setReview`, `setReviewInset`, `strip/review.ts`, U97): on,
+  the strip blends (650 ms, ease in-out cubic; back in 420 ms) from the playing frame to a review
+  frame: the largest zoom, at most the playing zoom and at least `reviewMinZoom` (default
+  `REVIEW_MIN_ZOOM` 0.6, never below `minZoom`), at which the loop's extent fits between the
+  sticky signatures (their width + fade, scaled) and the right edge with 24 px margins and the
+  staves fit between the top and bottom insets (`setReviewInset(bottom, top)`); centered when it fits, else from the loop start. The strip root is `overflow: clip` (never scrolled itself). `PageView.setReview` only toggles `pn-review` (loop controls hidden, no zoom). Blend: scale
+  `s0 → sR`; the cursor's screen x from the anchor to the cursor note's review x; the translate
+  keeps the cursor note under the cursor on every frame, so a moving transport needs no
+  retargeting. Driven in `flush` per frame (`pn-instant`, `performance.now()`), both ends mounted
+  on the first frame, `--pn-zoom` written once landed; `zoom()` and the requested zoom never
+  change. While on (`pn-review`): the music holds still, the cursor moves over it (a `wrapTo`
+  glides the cursor, no pan), loop controls hide, the grip is inert, a drag pans and a pinch /
+  ctrl-wheel zooms the review only (no `onBrowse`, no `onZoomChange`), a gesture lands a running
+  zoom, `respaceSnapshot` returns null. A strip told before its first frame, or with reduced
+  motion, switches at once. Off without a loop: the playing frame.
 - **Loop UI**: gray band over the passage, white rounded chevron handle tabs (40×110, counter-
   scaled to stay that size at any zoom), ✕ clear button (88 px; 56 px when the band is under
   150 px on screen, never hidden while editable) centered; pointer capture, never inverts,
@@ -272,7 +292,9 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
 
 ## Measurements (this container, x86; Playwright, all-note labels, 1180×400 strip)
 
-| | Reference piece 59 bars (Chromium / WebKit) | importer `generateLongScore(500)` | renderer `long-500` |
+The reference piece column was measured on the earlier 59-bar revision (1353 notes); the piece now has 61 bars (1386 notes) and has not been re-measured.
+
+| | Reference piece, earlier 59-bar revision (Chromium / WebKit) | importer `generateLongScore(500)` | renderer `long-500` |
 | --- | --- | --- | --- |
 | OSMD load (first) | 366 / 204 ms | – | – |
 | engrave (all iterations) | 810 / 744 ms (1 it.) | 1801 / 3036 ms (2 it.) | 1086 / 1647 ms (1 it.) |

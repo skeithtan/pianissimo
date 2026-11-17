@@ -97,8 +97,9 @@ describe('OnsetMatcher', () => {
     for (const chord of TUNE) stage.strike(chord).run(30)
     expect(stage.heard).toEqual([0, 1, 2, 3, 4, 5, 6])
     expect(stage.matcher.confidence).toBeGreaterThan(0.8)
-    // Every attack was decided before it had fully entered the frame.
-    expect(stage.events.filter((e) => e.to !== e.from).every((e) => e.early)).toBe(true)
+    // Every attack was decided within 60 ms of the first rise (P21: not before 40 ms, when the
+    // thump of the key has faded and the note has not), before it had fully entered the frame.
+    expect(stage.events.filter((e) => e.to !== e.from).every((e) => e.frame - e.opened <= 6)).toBe(true)
   })
 
   it('waits as long as the player does: a ringing chord, a release and noise move nothing', () => {
@@ -128,8 +129,8 @@ describe('OnsetMatcher', () => {
     const [, wrong, thump] = stage.events
     expect(wrong!.explained).toBe(false)
     expect(thump!.explained).toBe(false)
-    // The burst is as flat as a spectrum gets, which is why no group may claim it.
-    expect(thump!.flat).toBeGreaterThan(0.9)
+    // (The burst is over by the time the event is decided, 40 ms after it rose: what is left of
+    // it fits no group. Before P21 it was decided sooner and recognized as flat.)
     stage.strike([62]).run(30)
     expect(stage.heard).toEqual([0, 1])
   })
@@ -165,7 +166,9 @@ describe('OnsetMatcher', () => {
   })
 
   it('needs a few attacks, not one, to believe the player is somewhere else', () => {
-    const pitches = Array.from({ length: 30 }, (_, k) => [48 + ((k * 7) % 36)])
+    // From G3 up: a lone note below `lowest` is heard by its partials only and may pass for its
+    // octave (README "Limits").
+    const pitches = Array.from({ length: 30 }, (_, k) => [55 + ((k * 7) % 36)])
     const stage = new Stage(pitches).run(40)
     for (const k of [0, 1, 2]) stage.strike(pitches[k]!).run(30)
     // A jump of two lines.

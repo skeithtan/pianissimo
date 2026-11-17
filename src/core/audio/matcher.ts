@@ -11,8 +11,9 @@
  *    log-compressed excess over the baselines is the frame's rise; when its norm
  *    passes `riseOn` an **event** opens (something was struck) and lasts until the rise has
  *    fallen back or `maxAge` frames passed.
- * 2. **Evidence.** The event's observed rise is the loudest energy each semitone reached during
- *    it over the energies just before it. For a group, the expected rise is what its attack
+ * 2. **Evidence.** The event's observed rise is the energy of each semitone when it is decided
+ *    over the energies just before it (not the loudest during it: the thump of the key and
+ *    hammer is over by then, the note is not), from G3 up only (`lowest`). For a group, the expected rise is what its attack
  *    template would add to those same energies (so notes already ringing are discounted), at the
  *    best of a few loudness scales. The cosine of the two is the group's evidence; a broadband
  *    burst (a thump, a click) is recognized by the same cosine against a flat spectrum and gives
@@ -34,7 +35,7 @@
  * group, or a wrong note, does not make the whole fit better.) An event nothing explains is
  * likewise kept for a moment and read together with the next one.
  */
-import { SEMITONES } from './features'
+import { PIANO_LOW, SEMITONES } from './features'
 import type { AttackTemplate } from './templates'
 
 export interface MatcherOptions {
@@ -52,7 +53,7 @@ export interface MatcherOptions {
   readonly neutral?: number
   /** Score per unit of cosine above `neutral` (default 10). */
   readonly weight?: number
-  /** Price of each skipped group (default 0.5: 0.05 of cosine). */
+  /** Price of each skipped group (default 1: 0.1 of cosine). */
   readonly skip?: number
   /** Price of striking the same group again (default 1). */
   readonly again?: number
@@ -60,6 +61,29 @@ export interface MatcherOptions {
   readonly jump?: number
   /** Groups after the best position that stay reachable (default 32). */
   readonly ahead?: number
+  /**
+   * Groups more that stay reachable per event since the position last moved (default 2), up to
+   * `aheadMost` (default 128): a player whose attacks go unexplained may have moved on.
+   */
+  readonly aheadGrow?: number
+  readonly aheadMost?: number
+  /**
+   * MIDI pitch of the lowest semitone that counts for events and evidence (default 55, G3,
+   * 196 Hz). Below it a microphone on or near the piano hears the thump of every key and hammer
+   * (60–400 Hz, often louder than soft notes) and the frame resolves semitones poorly; lower
+   * notes are recognized by their partials from G3 up.
+   */
+  readonly lowest?: number
+  /**
+   * `jump` for places beyond the next `near` + 1 groups (default 10: about three clear events).
+   * A play-through cursor never moves back, so a place ahead must be surer than one behind.
+   */
+  readonly jumpAhead?: number
+  /**
+   * Frames an event lasts before it is decided (default 4: 40 ms). The thump of the key and
+   * hammer has mostly faded by then, the note has not.
+   */
+  readonly minAge?: number
   /** Groups before the best position that stay reachable (default 24). */
   readonly behind?: number
   /** Groups that may be skipped in one step (default 4). */
@@ -152,6 +176,13 @@ export class OnsetMatcher {
   readonly #again: number
   readonly #jump: number
   readonly #ahead: number
+  readonly #aheadGrow: number
+  readonly #aheadMost: number
+  readonly #lowest: number
+  readonly #minAge: number
+  readonly #jumpAhead: number
+  /** 1 for the semitones that count in events and evidence (from `lowest` up), else 0. */
+  readonly #w = new Float64Array(SEMITONES)
   readonly #behind: number
   readonly #near: number
   readonly #maxAge: number
@@ -169,8 +200,8 @@ export class OnsetMatcher {
   readonly #carry = new Float64Array(SEMITONES)
   /** Energies before the open group began. */
   readonly #chord = new Float64Array(SEMITONES)
-  /** Loudest energy per semitone during the open event. */
-  readonly #loudest = new Float64Array(SEMITONES)
+  /** Energy per semitone of the latest frame (what an event is decided on). */
+  readonly #now = new Float64Array(SEMITONES)
   readonly #rise = new Float64Array(SEMITONES)
   readonly #logBefore = new Float64Array(SEMITONES)
   /** Score per state (state s = group s − 1 was heard last; 0 = nothing yet), best = 0. */
@@ -199,6 +230,8 @@ export class OnsetMatcher {
   #openUntil = -Infinity
   /** Cosine of everything struck since the open group began with the group, at its latest notes. */
   #openCosine = 0
+  /** Events decided since the position last moved on an explained attack. */
+  #unmoved = 0
 
   /**
    * `templates[i]` is the attack of group i; `fillFrames` is how many frames the analyzer needs
@@ -214,10 +247,16 @@ export class OnsetMatcher {
     this.#riseMin = options.riseMin ?? 1.6
     this.#neutral = options.neutral ?? 0.5
     this.#weight = options.weight ?? 10
-    this.#skip = options.skip ?? 0.5
+    this.#skip = options.skip ?? 1
     this.#again = options.again ?? 1
     this.#jump = options.jump ?? 7
     this.#ahead = options.ahead ?? 32
+    this.#aheadGrow = options.aheadGrow ?? 2
+    this.#aheadMost = options.aheadMost ?? 128
+    this.#lowest = Math.max(0, (options.lowest ?? 55) - PIANO_LOW)
+    this.#minAge = options.minAge ?? 4
+    this.#jumpAhead = options.jumpAhead ?? 10
+    for (let p = this.#lowest; p < SEMITONES; p++) this.#w[p] = 1
     this.#behind = options.behind ?? 24
     this.#near = options.near ?? 4
     this.#maxAge = options.maxAge ?? 10
@@ -232,6 +271,11 @@ export class OnsetMatcher {
     this.#cosine = new Float64Array(templates.length + 1)
     this.seek(0)
     this.listen()
+  }
+
+  /** Groups after the best position that stay reachable now. */
+  #reach(): number {
+    return Math.max(this.#ahead, Math.min(this.#aheadMost, this.#ahead + this.#aheadGrow * this.#unmoved))
   }
 
   /** The group heard last (−1: none yet). */
@@ -253,6 +297,7 @@ export class OnsetMatcher {
     this.#confidence = 0
     this.#carryAt = -Infinity
     this.#open = -1
+    this.#unmoved = 0
   }
 
   /**
@@ -318,7 +363,8 @@ export class OnsetMatcher {
       }
       const lb = Math.log1p(g * b)
       const d = Math.log1p(g * v) - lb
-      sum += d * d
+      const wd = this.#w[p]! * d
+      sum += wd * wd
       base[p] = Math.expm1(lb + this.#rate * d) / g
     }
     const norm = Math.sqrt(sum)
@@ -328,14 +374,13 @@ export class OnsetMatcher {
       if (norm >= this.#riseOn) {
         this.#event = { age: 0, peak: norm }
         this.#eventOpened = this.#frame
-        this.#loudest.set(energy)
       }
       return false
     }
     event.age++
-    const loudest = this.#loudest
-    for (let p = 0; p < SEMITONES; p++) if (energy[p]! > loudest[p]!) loudest[p] = energy[p]!
+    this.#now.set(energy)
     if (norm > event.peak) event.peak = norm
+    if (event.age < this.#minAge) return false
     const ending = norm < this.#closeDrop * event.peak || event.age >= this.#maxAge
     return event.age >= 2 || ending ? this.#decide(energy, g, ending) : false
   }
@@ -354,13 +399,14 @@ export class OnsetMatcher {
   #observe(before: Float64Array, g: number): number {
     const rise = this.#rise
     const logBefore = this.#logBefore
-    const loudest = this.#loudest
+    const now = this.#now
+    const w = this.#w
     let sum = 0
     for (let p = 0; p < SEMITONES; p++) {
       const l = Math.log1p(g * before[p]!)
       logBefore[p] = l
-      const d = Math.log1p(g * loudest[p]!) - l
-      const r = d > 0 ? d : 0
+      const d = Math.log1p(g * now[p]!) - l
+      const r = d > 0 ? d * w[p]! : 0
       rise[p] = r
       sum += r * r
     }
@@ -379,7 +425,9 @@ export class OnsetMatcher {
       let own = 0
       for (let i = 0; i < index.length; i++) {
         const p = index[i]!
-        const expected = Math.log1p(g * (before[p]! + s * value[i]!)) - logBefore[p]!
+        const wp = this.#w[p]!
+        if (wp === 0) continue
+        const expected = wp * (Math.log1p(g * (before[p]! + s * value[i]!)) - logBefore[p]!)
         dot += rise[p]! * expected
         own += expected * expected
       }
@@ -400,8 +448,8 @@ export class OnsetMatcher {
       const s = (0.2 * scale) / g
       let dot = 0
       let own = 0
-      for (let p = 0; p < SEMITONES; p++) {
-        const expected = Math.log1p(g * (before[p]! + s)) - logBefore[p]!
+      for (let p = this.#lowest; p < SEMITONES; p++) {
+        const expected = this.#w[p]! * (Math.log1p(g * (before[p]! + s)) - logBefore[p]!)
         dot += rise[p]! * expected
         own += expected * expected
       }
@@ -426,7 +474,7 @@ export class OnsetMatcher {
     const cosine = this.#cosine
     const from = this.#state
     const first = Math.max(0, from - this.#behind)
-    const last = Math.min(score.length - 1, from + this.#ahead)
+    const last = Math.min(score.length - 1, from + this.#reach())
     const lo = Math.max(1, ending ? first : from)
     const hi = ending ? last : Math.min(last, from + 1 + this.#near)
     for (let s = lo; s <= hi; s++) cosine[s] = 0
@@ -507,6 +555,8 @@ export class OnsetMatcher {
       })
     }
     this.#event = null
+    // Each event that does not move the position widens the reach ahead (`aheadGrow`).
+    this.#unmoved = explained && moved ? 0 : this.#unmoved + 1
     for (let s = first; s <= last; s++) score[s] = next[s]!
     this.#state = bestState
     this.#spread()
@@ -574,10 +624,12 @@ export class OnsetMatcher {
   #spread(): void {
     const score = this.#score
     const lo = Math.max(0, this.#state - this.#behind)
-    const hi = Math.min(score.length - 1, this.#state + this.#ahead)
+    const hi = Math.min(score.length - 1, this.#state + this.#reach())
     const best = score[this.#state]!
+    const far = this.#state + 1 + this.#near
     for (let s = 0; s < score.length; s++) {
-      score[s] = s < lo || s > hi ? -Infinity : Math.max(score[s]! - best, -this.#jump)
+      const floor = s > far ? this.#jumpAhead : this.#jump
+      score[s] = s < lo || s > hi ? -Infinity : Math.max(score[s]! - best, -floor)
     }
   }
 }

@@ -1,6 +1,7 @@
 /**
- * Play-through through the microphone (DECISIONS P15, P16), end to end in the browser: the real
- * AudioWorklet, follower worker and session, with no MIDI at all. Only the microphone is
+ * Play-through through the microphone (DECISIONS P15, P16, P22), end to end in the browser: the
+ * real AudioWorklet, follower worker and session, with no MIDI at all and no Settings visit (no
+ * piano: play-through is on and follows the microphone, P22). Only the microphone is
  * replaced: `getUserMedia` returns a stream that plays a synthesized performance of the seeded
  * piece, with a stop in the middle, so the cursor has both something to follow and something to
  * wait for.
@@ -124,13 +125,23 @@ test('the cursor follows an acoustic piano through the microphone and waits whil
   const { pcm, groups, times, pitches } = await playing()
   expect(groups.length).toBe(6)
   await installFakeMicrophone(page, pcm)
-  // No MIDI anywhere: the microphone stands in for the piano.
-  await seedPiece(page, { mic: { follow: true }, metronome: { ...DEFAULT_SETTINGS.metronome, enabled: true } })
+  // No MIDI anywhere and the default settings (the metronome on, to check it stays silent): the
+  // microphone stands in for the piano without a visit to Settings.
+  await seedPiece(page, { metronome: { ...DEFAULT_SETTINGS.metronome, enabled: true } })
   await openSeededPractice(page)
+  // Play through is already on and cannot be switched off; Follow shows the microphone.
   const menu = await openFooterMenu(page)
-  await menu.getByRole('switch', { name: 'Play through' }).click()
+  const play = menu.getByRole('switch', { name: 'Play through' })
+  await expect(play).toBeChecked()
+  await expect(play).toBeDisabled()
+  await expect(menu.getByText('No piano connected: following the microphone.')).toBeVisible()
+  await expect(menu.getByRole('radio', { name: 'Microphone' })).toHaveAttribute('aria-checked', 'true')
+  await expect(menu.getByRole('radio', { name: 'Piano' })).toBeDisabled()
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Start', exact: true }).click()
+  // The main button starts it at once (the browser's permission prompt aside).
+  const start = page.getByRole('button', { name: 'Start', exact: true })
+  await expect(start).toBeEnabled()
+  await start.click()
   await expect(page.getByTestId('mic-status')).toContainText('Following through the microphone.')
 
   // Each poll keeps the snapshot it took, so the checks after it look at the sample that ended it

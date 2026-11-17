@@ -105,7 +105,8 @@ describe('PracticeSession: note-level Repeat loops (U21)', () => {
     if (action === 'browse') h.session.browseStarted()
     else h.session.pause()
     h.frames.flush()
-    expect(h.session.ui.get().playing).toBe(false)
+    // A browse holds Listen until the release (U95): the button still reads Pause.
+    expect(h.session.ui.get().playing).toBe(action === 'browse')
     expect(h.strip.loop).toEqual(range)
     expect(h.strip.loopEditable).toBe(true)
 

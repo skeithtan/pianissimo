@@ -37,8 +37,9 @@ samples ─► SemitoneAnalyzer ─► OnsetMatcher ─► group heard last ─�
 - **What is expected** (`templates.ts`): `attackGroups(model)` lists the positions where notes
   are struck with their distinct pitches (tie continuations, grace and cue notes left out: the
   practice timeline's groups for both hands). A group's `AttackTemplate` is the sum of its
-  pitches' semitone energies: 16 partials at 1/h power, spread over FFT bins by the window's own
-  response (`windowLobe`) and binned exactly as live frames are.
+  pitches' semitone energies: 16 partials at h^−2.5 power (`ROLL_OFF`; a real piano through a
+  phone gives its third and higher partials 15–30 dB under the fundamental, P21), spread over FFT
+  bins by the window's own response (`windowLobe`) and binned exactly as live frames are.
 - **Matching** (`matcher.ts`, `OnsetMatcher`, one `step` per frame):
   1. *Rise.* Each semitone has a baseline that falls with the sound (60 dB a second at most:
      the dips of beating partials are not followed, so their return is no attack) and rises
@@ -46,20 +47,28 @@ samples ─► SemitoneAnalyzer ─► OnsetMatcher ─► group heard last ─�
      running peak (20 dB a second decay), never less than 20 dB over the noise floor, which is
      read across the spectrum (the quietest tenth of the semitones from G3 up) so it is known
      even while notes sound. When the norm of the excess over the baselines passes 1.2 an
-     **event** opens; it ends when the rise has fallen back or after 100 ms.
-  2. *Evidence.* The event's observed rise is the loudest energy each semitone reached over the
-     energies just before it. A group's expected rise is what its template would add to those
+     **event** opens; it ends when the rise has fallen back or after 100 ms. Only semitones from
+     G3 up count, here and for the evidence (`lowest`): below it a microphone on or near the
+     piano hears the thump of every key and hammer, often louder than soft notes (P21); lower
+     notes are recognized by their partials.
+  2. *Evidence.* The event's observed rise is the energy of each semitone in the frame that
+     decides it over the energies just before it (not the loudest during the event: the thump
+     is over by then, the note is not). A group's expected rise is what its template would add to those
      same energies, so notes already ringing are discounted, at the best of four loudness
      scales. Their cosine is the group's evidence. The same cosine against a flat spectrum
      recognizes a broadband burst (a thump, a click): no group gets evidence above it.
   3. *Position.* A score per position is updated at each event as in a Viterbi step: the event
      is unexplained (free: nothing moves), or it is the attack of group `c` reached from the
-     group before it, from up to four groups earlier (skipped or unheard notes, 0.05 of cosine
+     group before it, from up to four groups earlier (skipped or unheard notes, 0.1 of cosine
      each) or from itself (struck again, 0.1). Positions up to 24 groups behind and 32 ahead of
-     the best one are kept within the worth of two or three clear events of it, so a run of
+     the best one (two more ahead for every event since the position last moved, up to 128: a
+     follower that missed a stretch finds the player again) are kept within the worth of two or three clear events of it, so a run of
      attacks that fits elsewhere (the player skipped a line, or went back to repeat a bar)
      takes over after a few of them, never after one. While one of the next groups is clearly
-     it (cosine ≥ 0.65, a margin over every other outcome) the event is decided before it ends.
+     it (cosine ≥ 0.65, a margin over every other outcome) the event is decided before it ends,
+     but never sooner than 40 ms after it rose (`minAge`: the thump of the key has mostly faded
+     by then). A place beyond the next five groups must lead by more than one behind
+     (`jumpAhead` 10 against `jump` 7): play-through cannot take a jump ahead back.
   4. *Chords that arrive in parts* (rolled, or one hand late). For half a second after its
      latest notes the group heard last is open: an event that raises new semitones and makes
      everything struck since the group began fit it clearly better is more of it, at no price.
@@ -83,9 +92,59 @@ samples ─► SemitoneAnalyzer ─► OnsetMatcher ─► group heard last ─�
 
 ## Measured
 
+### Real recording (P21)
+
+The user's own acoustic piano, recorded with a phone while playing the 61-bar reference piece
+start to finish with many mistakes and long pauses (`tests/fixtures/private/audio/`, 6:12, mono
+48 kHz, converted from AAC). The truth (`reference-piece.onsets.tsv`) was built offline by a
+global alignment that allows any pause, skips and going back, and validated on independent
+high-resolution spectra (the aligned group's own fundamental stands out by 6 dB at 75.5 % of the
+aligned attacks, 20 % for an unrelated nearby group at the same instant); 626 of the 752 onset
+groups are listed (12 more were dropped in the second pass: listed under 60 ms after the onset
+before them, implausible for this player). `recording.test.ts` replays the WAV through the app's
+chain: 512-sample blocks, an estimate whenever the group heard last changes, the session's rule
+(confidence ≥ 0.5, never behind the current group) and the play-through cursor (`PlayFollower`)
+over the both-hands timeline. Lag = when the cursor released an onset's group minus the onset's
+first attack. Distance = every 100 ms, the bar of the group the cursor released last minus the
+bar of the onset the player first played last (what a learner watching the cursor sees).
+
+| On the recording, through the session | P16 follower | P21 first pass | Now |
+| --- | --- | --- | --- |
+| Cursor reaches the last group | never (stops at bar 3.6, 3:10) | 0.16 s after its attack | 0.17 s after |
+| On time (−150…+150 ms) | 0.2 % | 53.4 % | 53.5 % |
+| Within −150…+500 ms | 0.2 % | 65.8 % | 67.7 % |
+| Ahead of the player (earlier than −150 ms) | 0 % | 4.8 % | 4.2 % |
+| Worst lag / most ahead | never reached | 13.2 s / 8.1 s | 14.7 s / 8.1 s |
+| Time within a quarter bar of the player | — | 81.5 % | 83.7 % |
+| Time within one bar | — | 98.1 % | 99.2 % |
+| Most behind / most ahead (bars) | — | 1.38 / 1.13 | 1.38 / 1.25 |
+| Time more than a bar off | — | 6.8 s | 2.9 s |
+
+(The first-pass column is measured against the same, second-pass truth.) Averaged over the
+recording as is, shifted by 237 samples, halved in level and with noise added: a quarter bar
+81.9 % → 84.0 % of the time, more than a bar off 10.6 s → 2.1 s, ahead 5.2 % → 3.3 %.
+
+Why the P16 follower failed: every key and hammer adds a thump of 60–400 Hz, louder than soft
+notes, that made events look broadband (the right group's cosine had a median of 0.36, the flat
+burst's 0.44), and the templates expected partials 15–30 dB stronger than the piano gave. The
+second pass decides an event 40 ms after it rose (`minAge`), when the thump has mostly faded, and
+asks more of a place far ahead than of one behind (`jumpAhead`). What remains, by cause:
+
+- *The thump masks the attack* (above G3 it is broadband up to about F#4): 2:04–2:13 (bars
+  25–26.3, fast single high notes, the rise of A#3–C4 outweighs them; up to 1.4 bars behind),
+  5:50–5:54 (bar 58.2–59, notes up to D#7 not explained).
+- *Soft notes that open no event*, in long hesitations: 0:41–0:58 (bars 7.5–9.4, single C4,
+  A3, G3; the truth there is weak too: contrasts of 5 dB), 4:13–4:18 (bar 47.1).
+- *Identical groups in the score*: 1:06–1:11 (bars 10.8–11.6: attacks are taken as the same
+  group struck again), 5:07 (bar 52.3: a stray chord in a hesitation equals a group two ahead;
+  the truth may be wrong here, the matcher heard the next group at 5:03).
+- *A replay*: 1:26–1:29 (bar 15 → 14, a replayed G4 is taken for the next group but one, 1.25
+  bars ahead for 3 s), 3:52–3:58 (bar 46.5 → 45.9, the cursor waits half a bar behind).
+- Shorter: 3:35 (bar 44.3, dense left hand), 0:13 (bar 3, repeated G5 ringing).
+
 ### Real piano sound (P16)
 
-No recording of the user's piano exists yet, so the redesign was measured on the next best
+No recording of the user's piano existed then, so the redesign was measured on the next best
 thing: performances rendered with the app's own sampled grand (`public/samples/salamander`,
 decoded with ffmpeg; real hammer noise, inharmonicity and decay), through a room model
 (reverberation, a microphone high-pass at 120 Hz, pink noise 43 dB under the piano's peak unless
@@ -142,18 +201,30 @@ with keys held or released, also with noise 30 dB under the piano; a jump of a f
 or back found after a few attacks; nothing heard in a chord that rings for five seconds or in
 noise. The median delay is 41–44 ms (the bound in the tests is 90 ms).
 
-Cost in Node on a desktop core: about 0.16 ms per 10 ms frame, nearly all of it the 4096-point
+P21 (the low cut, the decision frame, the steeper partials, the dearer skips) moved this bench up
+or left it in place: the 24-bar piece 92–100 % on time by scenario as before, the reference piece
+88–96 % → 90–98 %, with up to 2 % of the onsets ahead in three scenarios that had none (1.3×,
+sustain held, 10 % wrong notes). The left hand alone (a one-hand play-through, `hands: 'left'`)
+went from 98 % to 95 % on time steady, the right hand from 89 % to 95 %. The second pass (`minAge`, `jumpAhead`)
+cost the reference-piece rows up to 2 points on time (pedal as marked 94 → 90 %, reverberant
+90 → 87 %) and 1–3 % ahead, from one repeated triplet figure in bar 10 where a G3 at the low limit
+is taken for its octave; the 24-bar piece and the one-hand rows moved by a point at most.
+
+Cost in Node on a desktop core: about 0.11–0.16 ms per 10 ms frame, nearly all of it the 4096-point
 FFT (matching runs only during events), so an estimated 0.6–1 ms per frame on the reference
-tablet (4–6× slower), inside the budget of one worker. The templates of the 59-bar piece build
+tablet (4–6× slower), inside the budget of one worker. The templates of the 61-bar piece build
 in about 12 ms; there is no tempo-dependent reference to rebuild.
 
 ## Limits
 
-- Not proven on real piano sound through a tablet microphone. `recording.test.ts` scores a
-  recording with a hand-timed onset list dropped into the unpublished
-  `tests/fixtures/private/audio/` folder (its README says how; acceptance bar: 75 % within
-  150 ms) and skips without one. `MatcherOptions.trace` shows why each attack was or was not
-  taken, which is how to tune against such a recording.
+- Measured on one real recording only (one piano, one phone, AAC on the way; the live path has
+  no codec), and there only half the onsets are reached on time (the cursor is within a quarter
+  bar of the player 84 % of the time): soft notes under the thump of
+  the keys, notes of the left hand below G3 and repeated notes still ringing are often heard late,
+  and a hesitation with stray attacks can carry the cursor a few groups ahead (up to 8 s before
+  the player there). `recording.test.ts` locks in what was reached and skips without the
+  private files; `MatcherOptions.trace` shows why each attack was or was not taken.
+- Below G3 (`lowest`) nothing counts but partials: a lone low note may pass for its octave.
 - Soft notes under a lot of ringing sound (heavy pedal), notes in fast runs and a note struck
   again while it still rings raise little: they are often heard one note late (the next clear
   attack skips over them). This is the weakest case: 89 % on time on the reference piece in the
@@ -170,9 +241,14 @@ in about 12 ms; there is no tempo-dependent reference to rebuild.
   seek sets the position.
 - A voice or another instrument at the pitch of the next notes can pass for them.
 
-## Wiring (DECISIONS P15, P16)
+## Wiring (DECISIONS P15, P16, P22)
 
-Settings → Sound → Microphone → "Follow an acoustic piano", both hands only.
+Play-through follows the microphone whenever no piano input is connected (no setting), and with
+one when the Practice menu's Follow choice (`settings.mic.follow`) says Microphone; any hand
+(P22). With one hand the follower is built with `hands` ('right' / 'left': `attackGroups(model,
+hands)` keeps that hand's notes by the practice timeline's `n.hand` rule, so its groups are the
+one-hand timeline's and `groupReached` stays exact; `AudioFollowerOptions.hands`,
+`configure.hands` in `protocol.ts`; absent means both) and the app plays nothing meanwhile.
 `app/audio/micFollower.ts`: `getUserMedia({ echoCancellation: false, noiseSuppression: false,
 autoGainControl: false, channelCount: 1 })` → an `AudioWorklet` (`public/mic-processor.js`,
 512-sample mono blocks posted to the main thread) → `workers/follower.worker.ts` running

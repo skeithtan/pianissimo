@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildScore } from '../../core/engine/testkit'
 import { rat } from '../../core/music/rational'
-import { clampPassage, passageSummary, rangeText, selectionTimeline, startPlan } from './selection'
+import { NO_PIANO_NO_MIC, clampPassage, passageSummary, rangeText, selectionTimeline, startPlan } from './selection'
 
 const score = buildScore({
   notes: [
@@ -118,7 +118,7 @@ describe('selection', () => {
   })
 })
 
-describe('start plans without a piano input (microphone follower, DECISIONS P15)', () => {
+describe('start plans without a piano input (microphone follower, DECISIONS P15, P22)', () => {
   const both = { hands: 'both', range: null, multiplier: 1 } as const
   const right = { hands: 'right', range: null, multiplier: 1 } as const
   const timeline = selectionTimeline(score, score.tempo, both)
@@ -138,21 +138,62 @@ describe('start plans without a piano input (microphone follower, DECISIONS P15)
     })
   })
 
-  it('allows play-through with both hands only, and only with the microphone', () => {
+  it('allows play-through with any hand through the microphone (DECISIONS P22)', () => {
     expect(startPlan(timeline, both, noInput, { playThrough: true, mic: true })).toEqual({
       action: 'play',
       enabled: true,
       reason: null,
     })
-    expect(startPlan(rightTimeline, right, noInput, { playThrough: true, mic: true })).toMatchObject({
+    // One hand: the app plays nothing, so no output or echo test is needed.
+    const silentRoute = { ...noInput, hasOutput: false, accompanimentAllowed: false }
+    expect(startPlan(rightTimeline, right, silentRoute, { playThrough: true, mic: true })).toEqual({
       action: 'play',
-      enabled: false,
-      reason: 'One-hand play-through needs the piano: the microphone follows both hands only.',
+      enabled: true,
+      reason: null,
     })
+  })
+
+  it('says why when this browser cannot use a microphone either', () => {
+    const noMic = { ...noInput, micSupported: false }
+    for (const opts of [{ playThrough: true }, {}, { rhythm: true }]) {
+      expect(startPlan(timeline, both, noMic, opts)).toMatchObject({ enabled: false, reason: NO_PIANO_NO_MIC })
+    }
+    expect(NO_PIANO_NO_MIC).toBe('Connect a piano to play a hand: this browser cannot use the microphone here.')
+    // Play-through that does not follow the microphone cannot start without a piano.
     expect(startPlan(timeline, both, noInput, { playThrough: true })).toMatchObject({
       action: 'play',
       enabled: false,
-      reason: 'Play-through needs a connected piano.',
+      reason: NO_PIANO_NO_MIC,
+    })
+    // Listen is unchanged.
+    const none = { hands: 'none', range: null, multiplier: 1 } as const
+    expect(startPlan(timeline, none, noMic, { playThrough: true })).toEqual({
+      action: 'listen',
+      enabled: true,
+      reason: null,
+    })
+  })
+
+  it('keeps the real blockers in a microphone play-through: tempo, notes', () => {
+    expect(startPlan(timeline, both, { ...noInput, hasTempo: false }, { playThrough: true, mic: true })).toMatchObject({
+      enabled: false,
+      reason: 'Set a practice tempo so the score can follow the timing.',
+    })
+    const empty = { ...rightTimeline, groups: [] }
+    expect(startPlan(empty, right, noInput, { playThrough: true, mic: true })).toMatchObject({
+      enabled: false,
+      reason: expect.stringContaining('has no notes to play here'),
+    })
+  })
+
+  it('with a piano, one hand following the piano still needs a verified echo-free output', () => {
+    const unverified = { ...ok, accompanimentAllowed: false }
+    expect(startPlan(rightTimeline, right, unverified, { playThrough: true })).toMatchObject({
+      enabled: false,
+      reason: expect.stringContaining('verified output with no echo'),
+    })
+    expect(startPlan(rightTimeline, right, unverified, { playThrough: true, mic: true })).toMatchObject({
+      enabled: true,
     })
   })
 

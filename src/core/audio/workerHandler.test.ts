@@ -68,6 +68,19 @@ describe('follower worker handler', () => {
     expect(estimates().length).toBe(1)
   })
 
+  it('follows only the configured hand’s groups (DECISIONS P22)', async () => {
+    const { model, feed, estimates, handle } = await setup()
+    const right = attackGroups(model, 'right').map((g) => toNumber(g.position))
+    handle({ type: 'configure', model, position: null, hands: 'right' })
+    feed(0, Infinity)
+    const est = estimates()
+    // Every report is at one of the right hand's own groups, in order.
+    expect(est.length).toBeGreaterThan(0)
+    for (const e of est) expect(right).toContain(e.position)
+    const positions = est.map((e) => e.position)
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions)
+  })
+
   it('reports a failure as an error instead of throwing', async () => {
     const { audio, handle, posted } = await setup()
     handle({ type: 'configure', model: null as never, position: ZERO })

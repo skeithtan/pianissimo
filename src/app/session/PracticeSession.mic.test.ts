@@ -1,20 +1,33 @@
 /**
- * The microphone follower in play-through (DECISIONS P15): the session opens it on Start, turns
- * its position estimates into gate releases, and closes it when play-through ends.
+ * The microphone follower in play-through (DECISIONS P15, P16, P22): the session opens it on
+ * Start, turns its position estimates into gate releases, and closes it when play-through ends.
+ * Without a piano play-through is how a hand plays (P22); with one, the Follow choice
+ * (`settings.mic.follow`) picks the microphone.
  */
 import { describe, expect, it } from 'vitest'
 import { buildScore } from '../../core/engine/testkit'
+import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import type { ScoreModel } from '../../core/model/score'
 import { type Rational, ZERO, rat } from '../../core/music/rational'
 import { harness, testSettings, type Harness } from './testkit'
 import type { MetronomeModule } from '../../core/playback'
 import { FakeAudioContext } from '../../core/playback/fakeWebAudio'
 import { resetSharedAudioContext, sharedAudioContext } from '../../core/playback/webaudio/context'
+import type { Selection } from './selection'
 import type { MicEstimate, MicFollowerLike, SessionDeps } from './types'
 
 // Quarter = 60: one quarter (a quarter of a whole note) per second; group k at k/4.
 const melody = buildScore({
   notes: [60, 62, 64, 65, 67, 69, 71, 72].map((midi, at) => ({ at, midi })),
+  bars: 2,
+})
+
+// The left hand plays on the off-beats: its groups are at 1/8, 3/8, … (DECISIONS P22).
+const offBeats = buildScore({
+  notes: [
+    ...[60, 62, 64, 65].map((midi, at) => ({ at, midi })),
+    ...[48, 50, 52, 53].map((midi, at) => ({ at: at + 0.5, midi, hand: 'L' as const })),
+  ],
   bars: 2,
 })
 
@@ -26,6 +39,7 @@ class FakeMic implements MicFollowerLike {
   constructor(
     readonly onEstimate: (e: MicEstimate) => void,
     readonly onLost: (reason: string) => void,
+    readonly hands?: 'both' | 'right' | 'left',
   ) {}
   async start(position: Rational): Promise<void> {
     this.calls.push('start')
@@ -50,23 +64,23 @@ class FakeMic implements MicFollowerLike {
   }
 }
 
-function micHarness(model: ScoreModel = melody, opts: { follow?: boolean; fail?: Error } = {}) {
+function micHarness(
+  model: ScoreModel = melody,
+  opts: { follow?: boolean; fail?: Error; supported?: boolean; selection?: Partial<Selection> } = {},
+) {
   const mics: FakeMic[] = []
-  const h = harness(
-    model,
-    {},
-    {
-      settings: testSettings({ mic: { follow: opts.follow ?? true } }),
-      deps: {
-        createMicFollower: (_model: ScoreModel, onEstimate, onLost) => {
-          const mic = new FakeMic(onEstimate, onLost)
-          if (opts.fail) mic.fail = opts.fail
-          mics.push(mic)
-          return mic
-        },
+  const h = harness(model, opts.selection ?? {}, {
+    settings: testSettings({ mic: { follow: opts.follow ?? true } }),
+    deps: {
+      createMicFollower: (_model: ScoreModel, onEstimate, onLost, hands) => {
+        const mic = new FakeMic(onEstimate, onLost, hands)
+        if (opts.fail) mic.fail = opts.fail
+        mics.push(mic)
+        return mic
       },
+      micSupported: () => opts.supported ?? true,
     },
-  )
+  })
   return { h, mics, mic: () => mics[mics.length - 1]! }
 }
 
@@ -153,7 +167,7 @@ describe('Play-through through the microphone', () => {
     expect(h.session.ui.get().playing).toBe(true)
   })
 
-  it('a speed change leaves the follower alone; hands other than both close the microphone', async () => {
+  it('a speed change leaves the follower alone; new hands reopen it for those hands', async () => {
     const { h, mics, mic } = micHarness()
     await playThrough(h)
     mic().hear(0.26)
@@ -167,11 +181,16 @@ describe('Play-through through the microphone', () => {
     mic().hear(0.51)
     h.frames.flush()
     expect(h.strip.targets).toEqual([3])
+    expect(mics[0]!.hands).toBe('both')
+    // One hand (P22): the microphone still follows, now that hand's notes only.
     h.session.setSelection({ hands: 'right', multiplier: 0.8 })
     await h.session.start()
+    h.frames.flush()
     expect(mics[0]!.disposed).toBe(true)
-    expect(mics.length).toBe(1)
-    expect(h.session.ui.get().micStatus).toBeNull()
+    expect(mics.length).toBe(2)
+    expect(mic().hands).toBe('right')
+    expect(mic().started).toEqual(rat(3, 4))
+    expect(h.session.ui.get()).toMatchObject({ playing: true, micStatus: 'Following through the microphone.' })
   })
 
   it('leaving play-through closes the microphone and clears its status', async () => {
@@ -183,16 +202,30 @@ describe('Play-through through the microphone', () => {
     expect(h.session.ui.get().playThrough).toBe(false)
   })
 
-  it('turning the setting off mid-play closes the microphone; on again reopens it on Start', async () => {
+  it('switching Follow mid-play pauses: the next Start follows the new source (DECISIONS P22)', async () => {
     const { h, mics, mic } = micHarness()
     await playThrough(h)
+    mic().hear(0.26)
+    h.frames.flush()
     h.session.updateSettings(testSettings({ mic: { follow: false } }))
     expect(mic().disposed).toBe(true)
+    expect(h.session.ui.get()).toMatchObject({ playing: false, playThrough: true, follow: 'piano', micStatus: null })
+    await h.session.start()
+    h.frames.flush()
+    expect(mics.length).toBe(1)
     expect(h.session.ui.get().playing).toBe(true)
+    // The piano's keys follow now, from the same group.
+    expect(h.strip.targets).toEqual([2])
+    h.tap(64)
+    h.frames.flush()
+    expect(h.strip.targets).toEqual([3])
     h.session.updateSettings(testSettings({ mic: { follow: true } }))
-    await Promise.resolve()
+    expect(h.session.ui.get()).toMatchObject({ playing: false, follow: 'mic' })
+    await h.session.start()
+    h.frames.flush()
     expect(mics.length).toBe(2)
-    expect(mics[1]!.calls[0]).toBe('start')
+    expect(mic().started).toEqual(rat(3, 4))
+    expect(h.session.ui.get().playing).toBe(true)
   })
 
   it('a microphone that cannot start leaves play-through stopped with the reason', async () => {
@@ -205,40 +238,156 @@ describe('Play-through through the microphone', () => {
     expect(h.session.ui.get().micStatus).toBeNull()
   })
 
-  it('without a piano the hands stay available and only play-through can start', async () => {
-    const { h, mics } = micHarness()
+  it('without a piano: hands available, play-through on and locked, Start follows the microphone', async () => {
+    // No Settings visit: the Follow choice is off (P22).
+    const { h, mics, mic } = micHarness(melody, { follow: false })
     h.session.setInputAvailable(false)
     let ui = h.session.ui.get()
-    expect(ui.handsAvailable).toBe(true)
-    expect(ui.hands).toBe('both')
-    expect(ui.startEnabled).toBe(false)
-    expect(ui.startReason).toContain('Play through follows the microphone')
-    h.session.setPlayThrough(true)
-    ui = h.session.ui.get()
-    expect(ui.startAction).toBe('play')
-    expect(ui.startEnabled).toBe(true)
-    h.session.setSelection({ hands: 'right', multiplier: 1 })
-    h.frames.flush()
-    ui = h.session.ui.get()
-    expect(ui.hands).toBe('right')
-    expect(ui.startEnabled).toBe(false)
-    expect(ui.startReason).toContain('both hands only')
-    h.session.setSelection({ hands: 'both', multiplier: 1 })
-    h.frames.flush()
+    expect(ui).toMatchObject({
+      handsAvailable: true,
+      hands: 'both',
+      playThrough: true,
+      playThroughLocked: true,
+      follow: 'mic',
+      pianoConnected: false,
+      startAction: 'play',
+      startEnabled: true,
+      startReason: null,
+      metronomeMuted: true,
+    })
+    // It cannot be switched off while a hand is selected.
+    h.session.setPlayThrough(false)
+    expect(h.session.ui.get().playThrough).toBe(true)
     await h.session.start()
     h.frames.flush()
     expect(mics.length).toBe(1)
-    expect(h.session.ui.get().playing).toBe(true)
+    expect(mic().hands).toBe('both')
+    ui = h.session.ui.get()
+    expect(ui).toMatchObject({ playing: true, micStatus: 'Following through the microphone.' })
+    mic().hear(0.26)
+    h.frames.flush()
+    expect(h.strip.targets).toEqual([2])
   })
 
-  it('without the setting, no piano still holds the hands off', () => {
+  it('without a piano, Listen stays Listen and a hand chosen turns play-through back on', () => {
     const { h } = micHarness(melody, { follow: false })
     h.session.setInputAvailable(false)
-    expect(h.session.ui.get().handsAvailable).toBe(false)
-    expect(h.session.ui.get().hands).toBe('none')
-    h.session.updateSettings(testSettings({ mic: { follow: true } }))
-    expect(h.session.ui.get().handsAvailable).toBe(true)
-    expect(h.session.ui.get().hands).toBe('both')
+    h.session.setSelection({ hands: 'none' })
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ hands: 'none', playThrough: false, startAction: 'listen' })
+    h.session.setSelection({ hands: 'left' })
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ hands: 'left', playThrough: true, startAction: 'play' })
+  })
+
+  it('without a piano, Repeat and Keep time wait for one; Keep time comes back with it', () => {
+    const { h } = micHarness(melody, { follow: false, selection: { range: { fromOcc: 0, toOcc: 0 } } })
+    h.session.setRhythmMode(true)
+    expect(h.session.ui.get()).toMatchObject({ repeat: true, rhythm: true })
+    const saved = h.saves.length
+    h.session.setInputAvailable(false)
+    // Play-through takes over: Repeat closes (the loop is remembered), Keep time waits.
+    expect(h.session.ui.get()).toMatchObject({ repeat: false, rhythm: false, playThrough: true })
+    expect(h.saves.slice(saved).some((s) => s.patch.rhythm === false)).toBe(false)
+    h.session.setRhythmMode(true)
+    h.session.setRepeatMode(true)
+    h.session.repeatFrom(1)
+    expect(h.session.ui.get()).toMatchObject({ repeat: false, rhythm: false, playThrough: true })
+    h.session.setInputAvailable(true)
+    expect(h.session.ui.get()).toMatchObject({ playThrough: false, rhythm: true, playThroughLocked: false })
+  })
+
+  it('no piano and no microphone: the hands are held (Listen), as before', () => {
+    const { h } = micHarness(melody, { supported: false })
+    h.session.setInputAvailable(false)
+    expect(h.session.ui.get()).toMatchObject({
+      handsAvailable: false,
+      hands: 'none',
+      playThrough: false,
+      playThroughLocked: false,
+      micSupported: false,
+      follow: 'piano',
+      startAction: 'listen',
+    })
+    h.session.setInputAvailable(true)
+    expect(h.session.ui.get()).toMatchObject({ handsAvailable: true, hands: 'both' })
+  })
+
+  it('one hand with the microphone follows that hand only and plays nothing (DECISIONS P22)', async () => {
+    const { h, mic } = micHarness(offBeats, { follow: false, selection: { hands: 'left' } })
+    h.session.setInputAvailable(false)
+    expect(h.session.ui.get()).toMatchObject({ playThrough: true, startEnabled: true, hands: 'left' })
+    await h.session.start()
+    h.frames.flush()
+    expect(mic().hands).toBe('left')
+    expect(mic().started).toEqual(rat(1, 8))
+    expect(h.session.ui.get().playing).toBe(true)
+    // Notes are numbered in score order: the left hand's are the odd ones.
+    expect(h.strip.targets).toEqual([1])
+    // The left hand's second group, at 3/8, is reached exactly: its third (note 5) is next.
+    mic().hear(0.375)
+    h.frames.flush()
+    expect(h.strip.targets).toEqual([5])
+    h.step(4000)
+    // No accompaniment: the right hand is never sent to the piano.
+    expect(h.backend.ons()).toEqual([])
+    expect(h.session.ui.get().metronomeMuted).toBe(true)
+  })
+
+  it('one hand with the microphone needs no verified output', () => {
+    const { h } = micHarness(offBeats, { selection: { hands: 'right' } })
+    h.session.updateSettings({ ...testSettings({ mic: { follow: true } }), route: { ...DEFAULT_SETTINGS.route } })
+    h.session.setPlayThrough(true)
+    expect(h.session.ui.get()).toMatchObject({ startAction: 'play', startEnabled: true, follow: 'mic' })
+    h.session.updateSettings({ ...testSettings({ mic: { follow: false } }), route: { ...DEFAULT_SETTINGS.route } })
+    expect(h.session.ui.get().startEnabled).toBe(false)
+    expect(h.session.ui.get().startReason).toMatch(/verified output/)
+  })
+
+  it('a piano connecting mid play-through: the learner’s choice applies (off: back to reading there)', async () => {
+    const { h, mic } = micHarness(melody, { follow: false })
+    h.session.setInputAvailable(false)
+    await h.session.start()
+    mic().hear(0.26)
+    h.frames.flush()
+    h.session.setInputAvailable(true)
+    expect(mic().disposed).toBe(true)
+    expect(h.session.ui.get()).toMatchObject({ playThrough: false, playing: false, micStatus: null })
+    expect(h.strip.targets).toEqual([2])
+  })
+
+  it('a piano connecting while play-through was chosen pauses it; Start follows the piano', async () => {
+    const { h, mics, mic } = micHarness(melody, { follow: false })
+    h.session.setPlayThrough(true)
+    h.session.setInputAvailable(false)
+    await h.session.start()
+    mic().hear(0.26)
+    h.frames.flush()
+    h.session.setInputAvailable(true)
+    expect(mic().disposed).toBe(true)
+    expect(h.session.ui.get()).toMatchObject({ playThrough: true, playing: false, follow: 'piano' })
+    await h.session.start()
+    h.frames.flush()
+    expect(mics.length).toBe(1)
+    h.tap(64)
+    h.frames.flush()
+    expect(h.strip.targets).toEqual([3])
+  })
+
+  it('a piano unplugged during a play-through that followed it pauses; Start opens the microphone', async () => {
+    const { h, mics, mic } = micHarness(melody, { follow: false })
+    await playThrough(h)
+    h.tap(60)
+    h.frames.flush()
+    h.midi.route({ kind: 'input-disconnected', port: { id: 'in-1', name: 'Piano' } as never })
+    h.session.setInputAvailable(false)
+    expect(h.session.ui.get()).toMatchObject({ playing: false, playThrough: true, follow: 'mic' })
+    expect(mics.length).toBe(0)
+    await h.session.start()
+    h.frames.flush()
+    expect(mics.length).toBe(1)
+    expect(mic().started).toEqual(rat(1, 4))
+    expect(h.session.ui.get().playing).toBe(true)
   })
 
   it('a piano unplugged while the microphone follows does not pause', async () => {
@@ -280,10 +429,10 @@ describe('Play-through through the microphone', () => {
     h.session.setPlayThrough(true)
     h.frames.flush()
     expect(h.session.ui.get()).toMatchObject({ playThrough: true, metronomeMuted: true, metronomeScope: 'general' })
-    // One hand: the microphone does not follow (it would hear the automatic part).
+    // One hand: the microphone follows that hand and the app plays nothing (P22).
     h.session.setSelection({ hands: 'right' })
     h.frames.flush()
-    expect(h.session.ui.get()).toMatchObject({ playThrough: true, metronomeMuted: false })
+    expect(h.session.ui.get()).toMatchObject({ playThrough: true, metronomeMuted: true })
     h.session.setSelection({ hands: 'both' })
     h.frames.flush()
     expect(h.session.ui.get().metronomeMuted).toBe(true)
@@ -330,8 +479,9 @@ describe('Play-through through the microphone', () => {
         h.step(1000)
       }
       expect(clicks).toEqual([])
-      // With the setting off the same play-through clicks.
+      // Following the piano instead (it pauses), the same play-through clicks.
       h.session.updateSettings(settings(false))
+      await h.session.start()
       h.tap(67)
       h.step(1000)
       h.tap(69)
@@ -342,12 +492,15 @@ describe('Play-through through the microphone', () => {
     }
   })
 
-  it('MIDI presses still work alongside the microphone', async () => {
-    const { h } = micHarness()
+  it('MIDI presses do not move the cursor while the microphone follows (DECISIONS P22)', async () => {
+    const { h, mic } = micHarness()
     await playThrough(h)
     h.tap(60)
+    h.step(3000)
+    expect(h.strip.targets).toEqual([0])
+    expect(h.strip.cursor).toBe(0)
+    mic().hear(0.001)
     h.frames.flush()
     expect(h.strip.targets).toEqual([1])
-    expect(rat(1, 4)).toEqual({ n: 1, d: 4 })
   })
 })

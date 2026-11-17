@@ -18,6 +18,7 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `new PracticeEngine(timeline, config, now)` | The state machine (see below). |
 | `fadeOutOpacity(elapsedMs, durationMs)`, `easeInOut(p)` | Shared eased fade curve (smoothstep): exactly 1 before, exactly 0 at the end. Renderer labels and keyboard-guide hiding use it too. |
 | `EARLY_PRESS_GRACE_MS` (120), `matchingRulesFor(graceMs)` | Early-press grace window and the matching-rules id recorded with it. |
+| `CHORD_SLIP_MS` (60) | Chord slips (P24): a wrong key this soon after a group completes is that group's. Also the session's `finalSlipMs`. |
 | `DEFAULT_RHYTHM_TOLERANCE_MS` (150), `rhythmMatchingRulesFor(toleranceMs)` | Rhythm mode (strict transport) default tolerance and its matching-rules id (`strict-v1-tol-<n>ms`). See "Strict transport (rhythm mode)". |
 | `buildAttemptRecord`, `comparisonContextOf` | Record builders (used internally; exported for history tests). Scored records carry per-group outcomes (`groups: GroupOutcome[]`, type re-exported here). |
 | `testkit.ts` | Test-only: `buildScore` (compact note lists → valid `ScoreModel`), `MidiScript`, `EngineDriver`, `pedalDetector`. |
@@ -32,6 +33,7 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `requestHint(now)`, `dismissHint(now)` | Manual hint request (pedal goes through `input`), explicit dismissal (fade). |
 | `setKeyboardVisible(v, now)` | Keyboard guide; showing marks keyboard assistance. |
 | `recordPersistentLabelExposure(notes, now)` | Visible persistent labels. Call on every `exposure-reset` event and whenever newly placed labels become visible (read-ahead included). |
+| `config.finalSlipMs` | Scored: a completed final group stays current this long (ms, default 0) so a wrong key pressed with the final chord is still counted; the session passes `CHORD_SLIP_MS`. The completion time is unchanged; `nextDeadline` includes the hold's end, and the next event after it, `tick`, `restart`, `seek`, `reconfigure` or `interrupt` end the attempt first. |
 | `markPrepared(now)` | Scored: preparation done (score ready, automatic tail finished, output released, transport at the passage start, persistent-label fades finished). |
 | `pause` / `resume` | Reading: freeze/unfreeze (progress kept). Scored: `pause` interrupts. |
 | `interrupt(reason, now)` | Ends the attempt/traversal: `user-stop`/`user-restart` → abandoned, others → interrupted. `disconnect` forgets physical state. |
@@ -93,6 +95,29 @@ repositioning the transport so arrivals belong to the new attempt. Schedule `tic
 6. Pending presses are dropped without errors on interrupt, seek, restart, reconfigure and
    an ordinary pause. A group completed by pending presses records its completion at the
    later of the press and the previous group's completion (monotonic onsets).
+
+## Required notes (DECISIONS P23)
+
+A group is every distinct sounding pitch the selected hands attack at one exact position; it
+completes only when each has had a fresh press while it was current (or a pending press within
+the grace). Not required: tie continuations, grace and cue notes; a pitch shared by two voices
+or both hands is one press; rolls accept any order; ottava is already in the sounding pitch.
+`engine.required.test.ts` sweeps every two-hand group of every fixture and the reference piece
+(one hand alone, tapped or over the previous group's held keys, in reading, scored, Keep time and
+every one-bar loop) and checks the groups' pitches against the score.
+
+## Chord slips (DECISIONS P24)
+
+MIDI delivers a chord's keys in no set order, so an extra key can arrive just after the chord's
+last right key, when the next group is already current. A wrong `'pitch'` press is the
+**previous** group's wrong attack when it comes within `CHORD_SLIP_MS` of that group's completion,
+before anything (accepted or wrong) in the current group, and nearer to the completion than to the
+current group's moment (`transportArrived` time or `transportEta`, else the notated gap at the
+practice speed; unknown counts as far). It goes to that group's outcome (`wrongAttacks`,
+`wrongPitches`) and retracts its first pass; the bar-level count goes to its bar, or to the
+current bar when that one already closed. The `wrong` event carries the previous group; red wash,
+`lastWrongReason` and held-wrong marking as usual; no local marker, hint count or ottava warning
+on the current group. A pass's final chord: see `config.finalSlipMs`.
 
 ## Per-group outcomes (teacher corrections, E15–E16)
 

@@ -85,7 +85,7 @@
     color var(--dur-base) var(--ease-standard),
     box-shadow var(--dur-base) var(--ease-standard);
 }
-.segment:hover:not([aria-checked='true']) {
+.segment:hover:not([aria-checked='true']):not(:disabled) {
   color: var(--fg);
 }
 .segment[aria-checked='true'] {
@@ -95,6 +95,10 @@
 }
 .compact .segment {
   padding: 0 10px;
+}
+.segment:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .toggleRow {

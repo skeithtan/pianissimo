@@ -111,7 +111,7 @@ test.describe('renderer layout gates', () => {
     expect(r.summary.notes).toBeGreaterThan(1300)
     expect(rep.unmappedNotes).toEqual([])
     expect(rep.unmappedGraphics).toEqual([])
-    expect(rep.ottavasMapped).toBe(1)
+    expect(rep.ottavasMapped).toBe(2)
     expect(r.summary.ottavas[0]).toMatchObject({ staff: 0, text: '8va', engraved: true })
     expect(labelCollisions(r.labels, r.heads, r.numbers)).toEqual([])
     expect(r.summary.stats.placements.callout).toBeLessThanOrEqual(Math.ceil(r.labels.length * 0.005))

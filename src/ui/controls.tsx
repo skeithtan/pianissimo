@@ -40,6 +40,8 @@ export interface SegmentOption<T extends string> {
   readonly value: T
   readonly label: string
   readonly title?: string
+  /** Shown but not choosable (its `title` says why); arrow keys skip it. */
+  readonly disabled?: boolean
 }
 
 /**
@@ -69,7 +71,11 @@ export function Segmented<T extends string>({
           : 0
     if (step === 0) return
     event.preventDefault()
-    const target = options[(from + step + options.length) % options.length]
+    let target: SegmentOption<T> | undefined
+    for (let k = 1; k <= options.length && !target; k++) {
+      const o = options[(from + k * step + options.length * k) % options.length]
+      if (o && !o.disabled) target = o
+    }
     if (!target) return
     onChange(target.value)
     const buttons = (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLElement>('[role="radio"]')
@@ -86,6 +92,7 @@ export function Segmented<T extends string>({
           tabIndex={i === (selected < 0 ? 0 : selected) ? 0 : -1}
           title={o.title}
           class={styles.segment}
+          disabled={o.disabled}
           onClick={() => onChange(o.value)}
           onKeyDown={(e) => move(e, i)}
         >

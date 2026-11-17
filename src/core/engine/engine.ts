@@ -48,6 +48,13 @@ export const DEFAULT_PEDAL_DOWN_THRESHOLD = 64
  * rules (`MATCHING_RULES_VERSION`).
  */
 export const EARLY_PRESS_GRACE_MS = 120
+/**
+ * Chord slips (DECISIONS P24): a wrong key within this many real milliseconds after a group's
+ * completion, before anything was played in the next group, was pressed with that group and is
+ * its wrong attack. Shorter than the gap between notes of a fast run (16ths at ♩ = 200 are 75 ms
+ * apart), longer than the usual gap between the keys of one chord. Not tempo-scaled.
+ */
+export const CHORD_SLIP_MS = 60
 const LABELS_OFF: LabelSettingsSnapshot = { mode: 'off', rulesJson: '{}' }
 
 /** Matching-rules id for a grace window (the default grace keeps `MATCHING_RULES_VERSION`). */
@@ -136,6 +143,8 @@ export class PracticeEngine {
   #passTimeTolerance: number | null
   #transportEta: TransportEta | null
   readonly #graceMs: number
+  /** Scored: how long a completed final group stays open for chord slips (P24); 0 = none. */
+  readonly #finalSlipMs: number
   readonly #timeOrigin: number
   readonly #newId: (n: number, createdAt: number) => string
 
@@ -163,6 +172,12 @@ export class PracticeEngine {
   readonly #arrivedAt = new Map<number, number>()
   /** Time of the latest group input completion (keeps completion times monotonic). */
   #lastCompleteAt = -Infinity
+  /** The group whose input completed last in this attempt/traversal (chord slips, P24); null after a new log. */
+  #lastCompletedGroup: number | null = null
+  /** Scored: the completed final group is held open until then for chord slips (`finalSlipMs`). */
+  #finishAt: number | null = null
+  /** The time the held final group would have ended the attempt (its advance time). */
+  #finishFrom = 0
   /** Earliest and latest accepted attack of the current group (chord spread). */
   #firstAcceptAt = Infinity
   #lastAcceptAt = -Infinity
@@ -208,6 +223,7 @@ export class PracticeEngine {
     this.#passTimeTolerance = config.passTimeTolerance ?? null
     this.#transportEta = config.transportEta ?? null
     this.#graceMs = config.earlyGraceMs ?? EARLY_PRESS_GRACE_MS
+    this.#finalSlipMs = Math.max(0, config.finalSlipMs ?? 0)
     this.#timeOrigin = config.timeOrigin ?? 0
     const pieceId = config.pieceId
     this.#newId = config.newId ?? ((n, createdAt) => `${pieceId}-${createdAt}-${n}`)
@@ -261,6 +277,7 @@ export class PracticeEngine {
     if (ev.seq <= this.#lastSeq) return
     this.#lastSeq = ev.seq
     this.#now(ev.time)
+    if (this.#finishAt !== null && ev.time > this.#finishAt) this.#finishHeld()
     if (this.#strict) this.#runDue(ev.time, false)
     else this.#expirePending(ev.time)
     if (ev.kind === 'noteon' && ev.velocity > 0) this.#press(ev.note, ev.channel, ev.time)
@@ -383,8 +400,65 @@ export class PracticeEngine {
       this.#pending.push({ pitch, time, from: gi, target: gi + 1, deadline: time + this.#windowMs, tieEnd: true })
       return false
     }
+    if (this.#isChordSlip(gi, time)) {
+      this.#chordSlip(gi - 1, pitch, time)
+      return true
+    }
     this.#wrong(gi, g, pitch, time, 'pitch')
     return true
+  }
+
+  /**
+   * A wrong key pressed together with the group that just completed (P24): within
+   * `CHORD_SLIP_MS` of group gi − 1's completion and nearer to it than to gi's own moment (so a
+   * fast run's next note is never taken for it), before anything was played in gi. MIDI sends a
+   * chord's keys one by one in no set order, so an extra key that arrives just after the chord's
+   * last right key belongs to that chord, not to the next one.
+   */
+  #isChordSlip(gi: number, time: number): boolean {
+    if (gi === 0 || this.#lastCompletedGroup !== gi - 1 || this.#accepted.size > 0 || this.#groupWrong > 0) return false
+    const since = time - this.#lastCompleteAt
+    if (since > CHORD_SLIP_MS) return false
+    const until = this.#untilMoment(gi, time, since)
+    return until === null || since < until
+  }
+
+  /**
+   * Milliseconds from `time` to group gi's moment: its gate's arrival (accompaniment, strict) or
+   * ETA, else the previous group's completion plus the notated gap at the practice speed; null
+   * when unknown (no tempo, no transport).
+   */
+  #untilMoment(gi: number, time: number, since: number): number | null {
+    if (this.#transport !== 'free') {
+      if (this.#transportGate >= gi) return (this.#arrivedAt.get(gi) ?? time) - time
+      const eta = this.#transportEta?.(gi, time) ?? null
+      if (eta !== null) return eta
+    }
+    const groups = this.#timeline.groups
+    const a = groups[gi - 1]!.onsetSec
+    const b = groups[gi]!.onsetSec
+    return a === null || b === null ? null : (b - a) * 1000 - since
+  }
+
+  /**
+   * A chord slip: a wrong attack of the completed group `prev` (its outcome and wrong pitches, its
+   * first pass retracted; its bar, or the current bar when `prev`'s bar has already closed). The
+   * red wash and wrong-key marking show as for any wrong key; the current group gets no error,
+   * marker, hint count or ottava warning.
+   */
+  #chordSlip(prev: number, pitch: number, time: number): void {
+    const groups = this.#timeline.groups
+    const p = groups[prev]!
+    const cur = groups[this.#group!]!
+    this.#log.wrong(prev, p.occ, p.synthetic, false, pitch, {
+      group: cur.index,
+      occ: cur.occ,
+      synthetic: cur.synthetic,
+    })
+    this.#wrongUntil = Math.max(this.#wrongUntil, time + this.#wrongFeedbackMs)
+    this.#lastWrongReason = 'pitch'
+    if (this.#physical.isHeld(pitch)) this.#heldWrong.add(pitch)
+    this.#emit({ type: 'wrong', group: prev, pitch, time, feedbackUntil: this.#wrongUntil, reason: 'pitch' })
   }
 
   /**
@@ -466,6 +540,7 @@ export class PracticeEngine {
   #complete(gi: number, g: OnsetGroup, time: number): void {
     this.#inputComplete = true
     this.#lastCompleteAt = time
+    this.#lastCompletedGroup = gi
     const spreadMs = g.pitches.length > 1 ? Math.max(0, Math.round(this.#lastAcceptAt - this.#firstAcceptAt)) : 0
     const offsetMs = this.#strict ? this.#offsetMs(gi, time) : null
     if (offsetMs !== null) this.#lastOffsetMs = offsetMs
@@ -508,9 +583,22 @@ export class PracticeEngine {
     return at === undefined ? 0 : Math.max(0, Math.round(time - at))
   }
 
-  #advance(now: number): void {
+  #advance(now: number, held = false): void {
     const from = this.#group!
     const groups = this.#timeline.groups
+    // A completed final group stays current a moment longer: a key pressed with that chord is
+    // still its wrong attack (P24). Its completion time is already recorded.
+    if (
+      !held &&
+      this.#finalSlipMs > 0 &&
+      from === groups.length - 1 &&
+      this.#mode === 'scored' &&
+      this.#inputComplete
+    ) {
+      this.#finishAt = now + this.#finalSlipMs
+      this.#finishFrom = now
+      return
+    }
     const occ = groups[from]!.occ
     const to = from + 1 < groups.length ? from + 1 : null
     if (to === null || groups[to]!.occ !== occ) this.#closeMeasure(occ)
@@ -523,6 +611,13 @@ export class PracticeEngine {
       return
     }
     this.#settlePending(Math.max(now, this.#lastNow), false)
+  }
+
+  /** End the attempt the held final group was holding open (see `finalSlipMs`). */
+  #finishHeld(): void {
+    if (this.#finishAt === null) return
+    this.#finishAt = null
+    this.#advance(this.#finishFrom, true)
   }
 
   // ── Early-press grace ────────────────────────────────────────────────────────────────
@@ -675,7 +770,7 @@ export class PracticeEngine {
 
   /** Strict: close time of the current group, null when none (not Running, not reached yet). */
   #dueClose(): number | null {
-    if (!this.#strict || this.#phase !== 'running' || this.#group === null) return null
+    if (!this.#strict || this.#phase !== 'running' || this.#group === null || this.#inputComplete) return null
     const at = this.#closeAt.get(this.#group)
     return at === undefined ? null : Math.max(at, this.#log.clockStart ?? at)
   }
@@ -798,6 +893,7 @@ export class PracticeEngine {
    */
   interrupt(reason: InterruptReason, now: number): void {
     this.#now(now)
+    this.#finishHeld()
     if (reason === 'pause' && this.#mode === 'reading') {
       this.pause(now)
       return
@@ -823,6 +919,7 @@ export class PracticeEngine {
    */
   restart(now: number, options: AttemptStartOptions = {}): void {
     this.#now(now)
+    this.#finishHeld()
     this.#pending = []
     if (this.#attemptActive()) this.#end('abandoned', 'user-restart', now)
     this.#clearGroupState(now)
@@ -842,6 +939,7 @@ export class PracticeEngine {
    */
   seek(group: number, now: number): void {
     this.#now(now)
+    this.#finishHeld()
     if (this.#mode === 'scored') {
       if (this.#attemptActive()) this.interrupt('seek', now)
       return
@@ -862,6 +960,7 @@ export class PracticeEngine {
    */
   reconfigure(change: EngineReconfigure, now: number): void {
     this.#now(now)
+    this.#finishHeld()
     const timeline = change.timeline ?? this.#timeline
     const mode = change.mode ?? this.#mode
     let transport = change.transport ?? (change.timeline ? defaultTransport(timeline) : this.#transport)
@@ -951,6 +1050,8 @@ export class PracticeEngine {
    */
   tick(now: number): void {
     this.#now(now)
+    const held = this.#finishAt !== null && this.#lastNow >= this.#finishAt
+    if (held) this.#finishHeld()
     let changed = this.#strict ? this.#runDue(this.#lastNow, true) : this.#expirePending(this.#lastNow)
     const t = this.#clock.active(this.#lastNow)
     const expired = this.#hints.expire(t)
@@ -962,7 +1063,7 @@ export class PracticeEngine {
     if (this.#hints.prune(t)) changed = true
     const phase = this.#phase
     this.#checkReady(this.#lastNow)
-    if (changed || phase !== this.#phase) this.#touch()
+    if (held || changed || phase !== this.#phase) this.#touch()
   }
 
   /**
@@ -971,7 +1072,7 @@ export class PracticeEngine {
    * reading pause freezes them.
    */
   nextDeadline(): number | null {
-    let next: number | null = this.#dueClose()
+    let next: number | null = this.#finishAt ?? this.#dueClose()
     for (const p of this.#pending) if (next === null || p.deadline < next) next = p.deadline
     const d = this.#hints.nextDeadline()
     const hint = d === null ? null : this.#clock.toReal(d)
@@ -1121,6 +1222,7 @@ export class PracticeEngine {
     this.#runningStart = runningStart
     this.#prepared = false
     this.#pending = []
+    this.#finishAt = null
     this.#lastCompleteAt = -Infinity
     this.#lastWrongReason = null
     this.#setPhase(phase, now)
@@ -1141,6 +1243,7 @@ export class PracticeEngine {
     this.#log = new AttemptLog(this.#newId(this.#attempts, createdAt), createdAt)
     this.#clockGroup = null
     this.#interruptReason = null
+    this.#lastCompletedGroup = null
     this.#emit({ type: 'exposure-reset', attemptId: this.#log.id })
   }
 

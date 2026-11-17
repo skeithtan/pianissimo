@@ -113,6 +113,13 @@ export interface EngineConfig {
   /** Early-press grace in real milliseconds (default `EARLY_PRESS_GRACE_MS` = 120; not tempo-scaled). */
   readonly earlyGraceMs?: number
   /**
+   * Scored: real milliseconds a completed final group stays current before the attempt ends, so
+   * a wrong key pressed with the final chord is still its wrong attack (chord slips, DECISIONS
+   * P24). The completion time is unchanged. Default 0 (ends at once); the session passes
+   * `CHORD_SLIP_MS`. Restart, seek, reconfigure and interruptions end the held attempt first.
+   */
+  readonly finalSlipMs?: number
+  /**
    * Accompaniment and strict: gate ETA from the transport. Accompaniment without it: current-group
    * presses are never "too early". Strict without it: a press before its gate's arrival is "too
    * early" (the scheduled time is unknown).

@@ -1,6 +1,6 @@
 /**
  * The Metronome switch (DECISIONS U87, P20) in the real app: the Practice menu's row and the Study
- * tool, which preference each edits, and the clicks themselves. With the fake MIDI piano and both
+ * menu's row (U90), which preference each edits, and the clicks themselves. With the fake MIDI piano and both
  * hands selected the app makes no other browser sound, so the metronome's oscillators are the
  * clicks: a wrapper around `AudioContext.prototype.createOscillator` counts them.
  */
@@ -118,19 +118,21 @@ test.describe('Practice Metronome switch', () => {
   })
 })
 
-test.describe('Study Metronome tool', () => {
+test.describe('Study Metronome switch', () => {
   test.use({ viewport: { width: 820, height: 1180 }, hasTouch: true })
 
-  test('toggles aria-pressed on the tablet footer', async ({ page }) => {
+  test("toggles in the tablet footer's Study menu (U90)", async ({ page }) => {
     await seedPiece(page)
     await page.getByRole('button', { name: 'Study Two Hands' }).click()
     await expect(page.locator('main')).toHaveAttribute('data-view', 'study')
     await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
-    const tool = page.getByTestId('study-screen').locator('footer').getByRole('button', { name: 'Metronome' })
-    await expect(tool).toHaveAttribute('aria-pressed', 'false')
-    await tool.click()
-    await expect(tool).toHaveAttribute('aria-pressed', 'true')
-    await tool.click()
-    await expect(tool).toHaveAttribute('aria-pressed', 'false')
+    await page.getByTestId('study-screen').locator('footer').getByRole('button', { name: 'Menu', exact: true }).click()
+    const metronome = page.getByRole('dialog', { name: 'Study menu' }).getByRole('switch', { name: 'Metronome' })
+    await expect(metronome).not.toBeChecked()
+    await metronome.click()
+    await expect(metronome).toBeChecked()
+    await expect.poll(async () => (await storedSettings(page))?.['metronome']).toMatchObject({ enabled: true })
+    await metronome.click()
+    await expect(metronome).not.toBeChecked()
   })
 })
