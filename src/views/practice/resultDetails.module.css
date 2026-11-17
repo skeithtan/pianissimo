@@ -4,9 +4,23 @@
 .details {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-3) var(--space-4);
+  gap: var(--space-4);
+  /* Tablet panel: roomier than the old card (U99, 17 November 2026). */
+  padding: var(--space-5) var(--space-5) var(--space-5);
   font-size: var(--text-s);
+}
+/* Phone: the full-screen result; the content stays inside the safe areas and is held to a
+   readable width on a wide phone on its side. */
+@media (max-width: 520px), (orientation: landscape) and (max-height: 520px) {
+  .details {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    gap: var(--space-3);
+    padding: var(--space-4) calc(var(--space-3) + var(--safe-r)) calc(var(--space-6) + var(--safe-b))
+      calc(var(--space-3) + var(--safe-l));
+  }
 }
 
 .verdict {
@@ -91,7 +105,10 @@
 }
 
 /* The bar at its own size when it fits the card, scaled down to the card's width when not; never
-   below 60 % (a dense bar then scrolls sideways inside its own box). */
+   below 60 % (a dense bar then scrolls sideways inside its own box). It may grow with the room
+   (U99, 17 November 2026): up to 1.4 times its size and 720 px on a tablet, up to twice its size
+   on a phone, where the full width is there to use; centered. All marks and ghost notes live in
+   the same SVG, so they scale with it. */
 .music {
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -99,10 +116,23 @@
 }
 .music > svg {
   width: 100%;
-  max-width: var(--excerpt-w);
+  max-width: min(calc(var(--excerpt-w) * 1.4), 720px);
   min-width: calc(var(--excerpt-w) * 0.6);
   height: auto;
   margin: 0 auto;
+}
+
+@media (max-width: 520px), (orientation: landscape) and (max-height: 520px) {
+  .music > svg {
+    max-width: min(calc(var(--excerpt-w) * 2), 100%);
+  }
+}
+
+/* A phone on its side has little height: a bar may not fill the screen. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .music > svg {
+    max-width: min(calc(var(--excerpt-w) * 1.3), 100%);
+  }
 }
 
 .lines {

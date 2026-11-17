@@ -432,8 +432,9 @@ U99 nothing in the app calls it (the Results route stays for `#/results/…` dee
 **Only Back leaves Practice (U99).** Practice's exits are its Back button (to the Library) and the
 overlays over it (Settings, the Connection setup, sheets and popovers). The result's details open
 in place: `AttemptResult` (`views/practice/Banners.tsx`) expands the pill into a card whose details
-sit above the pill as an absolute overlay (the dock keeps the pill's height, so
-`reviewInset`/`setReviewInset` never see it); its contents load on the first expansion
+sit over the score and never change the dock's height (so `reviewInset`/`setReviewInset` never
+see them): on a tablet a panel above the pill (up to 900 × 880 px, 16 px of margin on every
+side); on a phone (`usePhone`) a fixed full-screen dialog with its own sticky header (U99); its contents load on the first expansion
 (`ResultDetailsLoader` → `ResultDetails.tsx`). `PracticeSession.resultDetails()` hands over the last
 result's inputs on demand; the card ranks them (`app/session/ranking.ts` `rankMistakes`, loaded with the card, fed by the last scored
 records of the context and `correctionMarksByGroup`), never in the input path.

@@ -557,6 +557,144 @@
   }
 }
 
+/* The expanded result, by screen size (U99, 17 November 2026).
+   Tablet (wider and taller than a phone, DECISIONS U74): a generous panel over the score, wider
+   than the pill (900 px at most) and up to 880 px tall, with the same 16 px of margin on every
+   side (to the stage's top and sides, and to the footer under the pill). The collapsed pill keeps
+   its size; the dock only moves to the margin. */
+@media (min-width: 521px) and (min-height: 521px) {
+  .resultDock {
+    left: calc(var(--space-4) + var(--safe-l));
+    right: calc(var(--space-4) + var(--safe-r));
+    bottom: var(--space-4);
+  }
+  .resultRow {
+    padding: var(--space-2) calc(var(--space-4) + var(--safe-r)) var(--space-4) calc(var(--space-4) + var(--safe-l));
+  }
+  .resultCard[data-expanded] {
+    width: min(900px, 100%);
+    max-width: min(900px, 100%);
+  }
+}
+
+/* Phone (the app's phone layouts, upright and on its side): the expanded result is a screen, not
+   a card. It covers the whole viewport, top bar and footer included, edge to edge inside the
+   safe areas, with its own header (the chevron down, the verdict, Again, Hide) that never scrolls
+   away, and the content scrolling beneath it. No border, no radius, no gap around it. */
+@media (max-width: 520px), (orientation: landscape) and (max-height: 520px) {
+  .resultCard[data-expanded] {
+    width: 100%;
+    max-width: 100%;
+    transform: none;
+  }
+  .resultCard[data-expanded] .result {
+    border-radius: 32px;
+    border-top-color: var(--result-border);
+  }
+  .resultCard .resultDetails[data-layout='screen'] {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    height: auto;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    background: var(--bg-elevated);
+    animation: result-screen-in 260ms var(--ease-out) both;
+  }
+  .resultCard .resultDetails[data-layout='screen'][data-phase='leaving'] {
+    animation: result-screen-out 200ms var(--ease-in) both;
+  }
+  @keyframes result-screen-in {
+    from {
+      transform: translateY(32px);
+      opacity: 0;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+  @keyframes result-screen-out {
+    from {
+      transform: none;
+      opacity: 1;
+    }
+    to {
+      transform: translateY(32px);
+      opacity: 0;
+    }
+  }
+  .screenHeader {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: calc(60px + env(safe-area-inset-top, 0px));
+    padding: calc(var(--space-1) + env(safe-area-inset-top, 0px)) calc(var(--space-2) + var(--safe-r)) var(--space-1)
+      calc(var(--space-2) + var(--safe-l));
+    background: var(--bg-elevated);
+    border-bottom: 1px solid color-mix(in srgb, var(--result-tone, var(--fg-muted)) 30%, var(--border));
+  }
+  .screenBack {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--result-tone-bg, var(--bg-sunken));
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .screenBack:hover {
+    background: var(--hover);
+  }
+  .screenBack:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  .screenTitle {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--text-l);
+    font-weight: 650;
+    line-height: var(--leading-tight);
+  }
+  .screenTitle > span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+/* A phone on its side has the least height: a compact header. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .screenHeader {
+    min-height: calc(48px + env(safe-area-inset-top, 0px));
+    padding-top: calc(2px + env(safe-area-inset-top, 0px));
+    padding-bottom: 2px;
+  }
+  .screenBack,
+  .screenHeader .resultAgain,
+  .screenHeader .resultIconButton {
+    height: 40px;
+    min-height: 40px;
+  }
+  .screenBack,
+  .screenHeader .resultIconButton {
+    width: 40px;
+  }
+}
+
 /* ── Repeat panel (Repeat mode only, U14; revised 15 November 2026) ───────── */
 /* "Bars", the passage selector, the goal (a button with a popover, or ⋯ on a phone) and an
    always-visible ✕. No outline (U49) and a solid surface. `float` and `compact` sit at the top
@@ -1263,7 +1401,9 @@
     transition-duration: var(--dur-base);
   }
   .resultDetails,
-  .resultDetails[data-phase='leaving'] {
+  .resultDetails[data-phase='leaving'],
+  .resultCard .resultDetails[data-layout='screen'],
+  .resultCard .resultDetails[data-layout='screen'][data-phase='leaving'] {
     animation: none;
   }
 }

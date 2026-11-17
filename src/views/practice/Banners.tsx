@@ -138,14 +138,17 @@ export interface AttemptResultProps {
    */
   readonly expandedId?: string | null
   readonly onExpandedChange?: (id: string | null) => void
+  /**
+   * A phone-size screen (`usePhone`): the expanded result is the whole screen with its own header
+   * (U99, 17 November 2026), not a card over the score.
+   */
+  readonly phone?: boolean
 }
 
-/** Space kept between the expanded card and the top of the area it may cover (px). */
-const DETAILS_MARGIN = 8
-/** Below this, the expanded card may also cover the screen's top bar (a phone on its side). */
-const DETAILS_MIN_HEIGHT = 220
-/** The expanded card's details are at most this tall (px); its own list scrolls beyond. */
-export const DETAILS_MAX_HEIGHT = 560
+/** Space kept between the expanded tablet card and the top of the stage it may cover (px). */
+export const DETAILS_MARGIN = 16
+/** The expanded tablet card's details are at most this tall (px); its own list scrolls beyond. */
+export const DETAILS_MAX_HEIGHT = 880
 /** The details fold away in this long (CSS `.resultDetails[data-phase=leaving]`). */
 export const DETAILS_FOLD_MS = 200
 
@@ -176,6 +179,8 @@ export function AttemptResult(p: AttemptResultProps) {
   // The details unfold and fold like an accordion: they stay mounted while folding.
   const unfold = useFadePresence(expanded, DETAILS_FOLD_MS)
   const root = useRef<HTMLDivElement>(null)
+  const toggleButton = useRef<HTMLButtonElement>(null)
+  const phone = !!p.phone
   const [maxHeight, setMaxHeight] = useState(DETAILS_MAX_HEIGHT)
   // Measured again when the card mounts expanded (a rotation moved the dock).
   useLayoutEffect(() => {
@@ -215,6 +220,8 @@ export function AttemptResult(p: AttemptResultProps) {
       expanded={expanded}
       maxHeight={maxHeight}
       rootRef={root}
+      toggleRef={toggleButton}
+      phone={phone}
       unfold={unfold.mounted ? unfold.phase : null}
       details={p.details && unfold.mounted ? p.details(shown) : null}
       hasDetails={!!p.details}
@@ -226,17 +233,41 @@ export function AttemptResult(p: AttemptResultProps) {
 }
 
 /**
- * Height the expanded details may take above the pill: up to the top of the stage (the score
- * area), or, when that leaves too little (a phone on its side), up to the top of the screen.
+ * Height the tablet card's details may take above the pill: up to DETAILS_MARGIN under the top
+ * of the stage (the score area), at most DETAILS_MAX_HEIGHT. (A phone shows the details full
+ * screen: no height to measure.)
  */
 function availableHeight(card: HTMLElement | null): number {
   if (!card || typeof window === 'undefined') return DETAILS_MAX_HEIGHT
   const top = card.getBoundingClientRect().top
   const stage = card.closest('[data-activity]')?.querySelector('[data-repeat-bounds]')
   const stageTop = stage?.getBoundingClientRect().top ?? 0
-  let room = top - stageTop - DETAILS_MARGIN
-  if (room < DETAILS_MIN_HEIGHT) room = top - DETAILS_MARGIN
+  const room = top - stageTop - DETAILS_MARGIN
   return Math.max(120, Math.min(DETAILS_MAX_HEIGHT, Math.round(room)))
+}
+
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Keeps keyboard focus inside the full-screen panel (a modal region while it covers the screen):
+ * Tab wraps from the last control to the first and Shift+Tab the other way. Returns true when it
+ * moved focus (the caller prevents the default).
+ */
+export function wrapTab(panel: HTMLElement, event: { shiftKey: boolean }, active: Element | null): boolean {
+  const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => !el.closest('[inert]'))
+  if (items.length === 0) return false
+  const first = items[0]!
+  const last = items[items.length - 1]!
+  if (event.shiftKey && (active === first || !panel.contains(active))) {
+    last.focus()
+    return true
+  }
+  if (!event.shiftKey && (active === last || !panel.contains(active))) {
+    first.focus()
+    return true
+  }
+  return false
 }
 
 /**
@@ -258,6 +289,8 @@ function ResultCard({
   unfold,
   maxHeight,
   rootRef,
+  toggleRef,
+  phone,
   details,
   hasDetails,
   onToggle,
@@ -277,6 +310,9 @@ function ResultCard({
   unfold: FadePhase | null
   maxHeight: number
   rootRef: RefObject<HTMLDivElement | null>
+  toggleRef: RefObject<HTMLButtonElement | null>
+  /** Phone-size screen: the expanded result is full screen with its own header. */
+  phone: boolean
   details: ComponentChildren
   hasDetails: boolean
   onToggle: () => void
@@ -284,6 +320,42 @@ function ResultCard({
   onDismiss: () => void
 }) {
   const detailsId = useId()
+  const panel = useRef<HTMLElement>(null)
+  const hide = useRef<HTMLButtonElement>(null)
+  // Full screen on a phone: the pill underneath is covered, so it is inert; focus moves into the
+  // panel on opening and returns to the pill's chevron on closing; Tab stays inside.
+  const full = phone && expanded
+  const wasFull = useRef(false)
+  const open = unfold !== null
+  useLayoutEffect(() => {
+    if (full && open) {
+      hide.current?.focus()
+      wasFull.current = true
+    } else if (!full && wasFull.current) {
+      wasFull.current = false
+      const active = document.activeElement
+      if (!active || active === document.body || panel.current?.contains(active)) toggleRef.current?.focus()
+    }
+  }, [full, open])
+  useEffect(() => {
+    if (!full) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !panel.current) return
+      if (wrapTab(panel.current, event, document.activeElement)) event.preventDefault()
+    }
+    const onFocusIn = (event: FocusEvent) => {
+      // Not while it is closing: the layout effect hands focus back to the pill's chevron first.
+      if (!wasFull.current) return
+      const target = event.target as Node | null
+      if (target && panel.current && !panel.current.contains(target)) hide.current?.focus()
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('focusin', onFocusIn)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('focusin', onFocusIn)
+    }
+  }, [full])
   const timing = r.timing ? timingText(r.timing) : null
   const ladder = ladderResultText(r, multiplier)
   const dots = goal !== null && goal > 1 ? goal : null
@@ -312,20 +384,67 @@ function ResultCard({
       data-tone={tone}
       data-phase={phase}
       data-expanded={unfold !== null || undefined}
+      data-layout={phone ? 'screen' : 'panel'}
       style={{ '--result-details-max': `${maxHeight}px` }}
     >
       {unfold !== null ? (
         <section
+          ref={panel}
           id={detailsId}
           class={styles.resultDetails}
+          // A phone: the panel covers the whole screen, so it is a modal dialog (focus stays in it,
+          // the rest is not reachable). A tablet: a plain labeled region over the score.
+          role={phone ? 'dialog' : undefined}
+          aria-modal={phone ? 'true' : undefined}
           aria-label="Details of this pass"
           data-testid="result-details"
+          data-layout={phone ? 'screen' : 'panel'}
+          data-tone={tone}
           data-phase={unfold}
         >
+          {phone ? (
+            <header class={styles.screenHeader} data-testid="result-screen-header">
+              <button
+                ref={hide}
+                type="button"
+                class={styles.screenBack}
+                aria-label="Hide details"
+                title="Hide details"
+                data-testid="result-details-hide"
+                onClick={onToggle}
+              >
+                <Icon name="down" size={24} />
+              </button>
+              <h2 class={styles.screenTitle}>
+                <span>{resultTitle(r)}</span>
+                {dots !== null ? (
+                  <span class={styles.resultGoal} role="img" aria-label={`${filled} of ${dots} clean toward the goal`}>
+                    {Array.from({ length: dots }, (_, i) => (
+                      <span key={i} class={styles.resultDot} data-on={i < filled || undefined} />
+                    ))}
+                  </span>
+                ) : null}
+              </h2>
+              {showAgain ? (
+                <Button variant="primary" icon="restart" class={styles.resultAgain} onClick={onRestart}>
+                  Again
+                </Button>
+              ) : null}
+              <button
+                type="button"
+                class={styles.resultIconButton}
+                aria-label="Hide result"
+                title="Hide"
+                onClick={onDismiss}
+              >
+                <Icon name="close" size={20} />
+              </button>
+            </header>
+          ) : null}
           {details}
         </section>
       ) : null}
-      <div class={styles.result} role="status">
+      <div class={styles.result} role="status" inert={full || undefined}>
         <span class={styles.resultBadge} aria-hidden="true">
           {tone === 'clean' ? (
             <Icon name="check" size={22} />
@@ -363,6 +482,7 @@ function ResultCard({
           ) : null}
           {hasDetails ? (
             <button
+              ref={toggleRef}
               type="button"
               class={styles.resultDetailsButton}
               aria-expanded={expanded}

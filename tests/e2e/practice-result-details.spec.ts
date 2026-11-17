@@ -22,13 +22,13 @@ async function stripTransform(page: Page): Promise<string> {
   return page.locator('.pn-strip .pn-content').evaluate((el) => (el as HTMLElement).style.transform)
 }
 
-/** Waits until the strip's transform has not changed for 200 ms (the review zoom has landed). */
+/** Waits until the score's view (strip transform or page scroll) has not changed for 200 ms (the review zoom has landed). */
 async function settled(page: Page): Promise<void> {
   await page.waitForTimeout(800)
-  let last = await stripTransform(page)
+  let last = await viewSignature(page)
   for (let i = 0; i < 30; i++) {
     await page.waitForTimeout(200)
-    const now = await stripTransform(page)
+    const now = await viewSignature(page)
     if (now === last) return
     last = now
   }
@@ -75,6 +75,33 @@ async function rankedPasses(page: Page, settings: Partial<AppSettings> = {}): Pr
 
 const toggle = (page: Page) => page.getByTestId('result-details-toggle')
 const details = (page: Page) => page.getByTestId('result-details')
+const hide = (page: Page) => page.getByTestId('result-details-hide')
+
+/** What the score underneath shows: the strip's transform, or the page's scroll offset. */
+async function viewSignature(page: Page): Promise<string> {
+  if ((await page.locator('.pn-strip .pn-content').count()) > 0) return stripTransform(page)
+  return String(await page.getByTestId('page-scroll').evaluate((el) => el.scrollTop))
+}
+
+/** Folds the expanded result by its chevron: the panel's own on a phone, the pill's otherwise. */
+async function fold(page: Page): Promise<void> {
+  const phone = await page.evaluate(
+    () => matchMedia('(max-width: 520px), (orientation: landscape) and (max-height: 520px)').matches,
+  )
+  if (phone) await hide(page).click()
+  else await toggle(page).click()
+}
+
+const PHONE_SIZES = [
+  { name: 'phone upright', width: 390, height: 844 },
+  { name: 'phone on its side', width: 852, height: 360 },
+] as const
+const TABLET_SIZES = [
+  { name: 'tablet on its side', width: 1194, height: 834 },
+  { name: 'tablet upright', width: 834, height: 1194 },
+] as const
+/** The tablet panel's margin to the stage's top and sides and to the footer: at least this (px). */
+const PANEL_MARGIN = 16
 
 test.describe('the result details open in place (U99)', () => {
   test('Details expands the pill over the score, the URL and the review stay, the chevron folds it', async ({
@@ -265,6 +292,127 @@ test.describe('mistake playback in the card (U100)', () => {
   })
 })
 
+test.describe('the expanded result by screen size (U99, 17 November 2026)', () => {
+  test('a phone shows it full screen, a tablet a roomy panel with an even margin', async ({ page }) => {
+    test.setTimeout(400_000)
+    // Played at the tablet size (`playWhenDue` reads the cursor geometry), then shown at each size.
+    await page.setViewportSize({ width: 1194, height: 834 })
+    await rankedPasses(page)
+    const url = page.url()
+    for (const size of [...TABLET_SIZES, ...PHONE_SIZES]) {
+      await page.setViewportSize({ width: size.width, height: size.height })
+      await page.waitForTimeout(2500)
+      await expect(page.getByTestId('attempt-result')).toBeVisible()
+      await settled(page)
+      const before = await viewSignature(page)
+      const phone = PHONE_SIZES.some((p) => p.name === size.name)
+      await toggle(page).click()
+      await expect(details(page).getByTestId('result-excerpt').first()).toBeVisible()
+      await page.waitForTimeout(500)
+      const box = (await details(page).boundingBox())!
+      const vw = size.width
+      const vh = size.height
+      const label = size.name
+      if (phone) {
+        // Full screen: the whole viewport, over the top bar and the footer, edge to edge.
+        expect(box, label).toMatchObject({ x: 0, y: 0, width: vw, height: vh })
+        await expect(details(page)).toHaveAttribute('data-layout', 'screen')
+        await expect(details(page)).toHaveAttribute('role', 'dialog')
+        // The panel is what is on top at every corner and at the middle of the top bar.
+        const covered = await page.evaluate(
+          ([w, h]) =>
+            [
+              [2, 2],
+              [w! - 2, 2],
+              [2, h! - 2],
+              [w! - 2, h! - 2],
+              [w! / 2, 20],
+            ].every(([x, y]) => !!document.elementFromPoint(x!, y!)?.closest('[data-testid="result-details"]')),
+          [vw, vh],
+        )
+        expect(covered, label).toBe(true)
+        // The chevron down is in the header, in reach, and stays there while the content scrolls.
+        const head = (await page.getByTestId('result-screen-header').boundingBox())!
+        expect(head.y, label).toBe(0)
+        expect(head.height, label).toBeLessThanOrEqual(size.height > 400 ? 72 : 52)
+        await expect(hide(page)).toBeVisible()
+        await expect(hide(page)).toBeFocused()
+        await details(page).evaluate((el) => el.scrollTo(0, el.scrollHeight))
+        await page.waitForTimeout(150)
+        const chev = (await hide(page).boundingBox())!
+        expect(chev.y, label).toBeGreaterThanOrEqual(0)
+        expect(chev.y + chev.height, label).toBeLessThanOrEqual(head.height + 2)
+        // An excerpt uses the width there is (inside its padding), not a tiny picture.
+        const music = (await details(page).getByTestId('excerpt-music').first().boundingBox())!
+        expect(music.width, label).toBeGreaterThan(vw * 0.6)
+        // What is underneath neither scrolls nor takes taps: a tap at the pill's old place lands on the panel.
+        const hit = await page.evaluate(
+          ([w, h]) => document.elementFromPoint(w! / 2, h! - 40)?.closest('[data-testid="result-details"]') !== null,
+          [vw, vh],
+        )
+        expect(hit, label).toBe(true)
+      } else {
+        await expect(details(page)).toHaveAttribute('data-layout', 'panel')
+        // Larger than before (760 × 560 at most) and clearly not full screen.
+        expect(box.width, label).toBeGreaterThan(760)
+        expect(box.width, label).toBeLessThan(vw - 2 * PANEL_MARGIN + 1)
+        expect(box.height, label).toBeGreaterThan(560)
+        expect(box.height, label).toBeLessThan(vh * 0.85)
+        // The same margin on every side: the sides of the screen, the top of the stage (under the
+        // header and the overview), and the footer under the pill.
+        const stageTop = (await page.locator('[data-repeat-bounds]').boundingBox())!.y
+        const footerTop = (await page.getByTestId('footer-tools-slot').locator('xpath=ancestor::footer').boundingBox())!
+          .y
+        const dock = (await page.getByTestId('result-dock').boundingBox())!
+        const card = (await page.getByTestId('attempt-result').boundingBox())!
+        expect(box.x, label).toBeGreaterThanOrEqual(PANEL_MARGIN)
+        expect(vw - (box.x + box.width), label).toBeGreaterThanOrEqual(PANEL_MARGIN)
+        expect(box.y - stageTop, label).toBeGreaterThanOrEqual(PANEL_MARGIN - 1)
+        expect(footerTop - (card.y + card.height), label).toBeGreaterThanOrEqual(PANEL_MARGIN - 1)
+        expect(dock.width, label).toBeGreaterThan(0)
+      }
+      // Never re-zoomed or moved by expanding; still Practice on the same URL.
+      expect(await viewSignature(page), label).toBe(before)
+      expect(page.url()).toBe(url)
+      await fold(page)
+      await expect(details(page)).toHaveCount(0)
+      await expect(toggle(page)).toBeFocused()
+      expect(await viewSignature(page), label).toBe(before)
+    }
+  })
+
+  test('a phone on its side keeps the header compact; Escape folds it and a rotation keeps it open', async ({
+    page,
+  }) => {
+    test.setTimeout(200_000)
+    await page.setViewportSize({ width: 1194, height: 834 })
+    await openLoop(page)
+    await pass(page)
+    await expect(page.getByTestId('attempt-result')).toContainText('Clean pass')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.waitForTimeout(2500)
+    await toggle(page).click()
+    await expect(details(page).getByTestId('result-clean')).toHaveText('No mistakes in this pass.')
+    await expect(page.getByTestId('result-screen-header')).toContainText('Clean pass')
+    // Rotated: still open, laid out again for the short screen.
+    await page.setViewportSize({ width: 852, height: 360 })
+    await page.waitForTimeout(800)
+    await expect(details(page)).toBeVisible()
+    expect(await details(page).boundingBox()).toMatchObject({ x: 0, y: 0, width: 852, height: 360 })
+    const head = (await page.getByTestId('result-screen-header').boundingBox())!
+    expect(head.height).toBeLessThanOrEqual(52)
+    await expect(details(page).getByTestId('result-facts')).toBeAttached()
+    await page.keyboard.press('Escape')
+    await expect(details(page)).toHaveCount(0)
+    await expect(page.getByTestId('attempt-result')).toBeVisible()
+    // Hide result in the panel's header ends the result and its panel together.
+    await toggle(page).click()
+    await details(page).getByRole('button', { name: 'Hide result' }).click()
+    await expect(details(page)).toHaveCount(0)
+    await expect(page.getByTestId('attempt-result')).toHaveCount(0)
+  })
+})
+
 test.describe('result details screenshots (U99)', () => {
   test.skip(!SHOTS, 'set RESULT_DETAILS_SHOTS=<dir outside the repo> to save screenshots')
   const SIZES = [
@@ -284,7 +432,7 @@ test.describe('result details screenshots (U99)', () => {
       for (const size of SIZES) {
         await page.setViewportSize({ width: size.width, height: size.height })
         const name = `${browserName}-${size.name}-${theme}`
-        if ((await toggle(page).getAttribute('aria-expanded')) === 'true') await toggle(page).click()
+        if ((await toggle(page).getAttribute('aria-expanded')) === 'true') await fold(page)
         await page.waitForTimeout(2500)
         await expect(page.getByTestId('attempt-result')).toBeVisible()
         await page.screenshot({ path: join(SHOTS!, `${name}-collapsed.png`) })

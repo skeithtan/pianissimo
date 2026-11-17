@@ -711,6 +711,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         ui={ui}
         model={model}
         naming={appSettings.naming}
+        phone={phone}
         onRestart={() => session.restart()}
         // The details open in place over Practice (U99): nothing here leaves the screen.
         details={(r) => (

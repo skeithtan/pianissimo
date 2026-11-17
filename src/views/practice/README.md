@@ -137,6 +137,29 @@ mode and playing (receded, guide open) at 1180×820, 820×1180 and 360×780, lig
   backward to, notation follows, reading accepts that onset, and keyboard seeking starts
   from the visible note. `practice-page.spec.ts` also checks resumed following after scrolling.
 
+## The expanded result by screen size (U99, 17 November 2026)
+
+`AttemptResult` (`Banners.tsx`, prop `phone` from `usePhone`) expands the pill into one of two layouts
+(`data-layout` on `[data-testid="result-details"]`; the dock and the pill never change height, so
+the review frame and the strip's transform are untouched by expanding):
+
+- **Phone (`screen`):** the details section is `position: fixed; inset: 0` (the whole viewport,
+  over the top bar and footer), no border or radius, `role="dialog"` `aria-modal="true"`. Its own
+  sticky header (`result-screen-header`): the chevron down (`result-details-hide`, "Hide details",
+  focused on opening), the verdict headline with the goal dots, Again, Hide result; 60 px upright,
+  48 px on its side, padded by the safe-area insets. Content: 760 px at most, centered, safe-area
+  padding, excerpts up to twice their size. The pill underneath is `inert`; focus returns to its
+  chevron on close; Tab wraps inside (`wrapTab`); Escape folds it. Slides up 32 px while fading
+  (none with reduced motion).
+- **Tablet (`panel`):** a labeled region above the pill, up to 900 × 880 px, 16 px margin to the
+  stage's top and sides and to the footer (the dock and the page-mode result row keep 16 px),
+  24 px padding, excerpts up to 1.4 times their size and 720 px wide, centered.
+
+`tests/e2e/practice-result-details.spec.ts` checks both at 390×844, 852×360, 1194×834 and 834×1194
+(box equal to the viewport, covering the top bar and footer, the chevron reachable; the panel's
+margins; the strip's transform unchanged across expand and collapse; rotation keeps it open).
+`RESULT_DETAILS_SHOTS=<dir>` saves collapsed and expanded screenshots at those sizes, light and dark.
+
 ## Portrait page mode
 
 In portrait the stage shows the page view: systems wrapped to the width, the page still while a

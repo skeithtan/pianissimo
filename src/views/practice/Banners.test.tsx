@@ -9,6 +9,7 @@ import {
   AttemptResult,
   DETAILS_FOLD_MS,
   Banners,
+  wrapTab,
   RESULT_FADE_MS,
   ladderResultText,
   resultTitle,
@@ -366,6 +367,99 @@ describe('the result card expands in place (U99)', () => {
       />,
     )
     expect($(view.container, '[data-testid="result-details-toggle"]')).toBeNull()
+  })
+})
+
+describe('the expanded result by screen size (U99, 17 November 2026)', () => {
+  const toggle = () => $(view!.container, '[data-testid="result-details-toggle"]')!
+  const body = () => $(view!.container, '[data-testid="result-details"]')
+  const hide = () => $(view!.container, '[data-testid="result-details-hide"]') as HTMLButtonElement | null
+
+  it('a tablet gets a labeled region over the score, no header of its own', () => {
+    vi.useFakeTimers()
+    view = mount(result({ lastResult: RESULT }, { phone: false }))
+    advance(50)
+    click(toggle())
+    expect(body()?.dataset['layout']).toBe('panel')
+    expect(body()?.getAttribute('role')).toBeNull()
+    expect(body()?.getAttribute('aria-modal')).toBeNull()
+    expect($(view.container, '[data-testid="result-screen-header"]')).toBeNull()
+    expect(hide()).toBeNull()
+    expect($(view.container, '[role="status"]')?.hasAttribute('inert')).toBe(false)
+  })
+
+  it('a phone gets a full-screen modal dialog: header with the verdict, chevron, Again and Hide', () => {
+    vi.useFakeTimers()
+    const onRestart = vi.fn()
+    const onDismiss = vi.fn()
+    view = mount(result({ lastResult: RESULT }, { phone: true, onRestart, onDismiss }))
+    advance(50)
+    click(toggle())
+    expect(body()?.dataset['layout']).toBe('screen')
+    expect(body()?.getAttribute('role')).toBe('dialog')
+    expect(body()?.getAttribute('aria-modal')).toBe('true')
+    expect(body()?.getAttribute('aria-label')).toBe('Details of this pass')
+    const header = $(view.container, '[data-testid="result-screen-header"]')!
+    expect(header.querySelector('h2')?.textContent).toContain('Clean pass')
+    expect(header.contains(hide())).toBe(true)
+    expect(hide()?.getAttribute('aria-label')).toBe('Hide details')
+    // The header comes before the content, which is the same details content as the tablet's.
+    expect(header.nextElementSibling?.getAttribute('data-testid')).toBe('details-body')
+    // The pill underneath is covered: inert, so neither tapped nor tabbed to.
+    expect($(view.container, '[role="status"]')?.hasAttribute('inert')).toBe(true)
+    // Focus moved into the panel, onto the chevron.
+    expect(document.activeElement).toBe(hide())
+    // Again and Hide result are in the header.
+    click(byText(header, 'Again')!)
+    expect(onRestart).toHaveBeenCalledTimes(1)
+    click(byLabel(header, 'Hide result')!)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it("the panel chevron folds it and focus returns to the pill's chevron; Escape does too", () => {
+    vi.useFakeTimers()
+    view = mount(result({ lastResult: RESULT }, { phone: true }))
+    advance(50)
+    click(toggle())
+    expect(document.activeElement).toBe(hide())
+    click(hide()!)
+    advance(DETAILS_FOLD_MS + 1)
+    expect(body()).toBeNull()
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect($(view.container, '[role="status"]')?.hasAttribute('inert')).toBe(false)
+    expect(document.activeElement).toBe(toggle())
+
+    click(toggle())
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    advance(DETAILS_FOLD_MS + 1)
+    expect(body()).toBeNull()
+    expect(document.activeElement).toBe(toggle())
+  })
+
+  it('Tab stays inside the full-screen panel, and focus that strays is pulled back', () => {
+    vi.useFakeTimers()
+    view = mount(result({ lastResult: RESULT }, { phone: true }))
+    advance(50)
+    click(toggle())
+    const panel = body()!
+    const items = Array.from(panel.querySelectorAll<HTMLElement>('button'))
+    expect(items.length).toBeGreaterThanOrEqual(3)
+    const last = items[items.length - 1]!
+    last.focus()
+    expect(wrapTab(panel, { shiftKey: false }, last)).toBe(true)
+    expect(document.activeElement).toBe(items[0])
+    expect(wrapTab(panel, { shiftKey: true }, items[0]!)).toBe(true)
+    expect(document.activeElement).toBe(last)
+    // In the middle the browser's own Tab order applies.
+    expect(wrapTab(panel, { shiftKey: false }, items[1]!)).toBe(false)
+    // Something outside takes focus: it comes back to the chevron.
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    act(() => outside.focus())
+    expect(document.activeElement).toBe(hide())
+    outside.remove()
   })
 })
 
