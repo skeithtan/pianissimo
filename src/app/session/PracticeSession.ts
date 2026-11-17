@@ -1736,7 +1736,7 @@ export class PracticeSession {
     this.#cue = null
     this.#lateUntil = -Infinity
     this.#flash?.clear()
-    if (persist) this.#deps.piece.save({ rhythm: on })
+    if (persist) this.#deps.piece.save({ rhythm: on }, true)
     this.#lockState = ''
     this.#syncLock()
     this.#process(now)
@@ -2132,9 +2132,9 @@ export class PracticeSession {
     // Repeat opened or closed, or the loop cleared, is saved on the piece (U98).
     const saveMode = (modeChanged && !heldClose) || (loopChanged && !loop)
     if (persist && (handsChanged || base.multiplier !== prev.multiplier || loopChanged || saveMode)) {
-      // A mode or loop change comes from a tap or a drag (never the MIDI path) and a reload right
-      // after must find it: written at once. Speed and hands alone stay debounced (the speed
-      // ladder's step runs from the MIDI path).
+      // The learner's own change comes from a tap or a drag (never the MIDI path) and a reload
+      // right after must find it: written at once (the saver coalesces). Only the speed ladder's
+      // step stays debounced: it runs from the MIDI path, which never starts a write.
       this.#deps.piece.save(
         {
           lastHands: this.#heldHands ?? base.hands,
@@ -2142,7 +2142,7 @@ export class PracticeSession {
           lastMultiplier: base.multiplier,
           ...(saveMode ? { repeatOpen: repeat } : {}),
         },
-        saveMode || loopChanged,
+        !ladder,
       )
     }
     this.#loop = loop

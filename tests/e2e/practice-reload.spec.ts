@@ -152,8 +152,23 @@ for (const [name, viewport, layout] of [
     await setHandAndSpeed(page)
     await expect(panelOf(page).getByTestId('ladder-line')).toContainText('75% →')
     await expect(page.locator('.pn-loop.pn-on')).not.toHaveCount(0)
-    // Let the loop's resize settle before measuring it.
-    await page.waitForTimeout(500)
+    // Let the loop's resize settle before measuring it: the band's size stops changing.
+    const bandSize = async () => {
+      const box = await page.locator('.pn-loop.pn-on').first().boundingBox()
+      return box ? `${Math.round(box.width)}x${Math.round(box.height)}` : ''
+    }
+    let last = ''
+    await expect
+      .poll(
+        async () => {
+          const now = await bandSize()
+          const stable = now !== '' && now === last
+          last = now
+          return stable
+        },
+        { intervals: [100] },
+      )
+      .toBe(true)
     const before = await snapshot(page)
     expect(before.target).toBe('Until 5 clean')
     expect(before.left).toBe('false')
@@ -187,9 +202,10 @@ test('a note-level loop edge survives a reload', async ({ page }) => {
   const handle = page.getByRole('button', { name: /Passage end/ })
   await handle.focus()
   await page.keyboard.press('ArrowLeft')
-  await expect(end).not.toHaveText(/^\s*Bar 1\s*$/)
+  // A whole-bar edge reads "1Bar 1"; a note-level one carries the beat ("1·3Bar 1, beat 3").
+  await expect(end).toContainText('·')
   const edge = await end.textContent()
-  await page.waitForTimeout(400)
+  expect(edge).toContain('·')
 
   await reloadPractice(page)
   await expect(panelOf(page)).toBeVisible()
@@ -202,7 +218,6 @@ test('closing Repeat but keeping its loop (Play through) stays closed and keeps 
   await openPractice(page, TABLET)
   await openRepeat(page)
   await loopBarTwo(page)
-  await page.waitForTimeout(400)
   // Play through closes Repeat and keeps the loop for later (the panel's X would clear it).
   const menu = await openFooterMenu(page)
   await menu.getByRole('switch', { name: 'Play through' }).click()
@@ -236,7 +251,7 @@ test('a completed pass is not brought back by a reload', async ({ page }) => {
   await playWhenDue(page, 65)
   await expect(page.getByTestId('attempt-result')).toContainText('Clean pass')
   await page.getByRole('button', { name: 'Pause', exact: true }).click()
-  await page.waitForTimeout(400)
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
   const start = await loopStart(page).textContent()
   const end = await loopEnd(page).textContent()
 
@@ -252,7 +267,6 @@ test('leaving to the Library and opening the piece again keeps Repeat on over it
   await openPractice(page, TABLET)
   await openRepeat(page)
   await loopBarTwo(page)
-  await page.waitForTimeout(400)
   await page.getByRole('button', { name: 'Back to Library' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Library' })).toBeVisible()
 

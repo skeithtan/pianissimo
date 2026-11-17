@@ -110,7 +110,7 @@ describe('PracticeSession: Repeat mode is saved (U98)', () => {
     expect(closed.saves.at(-1)).toMatchObject({ patch: { lastPassage: null, repeatOpen: false }, immediate: true })
   })
 
-  it('a loop edit is written at once; hands or speed alone stay debounced', () => {
+  it('a loop, hands or speed edit by the learner is written at once', () => {
     const h = reopen({ ...FRESH, lastPassage: BAR_2, repeatOpen: true })
     h.session.setSelection({ range: { fromOcc: 1, toOcc: 2 } })
     expect(h.saves.at(-1)).toMatchObject({ patch: { lastPassage: { fromOcc: 1, toOcc: 2 } }, immediate: true })
@@ -118,10 +118,10 @@ describe('PracticeSession: Repeat mode is saved (U98)', () => {
     h.session.setSelection({ hands: 'right' })
     expect(h.saves.at(-1)).toEqual({
       patch: { lastHands: 'right', lastPassage: { fromOcc: 1, toOcc: 2 }, lastMultiplier: 1 },
-      immediate: false,
+      immediate: true,
     })
     h.session.setSelection({ multiplier: 0.7 })
-    expect(h.saves.at(-1)).toMatchObject({ patch: { lastMultiplier: 0.7 }, immediate: false })
+    expect(h.saves.at(-1)).toMatchObject({ patch: { lastMultiplier: 0.7 }, immediate: true })
   })
 
   it('the Repeat target and the speed ladder are written at once', () => {

@@ -1,8 +1,11 @@
 /**
  * Throttled piece updates (last speed, hands, passage, resume position, repeat target, speed
- * ladder). The session saves on pause, seek and hide (`immediate`) and debounces everything
- * else; nothing is written from the MIDI input path (spec "Persist history in asynchronous
- * batches outside the input handler").
+ * ladder). The session saves the learner's own changes, pause, seek and hide `immediate`ly and
+ * debounces everything else (the ladder's speed step, the periodic resume position); nothing is
+ * written from the MIDI input path (spec "Persist history in asynchronous batches outside the
+ * input handler"). Immediate saves are cheap: at most one write is in flight and everything saved
+ * meanwhile merges into the single write that follows it, so `flush()` resolves only once all
+ * that was saved before it is written.
  */
 import type { TimerApi } from '../../core/playback'
 import type { PiecePatch, PieceSink } from './types'
@@ -22,17 +25,39 @@ export function createPieceSaver(
 ): PieceSaver {
   let pending: PiecePatch | null = null
   let handle: unknown = null
-  let chain: Promise<unknown> = Promise.resolve()
+  let inFlight: Promise<void> | null = null
   let disposed = false
+
+  // Writes `pending` until nothing is left. Patches saved during a write merge into one following
+  // write, so an immediate save never queues more than one write behind the one in flight.
+  const drain = async (): Promise<void> => {
+    // Always suspend first: `run` stores this promise in `inFlight` before any of the body (so
+    // before the `finally`) runs, even when `write` throws synchronously or returns at once.
+    await Promise.resolve()
+    try {
+      while (pending) {
+        const patch = pending
+        pending = null
+        try {
+          await write(patch)
+        } catch {
+          // A failed write is dropped; the next save carries its own fields.
+        }
+      }
+    } finally {
+      // The same synchronous step as the loop's last check: no save can fall between them.
+      inFlight = null
+    }
+  }
 
   const run = (): Promise<void> => {
     if (handle !== null) timers.clearTimeout(handle)
     handle = null
-    const patch = pending
-    pending = null
-    if (!patch) return chain.then(() => undefined)
-    chain = chain.then(() => write(patch)).catch(() => undefined)
-    return chain.then(() => undefined)
+    if (inFlight) return inFlight
+    if (!pending) return Promise.resolve()
+    // `drain` suspends at its first line, so its `finally` clears this only after the assignment.
+    inFlight = drain()
+    return inFlight
   }
 
   return {

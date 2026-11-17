@@ -19,7 +19,7 @@ practice", "Execution and rendering architecture", "Storage and recovery" (resum
 | `selectionTimeline`, `startPlan`, `passageSummary`, `rangeText`, `tempoText`, `clampPassage`, `HAND_TEXT` | Selection helpers (timeline, plain-language blockers, "Right hand · Bars 5–8 · 80% (♩ = 58)"). |
 | `PersistentLabels`, `labelSnapshot`, `mergeOpacity` | Persistent label texts, eligibility and fades; engine label snapshot (`rulesJson = JSON.stringify(labels.rules)`). |
 | `accompanimentAllowed`, `hasSoundOutput` | Output rules (`output.ts`: `playbackDestination` resolves Auto / Connected piano / Browser sound; graded accompaniment needs browser sound or a verified echo-free MIDI output). |
-| `createPieceSaver(write, timers)` | Debounced `updatePiece` writes; `immediate` for pause/seek/hide. |
+| `createPieceSaver(write, timers)` | `updatePiece` writes, coalesced (one in flight); debounced unless `immediate` (learner changes, pause/seek/hide). |
 | `Store` / `ReadonlyStore` | Tiny observable used for the view stores. |
 | `repeatedMistakes`, `repeatedMistakeLine`, `REPEATED_MISTAKE_PASSES`, `RepeatedMistake` | Repeated mistakes (`mistakes.ts`, P24, below). |
 
@@ -228,12 +228,12 @@ Stores (subscribe from the view):
   owner), leaving the view (`user-stop`; a paused reading pass, also under an overlay, ends with
   `'suspend'`, so it is recorded without an abandon event). Reading interruptions offer Resume / Restart. Hiding
   the page only saves progress: it does not pause practice, Listen, or their transports.
-- **Persistence.** `lastHands/lastPassage/lastMultiplier` on selection change (debounced for
-  hands and speed alone: the speed ladder's step runs from the MIDI path), `repeatOpen` (Repeat
+- **Persistence.** `lastHands/lastPassage/lastMultiplier` on selection change, `repeatOpen` (Repeat
   mode on, DECISIONS U98) whenever Repeat opens or closes and `false` with `lastPassage: null`
-  when the loop is cleared; a save carrying a mode or loop change is immediate (taps and drags,
-  never the MIDI path; a reload right after must find it). `repeatTarget`, `ladder` (immediate,
-  discrete taps), `rhythm` (Keep time), `resume` on pause/seek/hide/dispose and every ≥ 5 s of
+  when the loop is cleared. Hands, speed, loop, Repeat mode, `repeatTarget`, `ladder` and
+  `rhythm` (Keep time) are written at once (taps and drags, never the MIDI path; a reload right
+  after must find them) and coalesced by the saver; only the ladder's own speed step (from the
+  MIDI path) and the periodic resume position are debounced. `resume` on pause/seek/hide/dispose and every ≥ 5 s of
   reading (from the frame, never per event); cleared at the end of the piece. The last result,
   corrections, streak, ladder failures and play-through are never saved: a session opened with
   `repeat: true` from the stored loop (`PracticeScreen`) starts paused at the loop start with no

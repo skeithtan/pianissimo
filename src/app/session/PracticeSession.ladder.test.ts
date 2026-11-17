@@ -84,6 +84,8 @@ describe('PracticeSession: speed ladder', () => {
     expect(ui(h).lastResult?.ladder).toEqual({ climbedTo: 0.65 })
     expect(h.strip.wraps).toBe(wraps + 1)
     expect(h.saves.some((s) => s.patch.lastMultiplier === 0.65)).toBe(true)
+    // The step runs from the MIDI path: debounced, never an immediate write.
+    expect(h.saves.filter((s) => s.patch.lastMultiplier === 0.65).every((s) => !s.immediate)).toBe(true)
     // The next attempt runs at the new speed, in its own comparison context, and the streak starts over.
     pass(h)
     expect(h.attempts).toHaveLength(4)
