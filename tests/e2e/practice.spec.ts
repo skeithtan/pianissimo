@@ -93,8 +93,9 @@ test.describe('practice', () => {
     await page.screenshot({ path: join(SHOT_DIR, `${browserName}-result-dark.png`) })
     await info.attach('result-dark.png', { body: await page.screenshot(), contentType: 'image/png' })
 
-    await card.getByRole('button', { name: 'Details' }).click()
-    await expect(page.locator('main')).toHaveAttribute('data-view', 'results')
+    await card.getByRole('button', { name: 'Show details of this pass' }).click()
+    await expect(page.getByTestId('result-details')).toBeVisible()
+    await expect(page.locator('main')).toHaveAttribute('data-view', 'practice') // in place (U99)
   })
 
   test('the cursor stays fixed while practice flows at tempo and waits for the next correct note', async ({ page }) => {

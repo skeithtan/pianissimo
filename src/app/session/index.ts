@@ -9,6 +9,7 @@ export { metronomeOn, metronomePatch, metronomeScope, type MetronomeScope } from
 export { createPieceSaver, type PieceSaver } from './persistence'
 export { practiceModel, practiceTempoMissing } from './model'
 export { REPEATED_MISTAKE_PASSES, repeatedMistakeLine, repeatedMistakes, type RepeatedMistake } from './mistakes'
+export type { GroupMark, MistakeLevel, PressKind, RankedMistake, WrongPress } from './ranking'
 export {
   HAND_TEXT,
   clampPassage,

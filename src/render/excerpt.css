@@ -1,0 +1,108 @@
+/* Score excerpts (excerpt.ts, DECISIONS U99): the notation tokens of the strip on a small card,
+   so light and dark follow the score paper and ink without re-engraving. The engraving's black is
+   currentColor (sanitize.ts). The red pen and the ghost notes use the correction color; a ghost is
+   a crossed, hollow head (never a printed one, whatever the color). */
+.pn-excerpt {
+  --pn-paper: var(--score-paper);
+  --pn-ink: var(--score-ink);
+  --pn-ink-muted: var(--score-ink-muted);
+  --pn-correction: var(--danger);
+  --pn-label-font: "Pianissimo Label", system-ui, sans-serif;
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+}
+
+.pn-excerpt svg {
+  display: block;
+  overflow: visible;
+}
+
+.pn-excerpt-svg {
+  color: var(--pn-ink);
+  fill: currentColor;
+}
+
+.pn-excerpt .pn-ex-staff path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: var(--score-staff-opacity, 1);
+}
+
+.pn-excerpt .pn-ex-music,
+.pn-excerpt .pn-ex-sig {
+  overflow: hidden;
+}
+
+.pn-excerpt .pn-ex-num {
+  fill: var(--pn-ink-muted);
+  font-family: var(--pn-label-font);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pn-excerpt .pn-corr-ring {
+  fill: none;
+  stroke: var(--pn-correction);
+  stroke-width: 2.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.88;
+}
+
+.pn-excerpt .pn-corr-leader,
+.pn-excerpt .pn-corr-link {
+  stroke: var(--pn-correction);
+  stroke-linecap: round;
+  opacity: 0.88;
+}
+
+.pn-excerpt .pn-corr-leader {
+  stroke-width: 1.5px;
+}
+
+.pn-excerpt .pn-corr-link {
+  stroke-width: 2.5px;
+}
+
+.pn-excerpt .pn-corr-label {
+  font-family: var(--pn-label-font);
+  font-size: 13px;
+  font-weight: 700;
+  fill: var(--pn-correction);
+}
+
+.pn-excerpt .pn-corr-halo {
+  paint-order: stroke;
+  stroke: var(--pn-paper);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.pn-excerpt .pn-ex-head {
+  fill: var(--pn-paper);
+  stroke: var(--pn-correction);
+  stroke-width: 2px;
+}
+
+.pn-excerpt .pn-ex-cross,
+.pn-excerpt .pn-ex-ledger {
+  fill: none;
+  stroke: var(--pn-correction);
+  stroke-linecap: round;
+}
+
+.pn-excerpt .pn-ex-cross {
+  stroke-width: 1.4px;
+}
+
+.pn-excerpt .pn-ex-ledger {
+  stroke-width: 1.3px;
+}
+
+.pn-excerpt .pn-ex-acc {
+  fill: var(--pn-correction);
+  font-family: var(--pn-label-font);
+  font-size: 20px;
+  font-weight: 700;
+}

@@ -12,7 +12,8 @@
  * interruption (the footer's main button offers Resume / Start, user 2026-11-02). There is no
  * end-of-piece banner: the footer's main button offers Start.
  */
-import { useMemo, useRef } from 'preact/hooks'
+import type { ComponentChildren, RefObject } from 'preact'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { repeatedMistakeLine, type AttemptSummary, type SessionUi } from '../../app/session'
 import type { ScoreModel } from '../../core/model/score'
 import type { NamingSettings } from '../../core/model/settings'
@@ -124,15 +125,37 @@ export interface AttemptResultProps {
   /** The practiced score and the naming settings word a repeated mistake (P24) on the card. */
   readonly model: Pick<ScoreModel, 'notes'>
   readonly naming: NamingSettings
-  readonly onResults: (attemptId: string) => void
+  /**
+   * What the expanded card holds (U99), rendered only while it is expanded; absent: no Details
+   * control. Nothing in it may leave Practice.
+   */
+  readonly details?: (r: AttemptSummary) => ComponentChildren
   readonly onRestart: () => void
   readonly onDismiss: () => void
+  /**
+   * The expanded result, held by the owner so a rotation that moves the dock (strip ↔ page)
+   * keeps the card open; absent: the card holds it itself.
+   */
+  readonly expandedId?: string | null
+  readonly onExpandedChange?: (id: string | null) => void
 }
+
+/** Space kept between the expanded card and the top of the area it may cover (px). */
+const DETAILS_MARGIN = 8
+/** Below this, the expanded card may also cover the screen's top bar (a phone on its side). */
+const DETAILS_MIN_HEIGHT = 220
+/** The expanded card's details are at most this tall (px); its own list scrolls beyond. */
+export const DETAILS_MAX_HEIGHT = 560
+/** The details fold away in this long (CSS `.resultDetails[data-phase=leaving]`). */
+export const DETAILS_FOLD_MS = 200
 
 /**
  * The result after a completed attempt (U97, revising U33), docked at the bottom of the stage: it
  * fades and rises in, keeps the last result while it fades out, and shows nothing while playing
- * through (P12).
+ * through (P12). Details expands it in place into a larger card (U99): the details open above
+ * the pill as an overlay (the dock keeps the pill's size, so the strip's review never re-fits),
+ * Hide details, Escape or anything that ends the result folds it again; a new result starts
+ * folded.
  */
 export function AttemptResult(p: AttemptResultProps) {
   const { ui } = p
@@ -145,6 +168,41 @@ export function AttemptResult(p: AttemptResultProps) {
   // Worded here, on a render, never in the input path; it follows the naming settings live.
   const first = shown?.repeatedMistakes?.[0]
   const note = useMemo(() => (first ? repeatedMistakeLine(first, p.model, p.naming) : null), [first, p.model, p.naming])
+  // Expanded for one result only: a new pass (or none) folds it.
+  const [ownId, setOwnId] = useState<string | null>(null)
+  const expandedId = p.onExpandedChange ? (p.expandedId ?? null) : ownId
+  const setExpandedId = p.onExpandedChange ?? setOwnId
+  const expanded = !!r && expandedId === r.id && !!p.details
+  // The details unfold and fold like an accordion: they stay mounted while folding.
+  const unfold = useFadePresence(expanded, DETAILS_FOLD_MS)
+  const root = useRef<HTMLDivElement>(null)
+  const [maxHeight, setMaxHeight] = useState(DETAILS_MAX_HEIGHT)
+  // Measured again when the card mounts expanded (a rotation moved the dock).
+  useLayoutEffect(() => {
+    if (expanded) setMaxHeight(availableHeight(root.current))
+  }, [expanded])
+
+  useEffect(() => {
+    if (!expanded) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      setExpandedId(null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [expanded])
+
+  const toggle = () => {
+    if (!r) return
+    if (expanded) {
+      setExpandedId(null)
+      return
+    }
+    setMaxHeight(availableHeight(root.current))
+    setExpandedId(r.id)
+  }
+
   if (!presence.mounted || !shown) return null
   return (
     <ResultCard
@@ -154,7 +212,13 @@ export function AttemptResult(p: AttemptResultProps) {
       multiplier={ui.multiplier}
       goal={ui.repeat ? ui.repeatTarget : null}
       showAgain={!ui.repeat || shown.targetReached}
-      onResults={p.onResults}
+      expanded={expanded}
+      maxHeight={maxHeight}
+      rootRef={root}
+      unfold={unfold.mounted ? unfold.phase : null}
+      details={p.details && unfold.mounted ? p.details(shown) : null}
+      hasDetails={!!p.details}
+      onToggle={toggle}
       onRestart={p.onRestart}
       onDismiss={p.onDismiss}
     />
@@ -162,11 +226,26 @@ export function AttemptResult(p: AttemptResultProps) {
 }
 
 /**
+ * Height the expanded details may take above the pill: up to the top of the stage (the score
+ * area), or, when that leaves too little (a phone on its side), up to the top of the screen.
+ */
+function availableHeight(card: HTMLElement | null): number {
+  if (!card || typeof window === 'undefined') return DETAILS_MAX_HEIGHT
+  const top = card.getBoundingClientRect().top
+  const stage = card.closest('[data-activity]')?.querySelector('[data-repeat-bounds]')
+  const stageTop = stage?.getBoundingClientRect().top ?? 0
+  let room = top - stageTop - DETAILS_MARGIN
+  if (room < DETAILS_MIN_HEIGHT) room = top - DETAILS_MARGIN
+  return Math.max(120, Math.min(DETAILS_MAX_HEIGHT, Math.round(room)))
+}
+
+/**
  * One slim row: a badge (a check for a clean pass, else the number of wrong notes), the headline
  * with the Repeat goal as dots, one status line (Keep time's timing, the streak, what the speed
  * ladder did, the goal reached), an optional second line (`note`: the latest pass's most repeated
- * mistake, P24, "F instead of F♯ in bar 12, three passes running"), then Again, Details and Hide. The time, the first-try share and the help used
- * live in Details (Results); the marks on the score speak for themselves.
+ * mistake, P24, "F instead of F♯ in bar 12, three passes running"), then Again, Details and Hide.
+ * Details (a chevron, labeled where there is room) expands the card upward over the score: the
+ * details sit above the row, which stays where it was, so the chevron never moves under the finger.
  */
 function ResultCard({
   r,
@@ -175,7 +254,13 @@ function ResultCard({
   multiplier,
   goal,
   showAgain,
-  onResults,
+  expanded,
+  unfold,
+  maxHeight,
+  rootRef,
+  details,
+  hasDetails,
+  onToggle,
   onRestart,
   onDismiss,
 }: {
@@ -187,10 +272,18 @@ function ResultCard({
   /** The Repeat target ("until N clean") shown as dots, or null. */
   goal: number | null
   showAgain: boolean
-  onResults: (attemptId: string) => void
+  expanded: boolean
+  /** The details while unfolded or folding (their fade phase), else null. */
+  unfold: FadePhase | null
+  maxHeight: number
+  rootRef: RefObject<HTMLDivElement | null>
+  details: ComponentChildren
+  hasDetails: boolean
+  onToggle: () => void
   onRestart: () => void
   onDismiss: () => void
 }) {
+  const detailsId = useId()
   const timing = r.timing ? timingText(r.timing) : null
   const ladder = ladderResultText(r, multiplier)
   const dots = goal !== null && goal > 1 ? goal : null
@@ -212,60 +305,89 @@ function ResultCard({
   ].filter((part) => part !== null)
   return (
     <div
-      class={styles.result}
-      role="status"
+      ref={rootRef}
+      class={styles.resultCard}
       data-testid="attempt-result"
       data-passed={r.passed}
       data-tone={tone}
       data-phase={phase}
+      data-expanded={unfold !== null || undefined}
+      style={{ '--result-details-max': `${maxHeight}px` }}
     >
-      <span class={styles.resultBadge} aria-hidden="true">
-        {tone === 'clean' ? (
-          <Icon name="check" size={22} />
-        ) : tone === 'wrong' ? (
-          <span class={styles.resultCount}>{r.wrongAttacks > 99 ? '99+' : r.wrongAttacks}</span>
-        ) : (
-          <Icon name="restart" size={20} />
-        )}
-      </span>
-      <div class={styles.resultText}>
-        <p class={styles.resultTitle}>
-          <span>{resultTitle(r)}</span>
-          {dots !== null ? (
-            <span class={styles.resultGoal} role="img" aria-label={`${filled} of ${dots} clean toward the goal`}>
-              {Array.from({ length: dots }, (_, i) => (
-                <span key={i} class={styles.resultDot} data-on={i < filled || undefined} />
-              ))}
-            </span>
-          ) : null}
-        </p>
-        {status.length ? (
-          <p class={styles.resultStatus}>{status.flatMap((part, i) => (i ? [' · ', part] : [part]))}</p>
-        ) : null}
-        {note ? (
-          <p class={styles.resultNote} data-testid="result-note">
-            {note}
-          </p>
-        ) : null}
-      </div>
-      <div class={styles.resultActions}>
-        {showAgain ? (
-          <Button variant="primary" icon="restart" class={styles.resultAgain} onClick={onRestart}>
-            Again
-          </Button>
-        ) : null}
-        <button
-          type="button"
-          class={styles.resultIconButton}
-          aria-label="Details"
-          title="Details"
-          onClick={() => onResults(r.id)}
+      {unfold !== null ? (
+        <section
+          id={detailsId}
+          class={styles.resultDetails}
+          aria-label="Details of this pass"
+          data-testid="result-details"
+          data-phase={unfold}
         >
-          <Icon name="chart" size={20} />
-        </button>
-        <button type="button" class={styles.resultIconButton} aria-label="Hide result" title="Hide" onClick={onDismiss}>
-          <Icon name="close" size={20} />
-        </button>
+          {details}
+        </section>
+      ) : null}
+      <div class={styles.result} role="status">
+        <span class={styles.resultBadge} aria-hidden="true">
+          {tone === 'clean' ? (
+            <Icon name="check" size={22} />
+          ) : tone === 'wrong' ? (
+            <span class={styles.resultCount}>{r.wrongAttacks > 99 ? '99+' : r.wrongAttacks}</span>
+          ) : (
+            <Icon name="restart" size={20} />
+          )}
+        </span>
+        <div class={styles.resultText}>
+          <p class={styles.resultTitle}>
+            <span>{resultTitle(r)}</span>
+            {dots !== null ? (
+              <span class={styles.resultGoal} role="img" aria-label={`${filled} of ${dots} clean toward the goal`}>
+                {Array.from({ length: dots }, (_, i) => (
+                  <span key={i} class={styles.resultDot} data-on={i < filled || undefined} />
+                ))}
+              </span>
+            ) : null}
+          </p>
+          {status.length ? (
+            <p class={styles.resultStatus}>{status.flatMap((part, i) => (i ? [' · ', part] : [part]))}</p>
+          ) : null}
+          {note ? (
+            <p class={styles.resultNote} data-testid="result-note">
+              {note}
+            </p>
+          ) : null}
+        </div>
+        <div class={styles.resultActions}>
+          {showAgain ? (
+            <Button variant="primary" icon="restart" class={styles.resultAgain} onClick={onRestart}>
+              Again
+            </Button>
+          ) : null}
+          {hasDetails ? (
+            <button
+              type="button"
+              class={styles.resultDetailsButton}
+              aria-expanded={expanded}
+              aria-controls={expanded ? detailsId : undefined}
+              aria-label={expanded ? 'Hide details' : 'Show details of this pass'}
+              title={expanded ? 'Hide details' : 'Details of this pass'}
+              data-testid="result-details-toggle"
+              onClick={onToggle}
+            >
+              <Icon name={expanded ? 'down' : 'up'} size={20} />
+              <span class={styles.resultDetailsLabel} aria-hidden="true">
+                Details
+              </span>
+            </button>
+          ) : null}
+          <button
+            type="button"
+            class={styles.resultIconButton}
+            aria-label="Hide result"
+            title="Hide"
+            onClick={onDismiss}
+          >
+            <Icon name="close" size={20} />
+          </button>
+        </div>
       </div>
     </div>
   )

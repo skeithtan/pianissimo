@@ -110,7 +110,7 @@ export function standInFor(pitch: number, group: Group, model: Pick<ScoreModel, 
   return Math.max(0, best)
 }
 
-const LETTERS: NamingSettings = {
+export const LETTERS: NamingSettings = {
   system: 'letter',
   seventh: 'si',
   showOctave: false,
@@ -119,7 +119,11 @@ const LETTERS: NamingSettings = {
 }
 
 /** The wrong key spelled on the target's letter (F for F♯, F♯ for F♮), or null. */
-function sameLetterSpelling(pitch: number, target: NoteLabel, naming: NamingSettings = LETTERS): NoteLabel | null {
+export function sameLetterSpelling(
+  pitch: number,
+  target: NoteLabel,
+  naming: NamingSettings = LETTERS,
+): NoteLabel | null {
   for (const prefer of ['sharp', 'flat'] as const) {
     const l = labelForMidi(pitch, naming, prefer)
     if (l.name === target.name) return l
@@ -127,34 +131,47 @@ function sameLetterSpelling(pitch: number, target: NoteLabel, naming: NamingSett
   return null
 }
 
-const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
+export const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
+
+/**
+ * The names of a wrong key and the note it stood for: the expected note spelled as the score
+ * does, with its accidental always shown (♮ when the wrong key is on the same letter); the wrong
+ * key on the target's letter when it can be, else in the target's accidental direction; octave
+ * numbers only when the two names would otherwise read the same (a wrong octave).
+ */
+export function pressNames(
+  wrongPitch: number,
+  expectedPitch: number,
+  expectedNote: number,
+  score: Pick<ScoreModel, 'notes'>,
+  naming: NamingSettings,
+): [wrong: string, expected: string] {
+  const note = score.notes[expectedNote]
+  const plain: NamingSettings = { ...naming, alwaysShowEffectiveAccidentals: true, showOctave: false }
+  const octaves: NamingSettings = { ...plain, showOctave: true }
+  const names = (n: NamingSettings): [string, string] => {
+    const target = note ? labelFor(note, n) : labelForMidi(expectedPitch, n)
+    // On the target's letter only a semitone away (F for F♯), never an octave away.
+    const same = (wrongPitch - expectedPitch) % 12 === 0 ? null : sameLetterSpelling(wrongPitch, target, n)
+    const wrong = same ?? labelForMidi(wrongPitch, n, target.accidental.includes('♭') ? 'flat' : 'sharp')
+    const accidental = target.accidental || (same ? NATURAL : '')
+    return [wrong.text, `${target.name}${accidental}${target.octave ?? ''}`]
+  }
+  const [wrong, expected] = names(plain)
+  return wrong === expected ? names(octaves) : [wrong, expected]
+}
 
 /**
  * The result card's line for a repeated mistake: "F instead of F♯ in bar 12, three passes
- * running". The expected note is spelled as the score does, with its accidental always shown
- * (♮ when the wrong key is on the same letter); the wrong key on the target's letter when it can
- * be, else in the target's accidental direction; octave numbers only when the two names would
- * otherwise read the same (a wrong octave: "C4 instead of C5"). Naming settings (letters or fixed
- * do, si/ti, enharmonic simplification) apply to both names.
+ * running". Spelled by `pressNames`. Naming settings (letters or fixed do, si/ti, enharmonic
+ * simplification) apply to both names.
  */
 export function repeatedMistakeLine(
   m: RepeatedMistake,
   score: Pick<ScoreModel, 'notes'>,
   naming: NamingSettings,
 ): string {
-  const note = score.notes[m.expectedNote]
-  const plain: NamingSettings = { ...naming, alwaysShowEffectiveAccidentals: true, showOctave: false }
-  const octaves: NamingSettings = { ...plain, showOctave: true }
-  const names = (n: NamingSettings): [string, string] => {
-    const target = note ? labelFor(note, n) : labelForMidi(m.expectedPitch, n)
-    // On the target's letter only a semitone away (F for F♯), never an octave away.
-    const same = (m.wrongPitch - m.expectedPitch) % 12 === 0 ? null : sameLetterSpelling(m.wrongPitch, target, n)
-    const wrong = same ?? labelForMidi(m.wrongPitch, n, target.accidental.includes('♭') ? 'flat' : 'sharp')
-    const accidental = target.accidental || (same ? NATURAL : '')
-    return [wrong.text, `${target.name}${accidental}${target.octave ?? ''}`]
-  }
-  let [wrong, expected] = names(plain)
-  if (wrong === expected) [wrong, expected] = names(octaves)
+  const [wrong, expected] = pressNames(m.wrongPitch, m.expectedPitch, m.expectedNote, score, naming)
   const passes = COUNTS[m.passes] ?? String(m.passes)
   return `${wrong} instead of ${expected} in bar ${m.bar}, ${passes} passes running`
 }

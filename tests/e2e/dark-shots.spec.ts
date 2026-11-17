@@ -66,9 +66,13 @@ test.describe('dark mode screenshots', () => {
     await expect(card).toBeVisible()
     await shot('practice-result')
 
-    await card.getByRole('button', { name: 'Details' }).click()
-    await expect(page.locator('main')).toHaveAttribute('data-view', 'results')
-    await expect(page.getByRole('heading', { level: 2, name: 'Latest attempt' })).toBeVisible()
-    await shot('results')
+    await card.getByRole('button', { name: 'Show details of this pass' }).click()
+    // The details open in place over Practice (U99), never another screen.
+    const details = page.getByTestId('result-details')
+    await expect(details).toBeVisible()
+    await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
+    await details.getByText('All the numbers for this pass').click()
+    await expect(details.getByRole('heading', { level: 2, name: 'Latest attempt' })).toBeVisible()
+    await shot('practice-details')
   })
 })

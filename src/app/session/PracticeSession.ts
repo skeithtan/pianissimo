@@ -95,8 +95,9 @@ import {
 } from './output'
 import { clampPassage, sameSelection, selectionTimeline, startPlan, type Selection, type StartPlan } from './selection'
 import { buildGuideKeys, sameGuideKeys } from './guide'
-import { correctionMarks, type CorrectionMark } from './corrections'
+import { correctionMarks, correctionMarksByGroup, type CorrectionMark } from './corrections'
 import { REPEATED_MISTAKE_HISTORY, repeatedMistakes } from './mistakes'
+import { PassCapture, SnippetPlayer, playedSnippet, writtenSnippet, type SnippetKind } from './snippets'
 import { countInPlan } from './countIn'
 import { metronomeOn, metronomeScope, type MetronomeScope } from './metronome'
 import {
@@ -119,6 +120,8 @@ import type {
   MicEstimate,
   MicFollowerLike,
   MidiBackendLike,
+  ResultDetails,
+  SnippetState,
   SessionDeps,
   SessionProgress,
   SessionSettings,
@@ -346,6 +349,14 @@ export class PracticeSession {
   #recentScored: AttemptRecord[] = []
   /** The completed record whose repeated mistakes the next UI publish works out, and its timeline. */
   #repeatedPending: { readonly id: string; readonly timeline: Timeline } | null = null
+  /** The timeline the last result's record ran on (its group indices), for `resultDetails` (U99). */
+  #resultTimeline: Timeline | null = null
+  /** The key events of the pass being played and of the last completed one (U100), never stored. */
+  readonly #capture = new PassCapture()
+  /** The mistake snippet playing (U100), with whether its echo is filtered from the input. */
+  #snippet: { readonly player: SnippetPlayer; readonly echo: boolean } | null = null
+  /** Which mistake snippet plays (the expanded result card shows it), or null. */
+  readonly snippet = new Store<SnippetState | null>(null, (a, b) => a?.occ === b?.occ && a?.kind === b?.kind)
   /** Teacher's marks of the last completed scored attempt, shown on the strip (`#clearCorrections`). */
   #corrections: readonly CorrectionMark[] = []
   #inputDisconnected = false
@@ -2053,6 +2064,103 @@ export class PracticeSession {
     this.#publishUi()
   }
 
+  /**
+   * What the expanded result card ranks (DECISIONS U99): the last result's record with the
+   * records before it, its timeline and its correction marks per group. Built on demand (the
+   * learner expands the card), never in the MIDI input path; null when there is no result, or its
+   * record is gone.
+   */
+  resultDetails(): ResultDetails | null {
+    const result = this.#lastResult
+    const latest = this.#recentScored.at(-1)
+    const timeline = this.#resultTimeline
+    if (!result || !latest || latest.id !== result.id || !timeline) return null
+    const marks = correctionMarksByGroup(latest, timeline, this.#model, this.#settings.naming)
+    return { attemptId: result.id, records: [...this.#recentScored], timeline, marks }
+  }
+
+  /**
+   * Why a mistake snippet cannot play now (U100), or null when it can: something is playing or
+   * counting in, the microphone follows (P22), there is nowhere to send sound, the result is gone,
+   * or (What you played) no key of that bar was captured.
+   */
+  snippetBlocked(attemptId: string, occ: number, kind: SnippetKind): string | null {
+    if (this.#lastResult?.id !== attemptId || !this.#resultTimeline) return 'This pass is over.'
+    if (this.#play?.mic) return 'Not while the microphone follows.'
+    if (
+      this.#engine.state.phase === 'running' ||
+      this.#countIn ||
+      this.#listen?.playing ||
+      this.#play?.playing ||
+      // A gated transport waiting at the next pass's first note plays nothing: not "playing".
+      (this.#accomp?.state === 'playing' && this.#accomp.holdingGate === null)
+    )
+      return 'Plays once the music stops.'
+    if (!this.#destination()) return 'No sound output: connect the piano or allow this device to play.'
+    if (kind === 'played' && this.#playedSnippet(attemptId, occ).notes.length === 0)
+      return 'No keys were captured in this bar.'
+    return null
+  }
+
+  /**
+   * Plays bar `occ` of the last pass (U100): `played`, the learner's own presses replayed;
+   * `written`, the bar from the score at the pass's speed. Through the same destination as Listen;
+   * on a piano not verified echo-free its notes coming back are kept from the input while they
+   * sound. Never touches the position, the loop, the records or the result. Resolves with why it
+   * did not play, or null.
+   */
+  async playSnippet(attemptId: string, occ: number, kind: SnippetKind): Promise<string | null> {
+    this.#stopSnippet()
+    const blocked = this.snippetBlocked(attemptId, occ, kind)
+    if (blocked) return blocked
+    const output = await this.#ensureOutput()
+    if (!output) return 'No sound output: connect the piano or allow this device to play.'
+    // The tap's await may have let the next pass start.
+    const again = this.snippetBlocked(attemptId, occ, kind)
+    if (again) return again
+    const snippet =
+      kind === 'played'
+        ? this.#playedSnippet(attemptId, occ)
+        : writtenSnippet(this.#model, this.#tempo, this.#resultMultiplier(), occ)
+    if (snippet.notes.length === 0) return 'Nothing to play in this bar.'
+    const echo = output.kind === 'midi' && this.#settings.route.echo !== 'none'
+    const player = new SnippetPlayer(snippet, output, this.#deps.clock, this.#deps.timers, () => {
+      if (this.#snippet?.player !== player) return
+      this.#snippet = null
+      this.snippet.set(null)
+    })
+    this.#snippet = { player, echo }
+    this.snippet.set({ occ, kind, shortened: snippet.shortened })
+    return null
+  }
+
+  /** Stops the mistake snippet at once (the card folds, the result ends, a key is pressed). */
+  stopSnippet(): void {
+    this.#stopSnippet()
+  }
+
+  #stopSnippet(): void {
+    const s = this.#snippet
+    if (!s) return
+    this.#snippet = null
+    s.player.stop()
+    this.snippet.set(null)
+  }
+
+  #playedSnippet(attemptId: string, occ: number) {
+    const pass = this.#capture.pass(attemptId)
+    const timeline = this.#resultTimeline
+    if (!pass || !timeline) return { notes: [], length: 0, shortened: false }
+    const groups = new Set<number>()
+    for (const g of timeline.groups) if (g.occ === occ) groups.add(g.index)
+    return playedSnippet(pass.keys, groups)
+  }
+
+  /** The speed the last result's pass ran at (its record's), else the current one. */
+  #resultMultiplier(): number {
+    return this.#recentScored.at(-1)?.context.multiplier ?? this.#sel.multiplier
+  }
+
   /** Dismiss the compact result card. */
   dismissResult(): void {
     this.#lastResult = null
@@ -2460,6 +2568,8 @@ export class PracticeSession {
     this.#frameHandle = null
     this.#tickHandle = null
     this.#clearCorrections()
+    this.#stopSnippet()
+    this.#capture.clear()
     this.#strip = null
   }
 
@@ -2467,6 +2577,14 @@ export class PracticeSession {
 
   #onMidi(ev: MidiInputEvent): void {
     if (this.#disposed) return
+    // A mistake snippet (U100): on a piano that may echo, its own notes coming back are not the
+    // learner; any other press stops it at once and is then handled as always.
+    const snippet = this.#snippet
+    if (snippet) {
+      if ((ev.kind === 'noteon' || ev.kind === 'noteoff') && snippet.echo && snippet.player.sounds(ev.note, ev.time))
+        return
+      if (ev.kind === 'noteon') this.#stopSnippet()
+    }
     this.#midiBackend?.humanInput(ev)
     // The monitor hears releases under an overlay too, so no key or pedal stays down in it.
     this.#monitor?.(ev)
@@ -2486,10 +2604,28 @@ export class PracticeSession {
     }
     // Judged before the input: a press never changes the group or phase while nothing plays.
     const group = this.#previewGroupNow()
+    this.#captureKey(ev)
     this.#engine.input(ev)
     if (group !== null) this.#previewInput(ev, group)
     else this.#clearPreview()
     this.#process(ev.time)
+  }
+
+  /**
+   * O(1): the key events of a scored pass, for "What you played" (U100). A press at Ready starts
+   * a pass; releases after the pass ended still land on it (its last chord's keys come up later).
+   */
+  #captureKey(ev: MidiInputEvent): void {
+    if (ev.kind !== 'noteon' && ev.kind !== 'noteoff') return
+    if (this.#engine.mode !== 'scored') return
+    const phase = this.#engine.state.phase
+    const velocity = ev.kind === 'noteon' ? ev.velocity : 0
+    if (phase === 'ready' && velocity > 0) this.#capture.begin()
+    if (phase === 'ready' || phase === 'running') {
+      if (velocity > 0 || phase === 'running')
+        this.#capture.add(ev.time, ev.note, velocity, this.#engine.state.groupIndex ?? -1)
+      else this.#capture.release(ev.time, ev.note)
+    } else if (velocity === 0) this.#capture.release(ev.time, ev.note)
   }
 
   /** The group presses are previewed against (U31): nothing plays, not Listen, a group exists. */
@@ -2857,6 +2993,7 @@ export class PracticeSession {
     this.#deps.history.queueAttempt(record)
     if (record.kind === 'scored') this.#rememberScored(record)
     if (record.kind !== 'scored' || record.completion !== 'completed') return
+    this.#capture.finish(record.id)
     this.#streak = record.passed ? this.#streak + 1 : 0
     this.#ladderNext = null
     let ladder: AttemptSummary['ladder'] | undefined
@@ -2899,6 +3036,7 @@ export class PracticeSession {
         record.contextKey,
     )
     this.#repeatedPending = timeline ? { id: record.id, timeline } : null
+    this.#resultTimeline = timeline ?? null
   }
 
   /** O(1): keeps the last few scored records of the current comparison context (P24). */
@@ -2926,6 +3064,7 @@ export class PracticeSession {
    * selection, a seek, leaving Practice, or the first press of the next Repeat pass.
    */
   #clearCorrections(): void {
+    this.#stopSnippet()
     if (this.#corrections.length === 0) return
     this.#corrections = []
     this.#strip?.setCorrections?.([])

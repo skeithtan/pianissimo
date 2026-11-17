@@ -21,14 +21,7 @@
 import { createMicFollowerDep, microphoneSupported } from '../../app/audio/micFollower'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { effect } from '@preact/signals'
-import {
-  connectionOpen,
-  navigate,
-  openResults,
-  openSettings,
-  settingsOpen,
-  type PracticePreset,
-} from '../../app/navigation'
+import { connectionOpen, navigate, openSettings, settingsOpen, type PracticePreset } from '../../app/navigation'
 import {
   PracticeSession,
   createPieceSaver,
@@ -67,6 +60,7 @@ import { MemoryLayoutCache } from '../../render/cache'
 import type { PracticeEnv, StripHandle } from './env'
 import { GuidePanel, OverviewBar, StageCue } from './live'
 import { AttemptResult, Banners } from './Banners'
+import { ResultDetailsLoader } from './ResultDetailsLoader'
 import { CountIn } from './CountIn'
 import { Footer, HANDS_UNAVAILABLE, HANDS_UNAVAILABLE_NOTICE } from './Footer'
 import { KEEPS_AHEAD, PracticeMenuItems, type MetronomeRow } from './FooterMenu'
@@ -276,6 +270,10 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const sideways = usePhoneLandscape()
   const host = useRef<HTMLDivElement>(null)
   const stripRef = useRef<StripHandle | null>(null)
+  /** The layout the score view shows: the expanded result card cuts its excerpts from it (U99). */
+  const layoutRef = useRef<PreparedLayout | null>(null)
+  /** The result whose details are open (U99): kept here so a rotation keeps the card open. */
+  const [expandedResult, setExpandedResult] = useState<string | null>(null)
   /** The page's image-zoom magnification (U83), kept across re-engravings, not saved. */
   const magnifyRef = useRef(1)
   /** The press now on the score brought a phone's hidden top bar back: its tap does not seek (U93). */
@@ -504,6 +502,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           mode,
         )
         stripRef.current = strip
+        layoutRef.current = layout
         shown.current = key
         strip.setReviewInset?.(reviewInset.current?.bottom ?? 0, reviewInset.current?.top ?? 0)
         session.attachStrip(strip)
@@ -713,8 +712,22 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         model={model}
         naming={appSettings.naming}
         onRestart={() => session.restart()}
-        onResults={(attemptId) => openResults({ pieceId: piece.id, attemptId })}
+        // The details open in place over Practice (U99): nothing here leaves the screen.
+        details={(r) => (
+          <ResultDetailsLoader
+            key={r.id}
+            session={session}
+            result={r}
+            model={model}
+            naming={appSettings.naming}
+            pieceId={piece.id}
+            layout={layoutRef.current}
+            goal={ui.repeat ? ui.repeatTarget : null}
+          />
+        )}
         onDismiss={() => session.dismissResult()}
+        expandedId={expandedResult}
+        onExpandedChange={setExpandedResult}
       />
     </div>
   )

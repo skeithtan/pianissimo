@@ -250,9 +250,13 @@ test.describe('note-level practice', () => {
     await playWhenDue(page, 62)
     await expect(card).toContainText('2 clean in a row')
 
-    // Results name the loop by its notes.
-    await card.getByRole('button', { name: 'Details' }).click()
-    await expect(page.locator('main')).toHaveAttribute('data-view', 'results')
-    await expect(page.locator('[data-row="context"]')).toContainText('Bar 1, beats 1–2')
+    // The details (in place, U99) name the loop by its notes in its history.
+    await card.getByRole('button', { name: 'Show details of this pass' }).click()
+    // The details open in place over Practice (U99), never another screen.
+    const details = page.getByTestId('result-details')
+    await expect(details).toBeVisible()
+    await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
+    await details.getByText(/Earlier passes of this loop/).click()
+    await expect(details.locator('[data-panel="history"]')).toContainText('Bar 1, beats 1–2')
   })
 })

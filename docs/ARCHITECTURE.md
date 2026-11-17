@@ -413,7 +413,30 @@ helpers, and `sessionDismissals`, the shared `SessionDismissals` instance used b
 Results.
 Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `practiceRequest`;
 `autoStart` is a one-shot import handoff consumed after notation preparation (L6).
-`openResults({ pieceId, attemptId? })` sets `resultsRequest` (both in `app/navigation.ts`).
+`openResults({ pieceId, attemptId? })` sets `resultsRequest` (both in `app/navigation.ts`); since
+U99 nothing in the app calls it (the Results route stays for `#/results/…` deep links).
+
+**Only Back leaves Practice (U99).** Practice's exits are its Back button (to the Library) and the
+overlays over it (Settings, the Connection setup, sheets and popovers). The result's details open
+in place: `AttemptResult` (`views/practice/Banners.tsx`) expands the pill into a card whose details
+sit above the pill as an absolute overlay (the dock keeps the pill's height, so
+`reviewInset`/`setReviewInset` never see it); its contents load on the first expansion
+(`ResultDetailsLoader` → `ResultDetails.tsx`). `PracticeSession.resultDetails()` hands over the last
+result's inputs on demand; the card ranks them (`app/session/ranking.ts` `rankMistakes`, loaded with the card, fed by the last scored
+records of the context and `correctionMarksByGroup`), never in the input path.
+`render/excerpt.ts` (pure, string SVG) cuts one bar of the shown `PreparedLayout` (strip or page)
+out of its segment markup with the signatures in front, the correction rings
+(`shared/corrections.ts`) and ghost noteheads (`GhostNote`, placed by `pressGhost` relative to the
+written note a wrong key stood for); it changes no render contract. The card reuses the Results
+`ScorecardPanel`, `HistoryPanel`, `deriveResults` and `loadResultsData`.
+Mistake playback (U100, `app/session/snippets.ts`): `PassCapture` keeps a scored pass's key
+events in memory (one bounded append per event in the input path, the last completed pass only,
+never stored); `playedSnippet` / `writtenSnippet` build one bar's notes (the learner's presses,
+long pauses shortened; or the score at the pass's speed) and `SnippetPlayer` hands them to the
+practice output when due and releases only its own notes. The session's `playSnippet`,
+`stopSnippet`, `snippetBlocked` and `snippet` store drive it; on a route not verified echo-free
+the snippet's own notes coming back are dropped from the input while they sound, and any other key
+stops it before being handled as usual.
 
 ### Session 4 additions
 - `ScoreModel.sections?` (I12) from `core/import/sections.ts`; `overviewMeasures(model, multiplier?)`

@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { $, byLabel, byText, click, mount, type Mounted } from '../shared/testing'
 import {
   AttemptResult,
+  DETAILS_FOLD_MS,
   Banners,
   RESULT_FADE_MS,
   ladderResultText,
@@ -93,7 +94,7 @@ function result(ui: Partial<SessionUi>, extra: Partial<AttemptResultProps> = {})
       ui={{ ...UI, ...ui }}
       model={{ notes: [] }}
       naming={DEFAULT_SETTINGS.naming}
-      onResults={noop}
+      details={() => <p data-testid="details-body">The details</p>}
       onRestart={noop}
       onDismiss={noop}
       {...extra}
@@ -273,10 +274,10 @@ describe('Banners', () => {
     expect(card()?.dataset['tone']).toBe('clean')
     expect(card()?.textContent).toContain('Clean pass')
     expect(card()?.textContent).toContain('2 clean in a row')
-    // The details live in Results now (U97): no time, first-try share, help or marks count.
+    // The details open in place (U99): the pill has no time, first-try share, help or marks count.
     for (const gone of ['3.0 s', 'right first time', 'No help', 'marks on the score', 'No wrong notes'])
       expect(card()?.textContent).not.toContain(gone)
-    expect(byLabel(card()!, 'Details')).not.toBeNull()
+    expect(byLabel(card()!, 'Show details of this pass')).not.toBeNull()
     expect(byText(card()!, 'Again')).not.toBeNull()
 
     click(byLabel(card()!, 'Hide result'))
@@ -289,6 +290,82 @@ describe('Banners', () => {
     expect(card()).not.toBeNull()
     advance(2)
     expect(card()).toBeNull()
+  })
+})
+
+describe('the result card expands in place (U99)', () => {
+  const toggle = () => $(view!.container, '[data-testid="result-details-toggle"]')!
+  const body = () => $(view!.container, '[data-testid="result-details"]')
+
+  it('Details unfolds the details above the row and folds them back with the chevron', () => {
+    vi.useFakeTimers()
+    const details = vi.fn(() => <p data-testid="details-body">The details</p>)
+    view = mount(result({ lastResult: RESULT }, { details }))
+    advance(50)
+    expect(body()).toBeNull()
+    expect(details).not.toHaveBeenCalled() // nothing rendered (nor loaded) until the first expansion
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(toggle().getAttribute('aria-label')).toBe('Show details of this pass')
+    expect(toggle().textContent).toContain('Details')
+
+    click(toggle())
+    expect(body()?.textContent).toBe('The details')
+    expect(body()?.getAttribute('aria-label')).toBe('Details of this pass')
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    expect(toggle().getAttribute('aria-controls')).toBe(body()?.id)
+    expect(toggle().getAttribute('aria-label')).toBe('Hide details')
+    // The details come before the row (above it), outside its status live region.
+    const card = $(view.container, '[data-testid="attempt-result"]')!
+    expect(card.firstElementChild).toBe(body())
+    expect(body()?.closest('[role="status"]')).toBeNull()
+    expect(details).toHaveBeenCalledWith(RESULT)
+
+    click(toggle())
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(body()?.dataset['phase']).toBe('leaving') // folding
+    advance(DETAILS_FOLD_MS + 1)
+    expect(body()).toBeNull()
+  })
+
+  it('Escape folds it; a new result or none starts folded', () => {
+    vi.useFakeTimers()
+    view = mount(result({ lastResult: RESULT }))
+    advance(50)
+    click(toggle())
+    expect(body()).not.toBeNull()
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    advance(DETAILS_FOLD_MS + 1)
+    expect(body()).toBeNull()
+
+    click(toggle())
+    expect(body()).not.toBeNull()
+    // The next pass's result: folded (the expanded state is never carried over).
+    view.rerender(result({ lastResult: { ...RESULT, id: 'a2' } }))
+    advance(DETAILS_FOLD_MS + 1)
+    expect(body()).toBeNull()
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+
+    // Anything that ends the result (the next pass's first key, Start, Hide, a seek) folds it.
+    click(toggle())
+    view.rerender(result({ lastResult: null }))
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    advance(RESULT_FADE_MS + 1)
+    expect($(view.container, '[data-testid="attempt-result"]')).toBeNull()
+  })
+
+  it('without details there is no Details control', () => {
+    view = mount(
+      <AttemptResult
+        ui={{ ...UI, lastResult: RESULT }}
+        model={{ notes: [] }}
+        naming={DEFAULT_SETTINGS.naming}
+        onRestart={noop}
+        onDismiss={noop}
+      />,
+    )
+    expect($(view.container, '[data-testid="result-details-toggle"]')).toBeNull()
   })
 })
 

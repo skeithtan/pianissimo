@@ -56,6 +56,8 @@ const paths: Record<string, () => JSX.Element> = {
   ),
   ladder: () => <path d="M3 17l6-6 4 4 8-8M14 7h7v7" />,
   forward: () => <path d="M9 18l6-6-6-6" />,
+  up: () => <path d="M6 15l6-6 6 6" />,
+  down: () => <path d="M6 9l6 6 6-6" />,
   plus: () => <path d="M12 5v14M5 12h14" />,
   minus: () => <path d="M5 12h14" />,
   /** Open right palm seen from above (thumb toward the middle of the keyboard), solid. */

@@ -8,6 +8,7 @@ import { CHORD_SLIP_MS } from '../../core/engine'
 import { buildScore } from '../../core/engine/testkit'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { repeatedMistakeLine } from './mistakes'
+import { rankMistakes } from './ranking'
 import { harness, type Harness } from './testkit'
 
 // Bar 1: C D E, then the C–E chord; bar 2: G.
@@ -68,6 +69,36 @@ describe('repeated mistakes in the result summary (P24)', () => {
     pass(h, 61)
     expect(h.attempts).toHaveLength(3)
     expect(h.session.ui.get().lastResult?.repeatedMistakes).toBeUndefined()
+  })
+})
+
+describe('the expanded result card’s details (U99)', () => {
+  it('ranks the last result’s mistakes on demand; nothing without a result', async () => {
+    const h = harness(score, { range: loop })
+    await h.session.start()
+    expect(h.session.resultDetails()).toBeNull()
+    pass(h, 61)
+    pass(h, 61)
+    const details = h.session.resultDetails()!
+    expect(details.attemptId).toBe(h.session.ui.get().lastResult!.id)
+    expect(details.records.at(-1)!.id).toBe(details.attemptId)
+    expect(rankMistakes(details.records, details.timeline, score, details.marks)).toMatchObject([
+      {
+        level: 'habit',
+        group: 1,
+        bar: '1',
+        reason: 'Same wrong key twice now',
+        presses: [{ pitch: 61, kind: 'accidental', expectedPitch: 62, passes: 2 }],
+        mark: { kind: 'accidental' },
+      },
+    ])
+    // Asking changes nothing: the same answer, the same result, no records written.
+    const attempts = h.attempts.length
+    expect(h.session.resultDetails()).toEqual(details)
+    expect(h.attempts).toHaveLength(attempts)
+    // Hide: no result, no details.
+    h.session.dismissResult()
+    expect(h.session.resultDetails()).toBeNull()
   })
 })
 

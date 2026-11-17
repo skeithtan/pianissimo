@@ -9,8 +9,9 @@ import type { AbandonEvent, AttemptRecord, InterruptReason, PassageRange } from 
 import type { HandSelection, ScoreModel } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import type { AppSettings } from '../../core/model/settings'
-import type { Phase } from '../../core/engine'
+import type { Phase, Timeline } from '../../core/engine'
 import type { RepeatedMistake } from './mistakes'
+import type { GroupMark } from './ranking'
 import type { BrowserAudioModule, MetronomeModule, OutputBackend, TimerApi } from '../../core/playback'
 import type { LadderSettings, ResumePosition } from '../../core/storage/records'
 import type { GuideKey } from '../../render/keyboard/types'
@@ -248,6 +249,31 @@ export interface AttemptSummary {
    * note line shows the first (U97).
    */
   readonly repeatedMistakes?: readonly RepeatedMistake[]
+}
+
+/**
+ * What the expanded result card ranks (DECISIONS U99, `PracticeSession.resultDetails`): the
+ * inputs of `rankMistakes` (in `ranking.ts`, loaded with the card), as the session holds them.
+ */
+export interface ResultDetails {
+  /** The attempt the details are of (`AttemptSummary.id`; the last of `records`). */
+  readonly attemptId: string
+  /** The session's last scored records, oldest first (a copy). */
+  readonly records: readonly AttemptRecord[]
+  /** The timeline the attempt ran on (its group indices). */
+  readonly timeline: Timeline
+  /** The attempt's correction mark per group (`correctionMarksByGroup`). */
+  readonly marks: ReadonlyMap<number, GroupMark>
+}
+
+/** The mistake snippet playing in the expanded result card (DECISIONS U100). */
+export interface SnippetState {
+  /** The bar it plays. */
+  readonly occ: number
+  /** `played`: the learner's own presses replayed; `written`: the bar from the score. */
+  readonly kind: 'played' | 'written'
+  /** A long pause in the replay was shortened. */
+  readonly shortened: boolean
 }
 
 /** How a Keep time attempt kept time: groups judged and how many were on time, early, late, missed. */

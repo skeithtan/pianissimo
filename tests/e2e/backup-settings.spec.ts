@@ -95,9 +95,12 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   await playWhenDue(page, 48)
   const card = page.getByTestId('attempt-result')
   await expect(card).not.toContainText('wrong note') // U97: the headline says it
-  await card.getByRole('button', { name: 'Details' }).click()
-  await expect(page.locator('main')).toHaveAttribute('data-view', 'results')
-  const history = page.locator('[data-panel="history"]')
+  await card.getByRole('button', { name: 'Show details of this pass' }).click()
+  // The details open in place over Practice (U99); the earlier passes are folded inside.
+  const details = page.getByTestId('result-details')
+  await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
+  await details.getByText(/Earlier passes of this loop/).click()
+  const history = details.locator('[data-panel="history"]')
   await expect(history.getByRole('heading', { name: 'Clean and unassisted' })).toBeVisible()
   // The restored attempt had one wrong note, which now shows a hint (S5): assisted practice.
   await expect(history.getByRole('heading', { name: 'Assisted practice' })).toBeVisible()

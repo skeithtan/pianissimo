@@ -4,7 +4,10 @@ Spec: "Results and timing", "Repeating passages" (pass condition, streaks), "Sug
 "Persistent score labels" (assistance paragraph). Lazily loaded from `app/views.ts`
 (`ResultsView`). Opened with `openResults({ pieceId, attemptId? })` (`app/navigation.ts`):
 `attemptId` omitted means the most recent stored attempt; with no request at all the view shows
-an empty state linking to the Library.
+an empty state linking to the Library. Since U99 nothing in the app opens it (Practice's result
+details open in place, reusing `ScorecardPanel`, `HistoryPanel`, `deriveResults` and
+`loadResultsData` in `views/practice/ResultDetails.tsx`); the route stays for `#/results/…` deep
+links.
 
 ## Layout
 

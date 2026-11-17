@@ -184,7 +184,7 @@ test.describe('practice assistance and repeat', () => {
       .toEqual(['scored', 'scored'])
   })
 
-  test('Details opens the Results page with a scorecard of the attempt', async ({ page }) => {
+  test('Details opens the scorecard of the attempt in place (U99)', async ({ page }) => {
     await seedPiece(page)
     await openSeededPractice(page)
     await setShowKeys(page)
@@ -198,16 +198,18 @@ test.describe('practice assistance and repeat', () => {
 
     const card = page.getByTestId('attempt-result')
     await expect(card).toContainText('2 wrong notes')
-    await card.getByRole('button', { name: 'Details' }).click()
-
-    await expect(page.locator('main')).toHaveAttribute('data-view', 'results')
-    await expect(page.getByRole('heading', { level: 1, name: 'Results' })).toBeVisible()
-    await expect(page.getByRole('heading', { level: 2, name: 'Latest attempt' })).toBeVisible()
-    await expect(page.locator('[data-row="wrong-attacks"]')).toContainText('2')
-    await expect(page.getByText('Not a pass: wrong-note attacks')).toBeVisible()
-    await expect(page.locator('[data-row="assist-keyboard"]')).toContainText('Shown during this attempt.')
-    await expect(page.locator('[data-row="assist-hints"]')).toContainText('1 automatic hint. 1 group revealed')
-    await expect(page.locator('[data-row="completion-time"]')).toBeVisible()
+    await card.getByRole('button', { name: 'Show details of this pass' }).click()
+    // The details open in place over Practice (U99), never another screen.
+    const details = page.getByTestId('result-details')
+    await expect(details).toBeVisible()
+    await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
+    await details.getByText('All the numbers for this pass').click()
+    await expect(details.getByRole('heading', { level: 2, name: 'Latest attempt' })).toBeVisible()
+    await expect(details.locator('[data-row="wrong-attacks"]')).toContainText('2')
+    await expect(details.getByText('Not a pass: wrong-note attacks')).toBeVisible()
+    await expect(details.locator('[data-row="assist-keyboard"]')).toContainText('Shown during this attempt.')
+    await expect(details.locator('[data-row="assist-hints"]')).toContainText('1 automatic hint. 1 group revealed')
+    await expect(details.locator('[data-row="completion-time"]')).toBeVisible()
 
     // The stored record matches what the card says.
     const attempts = await idbAll<{ wrongAttacks: number; completion: string }>(page, 'attempts')

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
 import { connectionOpen, currentView, practiceRequest, resultsRequest, settingsOpen } from '../../app/navigation'
 import { connectionStatus, notices, resetAppStateForTests, settings, updateSettings } from '../../app/state'
@@ -362,7 +362,7 @@ describe('PracticeView', () => {
     })
   })
 
-  it('a preset passage is preselected (never started); a scored attempt shows its result and links to Results', async () => {
+  it('a preset passage is preselected (never started); a scored attempt shows its result and opens its details in place (U99)', async () => {
     const r = await rig()
     practiceRequest.value = {
       pieceId: r.pieceId,
@@ -392,9 +392,16 @@ describe('PracticeView', () => {
     expect(card?.dataset['passed']).toBe('true')
     expect(card?.textContent).toContain('Clean pass')
     expect(r.strips[0]!.reviewing).toBe(true)
-    click(byLabel(card!, 'Details'))
-    expect(resultsRequest.value?.pieceId).toBe(r.pieceId)
-    expect(resultsRequest.value?.attemptId).toMatch(/piece-1/)
+    // Details opens in place over Practice (U99): no other screen, the review stays.
+    click(byLabel(card!, 'Show details of this pass'))
+    await vi.waitFor(() => expect($(view!.container, '[data-testid="result-verdict"]')).not.toBeNull())
+    expect($(view.container, '[data-testid="result-details"]')?.textContent).toContain('No mistakes in this pass.')
+    expect(currentView.value).not.toBe('results')
+    expect(resultsRequest.value).toBeNull()
+    expect(r.strips[0]!.reviewing).toBe(true)
+    click(byLabel(card!, 'Hide details'))
+    expect(byLabel(card!, 'Show details of this pass')?.getAttribute('aria-expanded')).toBe('false')
+    expect(currentView.value).not.toBe('results')
   })
 
   it('the same wrong key three passes running shows on the result pill, following the naming settings (P24, U97)', async () => {

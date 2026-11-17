@@ -269,50 +269,132 @@
 .resultRow:empty {
   display: none;
 }
+/* The expanded card rises over the stage above it. */
+.resultRow {
+  position: relative;
+  z-index: 6;
+}
 
 /* The attempt result (U97, revising U33): one slim pill. A badge in the outcome's tone (a check
    for a clean pass, the count of wrong notes otherwise), the headline with the Repeat goal as
    dots, one muted status line and an optional note line, then Again, Details and Hide. No shadow
    (A11): a 1 px border tinted by the tone. It fades and rises in from below, fades and sinks out
    (`data-phase` from `useFadePresence`, RESULT_FADE_MS in Banners.tsx); reduced motion keeps only
-   a short fade. */
-.result {
+   a short fade.
+
+   Details expands it in place (U99): the details open above the pill as one card with it,
+   positioned over the score (absolute, so the dock keeps the pill's height and the strip's
+   review never re-fits), revealed upward like an accordion (clip-path, 240 ms). */
+.resultCard {
   --result-tone: var(--fg-muted);
   --result-tone-bg: var(--bg-sunken);
+  --result-border: color-mix(in srgb, var(--result-tone) 30%, var(--border));
+  position: relative;
   pointer-events: auto;
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
   min-width: 0;
   max-width: min(620px, 100%);
-  min-height: 60px;
-  padding: var(--space-2);
-  background: var(--bg-elevated);
-  color: var(--fg);
-  border: 1px solid color-mix(in srgb, var(--result-tone) 30%, var(--border));
-  border-radius: 32px;
   opacity: 1;
   transform: none;
   transition:
     opacity 220ms var(--ease-standard),
     transform 220ms var(--ease-out);
 }
-.result[data-tone='clean'] {
+.resultCard[data-expanded] {
+  width: min(760px, 100%);
+  max-width: min(760px, 100%);
+}
+.result {
+  pointer-events: auto;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 60px;
+  padding: var(--space-2);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--result-border);
+  border-radius: 32px;
+  transition: border-radius var(--dur-fast) var(--ease-standard);
+}
+.resultCard[data-expanded] .result {
+  border-radius: 0 0 24px 24px;
+  border-top-color: transparent;
+}
+.resultCard[data-tone='clean'] {
   --result-tone: var(--success);
   --result-tone-bg: var(--success-bg);
 }
-.result[data-tone='wrong'] {
+.resultCard[data-tone='wrong'] {
   --result-tone: var(--danger);
   --result-tone-bg: var(--danger-bg);
 }
-.result[data-phase='entering'],
-.result[data-phase='leaving'] {
+.resultCard[data-phase='entering'],
+.resultCard[data-phase='leaving'] {
   opacity: 0;
   transform: translateY(8px);
 }
-.result[data-phase='leaving'] {
+.resultCard[data-phase='leaving'] {
   pointer-events: none;
   transition-timing-function: var(--ease-standard), var(--ease-in);
+}
+/* The details: above the pill, as wide as the card, up to the room above it (set on expansion:
+   --result-details-max), scrolling inside. */
+.resultDetails {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% - 1px);
+  box-sizing: border-box;
+  height: var(--result-details-max, 480px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--result-border);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  z-index: 1;
+  animation: result-unfold 240ms var(--ease-out) both;
+}
+.resultCard[data-passed='true'] .resultDetails {
+  height: auto;
+  max-height: var(--result-details-max, 480px);
+}
+@keyframes result-unfold {
+  from {
+    clip-path: inset(100% 0 0 0 round 24px 24px 0 0);
+    opacity: 0.4;
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 24px 24px 0 0);
+    opacity: 1;
+  }
+}
+.resultDetails[data-phase='leaving'] {
+  pointer-events: none;
+  animation: result-fold 200ms var(--ease-in) both;
+}
+@keyframes result-fold {
+  from {
+    clip-path: inset(0 0 0 0 round 24px 24px 0 0);
+    opacity: 1;
+  }
+  to {
+    clip-path: inset(100% 0 0 0 round 24px 24px 0 0);
+    opacity: 0.4;
+  }
+}
+.resultDetailsLoading {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  height: 100%;
+  color: var(--fg-muted);
+  font-size: var(--text-s);
 }
 .resultBadge {
   flex: none;
@@ -410,6 +492,35 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
+/* Details: a chevron with its word where there is room (a phone upright: the chevron only). */
+.resultDetailsButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--text-s);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.resultDetailsButton:hover {
+  background: var(--hover);
+}
+.resultDetailsButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.resultDetailsButton[aria-expanded='true'] {
+  background: var(--bg-sunken);
+}
 /* A phone held upright: Again keeps its name for assistive technology but shows only its icon. */
 @media (max-width: 480px) {
   .resultDock {
@@ -417,9 +528,19 @@
     right: calc(var(--space-2) + var(--safe-r));
     bottom: var(--space-2);
   }
+  .resultCard {
+    width: 100%;
+    max-width: 100%;
+  }
   .result {
     gap: var(--space-2);
-    width: 100%;
+  }
+  .resultDetailsButton {
+    padding: 0;
+    width: 44px;
+  }
+  .resultDetailsLabel {
+    display: none;
   }
   .resultAgain {
     padding: 0;
@@ -1136,9 +1257,13 @@
   .repeatPanel {
     animation: none;
   }
-  .result,
-  .result[data-phase] {
+  .resultCard,
+  .resultCard[data-phase] {
     transform: none;
     transition-duration: var(--dur-base);
+  }
+  .resultDetails,
+  .resultDetails[data-phase='leaving'] {
+    animation: none;
   }
 }

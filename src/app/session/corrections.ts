@@ -42,8 +42,18 @@ export function correctionMarks(
   score: CorrectionScore,
   naming: NamingSettings,
 ): CorrectionMark[] {
+  return [...correctionMarksByGroup(record, timeline, score, naming).values()]
+}
+
+/** `correctionMarks` keyed by engine group index (in group order), for the expanded result card (U99). */
+export function correctionMarksByGroup(
+  record: AttemptRecord,
+  timeline: Timeline,
+  score: CorrectionScore,
+  naming: NamingSettings,
+): Map<number, CorrectionMark> {
   const bounds = attemptBounds(record, score)
-  const marks: CorrectionMark[] = []
+  const marks = new Map<number, CorrectionMark>()
   for (const g of record.groups ?? []) {
     const group = timeline.groups[g.group]
     if (!group) continue
@@ -53,7 +63,7 @@ export function correctionMarks(
     })
     if (notes.length === 0) continue
     const mark = classify(g, group, score, naming, record.rhythm?.toleranceMs)
-    if (mark) marks.push({ notes, ...mark })
+    if (mark) marks.set(g.group, { notes, ...mark })
   }
   return marks
 }
