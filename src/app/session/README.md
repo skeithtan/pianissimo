@@ -137,14 +137,23 @@ head before the loop start is never ringed; a mark with none left is dropped), h
 `'tie-end'` only tints the cursor amber (like too early): no pulse, flash, red marker or cue.
 Interrupted or abandoned attempts draw none. They stay while the result card shows and clear
 (`#clearCorrections`) on Start, Restart, `dismissResult()`, a selection change, a seek and
-`dispose()`. A Repeat pass that starts over by itself keeps them through Ready until the first
-press of the new pass (any key: the attempt starts running). A re-attached strip gets them again.
+`dispose()`. A Repeat pass that starts over by itself keeps them through Ready and through wrong
+keys until the new pass's first correct note (U101: the engine's first `accepted` event while the
+result shows, `#resultPlayed`). A re-attached strip gets them again.
+
+The result while the next pass begins (U101): wrong keys change nothing. The first correct note
+ends the review and the marks; on a one-bar loop it ends the result too (`#endResultByPlay`),
+otherwise `#resultPlayedIn` keeps that note's bar and `ui.resultDimmed` is true until an
+`advanced` event takes the cursor out of it, which ends the result. Ended that way,
+`ui.resultExit` is `'played'` (the view slides the pill away); any other end leaves it
+`'dismissed'`. Both checks are O(1) in the input path.
 
 The review (U97, `#syncReview`, run in `#syncLock` from every frame and on `attachStrip`): the
-optional `strip.setReview?(on)` is on exactly while a completed pass's result shows
-(`#lastResult` set, a loop present, not play-through), so it ends with the marks above (and on
-Hide, which schedules a frame). It is never called from the MIDI input path: the first press of
-the next pass is matched at once and the strip hears about it in the next frame. A re-attached
+optional `strip.setReview?(on)` is on exactly while a completed pass's result shows and the next
+pass has played no correct note (`#lastResult` set, `#resultPlayedIn` null, a loop present, not
+play-through), so it ends with the marks above (and on Hide, which schedules a frame). It is never
+called from the MIDI input path: the next pass's notes are matched at once and the strip hears
+about it in the next frame. A re-attached
 strip gets the review again (and shows it without animation). The card's note line is the
 first of `lastResult.repeatedMistakes`, worded by the view (below).
 

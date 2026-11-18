@@ -26,6 +26,8 @@ import styles from './practice.module.css'
 
 /** The result card fades and rises in, fades and sinks out (CSS `.result[data-phase]` mirrors it). */
 export const RESULT_FADE_MS = 220
+/** Played past by the next pass (U101), it slides down out of view in this long (CSS mirrors it). */
+export const RESULT_SLIDE_MS = 320
 
 export interface BannersProps {
   readonly ui: SessionUi
@@ -158,7 +160,8 @@ export const DETAILS_FOLD_MS = 200
  * through (P12). Details expands it in place into a larger card (U99): the details open above
  * the pill as an overlay (the dock keeps the pill's size, so the strip's review never re-fits),
  * Hide details, Escape or anything that ends the result folds it again; a new result starts
- * folded.
+ * folded. Once the next pass plays its first correct note (U101) the pill dims like focus-mode
+ * chrome and folds; a tap brings it back to full strength; played past, it slides down out of view.
  */
 export function AttemptResult(p: AttemptResultProps) {
   const { ui } = p
@@ -166,7 +169,13 @@ export function AttemptResult(p: AttemptResultProps) {
   // While it fades out, the card keeps showing the last result it had.
   const last = useRef<AttemptSummary | null>(r)
   if (r) last.current = r
-  const presence = useFadePresence(!!r, RESULT_FADE_MS)
+  // Dimmed while the next pass plays (U101), until a tap brings this result back to full strength.
+  const [restoredId, setRestoredId] = useState<string | null>(null)
+  const lastDimmed = useRef(false)
+  if (r) lastDimmed.current = ui.resultDimmed && restoredId !== r.id
+  const dimmed = lastDimmed.current
+  const exit = r ? null : ui.resultExit
+  const presence = useFadePresence(!!r, ui.resultExit === 'played' ? RESULT_SLIDE_MS : RESULT_FADE_MS)
   const shown = r ?? last.current
   // Worded here, on a render, never in the input path; it follows the naming settings live.
   const first = shown?.repeatedMistakes?.[0]
@@ -176,6 +185,10 @@ export function AttemptResult(p: AttemptResultProps) {
   const expandedId = p.onExpandedChange ? (p.expandedId ?? null) : ownId
   const setExpandedId = p.onExpandedChange ?? setOwnId
   const expanded = !!r && expandedId === r.id && !!p.details
+  // The next pass is under way: the details fold (the pill stays, dimmed).
+  useEffect(() => {
+    if (r && ui.resultDimmed && expandedId === r.id) setExpandedId(null)
+  }, [r?.id, ui.resultDimmed])
   // The details unfold and fold like an accordion: they stay mounted while folding.
   const unfold = useFadePresence(expanded, DETAILS_FOLD_MS)
   const root = useRef<HTMLDivElement>(null)
@@ -208,12 +221,19 @@ export function AttemptResult(p: AttemptResultProps) {
     setExpandedId(r.id)
   }
 
+  const restore = () => {
+    if (r && dimmed) setRestoredId(r.id)
+  }
+
   if (!presence.mounted || !shown) return null
   return (
     <ResultCard
       r={shown}
       note={note}
       phase={presence.phase}
+      dimmed={dimmed}
+      exit={exit}
+      onRestore={restore}
       multiplier={ui.multiplier}
       goal={ui.repeat ? ui.repeatTarget : null}
       showAgain={!ui.repeat || shown.targetReached}
@@ -282,6 +302,9 @@ function ResultCard({
   r,
   note,
   phase,
+  dimmed,
+  exit,
+  onRestore,
   multiplier,
   goal,
   showAgain,
@@ -301,6 +324,11 @@ function ResultCard({
   /** A repeated mistake, worded (P24), or null. */
   note: string | null
   phase: FadePhase
+  /** The next pass is under way (U101): the pill recedes; a tap (or focus) brings it back. */
+  dimmed: boolean
+  /** How it leaves once gone: 'played' slides down out of view (U101), else it fades. */
+  exit: 'played' | 'dismissed' | null
+  onRestore: () => void
   multiplier: number
   /** The Repeat target ("until N clean") shown as dots, or null. */
   goal: number | null
@@ -385,7 +413,17 @@ function ResultCard({
       data-phase={phase}
       data-expanded={unfold !== null || undefined}
       data-layout={phone ? 'screen' : 'panel'}
+      data-dimmed={dimmed || undefined}
+      data-exit={exit ?? undefined}
       style={{ '--result-details-max': `${maxHeight}px` }}
+      // Dimmed, the first tap only brings the pill back: its controls do not act on it.
+      onClickCapture={(event) => {
+        if (!dimmed) return
+        event.preventDefault()
+        event.stopPropagation()
+        onRestore()
+      }}
+      onFocusIn={onRestore}
     >
       {unfold !== null ? (
         <section

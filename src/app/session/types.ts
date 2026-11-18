@@ -342,6 +342,23 @@ export interface SessionUi {
   /** The speed ladder, or null when off. It acts only while Repeat mode is open. */
   readonly ladder: LadderUi | null
   readonly lastResult: AttemptSummary | null
+  /**
+   * The next pass has played its first correct note while `lastResult` still shows (U101): the
+   * strip is back at the playing frame and the pill is dimmed (a tap brings it back to full
+   * strength) until the cursor leaves that bar, when the result goes (`resultExit` 'played').
+   */
+  readonly resultDimmed: boolean
+  /**
+   * How the last result went (or goes): 'played' when the next pass played past it (U101, it
+   * slides away), 'dismissed' for anything else (it fades).
+   */
+  readonly resultExit: 'played' | 'dismissed'
+  /**
+   * The strip reviews the loop after a completed pass (U97): the result shows at full strength and
+   * the next pass has played no correct note yet (U101). Focus mode waits meanwhile (U102), though
+   * Repeat counts as playing while it waits at Ready.
+   */
+  readonly reviewing: boolean
   /** Teacher's correction marks shown on the score now (0 when none), e.g. "3 points to improve". */
   readonly corrections: number
   readonly interruption: Interruption | null

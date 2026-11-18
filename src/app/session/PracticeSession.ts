@@ -97,7 +97,7 @@ import { clampPassage, sameSelection, selectionTimeline, startPlan, type Selecti
 import { buildGuideKeys, sameGuideKeys } from './guide'
 import { correctionMarks, correctionMarksByGroup, type CorrectionMark } from './corrections'
 import { REPEATED_MISTAKE_HISTORY, repeatedMistakes } from './mistakes'
-import { PassCapture, SnippetPlayer, playedSnippet, writtenSnippet, type SnippetKind } from './snippets'
+import { PassCapture, SNIPPET_PEDALS, SnippetPlayer, playedSnippet, writtenSnippet, type SnippetKind } from './snippets'
 import { countInPlan } from './countIn'
 import { metronomeOn, metronomeScope, type MetronomeScope } from './metronome'
 import {
@@ -345,6 +345,14 @@ export class PracticeSession {
   #gateOffset = 0
   #streak = 0
   #lastResult: AttemptSummary | null = null
+  /**
+   * The next pass played its first correct note while the last result shows (U101): the bar of
+   * that note (the result goes once the cursor leaves it). Null: the result is still reviewed
+   * (full strength, the strip zoomed out), whatever keys were pressed. Reset by each new result.
+   */
+  #resultPlayedIn: number | null = null
+  /** How the last result went: played past by the next pass (U101), or dismissed any other way. */
+  #resultExit: 'played' | 'dismissed' = 'dismissed'
   /** Recent scored records of one comparison context, oldest first (repeated mistakes, P24). */
   #recentScored: AttemptRecord[] = []
   /** The completed record whose repeated mistakes the next UI publish works out, and its timeline. */
@@ -2150,10 +2158,10 @@ export class PracticeSession {
   #playedSnippet(attemptId: string, occ: number) {
     const pass = this.#capture.pass(attemptId)
     const timeline = this.#resultTimeline
-    if (!pass || !timeline) return { notes: [], length: 0, shortened: false }
+    if (!pass || !timeline) return { notes: [], pedals: [], length: 0, shortened: false }
     const groups = new Set<number>()
     for (const g of timeline.groups) if (g.occ === occ) groups.add(g.index)
-    return playedSnippet(pass.keys, groups)
+    return playedSnippet(pass.keys, groups, pass.pedals)
   }
 
   /** The speed the last result's pass ran at (its record's), else the current one. */
@@ -2577,12 +2585,13 @@ export class PracticeSession {
 
   #onMidi(ev: MidiInputEvent): void {
     if (this.#disposed) return
-    // A mistake snippet (U100): on a piano that may echo, its own notes coming back are not the
-    // learner; any other press stops it at once and is then handled as always.
+    // A mistake snippet (U100): on a piano that may echo, its own notes and pedals (U101) coming
+    // back are not the learner; any other press stops it at once and is then handled as always.
     const snippet = this.#snippet
     if (snippet) {
       if ((ev.kind === 'noteon' || ev.kind === 'noteoff') && snippet.echo && snippet.player.sounds(ev.note, ev.time))
         return
+      if (ev.kind === 'cc' && snippet.echo && snippet.player.drivesPedal(ev.controller)) return
       if (ev.kind === 'noteon') this.#stopSnippet()
     }
     this.#midiBackend?.humanInput(ev)
@@ -2612,15 +2621,22 @@ export class PracticeSession {
   }
 
   /**
-   * O(1): the key events of a scored pass, for "What you played" (U100). A press at Ready starts
-   * a pass; releases after the pass ended still land on it (its last chord's keys come up later).
+   * O(1): the key and pedal events of a scored pass, for "What you played" (U100, U101). A press
+   * at Ready starts a pass; releases and pedal moves after the pass ended still land on it (its
+   * last chord's keys and the pedal come up later). The hint pedal is never kept: it is no sound.
    */
   #captureKey(ev: MidiInputEvent): void {
-    if (ev.kind !== 'noteon' && ev.kind !== 'noteoff') return
+    if (ev.kind === 'cc') {
+      if (!SNIPPET_PEDALS.includes(ev.controller)) return
+      const hint = this.#settings.pedal.hintPedal
+      if (hint && hint.controller === ev.controller && (hint.channel === null || hint.channel === ev.channel)) return
+      this.#capture.pedal(ev.time, ev.controller, ev.value, this.#engine.mode === 'scored')
+      return
+    }
     if (this.#engine.mode !== 'scored') return
     const phase = this.#engine.state.phase
     const velocity = ev.kind === 'noteon' ? ev.velocity : 0
-    if (phase === 'ready' && velocity > 0) this.#capture.begin()
+    if (phase === 'ready' && velocity > 0) this.#capture.begin(ev.time)
     if (phase === 'ready' || phase === 'running') {
       if (velocity > 0 || phase === 'running')
         this.#capture.add(ev.time, ev.note, velocity, this.#engine.state.groupIndex ?? -1)
@@ -2853,6 +2869,7 @@ export class PracticeSession {
     switch (ev.type) {
       case 'accepted':
         if (ev.pitch === this.#cue?.target) this.#cue = null
+        this.#resultPlayed(ev.group)
         break
       case 'input-complete':
         this.#cue = null
@@ -2902,10 +2919,47 @@ export class PracticeSession {
       case 'advanced':
         this.#cue = null
         this.#lastVersion = -1
+        this.#resultAdvanced(ev.to)
         break
       default:
         break
     }
+  }
+
+  /**
+   * O(1), in the input path: a correct note of the next pass while the last result shows (U101).
+   * Wrong keys leave the result as it was (full strength, the strip reviewing the loop). The first
+   * correct note ends the review (the strip zooms back in the next frame, the marks go): the
+   * result dims until the cursor leaves that bar, or goes at once when the loop is one bar.
+   */
+  #resultPlayed(group: number): void {
+    if (this.#lastResult === null || this.#resultPlayedIn !== null) return
+    if (this.#engine.mode !== 'scored' || this.#engine.state.phase !== 'running') return
+    const timeline = this.#engine.timeline
+    const occ = timeline.groups[group]?.occ
+    if (occ === undefined) return
+    if (timeline.measures.length <= 1) {
+      this.#endResultByPlay()
+      return
+    }
+    this.#resultPlayedIn = occ
+    this.#clearCorrections()
+  }
+
+  /** O(1): the cursor moved on; leaving the bar of the next pass's first correct note ends the result. */
+  #resultAdvanced(to: number | null): void {
+    const occ = this.#resultPlayedIn
+    if (occ === null || this.#lastResult === null) return
+    if (to !== null && this.#engine.timeline.groups[to]?.occ === occ) return
+    this.#endResultByPlay()
+  }
+
+  /** The next pass played past the result (U101): it slides away (`resultExit`). */
+  #endResultByPlay(): void {
+    this.#lastResult = null
+    this.#resultPlayedIn = null
+    this.#resultExit = 'played'
+    this.#clearCorrections()
   }
 
   /** Pitches of `group` the learner has accepted so far. */
@@ -2969,11 +3023,6 @@ export class PracticeSession {
       if (this.#accomp && this.#engine.transport === 'accompaniment') this.#accomp.play(t)
       // Keep time: count in, then the clock and the music start together.
       else if (this.#engine.transport === 'strict' && this.#engine.mode === 'scored') this.#beginCountIn(t)
-    } else if (phase === 'running' && this.#engine.mode === 'scored') {
-      // The first press of the next pass: the previous pass's card and marks go (Repeat keeps
-      // them through the automatic restart so the learner sees what to improve).
-      this.#lastResult = null
-      this.#clearCorrections()
     } else if (phase === 'completed') {
       if (this.#engine.mode === 'scored') this.#completedPending = true
       else if (this.#leadIn && !this.#leadIn.handedOver) {
@@ -3012,6 +3061,8 @@ export class PracticeSession {
     // A climb keeps Repeat going: the target applies again at the new speed.
     const climbing = ladder?.climbedTo !== undefined
     const targetReached = !climbing && this.#repeatTarget !== null && this.#streak >= this.#repeatTarget
+    this.#resultPlayedIn = null
+    this.#resultExit = 'dismissed'
     this.#lastResult = {
       id: record.id,
       passed: record.passed,
@@ -3847,6 +3898,9 @@ export class PracticeSession {
       repeatTarget: this.#repeatTarget,
       ladder: this.#ladder,
       lastResult: null,
+      resultDimmed: false,
+      resultExit: this.#resultExit,
+      reviewing: false,
       corrections: 0,
       interruption: null,
       soundStatus: this.#soundStatus,
@@ -3911,6 +3965,9 @@ export class PracticeSession {
       repeatTarget: this.#repeatTarget,
       ladder: this.#ladder,
       lastResult: this.#resultForUi(),
+      resultDimmed: this.#lastResult !== null && this.#resultPlayedIn !== null,
+      resultExit: this.#resultExit,
+      reviewing: this.#reviewing(),
       corrections: this.#corrections.length,
       interruption: this.#interruption(),
       soundStatus: this.#soundStatus,
@@ -4042,17 +4099,23 @@ export class PracticeSession {
 
   /**
    * The strip reviews the passage while a completed pass's result shows (U97): it zooms out to the
-   * whole loop when the result appears and back in when it goes (the first press of the next
-   * pass, Start, Restart, Hide, a selection change, a seek). Called from the frame, never from
-   * the input path; the strip only records the change there and animates in its own frames.
+   * whole loop when the result appears and back in when the next pass plays its first correct
+   * note (U101; wrong keys keep the review) or the result goes (Start, Restart, Hide, a selection
+   * change, a seek). Called from the frame, never from the input path; the strip only records the
+   * change there and animates in its own frames.
    */
   #syncReview(): void {
     const strip = this.#strip
     if (!strip?.setReview) return
-    const on = this.#lastResult !== null && this.#loop !== null && !this.#playThrough
+    const on = this.#reviewing()
     if (on === this.#reviewShown) return
     this.#reviewShown = on
     strip.setReview(on)
+  }
+
+  /** The review is on (`#syncReview`, `ui.reviewing`): a completed pass's result, not yet played past. */
+  #reviewing(): boolean {
+    return this.#lastResult !== null && this.#resultPlayedIn === null && this.#loop !== null && !this.#playThrough
   }
 
   /** Loop handles, drag inspection and the cursor's repeat button by state. */

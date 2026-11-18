@@ -247,7 +247,8 @@ test.describe('the review after a completed pass (U97)', () => {
       { timeout: 1000 },
     )
     await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-review/)
-    await expect(card).toHaveCount(0)
+    // The card stays, dimmed, until the cursor leaves the bar (U101).
+    await expect(card).toHaveAttribute('data-dimmed', 'true')
     await expect(page.locator('.pn-corr')).toHaveCount(0)
     await settled(page)
     expect(await stripScale(page)).toBeCloseTo(before, 4)

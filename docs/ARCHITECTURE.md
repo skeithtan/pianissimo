@@ -397,7 +397,8 @@ off) toggles play-through; the main button reads Start / Pause / Resume there, a
 interruption or Repeat panel shows while `activity === 'playing'`.
 Focus mode collapses the header, and on windows of 640 px or less the wrapped footer-tools row, using CSS grid tracks (U60); a tablet's footer is one row in both orientations and its tools dim in place (U88).
 Only the stage height changes, so the existing score view remeasures without re-engraving.
-`useRecede` restores chrome on pause, pointer/touch interaction, or keyboard navigation.
+`useRecede` restores chrome on pause, pointer/touch interaction, or keyboard navigation; it is
+held off while `SessionUi.reviewing` (the review after a completed pass, U102).
 `views/study` (U72): `StudyView` reads `studyRequest` (`openStudy({pieceId})`, route
 `#/study/<pieceId>`) and runs a `PracticeSession` in Listen (`hands: 'none'`,
 `cursorAction: false`, no-op history and piece sinks) over the same score views, layouts and
@@ -444,13 +445,15 @@ out of its segment markup with the signatures in front, the correction rings
 written note a wrong key stood for); it changes no render contract. The card reuses the Results
 `ScorecardPanel`, `HistoryPanel`, `deriveResults` and `loadResultsData`.
 Mistake playback (U100, `app/session/snippets.ts`): `PassCapture` keeps a scored pass's key
-events in memory (one bounded append per event in the input path, the last completed pass only,
-never stored); `playedSnippet` / `writtenSnippet` build one bar's notes (the learner's presses,
-long pauses shortened; or the score at the pass's speed) and `SnippetPlayer` hands them to the
-practice output when due and releases only its own notes. The session's `playSnippet`,
-`stopSnippet`, `snippetBlocked` and `snippet` store drive it; on a route not verified echo-free
-the snippet's own notes coming back are dropped from the input while they sound, and any other key
-stops it before being handled as usual.
+and pedal events (sustain, sostenuto, soft; never the hint pedal; U101) in memory (one bounded
+append per event in the input path, the last completed pass only, never stored);
+`playedSnippet` / `writtenSnippet` build one bar's notes and pedal moves (the learner's presses
+and pedals, long pauses shortened; or the score with its pedal marks at the pass's speed), every
+pedal let up by the end, and `SnippetPlayer` hands them to the practice output when due and
+releases only its own notes and pedals. The session's `playSnippet`, `stopSnippet`,
+`snippetBlocked` and `snippet` store drive it; on a route not verified echo-free the snippet's own
+notes coming back are dropped from the input while they sound (its pedal controllers while it
+plays), and any other key stops it before being handled as usual.
 
 ### Session 4 additions
 - `ScoreModel.sections?` (I12) from `core/import/sections.ts`; `overviewMeasures(model, multiplier?)`
@@ -490,14 +493,18 @@ stops it before being handled as usual.
   `repeatedMistakeLine` on its note line, U97). While nothing
   plays the session previews held keys against the current group (U37). Strip extras:
   `wrapTo` (loop wrap pan), `setEarlyMarker` (amber tint), the cursor bar bounded to the staves.
-  The review after a completed pass (U97): while `lastResult` shows, the session (from its frame,
-  never the input path) calls the optional `StripSink.setReview(true)`; `StripView` blends its
+  The review after a completed pass (U97): while `lastResult` shows and the next pass has not
+  played a correct note (U101), the session (from its frame, never the input path) calls the
+  optional `StripSink.setReview(true)`; `StripView` blends its
   playing frame into a review frame (`render/strip/review.ts`: the whole loop beside the fixed
   signatures, never above the playing zoom nor below 0.6, above the result card's height from
   `setReviewInset`) frame by frame on transforms only, holds the music still and moves the cursor
   over it; `setReview(false)` blends back to the exact playing frame. The result card
   (`AttemptResult` in `views/practice/Banners.tsx`) docks at the bottom of the stage and
-  `views/practice/reviewInset.ts` hands its height to the strip.
+  `views/practice/reviewInset.ts` hands its height to the strip. The next pass's first correct
+  note (U101) ends the review and sets `SessionUi.resultDimmed` (the pill dims until the cursor
+  leaves that bar; a one-bar loop ends the result at once); played past, `resultExit` is
+  `'played'` and the pill slides away instead of fading.
   Theme tokens in `src/ui/global.css`: a four-step surface ramp (`--bg` / `--bg-elevated` /
   `--bg-sunken` / `--bg-raised`) that steps lighter with elevation in dark mode, and the accent
   as text (`--accent`) versus fill (`--accent-fill` + `--accent-fg`) (A12, A17, Olive U49).

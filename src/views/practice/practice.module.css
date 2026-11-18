@@ -340,6 +340,34 @@
   pointer-events: none;
   transition-timing-function: var(--ease-standard), var(--ease-in);
 }
+/* The next pass is under way (U101): the pill recedes like focus-mode chrome (U13), slowly, and a
+   tap anywhere on it brings it back quickly; its controls take no input until then (the tap only
+   restores it). */
+.resultCard[data-dimmed] {
+  opacity: var(--practice-recede, 0.12);
+  cursor: pointer;
+  transition-duration: calc(var(--dur-slow) * 2), 220ms;
+}
+.resultCard[data-dimmed] .result * {
+  pointer-events: none;
+}
+/* Played past (U101): it slides down out of the score area at the strength it had (the stage, or
+   the page's result row, clips it), then is gone. Not while its details are still folding: an
+   expanded card keeps the ordinary exit (a phone's full-screen details are fixed to the screen,
+   and a transform on the card would carry them along). */
+.resultCard[data-exit='played'][data-phase='leaving']:not([data-expanded]) {
+  opacity: 1;
+  transform: translateY(calc(100% + var(--space-5)));
+  transition:
+    opacity 220ms var(--ease-standard),
+    transform 320ms var(--ease-in);
+}
+.resultCard[data-exit='played'][data-phase='leaving'][data-dimmed]:not([data-expanded]) {
+  opacity: var(--practice-recede, 0.12);
+}
+.resultRow:has(> [data-exit='played'][data-phase='leaving']:not([data-expanded])) {
+  overflow: hidden;
+}
 /* The details: above the pill, as wide as the card, up to the room above it (set on expansion:
    --result-details-max), scrolling inside. */
 .resultDetails {
@@ -1397,6 +1425,13 @@
   }
   .resultCard,
   .resultCard[data-phase] {
+    transform: none;
+    transition-duration: var(--dur-base);
+  }
+  /* Played past: no slide, a short fade. */
+  .resultCard[data-exit='played'][data-phase='leaving']:not([data-expanded]),
+  .resultCard[data-exit='played'][data-phase='leaving'][data-dimmed]:not([data-expanded]) {
+    opacity: 0;
     transform: none;
     transition-duration: var(--dur-base);
   }

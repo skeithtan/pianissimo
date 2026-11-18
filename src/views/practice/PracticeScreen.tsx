@@ -340,7 +340,9 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   useEffect(() => {
     if (ui.playing || !phone) setMenuOpen(false)
   }, [ui.playing, phone])
-  const recede = useRecede(ui.playing, env.timers)
+  // Not while the loop is reviewed after a pass (U102): Repeat waits at Ready (playing), but the
+  // learner has not started the next pass; its first correct note ends the review and focus follows.
+  const recede = useRecede(ui.playing && !ui.reviewing, env.timers)
   // An upright phone gives the Repeat controls a row of their own that folds away while playing;
   // elsewhere they float over the score (U14, U80, revised 15 November 2026). Their options open
   // in a sheet on a phone, which closes when playback starts, like the menu.

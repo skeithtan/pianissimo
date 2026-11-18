@@ -2,7 +2,8 @@
  * The result's details open in place (DECISIONS U99): Details expands the pill into a larger card
  * over the score, never another screen. The URL and the strip's review frame stay as they were;
  * the chevron, Escape, and everything that ends the result fold it; a key press starts the next
- * pass as before. The card's excerpts show each wrong place on the music, ranked by severity: the
+ * pass as before, and the next pass's first correct note folds and dims it until the cursor leaves
+ * that bar, when it slides away (U101). The card's excerpts show each wrong place on the music, ranked by severity: the
  * same wrong key three passes running first, then one twice running, then this pass's one-offs,
  * with ghost notes for the keys pressed. Fake Web MIDI; the seeded Two Hands piece looped.
  *
@@ -102,6 +103,8 @@ const TABLET_SIZES = [
 ] as const
 /** The tablet panel's margin to the stage's top and sides and to the footer: at least this (px). */
 const PANEL_MARGIN = 16
+/** The tablet panel's height cap (`DETAILS_MAX_HEIGHT` in views/practice/Banners.tsx). */
+const PANEL_MAX_HEIGHT = 880
 
 test.describe('the result details open in place (U99)', () => {
   test('Details expands the pill over the score, the URL and the review stay, the chevron folds it', async ({
@@ -149,18 +152,52 @@ test.describe('the result details open in place (U99)', () => {
     await expect(card).toBeVisible()
   })
 
-  test('a key press while expanded starts the next pass and the card goes', async ({ page }) => {
+  test('the next pass: wrong keys keep the card; the first correct note folds and dims it; past that bar it slides away (U101)', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1194, height: 834 })
     await openLoop(page)
     await pass(page, { 3: [66] })
-    await expect(page.getByTestId('attempt-result')).toContainText('1 wrong note')
+    const card = page.getByTestId('attempt-result')
+    await expect(card).toContainText('1 wrong note')
     await toggle(page).click()
     await expect(details(page).getByTestId('result-excerpt')).toHaveCount(1)
     await nextPass(page)
-    await play(page, 60, 48)
+    // Repeat waits at Ready (Pause shows), but nothing was played yet: no focus mode (U102).
+    const practice = page.locator('[data-activity]')
+    await page.waitForTimeout(1600)
+    await expect(practice).not.toHaveAttribute('data-recede', 'true')
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+    // A wrong key starts the pass and changes nothing here: expanded, full strength, reviewing.
+    await play(page, 30)
     await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'running', { timeout: 1000 })
-    await expect(page.getByTestId('attempt-result')).toHaveCount(0)
+    await page.waitForTimeout(1400)
+    await expect(practice).not.toHaveAttribute('data-recede', 'true')
+    await expect(details(page)).toBeVisible()
+    await expect(card).not.toHaveAttribute('data-dimmed')
+    await expect(page.locator('.pn-strip')).toHaveClass(/pn-review/)
+    await expect(page.locator('.pn-corr')).not.toHaveCount(0)
+    // The first correct note: folded, dimmed, the strip back at the playing frame, the marks gone.
+    await play(page, 60, 48)
     await expect(details(page)).toHaveCount(0)
+    await expect(card).toHaveAttribute('data-dimmed', 'true')
+    await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-review/)
+    await expect(page.locator('.pn-corr')).toHaveCount(0)
+    expect(Number(await card.evaluate((el) => getComputedStyle(el).opacity))).toBeLessThan(0.5)
+    // Focus mode follows the first correct note after its usual delay.
+    await expect(practice).toHaveAttribute('data-recede', 'true', { timeout: 3000 })
+    // A tap brings it back to full strength without acting on its controls.
+    await card.click()
+    await expect(card).not.toHaveAttribute('data-dimmed')
+    await expect(card).toBeVisible()
+    // The rest of bar 1: once the cursor leaves it, the card slides down out of the score.
+    await playWhenDue(page, 62)
+    await playWhenDue(page, 64)
+    await expect(card).toBeVisible()
+    await playWhenDue(page, 65)
+    await expect(card).toHaveAttribute('data-exit', 'played')
+    await expect(card).toHaveCount(0)
+    await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'running')
   })
 
   test('a reload while expanded leaves the learner in Practice with the loop, folded', async ({ page }) => {
@@ -282,12 +319,14 @@ test.describe('mistake playback in the card (U100)', () => {
       timeout: 10_000,
     })
 
-    // Playing again, a key press stops it at once and starts the next pass as always.
+    // Playing again, a key press stops it at once and starts the next pass as always (its first
+    // correct notes fold and dim the card, U101).
     await excerpt.getByRole('button', { name: 'As written' }).click()
     await expect(excerpt.getByRole('button', { name: 'As written' })).toHaveAttribute('aria-pressed', 'true')
     await play(page, 60, 48)
     await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'running', { timeout: 1000 })
-    await expect(page.getByTestId('attempt-result')).toHaveCount(0)
+    await expect(page.getByTestId('attempt-result')).toHaveAttribute('data-dimmed', 'true')
+    await expect(details(page)).toHaveCount(0)
     expect(page.url()).toBe(url)
   })
 })
@@ -353,10 +392,12 @@ test.describe('the expanded result by screen size (U99, 17 November 2026)', () =
         expect(hit, label).toBe(true)
       } else {
         await expect(details(page)).toHaveAttribute('data-layout', 'panel')
-        // Larger than before (760 × 560 at most) and clearly not full screen.
+        // Wider than before (760 at most), clearly not full screen, and as tall as the stage allows.
+        // The review keeps the header and overview up (no focus mode, U102), so on its side the
+        // room is the stage under them: about 550 px at 1194 × 834.
         expect(box.width, label).toBeGreaterThan(760)
         expect(box.width, label).toBeLessThan(vw - 2 * PANEL_MARGIN + 1)
-        expect(box.height, label).toBeGreaterThan(560)
+        expect(box.height, label).toBeGreaterThan(size.height > size.width ? 560 : 500)
         expect(box.height, label).toBeLessThan(vh * 0.85)
         // The same margin on every side: the sides of the screen, the top of the stage (under the
         // header and the overview), and the footer under the pill.
@@ -368,6 +409,7 @@ test.describe('the expanded result by screen size (U99, 17 November 2026)', () =
         expect(box.x, label).toBeGreaterThanOrEqual(PANEL_MARGIN)
         expect(vw - (box.x + box.width), label).toBeGreaterThanOrEqual(PANEL_MARGIN)
         expect(box.y - stageTop, label).toBeGreaterThanOrEqual(PANEL_MARGIN - 1)
+        if (box.height < PANEL_MAX_HEIGHT - 1) expect(box.y - stageTop, label).toBeLessThanOrEqual(PANEL_MARGIN + 2)
         expect(footerTop - (card.y + card.height), label).toBeGreaterThanOrEqual(PANEL_MARGIN - 1)
         expect(dock.width, label).toBeGreaterThan(0)
       }

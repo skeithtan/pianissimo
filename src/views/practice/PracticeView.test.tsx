@@ -444,6 +444,60 @@ describe('PracticeView', () => {
     expect(note()).toBe('re♭ instead of re♮ in bar 1, three passes running')
   })
 
+  it('no focus mode while the loop is reviewed after a pass; the next pass’s first correct note brings it (U102)', async () => {
+    const r = await rig()
+    practiceRequest.value = {
+      pieceId: r.pieceId,
+      preset: { passage: { fromOcc: 0, toOcc: 1 }, hands: 'both', multiplier: 1 },
+    }
+    view = mount(<PracticeViewWith env={r.env} />)
+    await settle(r)
+    const screen = () => $(view!.container, '[data-activity]')!
+    const wait = async (ms: number) => {
+      act(() => r.clock.advance(ms))
+      await settle(r, 1)
+    }
+    click(byLabel(view.container, 'Start'))
+    await settle(r)
+    // Bars 1–2: C D E F over the low C, then the chord over G and the C a half note later.
+    tap(r, 60, 48)
+    await wait(RECEDE_DELAY_MS)
+    expect(screen().dataset['recede']).toBe('true') // focus mode while the pass runs
+    for (const [ms, notes] of [
+      [1000 - RECEDE_DELAY_MS, [62]],
+      [1000, [64]],
+      [1000, [65]],
+      [1000, [67, 71, 74, 43]],
+      [2000, [48]],
+    ] as const) {
+      await wait(ms)
+      tap(r, ...notes)
+    }
+    await wait(100)
+    expect($(view.container, '[data-testid="attempt-result"]')).not.toBeNull()
+    expect(r.strips[0]!.reviewing).toBe(true)
+    // The review: the chrome is back and stays, through Repeat's wait at Ready (still "playing").
+    expect(screen().dataset['recede']).toBeUndefined()
+    for (let k = 0; k < 200 && screen().dataset['phase'] !== 'ready'; k++) await wait(20)
+    expect(screen().dataset['phase']).toBe('ready')
+    expect(byLabel(view.container, 'Pause')).not.toBeNull()
+    await wait(RECEDE_DELAY_MS * 3)
+    expect(screen().dataset['recede']).toBeUndefined()
+    expect($(view.container, 'header')!.hasAttribute('inert')).toBe(false)
+    // A wrong key starts the pass but keeps the review: still no focus mode.
+    tap(r, 30)
+    await wait(RECEDE_DELAY_MS * 2)
+    expect(screen().dataset['phase']).toBe('running')
+    expect(screen().dataset['recede']).toBeUndefined()
+    // The first correct note ends the review; focus mode follows after its usual delay.
+    tap(r, 60, 48)
+    await settle(r, 1)
+    expect(r.strips[0]!.reviewing).toBe(false)
+    expect(screen().dataset['recede']).toBeUndefined()
+    await wait(RECEDE_DELAY_MS)
+    expect(screen().dataset['recede']).toBe('true')
+  })
+
   it('prepares the other label room ahead while idle, never while something plays', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }

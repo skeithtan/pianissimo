@@ -2073,7 +2073,7 @@ describe('PracticeSession: teacher corrections after an attempt', () => {
     expect(speed.session.ui.get().corrections).toBe(0)
   })
 
-  it('in Repeat mode keeps the marks through the automatic restart until the first press of the next pass', async () => {
+  it('in Repeat mode keeps the marks and the result through the restart and wrong keys; a one-bar loop lets them go at the first correct note (U101)', async () => {
     const h = harness(timed, { range: { fromOcc: 0, toOcc: 0 } })
     await flawedPass(h)
     // The next pass is ready (Repeat started over by itself): the marks are still there.
@@ -2083,13 +2083,75 @@ describe('PracticeSession: teacher corrections after an attempt', () => {
     h.step(2000)
     expect(h.strip.corrections).toHaveLength(2)
     expect(h.session.ui.get().corrections).toBe(2)
+    expect(h.strip.reviewing).toBe(true)
     const calls = h.strip.correctionCalls
-    // The first press of the new pass, even a wrong key, clears them.
+    // Wrong keys start the next pass but leave everything as it was: the marks, the result, the review.
     h.tap(61)
+    h.tap(50)
     expect(h.session.engine.state.phase).toBe('running')
+    expect(h.strip.corrections).toHaveLength(2)
+    expect(h.strip.correctionCalls).toBe(calls)
+    expect(h.strip.reviewing).toBe(true)
+    expect(h.session.ui.get()).toMatchObject({ corrections: 2, resultDimmed: false, lastResult: { passed: false } })
+    // The first correct note of a one-bar loop: the result goes at once (it slides away), so do the marks.
+    h.tap(60)
     expect(h.strip.corrections).toEqual([])
     expect(h.strip.correctionCalls).toBe(calls + 1)
-    expect(h.session.ui.get()).toMatchObject({ corrections: 0, lastResult: null })
+    expect(h.strip.reviewing).toBe(false)
+    expect(h.session.ui.get()).toMatchObject({
+      corrections: 0,
+      lastResult: null,
+      resultDimmed: false,
+      resultExit: 'played',
+    })
+  })
+
+  it('a loop of several bars dims the result at the first correct note and lets it go when the cursor leaves that bar (U101)', async () => {
+    const h = harness(timed, { range: { fromOcc: 0, toOcc: 1 } })
+    await h.session.start()
+    h.frames.flush()
+    h.play(60)
+    h.tap(61) // a wrong key: the pass is not clean
+    h.play(62, 64, 65, 67, 69, 71, 72)
+    h.step(1500)
+    expect(h.session.engine.state.phase).toBe('ready')
+    expect(h.session.ui.get()).toMatchObject({ lastResult: { passed: false }, resultDimmed: false })
+    expect(h.strip.corrections).toHaveLength(1)
+    expect(h.strip.reviewing).toBe(true)
+    // Nonsense keeps it at full strength, the strip zoomed out.
+    h.tap(50)
+    h.tap(51)
+    expect(h.session.ui.get()).toMatchObject({ resultDimmed: false, reviewing: true, playing: true })
+    expect(h.strip.reviewing).toBe(true)
+    // The first correct note: the strip zooms back, the marks go, the result dims and stays.
+    h.tap(60)
+    expect(h.strip.reviewing).toBe(false)
+    expect(h.strip.corrections).toEqual([])
+    expect(h.session.ui.get()).toMatchObject({
+      resultDimmed: true,
+      reviewing: false,
+      corrections: 0,
+      lastResult: { passed: false },
+    })
+    h.play(62, 64)
+    expect(h.session.ui.get()).toMatchObject({ resultDimmed: true, lastResult: { passed: false } })
+    // The bar's last note: the cursor moves into the next bar and the result slides away.
+    h.play(65)
+    expect(h.session.ui.get()).toMatchObject({ lastResult: null, resultDimmed: false, resultExit: 'played' })
+    expect(h.strip.reviewing).toBe(false)
+  })
+
+  it('Hide after the next pass began still fades the result (U101)', async () => {
+    const h = harness(timed, { range: { fromOcc: 0, toOcc: 1 } })
+    await h.session.start()
+    h.frames.flush()
+    h.play(60, 62, 64, 65, 67, 69, 71, 72)
+    h.step(1500)
+    h.tap(60)
+    expect(h.session.ui.get().resultDimmed).toBe(true)
+    h.session.dismissResult()
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ lastResult: null, resultDimmed: false, resultExit: 'dismissed' })
   })
 
   it('clears the marks when leaving Practice and hands them to a strip attached again', async () => {

@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { buildScore } from '../../core/engine/testkit'
+import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { harness, testSettings, type Harness } from './testkit'
 
 // Bar 1: C D E, then the C–E chord; bar 2: G.
@@ -123,5 +124,114 @@ describe('mistake snippets (U100)', () => {
     const { h, id } = await afterPass()
     expect(h.session.snippetBlocked(id, 1, 'played')).toBe('No keys were captured in this bar.')
     expect(h.session.snippetBlocked(id, 1, 'written')).toBeNull()
+  })
+})
+
+describe('mistake snippets keep the pedal (U101)', () => {
+  const untilReady = (h: Harness) => {
+    for (let k = 0; k < 500 && h.session.engine.state.phase !== 'ready'; k++) h.step(20)
+  }
+  const hintPedal = {
+    ...DEFAULT_SETTINGS.pedal,
+    hintPedal: {
+      channel: null,
+      controller: 66,
+      threshold: 64,
+      inverted: false,
+      observedMin: 0,
+      observedMax: 127,
+      verified: true,
+    },
+  }
+
+  it('What you played replays the learner’s sustain (down before the first note, changed, lifted after), never the hint pedal', async () => {
+    const h = harness(score, { range: loop }, { settings: testSettings({ pedal: hintPedal }) })
+    await h.session.start()
+    untilReady(h)
+    h.midi.cc(64, 127, h.clock.now) // down before the first note
+    h.play(60)
+    h.step(300)
+    h.midi.cc(66, 127, h.clock.now) // the hint pedal: no sound, never replayed
+    h.midi.cc(66, 0, h.clock.now)
+    h.play(62)
+    h.midi.cc(64, 0, h.clock.now) // a pedal change
+    h.step(30)
+    h.midi.cc(64, 120, h.clock.now)
+    h.play(64, 60, 64)
+    h.step(200)
+    h.midi.cc(64, 0, h.clock.now) // lifted after the last chord
+    const id = h.session.ui.get().lastResult!.id
+    untilReady(h)
+    h.backend.calls.length = 0
+    expect(await h.session.playSnippet(id, 0, 'played')).toBeNull()
+    h.step(10_000)
+    const ccs = h.backend.ccs()
+    expect(ccs.map((c) => [c.controller, c.value])).toEqual([
+      [64, 127],
+      [64, 0],
+      [64, 120],
+      [64, 0],
+    ])
+    // The pedal is down before the first key sounds, and the last key sound rings until it lifts.
+    const calls = h.backend.calls
+    expect(calls.findIndex((c) => c.op === 'cc')).toBeLessThan(calls.findIndex((c) => c.op === 'on'))
+    expect(calls.at(-1)).toMatchObject({ op: 'cc', controller: 64, value: 0 })
+    expect(h.session.snippet.get()).toBeNull()
+  })
+
+  const pedalled = buildScore({
+    notes: [
+      { at: 0, midi: 60 },
+      { at: 1, midi: 62 },
+      { at: 2, midi: 64 },
+      { at: 3, midi: 60 },
+      { at: 3, midi: 64 },
+      { at: 4, midi: 67 },
+    ],
+    bars: 2,
+    pedals: [
+      { at: 0, type: 'start' },
+      { at: 2, type: 'change' },
+    ],
+  })
+
+  async function pedalledPass(settings = testSettings()) {
+    const h = harness(pedalled, { range: loop }, { settings })
+    await h.session.start()
+    pass(h)
+    const id = h.session.ui.get().lastResult!.id
+    untilReady(h)
+    h.backend.calls.length = 0
+    return { h, id }
+  }
+
+  it('As written plays the score’s pedal marks and lets the pedal up at the bar’s end', async () => {
+    const { h, id } = await pedalledPass()
+    expect(await h.session.playSnippet(id, 0, 'written')).toBeNull()
+    h.step(10_000)
+    expect(h.backend.ccs().map((c) => [c.controller, c.value])).toEqual([
+      [64, 127],
+      [64, 0],
+      [64, 127],
+      [64, 0],
+    ])
+  })
+
+  it('a key stops the snippet and lets its pedal up; on a piano that may echo, its pedal coming back is not the learner’s', async () => {
+    const stopped = await pedalledPass()
+    await stopped.h.session.playSnippet(stopped.id, 0, 'written')
+    stopped.h.step(10)
+    stopped.h.press(65)
+    expect(stopped.h.session.snippet.get()).toBeNull()
+    expect(stopped.h.backend.ccs().at(-1)).toMatchObject({ controller: 64, value: 0 })
+
+    const { h, id } = await pedalledPass(testSettings({ route: { ...testSettings().route, echo: 'echo-detected' } }))
+    await h.session.playSnippet(id, 0, 'written')
+    h.step(10)
+    h.midi.cc(64, 127, h.clock.now) // the piano sends the snippet's pedal back
+    expect(h.session.snippet.get()).not.toBeNull()
+    expect(h.session.engine.state.sustainDown).toBe(false)
+    h.step(10_000)
+    expect(h.backend.ccs().at(-1)).toMatchObject({ controller: 64, value: 0 })
   })
 })

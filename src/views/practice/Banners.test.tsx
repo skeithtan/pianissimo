@@ -11,6 +11,7 @@ import {
   Banners,
   wrapTab,
   RESULT_FADE_MS,
+  RESULT_SLIDE_MS,
   ladderResultText,
   resultTitle,
   type AttemptResultProps,
@@ -52,6 +53,9 @@ const UI: SessionUi = {
   repeatTarget: null,
   ladder: null,
   lastResult: null,
+  resultDimmed: false,
+  resultExit: 'dismissed',
+  reviewing: false,
   corrections: 0,
   interruption: null,
   soundStatus: null,
@@ -348,12 +352,59 @@ describe('the result card expands in place (U99)', () => {
     expect(body()).toBeNull()
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
 
-    // Anything that ends the result (the next pass's first key, Start, Hide, a seek) folds it.
+    // Anything that ends the result (the next pass playing past it, Start, Hide, a seek) folds it.
     click(toggle())
     view.rerender(result({ lastResult: null }))
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
     advance(RESULT_FADE_MS + 1)
     expect($(view.container, '[data-testid="attempt-result"]')).toBeNull()
+  })
+
+  it('the next pass’s first correct note dims the pill and folds it; a tap only brings it back (U101)', () => {
+    vi.useFakeTimers()
+    const onDismiss = vi.fn()
+    view = mount(result({ lastResult: RESULT }, { onDismiss }))
+    advance(50)
+    const card = () => $(view!.container, '[data-testid="attempt-result"]')!
+    click(toggle())
+    expect(body()).not.toBeNull()
+    // Wrong keys change nothing (the session keeps resultDimmed false); the first correct note:
+    view.rerender(result({ lastResult: RESULT, resultDimmed: true }, { onDismiss }))
+    expect(card().dataset['dimmed']).toBe('true')
+    advance(DETAILS_FOLD_MS + 1)
+    expect(body()).toBeNull()
+    // A tap on Hide while dimmed only brings the pill back to full strength.
+    click(byLabel(card(), 'Hide result'))
+    expect(onDismiss).not.toHaveBeenCalled()
+    expect(card().dataset['dimmed']).toBeUndefined()
+    click(byLabel(card(), 'Hide result'))
+    expect(onDismiss).toHaveBeenCalledOnce()
+    // Restored for this result only: the next one dims again.
+    view.rerender(result({ lastResult: { ...RESULT, id: 'a2' }, resultDimmed: true }, { onDismiss }))
+    expect(card().dataset['dimmed']).toBe('true')
+  })
+
+  it('played past, it slides away as it was (dimmed), in RESULT_SLIDE_MS; dismissed, it fades (U101)', () => {
+    vi.useFakeTimers()
+    view = mount(result({ lastResult: RESULT, resultDimmed: true }))
+    advance(50)
+    const card = () => $(view!.container, '[data-testid="attempt-result"]')
+    view.rerender(result({ lastResult: null, resultDimmed: false, resultExit: 'played' }))
+    expect(card()?.dataset['phase']).toBe('leaving')
+    expect(card()?.dataset['exit']).toBe('played')
+    expect(card()?.dataset['dimmed']).toBe('true')
+    advance(RESULT_SLIDE_MS - 1)
+    expect(card()).not.toBeNull()
+    advance(2)
+    expect(card()).toBeNull()
+
+    view.rerender(result({ lastResult: RESULT }))
+    advance(50)
+    view.rerender(result({ lastResult: null, resultExit: 'dismissed' }))
+    expect(card()?.dataset['exit']).toBe('dismissed')
+    expect(card()?.dataset['dimmed']).toBeUndefined()
+    advance(RESULT_FADE_MS + 1)
+    expect(card()).toBeNull()
   })
 
   it('without details there is no Details control', () => {
