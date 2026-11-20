@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Global toast area fed by `pushNotice`. Toasts slide in and fade out before they are removed;
  * errors are announced assertively and stay until dismissed.
@@ -31,8 +32,13 @@ export function NoticeArea() {
           style={{ opacity: leaving ? 0 : 1, transition: `opacity ${duration}ms var(--ease-standard)` }}
         >
           <Icon name={ICON[item.kind]} size={20} />
-          <span class={styles.text}>{item.text}</span>
-          <button type="button" class={styles.dismiss} aria-label="Dismiss" onClick={() => dismissNotice(item.id)}>
+          <span class={styles.text}>{msg(item.text)}</span>
+          <button
+            type="button"
+            class={styles.dismiss}
+            aria-label={msg('Dismiss')}
+            onClick={() => dismissNotice(item.id)}
+          >
             <Icon name="close" size={18} />
           </button>
         </div>

@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Practice timeline: the learner's required onset groups for one hand selection and passage,
  * prepared once before practice so matching only does small lookups per MIDI event
@@ -165,7 +166,7 @@ function handsOf(h: LearnerHands): readonly Hand[] {
 export function barLabel(model: ScoreModel, occ: number): string {
   const o = model.occurrences[occ]
   if (!o) return `${occ + 1}`
-  return o.pass > 1 ? `${o.number} (pass ${o.pass})` : o.number
+  return o.pass > 1 ? msg('{0} (pass {1})', o.number, o.pass) : o.number
 }
 
 function resolveRange(model: ScoreModel, range: PassageRange | null): PassageRange {
@@ -203,7 +204,9 @@ function describeIssue(model: ScoreModel, issue: TimingIssue): string {
         : issue.kind === 'rubato'
           ? 'Rubato'
           : `Timing instruction "${issue.text}"`
-  return `${what} in bar ${barLabel(model, issue.occ)} has no exact duration. Completion time is not compared.`
+  const o = model.occurrences[issue.occ]
+  const bar = o && o.pass > 1 ? `${o.number} (pass ${o.pass})` : (o?.number ?? String(issue.occ + 1))
+  return `${what} in bar ${bar} has no exact duration. Completion time is not compared.`
 }
 
 /**
@@ -446,20 +449,29 @@ export function buildTimeline(model: ScoreModel, options: TimelineOptions): Time
   if (groups.length === 0) {
     blockers.push({
       kind: 'no-required-onsets',
-      message: `The ${HAND_NAMES[hands]} part has no notes to play in ${bars}. Choose another hand or passage. Listen is still available.`,
+      message: msg(
+        'The {0} part has no notes to play in {1}. Choose another hand or passage. Listen is still available.',
+        msg(HAND_NAMES[hands]),
+        bars,
+      ),
     })
   }
   if (!hasTempo(tempo)) {
     blockers.push({
       kind: 'tempo-missing',
-      message: 'This score has no numerical tempo. Enter a practice tempo before scored practice.',
+      message: msg('This score has no numerical tempo. Enter a practice tempo before scored practice.'),
     })
   }
   for (const region of unsupported) {
     blockers.push({
       kind: 'unsupported-region',
       region,
-      message: `${region.message} (bars ${barLabel(model, region.fromOcc)}–${barLabel(model, region.toOcc)}) cannot be scored yet.`,
+      message: msg(
+        '{0} (bars {1}–{2}) cannot be scored yet.',
+        msg(region.message),
+        barLabel(model, region.fromOcc),
+        barLabel(model, region.toOcc),
+      ),
     })
   }
   if (model.hands.ambiguousVoices.length > 0 && !model.hands.confirmed) {
@@ -473,7 +485,7 @@ export function buildTimeline(model: ScoreModel, options: TimelineOptions): Time
       blockers.push({
         kind: 'hands-unconfirmed',
         voices: [...voices],
-        message: 'Confirm the hand assignment of cross-staff voices in the import summary before scored practice.',
+        message: msg('Confirm the hand assignment of cross-staff voices in the import summary before scored practice.'),
       })
     }
   }

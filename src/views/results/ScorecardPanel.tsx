@@ -1,3 +1,5 @@
+import { importMessage } from '../../i18n/importMessage'
+import { msg, percentage } from '../../i18n/messages'
 /**
  * The scorecard of one attempt (spec "Results and timing"): a transparent set of results, no
  * points total and no "missed notes" metric. Persistent score labels, temporary hints and the
@@ -98,18 +100,22 @@ function Assistance({ attempt, card }: { attempt: AttemptRecord; card: Scorecard
   const labelsUsed = a.persistentLabelNotes > 0
   const hintsUsed = a.hintRequests + a.autoHints + a.hintGroups > 0
   return (
-    <ul class={styles.assistList} aria-label="Assistance details">
+    <ul class={styles.assistList} aria-label={msg('Assistance details')}>
       <li data-used={labelsUsed ? '' : undefined} data-row="assist-labels">
-        <strong>Persistent score labels</strong>
+        <strong>{msg('Persistent score labels')}</strong>
         <span>
-          Setting: {LABEL_MODE_TEXT[a.labelMode]}.{' '}
+          {msg('Setting:')} {msg(LABEL_MODE_TEXT[a.labelMode])}.{' '}
           {labelsUsed
-            ? `Revealed ${plural(a.persistentLabelNotes, 'note')} in ${plural(a.persistentLabelGroups, 'group')}, including labels seen in advance.`
-            : 'No notes were revealed by labels.'}
+            ? msg(
+                'Revealed {0} in {1}, including labels seen in advance.',
+                plural(a.persistentLabelNotes, 'note'),
+                plural(a.persistentLabelGroups, 'group'),
+              )
+            : msg('No notes were revealed by labels.')}
         </span>
         {rules.length > 0 ? (
           <details class={styles.inlineDetails}>
-            <summary>Label rules at the time</summary>
+            <summary>{msg('Label rules at the time')}</summary>
             <ul>
               {rules.map((r) => (
                 <li key={r}>{r}</li>
@@ -119,16 +125,21 @@ function Assistance({ attempt, card }: { attempt: AttemptRecord; card: Scorecard
         ) : null}
       </li>
       <li data-used={hintsUsed ? '' : undefined} data-row="assist-hints">
-        <strong>Temporary hints</strong>
+        <strong>{msg('Temporary hints')}</strong>
         <span>
           {hintsUsed
-            ? `${plural(a.hintRequests, 'hint request')} (manual), ${plural(a.autoHints, 'automatic hint')}. ${plural(a.hintGroups, 'group')} revealed.`
-            : 'No hints were requested or shown automatically.'}
+            ? msg(
+                '{0} (manual), {1}. {2} revealed.',
+                plural(a.hintRequests, 'hint request'),
+                plural(a.autoHints, 'automatic hint'),
+                plural(a.hintGroups, 'group'),
+              )
+            : msg('No hints were requested or shown automatically.')}
         </span>
       </li>
       <li data-used={a.keyboardShown ? '' : undefined} data-row="assist-keyboard">
-        <strong>Keyboard guide</strong>
-        <span>{a.keyboardShown ? 'Shown during this attempt.' : 'Not shown.'}</span>
+        <strong>{msg('Keyboard guide')}</strong>
+        <span>{a.keyboardShown ? msg('Shown during this attempt.') : msg('Not shown.')}</span>
       </li>
     </ul>
   )
@@ -156,10 +167,10 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: Scor
     <section class={styles.panel} aria-labelledby={headingId} data-completion={card.completion} data-timing={timing}>
       <header class={styles.panelHead}>
         <div>
-          <h2 id={headingId}>{isLatest ? 'Latest attempt' : 'Earlier attempt'}</h2>
+          <h2 id={headingId}>{isLatest ? msg('Latest attempt') : msg('Earlier attempt')}</h2>
           <p class={styles.muted}>
             {whenText(attempt.createdAt, now)}
-            {attempt.kind === 'reading' ? ' · ordinary reading' : ''}
+            {attempt.kind === 'reading' ? msg(' · ordinary reading') : ''}
           </p>
         </div>
         <p
@@ -168,43 +179,47 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: Scor
           data-pass={attempt.passed ? '' : undefined}
         >
           <Icon name={completed ? 'check' : 'alert'} size={18} />
-          <span>{completed ? 'Completed' : attempt.completion === 'abandoned' ? 'Abandoned' : 'Interrupted'}</span>
+          <span>
+            {completed ? msg('Completed') : attempt.completion === 'abandoned' ? msg('Abandoned') : msg('Interrupted')}
+          </span>
           {!completed ? <small>{incompleteReason(attempt)}</small> : null}
         </p>
       </header>
 
       {attempt.kind === 'reading' ? (
-        <p class={styles.note}>This was ordinary reading, not a scored attempt, so it is not compared with anything.</p>
+        <p class={styles.note}>
+          {msg('This was ordinary reading, not a scored attempt, so it is not compared with anything.')}
+        </p>
       ) : (
         <p class={styles.passLine} data-reason={reason}>
-          {PASS_TEXT[reason]}
+          {msg(PASS_TEXT[reason])}
         </p>
       )}
       {!completed && attempt.kind === 'scored' ? (
         <p class={styles.note}>
-          Incomplete attempts keep their diagnostics below but stay out of rankings and completion times.
+          {msg('Incomplete attempts keep their diagnostics below but stay out of rankings and completion times.')}
         </p>
       ) : null}
 
       <dl class={styles.tiles}>
         <Tile
           testId="wrong-attacks"
-          label="Wrong-note attacks"
+          label={msg('Wrong-note attacks')}
           value={card.wrongAttacks}
           detail={
             card.wrongAttacks === 0
-              ? 'None'
+              ? msg('None')
               : early !== null
-                ? `${early} of them too early (right key, pressed before its moment)`
+                ? msg('{0} of them too early (right key, pressed before its moment)', early)
                 : undefined
           }
           tone={card.wrongAttacks === 0 ? 'good' : undefined}
         />
         <Tile
           testId="first-pass"
-          label="First-pass groups"
-          value={card.firstPassPercent === null ? '—' : `${Math.round(card.firstPassPercent)}%`}
-          detail={`${attempt.groupsFirstPass} of ${attempt.groupsTotal} onset groups without a wrong attack`}
+          label={msg('First-pass groups')}
+          value={card.firstPassPercent === null ? '—' : percentage(Math.round(card.firstPassPercent) / 100)}
+          detail={msg('{0} of {1} onset groups without a wrong attack', attempt.groupsFirstPass, attempt.groupsTotal)}
         />
 
         {timing === 'rhythm' ? (
@@ -212,74 +227,80 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: Scor
             {RHYTHM_TILES.map(({ id, label, detail }) => {
               const row = rows.get(id)
               return row ? (
-                <Tile key={id} testId={id} label={label} value={row.value} detail={row.detail ?? detail} />
+                <Tile
+                  key={id}
+                  testId={id}
+                  label={msg(label)}
+                  value={row.value}
+                  detail={row.detail ?? (detail && msg(detail))}
+                />
               ) : null
             })}
           </>
         ) : attempt.context.transport === 'strict' ? null : timing === 'scored' || timing === 'ungraded' ? (
           <Tile
             testId="completion-time"
-            label={timing === 'ungraded' ? 'Time to solve' : 'Completion time'}
+            label={timing === 'ungraded' ? msg('Time to solve') : msg('Completion time')}
             value={card.completionTimeSec === null ? '—' : formatSeconds(card.completionTimeSec)}
-            detail={timing === 'ungraded' ? 'Ungraded: a single onset group has no tempo ratio.' : undefined}
+            detail={timing === 'ungraded' ? msg('Ungraded: a single onset group has no tempo ratio.') : undefined}
           />
         ) : (
           <Tile
             testId="completion-time"
-            label="Completion time"
+            label={msg('Completion time')}
             value="—"
             tone="muted"
             detail={
               timing === 'unscored'
-                ? `Timing not scored: ${card.timingNote ?? 'unresolved tempo issue'}`
-                : 'Not completed'
+                ? msg('Timing not scored: {0}', importMessage(card.timingNote ?? 'unresolved tempo issue'))
+                : msg('Not completed')
             }
           />
         )}
         {timing === 'scored' && card.expectedTimeSec !== null ? (
           <Tile
             testId="expected-time"
-            label="Expected time"
+            label={msg('Expected time')}
             value={formatSeconds(card.expectedTimeSec)}
-            detail="Reference attack span at this speed"
+            detail={msg('Reference attack span at this speed')}
           />
         ) : null}
         {timing === 'scored' && diffRow ? (
           <Tile
             testId="time-difference"
-            label="Time difference"
+            label={msg('Time difference')}
             value={diffRow.value}
-            detail="Actual minus expected. Neutral: faster is not automatically better."
+            detail={msg('Actual minus expected. Neutral: faster is not automatically better.')}
           />
         ) : null}
         {timing === 'scored' && card.notatedDurationSec !== null ? (
           <Tile
             testId="notated-duration"
-            label="Full notated duration"
+            label={msg('Full notated duration')}
             value={formatSeconds(card.notatedDurationSec)}
-            detail="Including final sustain and trailing rests"
+            detail={msg('Including final sustain and trailing rests')}
           />
         ) : null}
 
         {streakRow ? (
           <Tile
             testId="streak"
-            label="Practice streak"
+            label={msg('Practice streak')}
             value={streakRow.value}
-            detail={`${streakRow.detail ?? ''} in this setting`.trim()}
+            detail={msg('{0} in this setting', streakRow.detail ?? '').trim()}
           />
         ) : null}
 
         <Tile
           testId="assistance"
-          label="Assistance"
+          label={msg('Assistance')}
           wide
           value={
             card.assistance.level === 'none'
-              ? 'None'
+              ? msg('None')
               : card.assistance.level === 'names'
-                ? 'Note names'
-                : 'Keyboard guide'
+                ? msg('Note names')
+                : msg('Keyboard guide')
           }
           tone={card.assistance.assisted ? undefined : 'good'}
         >
@@ -289,8 +310,8 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: Scor
 
       {(timing === 'scored' || timing === 'ungraded') && attempt.context.transport !== 'strict' ? (
         <details class={styles.details}>
-          <summary>How completion time is measured</summary>
-          <p>{COMPLETION_TIME_DEFINITION}</p>
+          <summary>{msg('How completion time is measured')}</summary>
+          <p>{msg(COMPLETION_TIME_DEFINITION)}</p>
         </details>
       ) : null}
     </section>

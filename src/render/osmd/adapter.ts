@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * OSMD 2.2.1 renderer adapter (spec "MusicXML engraving" row, "Execution and rendering
  * architecture"; DECISIONS R1–R3). One `prepare` call:
@@ -110,7 +111,7 @@ export const OSMD_OPTIONS = {
 } as const
 
 export function defaultMeasureLabel(number: string, pass: number): string {
-  return pass > 1 ? `${number} (pass ${pass})` : number
+  return pass > 1 ? msg('{0} (pass {1})', number, pass) : number
 }
 
 /**
@@ -129,7 +130,7 @@ export function labelMetrics(
 
 export class Aborted extends Error {
   constructor() {
-    super('Layout preparation was canceled')
+    super(msg('Layout preparation was canceled'))
     this.name = 'AbortError'
   }
 }

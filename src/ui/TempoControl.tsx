@@ -1,3 +1,4 @@
+import { msg, percentage } from '../i18n/messages'
 /**
  * Practice speed control: [-]  100% / ♩ = 72  [+] (spec "Practice screen": the header shows the
  * speed multiplier and the effective BPM with its beat unit). Press-and-hold repeats. Tapping the
@@ -90,7 +91,7 @@ function StepButton({ dir, enabled, onStep }: { dir: -1 | 1; enabled: boolean; o
     <button
       type="button"
       class={styles.step}
-      aria-label={dir < 0 ? 'Slower by 5 percent' : 'Faster by 5 percent'}
+      aria-label={dir < 0 ? msg('Slower by 5 percent') : msg('Faster by 5 percent')}
       disabled={!enabled}
       {...handlers}
     >
@@ -131,7 +132,7 @@ function SpeedPopover({
 
   return (
     <div class={styles.panel}>
-      <div class={styles.presets} role="group" aria-label="Speed presets">
+      <div class={styles.presets} role="group" aria-label={msg('Speed presets')}>
         {SPEED_PRESETS_PERCENT.map((p) => (
           <button
             key={p}
@@ -140,12 +141,12 @@ function SpeedPopover({
             aria-pressed={percent === p}
             onClick={() => onChange(p / 100)}
           >
-            {p}%
+            {percentage(p / 100)}
           </button>
         ))}
       </div>
       <Slider
-        label="Speed"
+        label={msg('Speed')}
         min={25}
         max={200}
         step={5}
@@ -155,11 +156,11 @@ function SpeedPopover({
       />
       <form class={styles.custom} onSubmit={submit} noValidate>
         <Segmented
-          label="Custom entry"
+          label={msg('Custom entry')}
           value={mode}
           compact
           options={[
-            { value: 'speed', label: 'Speed' },
+            { value: 'speed', label: msg('Speed') },
             { value: 'bpm', label: 'BPM' },
           ]}
           onChange={(m) => {
@@ -174,9 +175,9 @@ function SpeedPopover({
             inputMode="decimal"
             autoComplete="off"
             spellcheck={false}
-            aria-label={mode === 'bpm' ? `Custom tempo in ${unitName} beats per minute` : 'Custom speed'}
+            aria-label={mode === 'bpm' ? msg('Custom tempo in {0} beats per minute', unitName) : msg('Custom speed')}
             aria-invalid={error ? true : undefined}
-            placeholder={mode === 'bpm' ? `e.g. ${formatBpm(sourceBeatBpm * 0.8)}` : 'e.g. 0.6 or 60%'}
+            placeholder={mode === 'bpm' ? msg('e.g. {0}', formatBpm(sourceBeatBpm * 0.8)) : msg('e.g. 0.6 or 60%')}
             value={text}
             onInput={(e) => {
               setText((e.currentTarget as HTMLInputElement).value)
@@ -184,7 +185,7 @@ function SpeedPopover({
             }}
           />
           <Button type="submit" variant="primary">
-            Set
+            {msg('Set')}
           </Button>
         </div>
         {error ? (
@@ -201,10 +202,10 @@ function SpeedPopover({
           disabled={multiplier === 1}
           onClick={() => onChange(1)}
         >
-          Reset to original tempo
+          {msg('Reset to original tempo')}
         </Button>
         <Button variant="ghost" onClick={onClose}>
-          Done
+          {msg('Done')}
         </Button>
       </div>
     </div>
@@ -228,7 +229,7 @@ export function TempoControl({
   const popover = useFadePresence(open && !disabled && !noTempo, 160)
   const fit = usePopoverPlacement(popover.mounted, placement, root, panel)
   const side = fit?.side ?? placement
-  const unitName = beatUnitName(beatUnit)
+  const unitName = msg(beatUnitName(beatUnit))
   const locked = disabled === true || noTempo === true
 
   const step = (dir: -1 | 1) => (): boolean => {
@@ -273,8 +274,8 @@ export function TempoControl({
       <StepButton dir={-1} enabled={!locked && canStepMultiplier(multiplier, -1)} onStep={step(-1)} />
       {noTempo ? (
         <button type="button" class={styles.value} onClick={() => onRequestTempo?.()} disabled={disabled}>
-          <span class={styles.percent}>Set tempo…</span>
-          <span class={styles.bpm}>needed for speed control</span>
+          <span class={styles.percent}>{msg('Set tempo…')}</span>
+          <span class={styles.bpm}>{msg('needed for speed control')}</span>
         </button>
       ) : (
         <button
@@ -283,7 +284,12 @@ export function TempoControl({
           class={styles.value}
           aria-haspopup="dialog"
           aria-expanded={open}
-          aria-label={`Speed ${formatSpeedPercent(multiplier)}, ${unitName} = ${formatBpm(sourceBeatBpm * multiplier)}. Open speed options`}
+          aria-label={msg(
+            'Speed {0}, {1} = {2}. Open speed options',
+            formatSpeedPercent(multiplier),
+            unitName,
+            formatBpm(sourceBeatBpm * multiplier),
+          )}
           disabled={disabled}
           onClick={() => setOpen((o) => !o)}
         >
@@ -299,7 +305,7 @@ export function TempoControl({
           ref={panel}
           class={`${styles.popover} ${side === 'up' ? styles.up : ''}`}
           role="dialog"
-          aria-label="Playback speed"
+          aria-label={msg('Playback speed')}
           data-side={side}
           style={{
             ...popover.style,

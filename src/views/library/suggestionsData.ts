@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Data layer for a piece's Suggested practice section (spec "Suggested practice"). Kept apart
  * from the presentation (`PieceSuggestions.tsx`, the shared `SuggestionList`):
@@ -87,7 +88,7 @@ export class PieceSuggestionsModel {
       if (generation !== this.#generation || this.#disposed) return
       this.state.value = {
         status: 'error',
-        message: `Suggestions could not be loaded: ${error instanceof Error ? error.message : String(error)}`,
+        message: msg('Suggestions could not be loaded: {0}', error instanceof Error ? error.message : String(error)),
       }
     }
   }

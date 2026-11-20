@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Thin zip layer over fflate for backups: a streaming writer that lets the event loop breathe
  * between chunks, and a reader that decompresses one entry at a time under size limits.
@@ -87,12 +88,15 @@ export class ZipReader {
       unzipSync(bytes, {
         filter(info) {
           if (info.name.endsWith('/')) return false
-          if (entries.size >= MAX_ENTRIES) throw new BackupError('too-large', 'The backup has too many files.')
+          if (entries.size >= MAX_ENTRIES) throw new BackupError('too-large', msg('The backup has too many files.'))
           if (info.originalSize > MAX_ENTRY_BYTES) {
-            throw new BackupError('too-large', `${info.name} is too large to restore (${info.originalSize} bytes).`)
+            throw new BackupError(
+              'too-large',
+              msg('{0} is too large to restore ({1} bytes).', info.name, info.originalSize),
+            )
           }
           total += info.originalSize
-          if (total > MAX_TOTAL_BYTES) throw new BackupError('too-large', 'The backup is too large to restore.')
+          if (total > MAX_TOTAL_BYTES) throw new BackupError('too-large', msg('The backup is too large to restore.'))
           entries.set(info.name, { ...info })
           return false
         },
@@ -119,7 +123,7 @@ export class ZipReader {
     try {
       const out = unzipSync(this.#bytes, { filter: (info) => info.name === name })
       const data = out[name]
-      if (!data) throw new BackupError('damaged', `The backup is missing ${name}.`)
+      if (!data) throw new BackupError('damaged', msg('The backup is missing {0}.', name))
       return data
     } catch (error) {
       throw asBackupError(error, name)
@@ -131,13 +135,13 @@ export class ZipReader {
     try {
       return JSON.parse(text)
     } catch {
-      throw new BackupError('damaged', `${name} in the backup is not readable (invalid JSON).`)
+      throw new BackupError('damaged', msg('{0} in the backup is not readable (invalid JSON).', name))
     }
   }
 }
 
 function asBackupError(error: unknown, name?: string): BackupError {
   if (error instanceof BackupError) return error
-  const where = name === undefined ? '' : ` while reading ${name}`
-  return new BackupError('damaged', `The backup file is damaged or is not a zip archive${where}.`)
+  const where = name === undefined ? '' : msg(' while reading {0}', name)
+  return new BackupError('damaged', msg('The backup file is damaged or is not a zip archive{0}.', where))
 }

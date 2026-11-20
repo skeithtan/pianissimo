@@ -1,3 +1,4 @@
+import { bindScoreLanguage } from '../shared/scoreLanguage'
 /**
  * Portrait page mode (DECISIONS "Portrait page mode"): the score as an engraved page — systems
  * wrapped to the width and stacked, scrolling vertically — with the cursor moving along the
@@ -328,7 +329,6 @@ export class PageView {
 
     this.root = div('pn-strip pn-page pn-instant')
     this.root.setAttribute('role', 'group')
-    this.root.setAttribute('aria-label', 'Score')
     this.scroller = div('pn-page-scroll pn-page-locked')
     this.scroller.setAttribute('data-testid', 'page-scroll')
     this.sheet = div('pn-page-sheet')
@@ -348,29 +348,20 @@ export class PageView {
     const grip = div('pn-cursor-grip')
     grip.setAttribute('data-testid', 'cursor-grip')
     grip.setAttribute('role', 'slider')
-    grip.setAttribute('aria-label', opts.cursorLabel ?? 'Playhead: drag or use arrow keys')
     grip.setAttribute('aria-orientation', 'horizontal')
     grip.tabIndex = 0
     grip.toggleAttribute('inert', true)
     this.cursorGrip = grip
     this.readoutEl = div('pn-cursor-readout')
     this.readoutEl.setAttribute('aria-hidden', 'true')
-    this.cursorBtn = this.button('pn-cursor-action', icon.repeat, opts.cursorActionLabel ?? 'Repeat from here')
+    this.cursorBtn = this.button('pn-cursor-action', icon.repeat, '')
     this.cursorBtn.toggleAttribute('inert', true)
     // Without a handler (Study mode, U72) the button is never shown, so it is not in the DOM.
     this.cursorEl.append(bar, grip, this.readoutEl)
     if (opts.onCursorAction) this.cursorEl.append(this.cursorBtn)
-    this.startHandle = this.button(
-      'pn-loop-ctl pn-handle pn-handle-start',
-      icon.left,
-      'Passage start: drag or use arrow keys',
-    )
-    this.endHandle = this.button(
-      'pn-loop-ctl pn-handle pn-handle-end',
-      icon.right,
-      'Passage end: drag or use arrow keys',
-    )
-    this.clearBtn = this.button('pn-loop-ctl pn-loop-clear', icon.clear, 'Clear passage selection')
+    this.startHandle = this.button('pn-loop-ctl pn-handle pn-handle-start', icon.left, '')
+    this.endHandle = this.button('pn-loop-ctl pn-handle pn-handle-end', icon.right, '')
+    this.clearBtn = this.button('pn-loop-ctl pn-loop-clear', icon.clear, '')
     for (const el of [this.startHandle, this.endHandle, this.clearBtn]) el.style.display = 'none'
     this.overlay.append(this.cursorEl, this.startHandle, this.endHandle, this.clearBtn)
 
@@ -378,14 +369,11 @@ export class PageView {
     this.scroller.append(this.sheet)
     this.root.append(this.scroller)
     if (opts.returnButton !== false) {
-      const ret = this.button(
-        'pn-score-action pn-return',
-        `${icon.back}<span>${escapeText(opts.returnLabel ?? 'Return to current position')}</span>`,
-        '',
-      )
+      const ret = this.button('pn-score-action pn-return', `${icon.back}<span></span>`, '')
       ret.addEventListener('click', () => this.returnToCurrent())
       this.root.append(ret)
     }
+    this.cleanup.push(bindScoreLanguage(this.root, opts))
     this.timingCue = new TimingCue(host, this.root)
 
     this.store = new PageSegmentStore(
@@ -2146,8 +2134,4 @@ export class PageView {
 
 function r2(v: number): number {
   return Math.round(v * 100) / 100
-}
-
-function escapeText(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 }

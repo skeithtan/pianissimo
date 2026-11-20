@@ -1,3 +1,5 @@
+import { effect } from '@preact/signals'
+import { msg, messageLanguage } from '../../i18n/messages'
 import type { TimingDirection } from '../../core/model/practice'
 
 const WIDTH = 158
@@ -11,6 +13,7 @@ export class TimingCue {
   private readonly frame: HTMLDivElement
   private readonly bubble: HTMLDivElement
   private readonly label: HTMLSpanElement
+  private readonly stopLanguage: () => void
   private enabled = false
   private direction: TimingDirection | null = null
   private x = NaN
@@ -46,6 +49,10 @@ export class TimingCue {
     layer.append(this.bubble)
     this.frame.append(score, layer)
     host.append(this.frame)
+    this.stopLanguage = effect(() => {
+      messageLanguage()
+      this.updateText()
+    })
   }
 
   set(direction: TimingDirection | null, enabled: boolean): boolean {
@@ -59,13 +66,17 @@ export class TimingCue {
     if (direction === null) {
       delete this.frame.dataset.timingDirection
       delete this.bubble.dataset.direction
-      this.label.textContent = ''
     } else {
       this.frame.dataset.timingDirection = direction
       this.bubble.dataset.direction = direction
-      this.label.textContent = direction === 'rushing' ? 'Rushing' : 'Dragging'
     }
+    this.updateText()
     return true
+  }
+
+  private updateText(): void {
+    this.label.textContent =
+      this.direction === null ? '' : this.direction === 'rushing' ? msg('Rushing') : msg('Dragging')
   }
 
   get visible(): boolean {
@@ -87,6 +98,7 @@ export class TimingCue {
   }
 
   destroy(): void {
+    this.stopLanguage()
     this.frame.remove()
   }
 }

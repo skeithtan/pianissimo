@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Reads geometry out of one OSMD engraving: graphical notes (for mapping), measure and staff
  * geometry, ottava brackets, clef/key/meter glyph groups, and obstacle boxes for label layout.
@@ -76,15 +77,15 @@ function bbox(el: Element): Box {
 
 export function extract(osmd: OsmdInstance, host: HTMLElement, occurrenceCount: number): Extraction {
   const svg = host.querySelector('svg')
-  if (!svg) throw new Error('OSMD produced no SVG')
+  if (!svg) throw new Error(msg('OSMD produced no SVG'))
   const sheet = osmd.GraphicSheet
   const systems = sheet.MusicPages.flatMap((p) => p.MusicSystems)
   const system = systems[0]
-  if (!system) throw new Error('OSMD produced no music system')
+  if (!system) throw new Error(msg('OSMD produced no music system'))
   if (systems.length !== 1)
-    throw new Error(`OSMD laid the score out in ${systems.length} systems instead of one horizontal staffline`)
+    throw new Error(msg('OSMD laid the score out in {0} systems instead of one horizontal staffline', systems.length))
   if (sheet.MeasureList.length !== occurrenceCount) {
-    throw new Error(`Engraved ${sheet.MeasureList.length} measures for ${occurrenceCount} occurrences`)
+    throw new Error(msg('Engraved {0} measures for {1} occurrences', sheet.MeasureList.length, occurrenceCount))
   }
 
   const staves = staffGeometry(system.StaffLines)
@@ -144,16 +145,16 @@ export interface PageExtraction extends Extraction {
  */
 export function extractPage(osmd: OsmdInstance, host: HTMLElement, occurrenceCount: number): PageExtraction {
   const svg = host.querySelector('svg')
-  if (!svg) throw new Error('OSMD produced no SVG')
+  if (!svg) throw new Error(msg('OSMD produced no SVG'))
   const sheet = osmd.GraphicSheet
   const systems = sheet.MusicPages.flatMap((p) => p.MusicSystems)
-  if (!systems[0]) throw new Error('OSMD produced no music system')
+  if (!systems[0]) throw new Error(msg('OSMD produced no music system'))
   if (sheet.MeasureList.length !== occurrenceCount) {
-    throw new Error(`Engraved ${sheet.MeasureList.length} measures for ${occurrenceCount} occurrences`)
+    throw new Error(msg('Engraved {0} measures for {1} occurrences', sheet.MeasureList.length, occurrenceCount))
   }
   const staffCount = systems[0].StaffLines.length
   if (systems.some((s) => s.StaffLines.length !== staffCount))
-    throw new Error('OSMD systems do not all have the same staves')
+    throw new Error(msg('OSMD systems do not all have the same staves'))
 
   const systemOf = new Map<OsmdMeasure, number>()
   systems.forEach((sys, k) => {
@@ -164,16 +165,16 @@ export function extractPage(osmd: OsmdInstance, host: HTMLElement, occurrenceCou
       const k = m ? systemOf.get(m) : undefined
       if (k !== undefined) return k
     }
-    throw new Error(`Measure ${occ} is in no system`)
+    throw new Error(msg('Measure {0} is in no system', occ))
   })
   for (let o = 1; o < systemOfOcc.length; o++) {
-    if (systemOfOcc[o]! < systemOfOcc[o - 1]!) throw new Error('OSMD systems are not in bar order')
+    if (systemOfOcc[o]! < systemOfOcc[o - 1]!) throw new Error(msg('OSMD systems are not in bar order'))
   }
 
   const { graphics, headEls, noteGroupEls, measures } = readMeasures(sheet)
   const stafflineEls = [...svg.children].filter((c) => c.classList.contains('staffline'))
   if (stafflineEls.length !== systems.length * staffCount)
-    throw new Error(`Expected ${systems.length * staffCount} stafflines, found ${stafflineEls.length}`)
+    throw new Error(msg('Expected {0} stafflines, found {1}', systems.length * staffCount, stafflineEls.length))
 
   const measureEls: Element[][] = []
   for (let staff = 0; staff < staffCount; staff++) {
@@ -271,7 +272,7 @@ function readMeasures(sheet: OsmdInstance['GraphicSheet']): {
   sheet.MeasureList.forEach((row, occ) => {
     const entries = new Map<number, [number, number]>()
     const first = row.find((m): m is OsmdMeasure => m !== undefined)
-    if (!first) throw new Error(`Measure ${occ} has no graphical staves`)
+    if (!first) throw new Error(msg('Measure {0} has no graphical staves', occ))
     const x0 = first.PositionAndShape.AbsolutePosition.x * UNIT
     const x1 = x0 + first.PositionAndShape.Size.width * UNIT
     row.forEach((gm, staff) => {

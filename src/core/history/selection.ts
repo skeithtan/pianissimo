@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import type { AbandonEvent, PassageRange } from '../model/practice'
 import type { HandSelection, MeasureOccurrence } from '../model/score'
 import { createBarLabeler } from './barLabels'
@@ -82,7 +83,7 @@ const HAND_LABEL: Readonly<Record<HandSelection, string>> = {
 /** "Both hands at 0.75×" for a context. */
 export function describeContext(context: MeasureContext): string {
   const speed = Number(context.multiplier.toFixed(2))
-  return `${HAND_LABEL[context.hands]} at ${speed}×`
+  return msg('{0} at {1}×', msg(HAND_LABEL[context.hands]), speed)
 }
 
 /**
@@ -193,7 +194,7 @@ function toSuggestion(
   const progress: SuggestionProgress = {
     clean,
     target: RECOVERY_STREAK,
-    text: `${clean} of ${RECOVERY_STREAK} clean passes`,
+    text: msg('{0} of {1} clean passes', clean, RECOVERY_STREAK),
   }
 
   const evidence =
@@ -202,7 +203,7 @@ function toSuggestion(
       : s.kind === 'traversal'
         ? traversalText(history, s, labeler)
         : restartText(history, s, labeler)
-  const prompt = s.status === 'improved' ? '' : `Practice ${labeler.range(passage.fromOcc, passage.toOcc)}?`
+  const prompt = s.status === 'improved' ? '' : msg('Practice {0}?', labeler.range(passage.fromOcc, passage.toOcc))
 
   return {
     id: s.id,
@@ -225,7 +226,7 @@ function toSuggestion(
 
 function improvedText(core: PassageRange, labeler: BarLabeler): string {
   const where = labeler.range(core.fromOcc, core.toOcc)
-  return `Improved: ${RECOVERY_STREAK} clean passes in a row on ${where}.`
+  return msg('Improved: {0} clean passes in a row on {1}.', RECOVERY_STREAK, where)
 }
 
 /** "Mistakes in bar 13 on 3 of your last 5 comparable passes." */
@@ -237,16 +238,24 @@ function traversalText(history: PieceHistory, s: SuggestionRecord, labeler: BarL
   const withErrors = rows.filter((r) => r.errors > 0)
   const first = withErrors[0]
   if (first === undefined) {
-    return `${capitalize(labeler.range(s.coreFrom, s.coreTo))} was flagged earlier. Recent passes have been clean so far.`
+    return msg(
+      '{0} was flagged earlier. Recent passes have been clean so far.',
+      capitalize(labeler.range(s.coreFrom, s.coreTo)),
+    )
   }
   const uniform = withErrors.every((r) => r.errors === first.errors && r.complete === first.complete)
   if (uniform && withErrors.length === rows.length) {
     const where = labeler.range(s.coreFrom, s.coreTo)
-    return `Mistakes in ${where} on ${first.errors} of your last ${first.complete} comparable passes.`
+    return msg('Mistakes in {0} on {1} of your last {2} comparable passes.', where, first.errors, first.complete)
   }
-  const rest = withErrors.slice(1).map((r) => `bar ${labeler.label(r.occ)} on ${r.errors} of ${r.complete}`)
-  const lead = `Mistakes in bar ${labeler.label(first.occ)} on ${first.errors} of your last ${first.complete} comparable passes`
-  return rest.length === 0 ? `${lead}.` : `${lead}, and in ${rest.join(', and in ')}.`
+  const rest = withErrors.slice(1).map((r) => msg('bar {0} on {1} of {2}', labeler.label(r.occ), r.errors, r.complete))
+  const lead = msg(
+    'Mistakes in bar {0} on {1} of your last {2} comparable passes',
+    labeler.label(first.occ),
+    first.errors,
+    first.complete,
+  )
+  return rest.length === 0 ? `${lead}.` : msg('{0}, and in {1}.', lead, rest.join(msg(', and in ')))
 }
 
 /** "You restarted at bar 13 after mistakes three times." */
@@ -254,23 +263,23 @@ function restartText(history: PieceHistory, s: SuggestionRecord, labeler: BarLab
   const rows = coreOccs(s)
     .map((occ) => ({ occ, events: barAbandons(history, s, occ) }))
     .filter((r) => r.events.length > 0)
-  if (rows.length === 0) return `You restarted at ${labeler.range(s.coreFrom, s.coreTo)} after mistakes.`
+  if (rows.length === 0) return msg('You restarted at {0} after mistakes.', labeler.range(s.coreFrom, s.coreTo))
   const verb = rows.every((r) => r.events.every((e) => e.reason === 'user-stop'))
-    ? 'stopped'
+    ? msg('stopped')
     : rows.every((r) => r.events.every((e) => e.reason === 'user-restart'))
-      ? 'restarted'
-      : 'restarted or stopped'
+      ? msg('restarted')
+      : msg('restarted or stopped')
   if (rows.length === 1 && rows[0] !== undefined) {
-    return `You ${verb} at bar ${labeler.label(rows[0].occ)} after mistakes ${times(rows[0].events.length)}.`
+    return msg('You {0} at bar {1} after mistakes {2}.', verb, labeler.label(rows[0].occ), times(rows[0].events.length))
   }
-  const parts = rows.map((r) => `bar ${labeler.label(r.occ)} ${times(r.events.length)}`)
-  return `You ${verb} after mistakes at ${parts.join(', ')}.`
+  const parts = rows.map((r) => msg('bar {0} {1}', labeler.label(r.occ), times(r.events.length)))
+  return msg('You {0} after mistakes at {1}.', verb, parts.join(', '))
 }
 
 const COUNT_WORDS: Readonly<Record<number, string>> = { 3: 'three', 4: 'four', 5: 'five' }
 
 function times(n: number): string {
-  return `${COUNT_WORDS[n] ?? n} times`
+  return msg('{0} times', msg(COUNT_WORDS[n] ?? String(n)))
 }
 
 function capitalize(text: string): string {

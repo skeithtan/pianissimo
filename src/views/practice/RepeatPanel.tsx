@@ -1,3 +1,4 @@
+import { msg, percentage } from '../../i18n/messages'
 /**
  * Repeat mode's loop controls (spec "Repeating passages"; DECISIONS U10, U14, U22, U61, U77,
  * revised 15 November 2026). Two clusters, which bars and what goal, plus an always-visible exit:
@@ -59,21 +60,21 @@ export function ladderGoals(multiplier: number, goal: number | null): number[] {
 
 /** The ladder's summary on the goal button: "60% → 100%" while climbing, "Goal reached" at the goal. */
 export function ladderLine(ladder: LadderUi, multiplier: number): string {
-  return ladder.done ? 'Goal reached' : `${formatSpeedPercent(multiplier)} → ${formatSpeedPercent(ladder.goal)}`
+  return ladder.done ? msg('Goal reached') : `${formatSpeedPercent(multiplier)} → ${formatSpeedPercent(ladder.goal)}`
 }
 
 /** "Until 3 clean" or "No limit": the target half of the goal button. */
 export function targetLine(target: number | null): string {
-  return target === null ? 'No limit' : `Until ${target} clean`
+  return target === null ? msg('No limit') : msg('Until {0} clean', target)
 }
 
 /** The goal in words, for the options button's accessible name and the ladder note. */
 export function goalWords(target: number | null, ladder: LadderUi | null, multiplier: number): string {
-  const until = target === null ? 'repeat with no limit' : `until ${target} clean in a row`
+  const until = target === null ? msg('repeat with no limit') : msg('until {0} clean in a row', target)
   if (!ladder) return until
   return ladder.done
-    ? `${until}; speed ladder goal reached`
-    : `${until}; speed ladder ${formatSpeedPercent(multiplier)} to ${formatSpeedPercent(ladder.goal)}`
+    ? msg('{0}; speed ladder goal reached', until)
+    : msg('{0}; speed ladder {1} to {2}', until, formatSpeedPercent(multiplier), formatSpeedPercent(ladder.goal))
 }
 
 export interface RepeatOptionsProps {
@@ -94,15 +95,15 @@ export function RepeatOptions({ session, repeatTarget, multiplier, ladder }: Rep
     <div class={styles.repeatOptions} data-testid="repeat-options">
       <div class={styles.optionBlock}>
         <span class={styles.optionLabel} aria-hidden="true">
-          Repeat until · clean passes in a row
+          {msg('Repeat until · clean passes in a row')}
         </span>
         <Segmented
-          label="Repeat until"
+          label={msg('Repeat until')}
           value={repeatTarget === null ? 'none' : String(repeatTarget)}
           options={TARGETS.map((t) => ({
             value: t === null ? 'none' : String(t),
-            label: t === null ? 'No limit' : String(t),
-            title: t === null ? 'Repeat with no limit' : `Until ${t} clean in a row`,
+            label: t === null ? msg('No limit') : String(t),
+            title: t === null ? msg('Repeat with no limit') : msg('Until {0} clean in a row', t),
           }))}
           onChange={(v) => session.setRepeatTarget(v === 'none' ? null : Number(v))}
         />
@@ -110,21 +111,23 @@ export function RepeatOptions({ session, repeatTarget, multiplier, ladder }: Rep
       <div class={styles.optionDivider} />
       <div class={styles.optionBlock}>
         <Toggle
-          label="Speed ladder"
+          label={msg('Speed ladder')}
           checked={ladder !== null}
-          description={ladder ? '' : `Build up from ${formatSpeedPercent(defaultStart)} to 100% of the written tempo.`}
+          description={
+            ladder ? '' : msg('Build up from {0} to 100% of the written tempo.', formatSpeedPercent(defaultStart))
+          }
           onChange={(on) => (on ? setGoal(FULL_SPEED_PERCENT) : session.setLadder(null))}
         />
         {ladder ? (
           <>
             <div class={styles.optionRow}>
               <span class={styles.optionLabel} aria-hidden="true">
-                Up to
+                {msg('Up to')}
               </span>
               <Segmented
-                label="Ladder goal"
+                label={msg('Ladder goal')}
                 value={goalValue}
-                options={goals.map((p) => ({ value: String(p), label: `${p}%` }))}
+                options={goals.map((p) => ({ value: String(p), label: percentage(p / 100) }))}
                 onChange={(v) => {
                   if (v !== goalValue) setGoal(Number(v))
                 }}
@@ -132,8 +135,13 @@ export function RepeatOptions({ session, repeatTarget, multiplier, ladder }: Rep
             </div>
             <p class={styles.optionNote} data-testid="ladder-note">
               {ladder.done
-                ? `Goal reached: ${formatSpeedPercent(ladder.goal)}.`
-                : `Now ${formatSpeedPercent(multiplier)}. Speed rises toward ${formatSpeedPercent(ladder.goal)} after every ${passes} clean passes in a row.`}
+                ? msg('Goal reached: {0}.', formatSpeedPercent(ladder.goal))
+                : msg(
+                    'Now {0}. Speed rises toward {1} after every {2} clean passes in a row.',
+                    formatSpeedPercent(multiplier),
+                    formatSpeedPercent(ladder.goal),
+                    passes,
+                  )}
             </p>
           </>
         ) : null}
@@ -261,7 +269,7 @@ function GoalPopover(
         class={styles.goalButton}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`Repeat goal: ${goalWords(repeatTarget, ladder, multiplier)}. Open repeat options`}
+        aria-label={msg('Repeat goal: {0}. Open repeat options', goalWords(repeatTarget, ladder, multiplier))}
         onClick={() => setOpen((o) => !o)}
       >
         <Icon name="repeat" size={18} />
@@ -284,7 +292,7 @@ function GoalPopover(
           ref={panel}
           class={`${styles.goalPopover} ${fit?.side === 'up' ? styles.goalPopoverUp : ''}`}
           role="dialog"
-          aria-label="Repeat options"
+          aria-label={msg('Repeat options')}
           style={{
             ...popover.style,
             ...(fit ? { left: `${fit.left}px` } : {}),
@@ -321,14 +329,14 @@ export function RepeatPanel(props: RepeatPanelProps) {
     <div
       class={`${styles.repeatPanel} ${layout === 'docked' ? '' : styles.recedes}`}
       role="group"
-      aria-label="Repeat passage"
+      aria-label={msg('Repeat passage')}
       data-testid="repeat-controls"
       data-layout={layout}
       data-leaving={leaving || undefined}
     >
       {layout === 'float' ? (
         <span class={styles.barsLabel} aria-hidden="true">
-          Bars
+          {msg('Bars')}
         </span>
       ) : null}
       <LoopSteppers
@@ -337,7 +345,7 @@ export function RepeatPanel(props: RepeatPanelProps) {
         currentOcc={browsedOcc ?? currentOcc}
         lastOcc={model.occurrences.length - 1}
         onLoopChange={(range) => session.setSelection({ range })}
-        barLabel={(occ) => `Bar ${barLabel(model, occ)}`}
+        barLabel={(occ) => msg('Bar {0}', barLabel(model, occ))}
         edgeLabel={(range, edge) => edgeText(model, range, edge, hands)}
         shortLabel={(range, edge) => edgeShortText(model, range, edge, hands)}
       />
@@ -356,8 +364,8 @@ export function RepeatPanel(props: RepeatPanelProps) {
           class={styles.moreButton}
           aria-haspopup="dialog"
           aria-expanded={optionsOpen ?? false}
-          aria-label={`Repeat options: ${goalWords(repeatTarget, ladder, multiplier)}`}
-          title="Repeat options"
+          aria-label={msg('Repeat options: {0}', goalWords(repeatTarget, ladder, multiplier))}
+          title={msg('Repeat options')}
           onClick={() => onOpenOptions?.()}
         >
           <Icon name="more" size={22} />
@@ -368,8 +376,8 @@ export function RepeatPanel(props: RepeatPanelProps) {
       <button
         type="button"
         class={styles.iconButton}
-        aria-label="Exit repeat"
-        title="Exit repeat"
+        aria-label={msg('Exit repeat')}
+        title={msg('Exit repeat')}
         onClick={() => session.setSelection({ range: null })}
       >
         <Icon name="close" size={22} />

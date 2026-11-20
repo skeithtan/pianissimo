@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The teacher's corrections after a scored attempt: one red-pen mark per onset group that went
  * wrong, came too soon or too late (or, in rhythm mode, was missed), was spread out or re-attacked a tie, built from the record's
@@ -100,18 +101,18 @@ function classify(
   const wrong = g.wrongPitches
     ? g.wrongPitches.length
     : Math.max(0, g.wrongAttacks - g.earlyAttacks - (g.tieEndPresses ?? 0))
-  if (wrong > 0) return { kind: 'wrong', text: wrong > 1 ? 'Wrong notes' : 'Wrong note' }
-  if ((g.tieEndPresses ?? 0) > 0) return { kind: 'tie', text: 'Tied, hold it' }
-  if ((g.spreadMs ?? 0) >= SPREAD_MARK_MS && group.pitches.length >= 2) return { kind: 'spread', text: 'Together' }
+  if (wrong > 0) return { kind: 'wrong', text: wrong > 1 ? msg('Wrong notes') : msg('Wrong note') }
+  if ((g.tieEndPresses ?? 0) > 0) return { kind: 'tie', text: msg('Tied, hold it') }
+  if ((g.spreadMs ?? 0) >= SPREAD_MARK_MS && group.pitches.length >= 2) return { kind: 'spread', text: msg('Together') }
   if (strictToleranceMs !== undefined) {
     // Rhythm mode: the music never waited, so lateness is the offset from the scheduled time.
-    if (g.missed === true) return { kind: 'missed', text: 'Missed' }
-    if (g.earlyAttacks > 0) return { kind: 'early', text: 'Too soon' }
-    if ((g.offsetMs ?? 0) > strictToleranceMs) return { kind: 'late', text: 'Too late' }
+    if (g.missed === true) return { kind: 'missed', text: msg('Missed') }
+    if (g.earlyAttacks > 0) return { kind: 'early', text: msg('Too soon') }
+    if ((g.offsetMs ?? 0) > strictToleranceMs) return { kind: 'late', text: msg('Too late') }
     return null
   }
-  if (g.earlyAttacks > 0) return { kind: 'early', text: 'Too soon' }
-  if (g.lateMs >= LATE_MARK_MS) return { kind: 'late', text: 'Too late' }
+  if (g.earlyAttacks > 0) return { kind: 'early', text: msg('Too soon') }
+  if (g.lateMs >= LATE_MARK_MS) return { kind: 'late', text: msg('Too late') }
   return null
 }
 
@@ -131,7 +132,7 @@ function accidentalSlip(pitch: number, group: Group, score: CorrectionScore, nam
     const target = labelFor(note, shown)
     const wrong = pressed.find((l) => l.name === target.name)
     if (!wrong) continue
-    return `${target.name}${target.accidental || NATURAL}${target.octave ?? ''}, not ${wrong.text}`
+    return msg('{0}{1}{2}, not {3}', target.name, target.accidental || NATURAL, target.octave ?? '', wrong.text)
   }
   return null
 }
@@ -146,5 +147,5 @@ function octaveSlip(pitch: number, group: Group): string | null {
     if (d < best || (d === best && required < target!)) target = required
   }
   if (target === null) return null
-  return `Wrong octave ${target > pitch ? '↑' : '↓'}`
+  return msg('Wrong octave {0}', target > pitch ? '↑' : '↓')
 }

@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import type { KeyboardLayout } from './layout'
 import { ICON_WIDTH, hasIcon, type PlacedLabel } from './labels'
 import { BLACK_KEY_RATIO, CHIP_HEIGHT, KEYS_TOP, ROLL_GAP, checkPath, chipTop, crossPath, handAttr } from './metrics'
@@ -124,7 +125,7 @@ export function RollArrow({
   const back = direction === 'up' ? -1 : 1
   return (
     <g class={styles.roll} data-part="roll" data-direction={direction}>
-      <title>{direction === 'up' ? 'Roll upward' : 'Roll downward'}</title>
+      <title>{direction === 'up' ? msg('Roll upward') : msg('Roll downward')}</title>
       <path d={`M${low} ${y}H${high}`} />
       <path d={`M${tip + back * 5} ${y - 3.5}L${tip} ${y}L${tip + back * 5} ${y + 3.5}`} />
     </g>

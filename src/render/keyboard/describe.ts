@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import type { GuideKey, GuideKeyState } from './types'
 
 const GROUPS: ReadonlyArray<readonly [GuideKeyState, string]> = [
@@ -13,14 +14,14 @@ const GROUPS: ReadonlyArray<readonly [GuideKeyState, string]> = [
  * what the app is sounding, the keys held and any wrong key, low to high, plus the marked roll.
  */
 export function describeGuide(keys: readonly GuideKey[], rollDirection: 'up' | 'down' | undefined): string {
-  const parts = ['Keyboard guide.']
+  const parts = [msg('Keyboard guide.')]
   const sorted = [...keys].sort((a, b) => a.midi - b.midi)
   for (const [state, title] of GROUPS) {
     const names = sorted.filter((k) => k.state === state).map((k) => k.label)
-    if (names.length) parts.push(`${title}: ${names.join(', ')}.`)
+    if (names.length) parts.push(`${msg(title)}: ${names.join(', ')}.`)
   }
-  if (!sorted.some((k) => k.state === 'target' || k.state === 'accepted')) parts.push('No keys to play.')
-  if (rollDirection === 'up') parts.push('Roll upward, low to high.')
-  if (rollDirection === 'down') parts.push('Roll downward, high to low.')
+  if (!sorted.some((k) => k.state === 'target' || k.state === 'accepted')) parts.push(msg('No keys to play.'))
+  if (rollDirection === 'up') parts.push(msg('Roll upward, low to high.'))
+  if (rollDirection === 'down') parts.push(msg('Roll downward, high to low.'))
   return parts.join(' ')
 }

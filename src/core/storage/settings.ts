@@ -1,3 +1,4 @@
+import { LANGUAGES, type Language } from '../model/language'
 import type { ClefKey } from '../model/score'
 import {
   DEFAULT_SETTINGS,
@@ -242,6 +243,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
     },
     mic: { follow: bool(mic['follow'], d.mic.follow) },
     view: {
+      language: oneOf(view['language'], ['system', ...(Object.keys(LANGUAGES) as Language[])], d.view.language),
       zoom: num(view['zoom'], d.view.zoom, 0.1, 20),
       pageZoom: num(view['pageZoom'], d.view.pageZoom, 0.1, 20),
       theme: oneOf(view['theme'], ['system', 'light', 'dark'], d.view.theme),

@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Library and Import (spec "Main user journey" 1–2, "MusicXML score import", "Storage and
  * recovery", "Suggested practice" in the Library). The first screen, bundled with the shell:
@@ -54,7 +55,7 @@ function LibraryPage() {
   const startImport = (file: File) => {
     flow?.close()
     const next = new ImportFlow(deps, (piece) => {
-      pushNotice({ kind: 'success', text: `“${piece.title}” is in your library.` })
+      pushNotice({ kind: 'success', text: msg('“{0}” is in your library.', piece.title) })
       // Add and open opens the piece: its row says "Opened", like every other way of opening it.
       void model.markOpened(piece.id, piece.createdAt + 1).then(() => {
         void model.refresh()
@@ -78,7 +79,7 @@ function LibraryPage() {
   return (
     <div class={styles.page}>
       <header class={styles.header}>
-        <h1>Library</h1>
+        <h1>{msg('Library')}</h1>
         {pieces.length > 0 ? (
           <div>
             <FileButton
@@ -88,21 +89,21 @@ function LibraryPage() {
               disabled={unavailable}
               onFile={(f) => startImport(f)}
             >
-              Add score
+              {msg('Add score')}
             </FileButton>
           </div>
         ) : null}
       </header>
 
-      {state.status === 'loading' ? <p class={styles.loading}>Opening your library…</p> : null}
-      {state.status === 'unavailable' ? <Notice tone="warning">{state.message}</Notice> : null}
+      {state.status === 'loading' ? <p class={styles.loading}>{msg('Opening your library…')}</p> : null}
+      {state.status === 'unavailable' ? <Notice tone="warning">{msg(state.message)}</Notice> : null}
 
       {state.status !== 'loading' && pieces.length === 0 ? (
         <EmptyState accept={accept} disabled={unavailable} onFile={(f) => startImport(f)} />
       ) : null}
 
       {pieces.length > 0 ? (
-        <ul class={styles.list} aria-label="Pieces">
+        <ul class={styles.list} aria-label={msg('Pieces')}>
           {ordered.map((piece) => (
             <PieceCard key={piece.id} piece={piece} model={model} featured={continuing?.id === piece.id} />
           ))}
@@ -132,17 +133,17 @@ function EmptyState({
 }) {
   return (
     <section class={styles.empty} aria-labelledby="library-empty">
-      <h2 id="library-empty">Your library is empty</h2>
+      <h2 id="library-empty">{msg('Your library is empty')}</h2>
       <div>
         <FileButton variant="primary" icon="plus" accept={accept} disabled={disabled} onFile={onFile}>
-          Add score
+          {msg('Add score')}
         </FileButton>
       </div>
-      <p>Choose a MusicXML file: .musicxml, .mxl, or .xml.</p>
+      <p>{msg('Choose a MusicXML file: .musicxml, .mxl, or .xml.')}</p>
       <details class={styles.help}>
-        <summary>Help adding a score</summary>
-        <p>Most notation programs export MusicXML from File → Export. A PDF or photo cannot be imported.</p>
-        <p>Moving from another device? Restore a backup from Settings → Backup.</p>
+        <summary>{msg('Help adding a score')}</summary>
+        <p>{msg('Most notation programs export MusicXML from File → Export. A PDF or photo cannot be imported.')}</p>
+        <p>{msg('Moving from another device? Restore a backup from Settings → Backup.')}</p>
       </details>
     </section>
   )

@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import type { ResultDetails } from '../../app/session'
 import { TimingDrift, timingFeedbackThreshold } from '../../app/session/timingDrift'
 import { barLabel, DEFAULT_RHYTHM_TOLERANCE_MS } from '../../core/engine'
@@ -81,8 +82,8 @@ export function buildTimingReview(details: ResultDetails): TimingReviewData | nu
 }
 
 export function timingBarTitle(bar: TimingBar): string {
-  if (bar.direction === 'rushing') return 'Rushing'
-  return bar.direction === 'dragging' ? 'Dragging' : 'Timing slipped'
+  if (bar.direction === 'rushing') return msg('Rushing')
+  return bar.direction === 'dragging' ? msg('Dragging') : msg('Timing slipped')
 }
 
 export function timingBarDetail(bar: TimingBar, nearBeat: number): string {
@@ -99,14 +100,14 @@ export function timingBarDetail(bar: TimingBar, nearBeat: number): string {
   }
   const parts: string[] = []
   if (early.length) parts.push(offsetRange(early, 'early'))
-  if (onBeat) parts.push(`${onBeat} on the beat`)
+  if (onBeat) parts.push(msg('{0} on the beat', onBeat))
   if (late.length) parts.push(offsetRange(late, 'late'))
-  if (missed) parts.push(`${missed} missed`)
+  if (missed) parts.push(msg('{0} missed', missed))
   return parts.join(' · ')
 }
 
 function offsetRange(values: readonly number[], direction: 'early' | 'late'): string {
   const min = Math.min(...values)
   const max = Math.max(...values)
-  return `${values.length} ${direction}, by ${min === max ? min : `${min}–${max}`} ms`
+  return msg('{0} {1}, by {2} ms', values.length, direction, min === max ? min : `${min}–${max}`)
 }

@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Export and restore (spec "Storage and recovery": provide export and restore so browser
  * storage is not the only copy; they transfer the library and practice history between the
@@ -222,21 +223,25 @@ interface ParsedBackup {
 
 function parseManifest(zip: ZipReader): BackupManifest {
   if (!zip.has(FILE.manifest)) {
-    throw new BackupError('not-a-backup', 'This zip file is not a Pianissimo backup (it has no manifest.json).')
+    throw new BackupError('not-a-backup', msg('This zip file is not a Pianissimo backup (it has no manifest.json).'))
   }
   const raw = zip.json(FILE.manifest)
   if (!isObj(raw) || raw['format'] !== BACKUP_FORMAT) {
-    throw new BackupError('not-a-backup', 'This file is not a Pianissimo backup.')
+    throw new BackupError('not-a-backup', msg('This file is not a Pianissimo backup.'))
   }
   const version = raw['formatVersion']
   if (!isInt(version) || version < 1) {
-    throw new BackupError('damaged', 'The backup manifest has no valid format version.')
+    throw new BackupError('damaged', msg('The backup manifest has no valid format version.'))
   }
   if (version > BACKUP_FORMAT_VERSION) {
-    const app = isStr(raw['appVersion']) ? ` (made by Pianissimo ${raw['appVersion']})` : ''
+    const app = isStr(raw['appVersion']) ? msg(' (made by Pianissimo {0})', raw['appVersion']) : ''
     throw new BackupError(
       'unsupported-version',
-      `This backup${app} uses format ${version}, which this version of Pianissimo cannot read. Update the app and try again.`,
+      msg(
+        'This backup{0} uses format {1}, which this version of Pianissimo cannot read. Update the app and try again.',
+        app,
+        version,
+      ),
     )
   }
   const counts = raw['counts']
@@ -251,7 +256,7 @@ function parseManifest(zip: ZipReader): BackupManifest {
     'settings',
   ]
   if (!isObj(counts) || !keys.every((k) => isInt(counts[k]) && (counts[k] as number) >= 0)) {
-    throw new BackupError('damaged', 'The backup manifest has no valid record counts.')
+    throw new BackupError('damaged', msg('The backup manifest has no valid record counts.'))
   }
   return {
     format: BACKUP_FORMAT,
@@ -264,9 +269,9 @@ function parseManifest(zip: ZipReader): BackupManifest {
 }
 
 function list<T>(zip: ZipReader, file: string, check: (v: unknown) => string | null, problems: string[]): T[] {
-  if (!zip.has(file)) throw new BackupError('damaged', `The backup is incomplete: ${file} is missing.`)
+  if (!zip.has(file)) throw new BackupError('damaged', msg('The backup is incomplete: {0} is missing.', file))
   const raw = zip.json(file)
-  if (!Array.isArray(raw)) throw new BackupError('damaged', `${file} in the backup is not a list.`)
+  if (!Array.isArray(raw)) throw new BackupError('damaged', msg('{0} in the backup is not a list.', file))
   raw.forEach((item, i) => {
     const problem = check(item)
     if (problem !== null && problems.length < MAX_PROBLEMS) problems.push(`${file}[${i}] ${problem}`)
@@ -277,14 +282,14 @@ function list<T>(zip: ZipReader, file: string, check: (v: unknown) => string | n
 /** Read and validate the whole backup without touching storage. */
 async function readBackup(bytes: Uint8Array): Promise<ParsedBackup> {
   if (!looksLikeZip(bytes)) {
-    throw new BackupError('not-a-backup', 'This file is not a Pianissimo backup (it is not a zip archive).')
+    throw new BackupError('not-a-backup', msg('This file is not a Pianissimo backup (it is not a zip archive).'))
   }
   const zip = new ZipReader(bytes)
   const manifest = parseManifest(zip)
   const problems: string[] = []
 
   if (!zip.has(FILE.settings))
-    throw new BackupError('damaged', `The backup is incomplete: ${FILE.settings} is missing.`)
+    throw new BackupError('damaged', msg('The backup is incomplete: {0} is missing.', FILE.settings))
   const settingsFile = zip.json(FILE.settings)
   const settings = isObj(settingsFile) ? (settingsFile['settings'] ?? null) : null
 
@@ -299,25 +304,32 @@ async function readBackup(bytes: Uint8Array): Promise<ParsedBackup> {
   const mismatches: Array<[string, number, number]> = [
     ['pieces', pieces.length, counts.pieces],
     ['attempts', attempts.length, counts.attempts],
-    ['measure histories', bars.length, counts.measureHistory],
-    ['suggestion records', suggestionStates.length, counts.suggestionState],
-    ['abandon records', abandons.length, counts.abandonEvents],
+    [msg('measure histories'), bars.length, counts.measureHistory],
+    [msg('suggestion records'), suggestionStates.length, counts.suggestionState],
+    [msg('abandon records'), abandons.length, counts.abandonEvents],
     ['sources', sources.length, counts.sources],
   ]
   for (const [what, actual, expected] of mismatches) {
     if (actual !== expected) {
-      throw new BackupError('damaged', `The backup is incomplete: it lists ${expected} ${what} but contains ${actual}.`)
+      throw new BackupError(
+        'damaged',
+        msg('The backup is incomplete: it lists {0} {1} but contains {2}.', expected, what, actual),
+      )
     }
   }
   if ((settings === null ? 0 : 1) !== counts.settings) {
-    throw new BackupError('damaged', 'The backup is incomplete: its settings do not match the manifest.')
+    throw new BackupError('damaged', msg('The backup is incomplete: its settings do not match the manifest.'))
   }
 
   const packageFiles = zip.names('packages/')
   if (packageFiles.length !== counts.packages) {
     throw new BackupError(
       'damaged',
-      `The backup is incomplete: it lists ${counts.packages} score packages but contains ${packageFiles.length}.`,
+      msg(
+        'The backup is incomplete: it lists {0} score packages but contains {1}.',
+        counts.packages,
+        packageFiles.length,
+      ),
     )
   }
   const packages = new Map<string, string>()
@@ -330,7 +342,7 @@ async function readBackup(bytes: Uint8Array): Promise<ParsedBackup> {
     }
     const id = (pkg as ScorePackage).model.scoreVersionId
     if (name !== `packages/${entryName(id)}.json`) {
-      if (problems.length < MAX_PROBLEMS) problems.push(`${name}: file name does not match its score version`)
+      if (problems.length < MAX_PROBLEMS) problems.push(msg('{0}: file name does not match its score version', name))
       continue
     }
     packages.set(id, name)
@@ -340,17 +352,17 @@ async function readBackup(bytes: Uint8Array): Promise<ParsedBackup> {
     if (sourceMetaProblem(meta) !== null) continue
     const size = zip.size(meta.file)
     if (size === undefined) {
-      problems.push(`${FILE.sources}: ${meta.fileName} has no data in the backup`)
+      problems.push(msg('{0}: {1} has no data in the backup', FILE.sources, meta.fileName))
       continue
     }
     if (size !== meta.size) {
-      problems.push(`${meta.fileName}: size does not match the backup index`)
+      problems.push(msg('{0}: size does not match the backup index', meta.fileName))
       continue
     }
     if (meta.bytesSha256 !== undefined) {
       const actual = await sha256Hex(zip.read(meta.file))
       if (actual !== undefined && actual !== meta.bytesSha256) {
-        problems.push(`${meta.fileName}: the stored copy is damaged (checksum mismatch)`)
+        problems.push(msg('{0}: the stored copy is damaged (checksum mismatch)', meta.fileName))
       }
     }
   }
@@ -358,7 +370,7 @@ async function readBackup(bytes: Uint8Array): Promise<ParsedBackup> {
   if (problems.length > 0) {
     throw new BackupError(
       'invalid',
-      `The backup contains records this version cannot read (${problems[0]}). Nothing was restored.`,
+      msg('The backup contains records this version cannot read ({0}). Nothing was restored.', problems[0]),
       problems.slice(0, MAX_PROBLEMS),
     )
   }
@@ -531,7 +543,7 @@ export async function restoreBackup(db: Db, bytes: Uint8Array, options: RestoreO
 
     const restorable = backup.pieces.filter((p) => {
       if (localPackages.has(p.scoreVersionId)) return true
-      warnings.push(`"${p.title}" was skipped: its score data is not in the backup.`)
+      warnings.push(msg('"{0}" was skipped: its score data is not in the backup.', p.title))
       return false
     })
     stores.pieces.skipped = backup.pieces.length - restorable.length

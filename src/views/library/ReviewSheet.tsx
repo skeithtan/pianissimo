@@ -1,3 +1,5 @@
+import { importMessage } from '../../i18n/importMessage'
+import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * "Review hands and tempo" for a stored piece (DECISIONS L5): the import summary again, with the
  * hand of every voice editable and, when the user entered the tempo at import, that practice
@@ -34,7 +36,7 @@ export function ReviewSheet({
   onClose: () => void
 }) {
   return (
-    <Sheet title={`Hands and tempo of “${piece.title}”`} open={open} onClose={onClose} wide>
+    <Sheet title={msg('Hands and tempo of “{0}”', piece.title)} open={open} onClose={onClose} wide>
       {/* The sheet mounts its body only while shown (and fading out), so the package loads on open. */}
       <ReviewBody piece={piece} model={model} onClose={onClose} />
     </Sheet>
@@ -58,7 +60,7 @@ function ReviewBody({ piece, model, onClose }: { piece: PieceRecord; model: Libr
     return (
       <div class={styles.flow} aria-busy="true">
         <p class={styles.stage} role="status">
-          Opening the score…
+          {msg('Opening the score…')}
         </p>
       </div>
     )
@@ -66,10 +68,10 @@ function ReviewBody({ piece, model, onClose }: { piece: PieceRecord; model: Libr
   if (load.kind === 'failed') {
     return (
       <div class={styles.flow}>
-        <Notice tone="danger">{load.message}</Notice>
+        <Notice tone="danger">{importMessage(load.message)}</Notice>
         <div class={styles.flowActions}>
           <span />
-          <Button onClick={onClose}>Close</Button>
+          <Button onClick={onClose}>{msg('Close')}</Button>
         </div>
       </div>
     )
@@ -93,7 +95,10 @@ function ReviewForm({
   const [draft, setDraft] = useState<ReviewDraft>(() => storedDraft(summary, pkg.model, piece.userTempo))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const gate = useMemo(() => reviewGate(summary, draft, true, tempoEntry), [summary, draft, tempoEntry])
+  const gate = useMemo(
+    () => reviewGate(summary, draft, true, tempoEntry),
+    [summary, draft, tempoEntry, messageLanguage()],
+  )
   const changes = useMemo(() => storedReviewChanges(summary, draft, piece.userTempo), [summary, draft, piece.userTempo])
   const changed = changes.hands || changes.tempo
 
@@ -104,11 +109,15 @@ function ReviewForm({
       const fin = finalizeStoredReview(pkg.model, summary, draft, piece.userTempo)
       await model.saveReview(piece, pkg, fin)
       const what =
-        changes.hands && changes.tempo ? 'hands and practice tempo' : changes.hands ? 'hands' : 'practice tempo'
-      pushNotice({ kind: 'success', text: `Saved the ${what} of “${piece.title}”.` })
+        changes.hands && changes.tempo
+          ? msg('hands and practice tempo')
+          : changes.hands
+            ? 'hands'
+            : msg('practice tempo')
+      pushNotice({ kind: 'success', text: msg('Saved the {0} of “{1}”.', what, piece.title) })
       onClose()
     } catch (e) {
-      setError(`The changes could not be saved: ${message(e)} Your piece is unchanged.`)
+      setError(msg('The changes could not be saved: {0} Your piece is unchanged.', message(e)))
       setSaving(false)
     }
   }
@@ -116,9 +125,11 @@ function ReviewForm({
   return (
     <div class={styles.flow}>
       <Notice tone="info">
-        Changing which hand plays a voice{tempoEntry ? ', or your practice tempo,' : ''} starts a separate practice
-        history and separate results for the new setting. Earlier results stay as they are and are never mixed with the
-        new ones. Your resume position is kept.
+        {msg('Changing which hand plays a voice')}
+        {tempoEntry ? msg(', or your practice tempo,') : ''}{' '}
+        {msg(
+          'starts a separate practice history and separate results for the new setting. Earlier results stay as they are and are never mixed with the new ones. Your resume position is kept.',
+        )}
       </Notice>
       <ImportSummaryView
         summary={summary}
@@ -132,7 +143,7 @@ function ReviewForm({
         {error ? <Notice tone="danger">{error}</Notice> : null}
         {!gate.canSave ? (
           <div role="status">
-            <strong>Before saving:</strong>
+            <strong>{msg('Before saving:')}</strong>
             <ul class={styles.blockers}>
               {gate.blockers.map((b) => (
                 <li key={b}>{b}</li>
@@ -142,7 +153,7 @@ function ReviewForm({
         ) : null}
         <div class={styles.flowActions}>
           <Button onClick={onClose} disabled={saving}>
-            Cancel
+            {msg('Cancel')}
           </Button>
           <Button
             variant="primary"
@@ -150,7 +161,7 @@ function ReviewForm({
             disabled={!gate.canSave || !changed || saving}
             onClick={() => void save()}
           >
-            {saving ? 'Saving…' : 'Save changes'}
+            {saving ? msg('Saving…') : msg('Save changes')}
           </Button>
         </div>
       </div>

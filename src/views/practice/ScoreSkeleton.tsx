@@ -1,3 +1,4 @@
+import { msg, percentage } from '../../i18n/messages'
 /** Lightweight score placeholders while engraving loads. No notation or layout work (U62). */
 import type { ScoreViewMode } from './env'
 import styles from './scoreSkeleton.module.css'
@@ -28,7 +29,7 @@ export function ScoreSkeleton({ mode, fraction }: { mode: ScoreViewMode; fractio
         ))}
       </div>
       <div class={styles.status} role="status">
-        Preparing the score… {fraction > 0 ? `${Math.round(fraction * 100)}%` : ''}
+        {msg('Preparing the score…')} {fraction > 0 ? percentage(Math.round(fraction * 100) / 100) : ''}
       </div>
     </div>
   )

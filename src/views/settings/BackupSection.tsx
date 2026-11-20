@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Backup (spec "Storage and recovery": export and restore so browser storage is not the only
  * copy, and to move between computer and iPad), plus the storage status line. Kept in Settings
@@ -33,11 +34,11 @@ export function BackupSection() {
     setExporting(true)
     try {
       const name = await model.exportBackup()
-      pushNotice({ kind: 'success', text: `Backup saved as ${name}.` })
+      pushNotice({ kind: 'success', text: msg('Backup saved as {0}.', name) })
     } catch (e) {
       pushNotice({
         kind: 'error',
-        text: `The backup could not be created: ${e instanceof Error ? e.message : String(e)}`,
+        text: msg('The backup could not be created: {0}', e instanceof Error ? e.message : String(e)),
       })
     } finally {
       setExporting(false)
@@ -60,26 +61,27 @@ export function BackupSection() {
 
   return (
     <>
-      <Group title="Export">
+      <Group title={msg('Export')}>
         <Help>
-          Your scores, results and settings live only in this browser. Export a backup to keep a copy or to move your
-          library between your computer and your iPad.
+          {msg(
+            'Your scores, results and settings live only in this browser. Export a backup to keep a copy or to move your library between your computer and your iPad.',
+          )}
         </Help>
         <div class={styles.backupActions}>
           <Button icon="download" disabled={disabled || exporting} onClick={() => void runExport()}>
-            {exporting ? 'Preparing backup…' : 'Export backup'}
+            {exporting ? msg('Preparing backup…') : msg('Export backup')}
           </Button>
         </div>
         <StorageStatusLine status={model.storageStatus.value} />
       </Group>
 
-      <Group title="Restore">
+      <Group title={msg('Restore')}>
         {pending === null ? (
           <>
             <Help>
-              Pieces, results and practice history from the backup are added to this device. Nothing here is deleted,
-              and where both have the same piece the more recent one is kept. Settings are replaced by the backup's,
-              except this device's piano connection.
+              {msg(
+                "Pieces, results and practice history from the backup are added to this device. Nothing here is deleted, and where both have the same piece the more recent one is kept. Settings are replaced by the backup's, except this device's piano connection.",
+              )}
             </Help>
             <div class={styles.backupActions}>
               <FileButton
@@ -91,7 +93,7 @@ export function BackupSection() {
                   setPending(file)
                 }}
               >
-                Restore from backup…
+                {msg('Restore from backup…')}
               </FileButton>
             </div>
           </>
@@ -100,20 +102,20 @@ export function BackupSection() {
             <p class={styles.fileName}>{pending.name}</p>
             {outcome === null ? (
               <>
-                <Help>Restore this backup? Nothing on this device is deleted.</Help>
+                <Help>{msg('Restore this backup? Nothing on this device is deleted.')}</Help>
                 <div class={styles.backupActions}>
                   <Button onClick={finish} disabled={restoring}>
-                    Cancel
+                    {msg('Cancel')}
                   </Button>
                   <Button variant="primary" icon="upload" disabled={restoring} onClick={() => void runRestore()}>
-                    {restoring ? 'Restoring…' : 'Restore'}
+                    {restoring ? msg('Restoring…') : msg('Restore')}
                   </Button>
                 </div>
               </>
             ) : outcome.ok ? (
               <>
                 <Notice tone="success">
-                  <strong>Backup restored.</strong>
+                  <strong>{msg('Backup restored.')}</strong>
                   <ul class={styles.reportList}>
                     {describeRestore(outcome.report).map((line) => (
                       <li key={line}>{line}</li>
@@ -131,14 +133,14 @@ export function BackupSection() {
                 ) : null}
                 <div class={styles.backupActions}>
                   <Button variant="primary" onClick={finish}>
-                    Done
+                    {msg('Done')}
                   </Button>
                 </div>
               </>
             ) : (
               <>
                 <Notice tone="danger">
-                  <strong>This backup could not be restored. Nothing was changed.</strong> {outcome.message}
+                  <strong>{msg('This backup could not be restored. Nothing was changed.')}</strong> {outcome.message}
                   {outcome.problems.length ? (
                     <ul class={styles.reportList}>
                       {outcome.problems.map((p) => (
@@ -148,7 +150,7 @@ export function BackupSection() {
                   ) : null}
                 </Notice>
                 <div class={styles.backupActions}>
-                  <Button onClick={finish}>Close</Button>
+                  <Button onClick={finish}>{msg('Close')}</Button>
                 </div>
               </>
             )}

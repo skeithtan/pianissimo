@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Suggested practice for one piece in the Library (spec "Suggested practice"): the shared
  * `SuggestionList` (also used by Results) over `PieceSuggestionsModel`, which does loading,
@@ -40,11 +41,11 @@ export function SuggestionOptions({ model, onClose }: { model: PieceSuggestionsM
   const state = model.state.value
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  if (state.status === 'loading') return <p>Loading suggestion preferences…</p>
+  if (state.status === 'loading') return <p>{msg('Loading suggestion preferences…')}</p>
   if (state.status === 'error') {
     return (
       <Button variant="ghost" onClick={() => void model.load()}>
-        Retry loading suggestions
+        {msg('Retry loading suggestions')}
       </Button>
     )
   }
@@ -57,7 +58,7 @@ export function SuggestionOptions({ model, onClose }: { model: PieceSuggestionsM
           openSettings()
         }}
       >
-        Suggestions are turned off in Settings
+        {msg('Suggestions are turned off in Settings')}
       </Button>
     )
   }
@@ -68,7 +69,7 @@ export function SuggestionOptions({ model, onClose }: { model: PieceSuggestionsM
       await model.setDisabled(!state.selection.disabled)
       onClose()
     } catch {
-      setError('The suggestion preference could not be saved. Try again.')
+      setError(msg('The suggestion preference could not be saved. Try again.'))
     } finally {
       setBusy(false)
     }
@@ -76,7 +77,9 @@ export function SuggestionOptions({ model, onClose }: { model: PieceSuggestionsM
   return (
     <>
       <Button variant="ghost" disabled={busy} onClick={() => void toggle()}>
-        {state.selection.disabled ? 'Turn on suggestions for this piece' : 'Turn off suggestions for this piece'}
+        {state.selection.disabled
+          ? msg('Turn on suggestions for this piece')
+          : msg('Turn off suggestions for this piece')}
       </Button>
       {error ? <p role="alert">{error}</p> : null}
     </>

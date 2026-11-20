@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The practice session coordinator (WP10): wires MIDI input → engine → transport → renderer →
  * storage for one piece. Framework-free; every dependency is injected (`SessionDeps`).
@@ -2295,8 +2296,8 @@ export class PracticeSession {
    * or (What you played) no key of that bar was captured.
    */
   snippetBlocked(attemptId: string, occ: number, kind: SnippetKind): string | null {
-    if (this.#lastResult?.id !== attemptId || !this.#resultTimeline) return 'This pass is over.'
-    if (this.#play?.mic) return 'Not while the microphone follows.'
+    if (this.#lastResult?.id !== attemptId || !this.#resultTimeline) return msg('This pass is over.')
+    if (this.#play?.mic) return msg('Not while the microphone follows.')
     if (
       this.#engine.state.phase === 'running' ||
       this.#countIn ||
@@ -2305,10 +2306,10 @@ export class PracticeSession {
       // A gated transport waiting at the next pass's first note plays nothing: not "playing".
       (this.#accomp?.state === 'playing' && this.#accomp.holdingGate === null)
     )
-      return 'Plays once the music stops.'
-    if (!this.#destination()) return 'No sound output: connect the piano or allow this device to play.'
+      return msg('Plays once the music stops.')
+    if (!this.#destination()) return msg('No sound output: connect the piano or allow this device to play.')
     if (kind === 'played' && this.#playedSnippet(attemptId, occ).notes.length === 0)
-      return 'No keys were captured in this bar.'
+      return msg('No keys were captured in this bar.')
     return null
   }
 
@@ -2324,7 +2325,7 @@ export class PracticeSession {
     const blocked = this.snippetBlocked(attemptId, occ, kind)
     if (blocked) return blocked
     const output = await this.#ensureOutput()
-    if (!output) return 'No sound output: connect the piano or allow this device to play.'
+    if (!output) return msg('No sound output: connect the piano or allow this device to play.')
     // The tap's await may have let the next pass start.
     const again = this.snippetBlocked(attemptId, occ, kind)
     if (again) return again
@@ -2332,7 +2333,7 @@ export class PracticeSession {
       kind === 'played'
         ? this.#playedSnippet(attemptId, occ)
         : writtenSnippet(this.#model, this.#tempo, this.#resultMultiplier(), occ)
-    if (snippet.notes.length === 0) return 'Nothing to play in this bar.'
+    if (snippet.notes.length === 0) return msg('Nothing to play in this bar.')
     const echo = output.kind === 'midi' && this.#settings.route.echo !== 'none'
     const player = new SnippetPlayer(snippet, output, this.#deps.clock, this.#deps.timers, () => {
       if (this.#snippet?.player !== player) return
@@ -2670,8 +2671,8 @@ export class PracticeSession {
       if (was !== 'interrupted' && this.#engine.state.phase === 'interrupted') {
         this.#cancelCountIn(now)
         this.#interruptText = playbackChanged
-          ? 'The score playback setting changed, so the attempt stopped.'
-          : 'The Keep time tolerance changed, so the attempt stopped.'
+          ? msg('The score playback setting changed, so the attempt stopped.')
+          : msg('The Keep time tolerance changed, so the attempt stopped.')
       }
       if (playbackChanged && this.#rhythm && this.#sel.hands !== 'none') {
         this.#startGen++
@@ -3033,10 +3034,10 @@ export class PracticeSession {
     // Auto continues through this device on the next Start / Play (S4).
     const onDevice = this.#destination() === 'browser'
     this.#soundStatus = !onDevice
-      ? 'The piano output was disconnected. Reconnect it to hear playback.'
+      ? msg('The piano output was disconnected. Reconnect it to hear playback.')
       : this.#listen
-        ? 'The piano output was disconnected. Press Play to keep listening through this device.'
-        : 'The piano output was disconnected. Press Start to continue through this device.'
+        ? msg('The piano output was disconnected. Press Play to keep listening through this device.')
+        : msg('The piano output was disconnected. Press Start to continue through this device.')
     if (
       this.#engine.transport !== 'free' &&
       (this.#engine.state.phase === 'running' || ACTIVE.includes(this.#engine.state.phase))
@@ -3523,7 +3524,7 @@ export class PracticeSession {
     if (!load) return null
     // A lost piano backend goes first: no stuck notes.
     if (this.#output) this.#disposeOutput()
-    this.#soundStatus = 'Loading piano sounds…'
+    this.#soundStatus = msg('Loading piano sounds…')
     this.#publishUi()
     this.#outputLoading = load()
       .then((m) => {
@@ -3540,7 +3541,7 @@ export class PracticeSession {
         return backend as OutputBackend
       })
       .catch(() => {
-        this.#soundStatus = 'Browser sound could not be loaded.'
+        this.#soundStatus = msg('Browser sound could not be loaded.')
         return null
       })
       .finally(() => {
@@ -4106,7 +4107,11 @@ export class PracticeSession {
     const reason = s.interruptReason ?? 'pause'
     // No "Paused" banner: the main button reads Resume / Start (user, 2026-10-31).
     if (reason === 'mode-change' || reason === 'user-stop' || reason === 'pause') return null
-    return { reason, text: this.#interruptText ?? INTERRUPT_TEXT[reason], canResume: this.#engine.mode === 'reading' }
+    return {
+      reason,
+      text: this.#interruptText ?? msg(INTERRUPT_TEXT[reason]),
+      canResume: this.#engine.mode === 'reading',
+    }
   }
 
   /** The play-through UI (DECISIONS P12): no attempt states, results, interruptions or hints. */
@@ -4178,9 +4183,9 @@ export class PracticeSession {
     let waiting: string | null = null
     if (s.phase === 'preparing') {
       if (s.readyBlockers.includes('keys-held')) {
-        waiting = 'Release the keys to begin.'
+        waiting = msg('Release the keys to begin.')
       } else if (s.readyBlockers.includes('not-prepared')) {
-        waiting = this.#strip ? 'Getting ready…' : 'Preparing the score…'
+        waiting = this.#strip ? msg('Getting ready…') : msg('Preparing the score…')
       }
     }
     const leadIn = this.#leadIn !== null && !this.#leadIn.handedOver && this.#engine.mode === 'reading'
@@ -4229,6 +4234,11 @@ export class PracticeSession {
       // A lead-in that read to its end is not the end of the piece: it wraps into the attempt.
       finished: this.#engine.mode === 'reading' && s.phase === 'completed' && !leadIn,
     }
+  }
+
+  /** Recompute the current controls without changing the musical session. */
+  refreshLanguage(): void {
+    this.#publishUi()
   }
 
   #publishUi(): void {

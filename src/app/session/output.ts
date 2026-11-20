@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Sound destination for app-generated playback (accompaniment and Listen; spec "MIDI input,
  * output, and pedal controls", "Listening and hand practice", DECISIONS S4):
@@ -60,11 +61,11 @@ export function noPlaybackReason(
   if (hasSoundOutput(settings, output, browserSound)) return null
   switch (settings.sound.destination) {
     case 'midi':
-      return 'The piano output is not connected. Connect it in Connection, or choose Auto in Settings → Sound.'
+      return msg('The piano output is not connected. Connect it in Connection, or choose Auto in Settings → Sound.')
     case 'browser':
-      return 'This browser cannot play sound. Choose Auto or the connected piano in Settings → Sound.'
+      return msg('This browser cannot play sound. Choose Auto or the connected piano in Settings → Sound.')
     default:
-      return 'No piano is connected and this browser cannot play sound.'
+      return msg('No piano is connected and this browser cannot play sound.')
   }
 }
 

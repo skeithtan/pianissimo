@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /** Parsing for the custom number fields in Settings (hint threshold and lifetime). */
 
 export type NumberParse = { readonly ok: true; readonly value: number } | { readonly ok: false; readonly error: string }
@@ -15,15 +16,16 @@ export function parsePositive(
   options: { integer?: boolean; min?: number; max: number; what: string },
 ): NumberParse {
   const t = text.trim().replace(',', '.')
-  if (t === '') return { ok: false, error: `Enter ${options.what}.` }
-  if (!/^\d*\.?\d+$|^\d+\.$/u.test(t)) return { ok: false, error: `"${text.trim()}" is not a number.` }
+  if (t === '') return { ok: false, error: msg('Enter {0}.', options.what) }
+  if (!/^\d*\.?\d+$|^\d+\.$/u.test(t)) return { ok: false, error: msg('"{0}" is not a number.', text.trim()) }
   const value = Number(t)
-  if (!Number.isFinite(value)) return { ok: false, error: 'Enter a finite number.' }
-  if (value <= 0) return { ok: false, error: `${capitalize(options.what)} must be greater than zero.` }
-  if (options.integer && !Number.isInteger(value)) return { ok: false, error: 'Use a whole number.' }
+  if (!Number.isFinite(value)) return { ok: false, error: msg('Enter a finite number.') }
+  if (value <= 0) return { ok: false, error: msg('{0} must be greater than zero.', capitalize(options.what)) }
+  if (options.integer && !Number.isInteger(value)) return { ok: false, error: msg('Use a whole number.') }
   if (options.min !== undefined && value < options.min)
-    return { ok: false, error: `${capitalize(options.what)} must be at least ${options.min}.` }
-  if (value > options.max) return { ok: false, error: `${capitalize(options.what)} can be at most ${options.max}.` }
+    return { ok: false, error: msg('{0} must be at least {1}.', capitalize(options.what), options.min) }
+  if (value > options.max)
+    return { ok: false, error: msg('{0} can be at most {1}.', capitalize(options.what), options.max) }
   return { ok: true, value }
 }
 

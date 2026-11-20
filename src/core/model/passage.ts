@@ -1,3 +1,4 @@
+import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * Helpers over the `PassageRange` contract (spec "Repeating passages"; DECISIONS U19, U21–U23).
  *
@@ -165,7 +166,7 @@ type Words = Pick<ScoreModel, 'occurrences' | 'meters' | 'sourceMeasures'>
 function barText(model: Pick<ScoreModel, 'occurrences'>, occ: number): string {
   const o = model.occurrences[occ]
   if (!o) return `${occ + 1}`
-  return o.pass > 1 ? `${o.number} (pass ${o.pass})` : o.number
+  return o.pass > 1 ? msg('{0} (pass {1})', o.number, o.pass) : o.number
 }
 
 /**
@@ -190,7 +191,7 @@ export function beatText(model: Words, pos: Rational): string {
 
 /** "Bar 12, beat 3" (always with the beat): the strip's drag readout. */
 export function positionText(model: Words, pos: Rational): string {
-  return `Bar ${barText(model, occurrenceAt(model, pos))}, beat ${beatText(model, pos)}`
+  return msg('Bar {0}, beat {1}', barText(model, occurrenceAt(model, pos)), beatText(model, pos))
 }
 
 function handsOf(h: HandSelection): readonly Hand[] {
@@ -239,17 +240,21 @@ export type PassageWords = Words & Pick<ScoreModel, 'notes' | 'totalDuration'>
  */
 export function edgeText(model: PassageWords, p: PassageRange, edge: 'start' | 'end', hands: HandSelection): string {
   if (edge === 'start') {
-    const bar = `Bar ${barText(model, p.fromOcc)}`
-    return p.start ? `${bar}, beat ${beatText(model, p.start)}` : bar
+    const bar = msg('Bar {0}', barText(model, p.fromOcc))
+    return p.start ? msg('{0}, beat {1}', bar, beatText(model, p.start)) : bar
   }
-  const bar = `Bar ${barText(model, p.toOcc)}`
+  const bar = msg('Bar {0}', barText(model, p.toOcc))
   if (!p.end) return bar
   const { start, end } = passageBounds(model, p)
-  return `${bar}, beat ${beatText(model, lastOnsetIn(model, hands, start, end))}`
+  return msg('{0}, beat {1}', bar, beatText(model, lastOnsetIn(model, hands, start, end)))
 }
 
 /** "2nd", "3rd", "4th", … for a repeat pass. */
 function ordinal(n: number): string {
+  const language = messageLanguage()
+  if (language === 'fil-PH') return `ika-${n}`
+  if (language === 'es-ES') return `${n}.ª`
+  if (language.startsWith('fr')) return `${n}e`
   const tens = n % 100
   if (tens >= 11 && tens <= 13) return `${n}th`
   return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
@@ -282,14 +287,15 @@ export function edgeShortText(
  * loops (the end names the loop's last note, U22). `hands` decides which notes are counted.
  */
 export function describePassage(model: PassageWords, p: PassageRange | null, hands: HandSelection = 'both'): string {
-  if (!p) return 'Whole piece'
+  if (!p) return msg('Whole piece')
   const from = barText(model, p.fromOcc)
-  if (isWholeBars(p)) return p.fromOcc === p.toOcc ? `Bar ${from}` : `Bars ${from}–${barText(model, p.toOcc)}`
+  if (isWholeBars(p))
+    return p.fromOcc === p.toOcc ? msg('Bar {0}', from) : msg('Bars {0}–{1}', from, barText(model, p.toOcc))
   if (p.fromOcc === p.toOcc) {
     const { start, end } = passageBounds(model, p)
     const a = beatText(model, start)
     const b = beatText(model, lastOnsetIn(model, hands, start, end))
-    return a === b ? `Bar ${from}, beat ${a}` : `Bar ${from}, beats ${a}–${b}`
+    return a === b ? msg('Bar {0}, beat {1}', from, a) : msg('Bar {0}, beats {1}–{2}', from, a, b)
   }
   const first = edgeText(model, p, 'start', hands)
   const lastText = edgeText(model, p, 'end', hands)

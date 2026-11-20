@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The import flow as a small state machine (spec "MusicXML score import", "Storage and
  * recovery", "Execution and rendering architecture"):
@@ -178,7 +179,7 @@ export class ImportFlow {
       this.#fail(
         token,
         fileName,
-        new ImportError('file-too-large', `“${fileName}” is larger than ${mib} MB, the most a score may be.`),
+        new ImportError('file-too-large', msg('“{0}” is larger than {1} MB, the most a score may be.', fileName, mib)),
       )
       return
     }
@@ -189,7 +190,7 @@ export class ImportFlow {
       this.#fail(
         token,
         fileName,
-        new ImportError('file-empty', `“${fileName}” could not be read: ${errorMessage(error).message}`),
+        new ImportError('file-empty', msg('“{0}” could not be read: {1}', fileName, errorMessage(error).message)),
       )
       return
     }
@@ -208,7 +209,7 @@ export class ImportFlow {
     if (!this.#live(token)) return
     const first = inspect.candidates[0]
     if (!first) {
-      this.#fail(token, fileName, new ImportError('score-structure', 'The file contains no score.'))
+      this.#fail(token, fileName, new ImportError('score-structure', msg('The file contains no score.')))
       return
     }
     if (needsChoice(inspect)) {
@@ -250,7 +251,7 @@ export class ImportFlow {
     const p = this.phase.peek()
     if (p.kind !== 'choose') return null
     const c = this.#candidate(p.inspect, p.candidateId)
-    return c ? selectionProblem(c, p.partIds) : 'Choose a score.'
+    return c ? selectionProblem(c, p.partIds) : msg('Choose a score.')
   }
 
   async confirmChoice(): Promise<void> {
@@ -347,11 +348,11 @@ export class ImportFlow {
       const storage = await this.#deps.getStorage()
       const existing = await storage.getPiece(pieceId)
       if (!existing || existing.scoreVersionId !== p.result.package.model.scoreVersionId) {
-        throw new Error('The existing piece changed. Close this import and choose the file again.')
+        throw new Error(msg('The existing piece changed. Close this import and choose the file again.'))
       }
       const pkg = await storage.getPackage(existing.scoreVersionId)
       if (!pkg || !summarizeImport(pkg.model).readiness.scoredPractice) {
-        throw new Error('The existing score is unavailable or needs review. Open that piece before adding a copy.')
+        throw new Error(msg('The existing score is unavailable or needs review. Open that piece before adding a copy.'))
       }
       if (!this.#live(token)) return
       await this.#commit(p, pkg, this.#pieceFor(pkg, existing.userTempo))
@@ -369,8 +370,10 @@ export class ImportFlow {
     } catch (error) {
       if (!this.#live(token)) return
       const message = isQuotaError(error)
-        ? 'There is not enough storage space left in this browser. Export a backup and delete pieces you no longer need, then try again.'
-        : `The score could not be saved: ${errorMessage(error).message}. Your library is unchanged.`
+        ? msg(
+            'There is not enough storage space left in this browser. Export a backup and delete pieces you no longer need, then try again.',
+          )
+        : msg('The score could not be saved: {0}. Your library is unchanged.', errorMessage(error).message)
       this.phase.value = { ...p, saving: false, saveError: message }
       return
     }

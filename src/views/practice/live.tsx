@@ -1,3 +1,4 @@
+import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * Small components subscribed to the session's per-frame stores, so the cursor, the correction
  * cue and the keyboard guide update without re-rendering the whole practice screen.
@@ -37,7 +38,7 @@ export function OverviewBar({
   /** Inside a phone's top bar (U80), between its buttons, instead of a row of its own. */
   inline?: boolean
 }) {
-  const measures = useMemo(() => overviewMeasures(model), [model])
+  const measures = useMemo(() => overviewMeasures(model), [model, messageLanguage()])
   // The session publishes progress every frame while playing: the overview follows it without
   // re-rendering (transforms only; a render only when the bar changes).
   const follow = useMemo<OverviewPositionSource>(
@@ -60,7 +61,7 @@ export function OverviewBar({
           view.current?.returnToCurrent()
         }}
         onLoopChange={(next) => session.setSelection({ range: next })}
-        describe={(occ, count) => `Bar ${barLabel(model, occ)} of ${count}`}
+        describe={(occ, count) => msg('Bar {0} of {1}', barLabel(model, occ), count)}
       />
     </div>
   )
@@ -86,7 +87,7 @@ export function StageCue({ session }: { session: PracticeSession }) {
   if (cue.kind === 'retry') {
     return (
       <div class={styles.stageCue} data-testid="stage-cue" data-kind="retry" role="status">
-        Try again
+        {msg('Try again')}
       </div>
     )
   }
@@ -98,7 +99,7 @@ export function StageCue({ session }: { session: PracticeSession }) {
         data-kind="octave"
         data-direction={cue.direction}
         role="img"
-        aria-label={cue.direction === 'up' ? 'Play an octave higher' : 'Play an octave lower'}
+        aria-label={cue.direction === 'up' ? msg('Play an octave higher') : msg('Play an octave lower')}
       >
         <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
           <path
@@ -116,7 +117,7 @@ export function StageCue({ session }: { session: PracticeSession }) {
   const at = cue.text.indexOf(cue.accidental)
   const name = at < 0 ? cue.text : cue.text.slice(0, at)
   const rest = at < 0 ? '' : cue.text.slice(at + cue.accidental.length)
-  const word = ACCIDENTAL_WORDS[cue.accidental] ?? ''
+  const word = msg(ACCIDENTAL_WORDS[cue.accidental] ?? '')
   const spoken = [name, word, rest].filter(Boolean).join(' ')
   return (
     <div
@@ -124,7 +125,7 @@ export function StageCue({ session }: { session: PracticeSession }) {
       data-testid="stage-cue"
       data-kind="accidental"
       role="img"
-      aria-label={`Play ${spoken} instead`}
+      aria-label={msg('Play {0} instead', spoken)}
     >
       <span aria-hidden="true">
         {name}
@@ -161,7 +162,7 @@ export function GuidePanel({
     <div class={styles.guideSlot} data-open={open ? 'true' : 'false'} data-testid="guide-slot">
       <div class={styles.guideSlotInner}>
         {presence.mounted ? (
-          <section class={styles.guide} aria-label="Keyboard guide" data-compact={phone ? 'true' : undefined}>
+          <section class={styles.guide} aria-label={msg('Keyboard guide')} data-compact={phone ? 'true' : undefined}>
             <KeyboardGuide
               keys={guide.keys}
               rollDirection={guide.rollDirection}

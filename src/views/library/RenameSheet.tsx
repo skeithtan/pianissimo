@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * "Rename piece": the title and composer of a library entry (the piece record). The score
  * package and its source file keep the score's own metadata. Every screen reads the name from
@@ -22,7 +23,7 @@ export function RenameSheet({
   onClose: () => void
 }) {
   return (
-    <Sheet title="Rename piece" open={open} onClose={onClose}>
+    <Sheet title={msg('Rename piece')} open={open} onClose={onClose}>
       {/* The sheet mounts its body only while shown, so the fields start from the piece on every open. */}
       <RenameForm piece={piece} model={model} onClose={onClose} />
     </Sheet>
@@ -60,7 +61,7 @@ function RenameForm({ piece, model, onClose }: { piece: PieceRecord; model: Libr
       await model.rename(piece.id, { title, composer })
       onClose()
     } catch (e) {
-      setError(`It could not be renamed: ${e instanceof Error ? e.message : String(e)}`)
+      setError(msg('It could not be renamed: {0}', e instanceof Error ? e.message : String(e)))
     } finally {
       setBusy(false)
     }
@@ -74,7 +75,7 @@ function RenameForm({ piece, model, onClose }: { piece: PieceRecord; model: Libr
         void save()
       }}
     >
-      <Field label="Title">
+      <Field label={msg('Title')}>
         <input
           ref={titleInput}
           type="text"
@@ -86,7 +87,7 @@ function RenameForm({ piece, model, onClose }: { piece: PieceRecord; model: Libr
           onInput={(e) => setTitle(e.currentTarget.value)}
         />
       </Field>
-      <Field label="Composer" hint="Optional">
+      <Field label={msg('Composer')} hint="Optional">
         <input
           type="text"
           value={composer}
@@ -98,10 +99,10 @@ function RenameForm({ piece, model, onClose }: { piece: PieceRecord; model: Libr
       {error ? <Notice tone="danger">{error}</Notice> : null}
       <div class={styles.flowActions}>
         <Button onClick={onClose} disabled={busy}>
-          Cancel
+          {msg('Cancel')}
         </Button>
         <Button type="submit" variant="primary" icon="check" disabled={!canSave}>
-          Save
+          {msg('Save')}
         </Button>
       </div>
     </form>

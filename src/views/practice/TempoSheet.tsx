@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Practice tempo entry for a score without a numerical tempo (spec "Missing numerical tempos
  * require user input to establish the reference tempo before relative speed controls can be
@@ -35,7 +36,7 @@ export function TempoSheet({
   const value = parseBpm(bpm)
   const chosen = UNITS.find((u) => u.id === unit) ?? UNITS[0]!
   return (
-    <Sheet title="Set a practice tempo" open={open} onClose={onClose}>
+    <Sheet title={msg('Set a practice tempo')} open={open} onClose={onClose}>
       <form
         class={styles.tempoForm}
         onSubmit={(e) => {
@@ -44,9 +45,9 @@ export function TempoSheet({
         }}
       >
         <p class={styles.muted}>
-          This score has no metronome mark. Choose the tempo to practice and time attempts against.
+          {msg('This score has no metronome mark. Choose the tempo to practice and time attempts against.')}
         </p>
-        <Field label="Beat" hint="The note value one beat lasts.">
+        <Field label={msg('Beat')} hint={msg('The note value one beat lasts.')}>
           <select
             class={styles.select}
             value={unit}
@@ -54,12 +55,12 @@ export function TempoSheet({
           >
             {UNITS.map((u) => (
               <option key={u.id} value={u.id}>
-                {u.label}
+                {msg(u.label)}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Beats per minute" error={value === null ? 'Enter a number from 10 to 400.' : null}>
+        <Field label={msg('Beats per minute')} error={value === null ? msg('Enter a number from 10 to 400.') : null}>
           <input
             class={styles.input}
             inputMode="decimal"
@@ -68,9 +69,9 @@ export function TempoSheet({
           />
         </Field>
         <div class={styles.resultActions}>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{msg('Cancel')}</Button>
           <Button type="submit" variant="primary" disabled={value === null}>
-            Use this tempo
+            {msg('Use this tempo')}
           </Button>
         </div>
       </form>

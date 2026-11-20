@@ -85,7 +85,7 @@
 }
 .stepHead {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) fit-content(42%);
   align-items: start;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-4) 0;
@@ -156,7 +156,7 @@
   border: 1px solid transparent;
   font-size: var(--text-xs);
   font-weight: 600;
-  white-space: nowrap;
+  white-space: normal;
   color: var(--fg-muted);
   background: var(--bg-sunken);
   transition:
@@ -164,8 +164,7 @@
     color var(--dur-base) var(--ease-standard);
 }
 .pill > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .pill[data-tone='done'] {
   color: var(--success);
@@ -634,7 +633,11 @@
   justify-content: space-between;
   gap: var(--space-2);
 }
+.counters > button {
+  flex: none;
+}
 .counters dl {
+  min-width: 0;
   margin: 0;
   display: flex;
   flex-wrap: wrap;

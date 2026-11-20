@@ -1,3 +1,4 @@
+import { msg, decimal } from '../../i18n/messages'
 /** Display text for the Results view. Pure; locale-dependent only in `whenText`. */
 import { formatSeconds, timeDifferenceSec, timingAccuracy } from '../../core/history'
 import type { AttemptRecord, ComparisonContext, InterruptReason } from '../../core/model/practice'
@@ -7,7 +8,7 @@ export function whenText(ms: number, now: number = Date.now()): string {
   const date = new Date(ms)
   const sameDay = new Date(now).toDateString() === date.toDateString()
   const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  if (sameDay) return `Today, ${time}`
+  if (sameDay) return msg('Today, {0}', time)
   const day = date.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -33,8 +34,8 @@ const REASON: Readonly<Record<InterruptReason, string>> = {
 
 /** "Paused", "Stopped"… for an incomplete attempt; "Interrupted" when the reason is unknown. */
 export function incompleteReason(a: AttemptRecord): string {
-  if (a.interruptReason !== undefined) return REASON[a.interruptReason]
-  return a.completion === 'abandoned' ? 'Abandoned' : 'Interrupted'
+  if (a.interruptReason !== undefined) return msg(REASON[a.interruptReason])
+  return a.completion === 'abandoned' ? msg('Abandoned') : msg('Interrupted')
 }
 
 export const LABEL_MODE_TEXT: Readonly<Record<PersistentLabelMode, string>> = {
@@ -44,7 +45,7 @@ export const LABEL_MODE_TEXT: Readonly<Record<PersistentLabelMode, string>> = {
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`
+  return `${n} ${msg(n === 1 ? one : many)}`
 }
 
 /** "+1.2 s" / "-0.4 s" for an attempt with scored timing, otherwise null. */
@@ -58,7 +59,7 @@ export function signedTime(a: AttemptRecord): string | null {
 /** The compact timing text (rhythm mode: on-time groups) of a history row: "8.4 s (+0.4 s)", "8.4 s" (ungraded) or "—". */
 export function timeText(a: AttemptRecord): string {
   const rhythm = timingAccuracy(a)
-  if (rhythm !== null) return `${rhythm.onTime} of ${rhythm.groups} on time`
+  if (rhythm !== null) return msg('{0} of {1} on time', rhythm.onTime, rhythm.groups)
   if (a.completionTimeSec === undefined) return '—'
   const base = formatSeconds(a.completionTimeSec)
   const diff = signedTime(a)
@@ -66,7 +67,7 @@ export function timeText(a: AttemptRecord): string {
 }
 
 export function speedText(multiplier: number): string {
-  return `${Number(multiplier.toFixed(2))}×`
+  return `${decimal(Number(multiplier.toFixed(2)))}×`
 }
 
 const HANDS = { both: 'Both hands', right: 'Right hand', left: 'Left hand', none: 'Preview' } as const
@@ -80,8 +81,8 @@ export function strictToleranceMs(c: ComparisonContext): number | null {
 /** "Keep time · ±150 ms" for a rhythm mode context. */
 export function rhythmText(c: ComparisonContext): string {
   const tol = strictToleranceMs(c)
-  const label = tol === null ? 'Keep time' : `Keep time · ±${tol} ms`
-  return c.scorePlayback ? `${label} · Score playback` : label
+  const label = tol === null ? msg('Keep time') : msg('Keep time · ±{0} ms', tol)
+  return c.scorePlayback ? msg('{0} · Score playback', label) : label
 }
 
 /** What the piano does for the other hand in this context. */
@@ -89,13 +90,13 @@ export function transportText(c: ComparisonContext): string | null {
   if (c.transport === 'strict') return rhythmText(c)
   if (c.transport !== 'accompaniment') return null
   return c.hands === 'right'
-    ? 'Piano plays the left hand'
+    ? msg('Piano plays the left hand')
     : c.hands === 'left'
-      ? 'Piano plays the right hand'
-      : 'Piano accompanies'
+      ? msg('Piano plays the right hand')
+      : msg('Piano accompanies')
 }
 
 /** "Right hand at 0.75×" */
 export function handsAndSpeed(c: ComparisonContext): string {
-  return `${HANDS[c.hands]} at ${speedText(c.multiplier)}`
+  return msg('{0} at {1}', msg(HANDS[c.hands]), speedText(c.multiplier))
 }

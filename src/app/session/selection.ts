@@ -1,3 +1,4 @@
+import { msg, percentage } from '../../i18n/messages'
 /**
  * What the learner selected (hands, passage, speed) and what it allows: the engine timeline,
  * scored-practice blockers in plain language and the passage summary shown before Start
@@ -68,9 +69,9 @@ export function tempoText(model: ScoreModel, tempo: TempoMapData, sel: Selection
 
 /** "Right hand · Bars 5–8 · 80% (♩ = 58)". */
 export function passageSummary(model: ScoreModel, tempo: TempoMapData, sel: Selection): string {
-  const pct = `${Math.round(sel.multiplier * 100)}%`
+  const pct = percentage(Math.round(sel.multiplier * 100) / 100)
   const t = tempoText(model, tempo, sel)
-  return [HAND_TEXT[sel.hands], rangeText(model, sel.range, sel.hands), t ? `${pct} (${t})` : pct].join(' · ')
+  return [msg(HAND_TEXT[sel.hands]), rangeText(model, sel.range, sel.hands), t ? `${pct} (${t})` : pct].join(' · ')
 }
 
 /** Why the main button cannot start what it would start; null when it can. */
@@ -131,10 +132,11 @@ export function startPlan(
   ctx: StartContext,
   opts: StartPlanOptions = {},
 ): StartPlan {
-  const noOutput = ctx.noOutputReason ?? 'Nothing can play sound here.'
+  const noOutput = ctx.noOutputReason ?? msg('Nothing can play sound here.')
   if (sel.hands === 'none') {
-    if (!ctx.hasOutput) return { action: 'listen', enabled: false, reason: `${noOutput} Listen is not available.` }
-    if (!ctx.hasTempo) return { action: 'listen', enabled: false, reason: 'Set a practice tempo to listen.' }
+    if (!ctx.hasOutput)
+      return { action: 'listen', enabled: false, reason: msg('{0} Listen is not available.', noOutput) }
+    if (!ctx.hasTempo) return { action: 'listen', enabled: false, reason: msg('Set a practice tempo to listen.') }
     return { action: 'listen', enabled: true, reason: null }
   }
   const action = opts.playThrough ? 'play' : sel.range || opts.rhythm ? 'scored' : 'reading'
@@ -142,20 +144,23 @@ export function startPlan(
     return {
       action,
       enabled: false,
-      reason: 'Set a practice tempo so the score can follow the timing.',
+      reason: msg('Set a practice tempo so the score can follow the timing.'),
     }
   }
   if (ctx.hasInput === false) {
     // Without a piano a hand plays through the microphone (the session keeps play-through on);
     // anything else, or no microphone at all, says why.
     if (ctx.micSupported === false || (action === 'play' && !opts.mic)) {
-      return { action, enabled: false, reason: NO_PIANO_NO_MIC }
+      return { action, enabled: false, reason: msg(NO_PIANO_NO_MIC) }
     }
     if (action !== 'play') {
       return {
         action,
         enabled: false,
-        reason: `${action === 'scored' ? 'Scored practice' : 'Reading'} needs a connected piano. Play through follows the microphone instead.`,
+        reason: msg(
+          '{0} needs a connected piano. Play through follows the microphone instead.',
+          action === 'scored' ? msg('Scored practice') : msg('Reading'),
+        ),
       }
     }
   }
@@ -164,8 +169,10 @@ export function startPlan(
       action,
       enabled: false,
       reason: ctx.hasOutput
-        ? 'Score playback needs an echo-free output. Play the test notes in Connection or choose Browser sound in Settings → Sound.'
-        : `Score playback needs a sound output. ${noOutput}`,
+        ? msg(
+            'Score playback needs an echo-free output. Play the test notes in Connection or choose Browser sound in Settings → Sound.',
+          )
+        : msg('Score playback needs a sound output. {0}', noOutput),
     }
   }
   // One hand through the microphone: the app plays nothing (the microphone must never hear it).
@@ -175,7 +182,7 @@ export function startPlan(
       return {
         action,
         enabled: false,
-        reason: `One-hand practice needs the piano or this device to play the other hand. ${noOutput}`,
+        reason: msg('One-hand practice needs the piano or this device to play the other hand. {0}', noOutput),
       }
     }
     if (!ctx.accompanimentAllowed) {
@@ -184,8 +191,12 @@ export function startPlan(
         enabled: false,
         reason:
           action === 'play'
-            ? 'One-hand play-through needs a verified output with no echo. Play the test notes in Connection, or play both hands.'
-            : 'Graded one-hand practice needs a verified output with no echo. Play the test notes in Connection, or practice both hands.',
+            ? msg(
+                'One-hand play-through needs a verified output with no echo. Play the test notes in Connection, or play both hands.',
+              )
+            : msg(
+                'Graded one-hand practice needs a verified output with no echo. Play the test notes in Connection, or practice both hands.',
+              ),
       }
     }
   }
@@ -193,7 +204,10 @@ export function startPlan(
     return {
       action,
       enabled: false,
-      reason: `${HAND_TEXT[sel.hands]} has no notes to play here. Choose other hands or bars. Listen still works.`,
+      reason: msg(
+        '{0} has no notes to play here. Choose other hands or bars. Listen still works.',
+        msg(HAND_TEXT[sel.hands]),
+      ),
     }
   }
   if (action === 'scored' && !timeline.scoredAllowed) {
@@ -201,7 +215,7 @@ export function startPlan(
     return {
       action,
       enabled: false,
-      reason: first ? first.message : 'Scored practice is not available for this passage.',
+      reason: first ? first.message : msg('Scored practice is not available for this passage.'),
     }
   }
   return { action, enabled: true, reason: null }

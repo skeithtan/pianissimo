@@ -1,9 +1,11 @@
+import { msg } from '../../i18n/messages'
 /**
  * MIDI connection status chip, driven by the `connectionStatus` signal. A dot, a short label and
  * the text itself carry the state (color is never the only cue). Tapping it opens the Connection
  * setup modal over the current view. Used by the app bar and by the Practice header.
  */
 import { connectionStatus, type ConnectionState, type ConnectionStatus } from '../../app/state'
+import { getFeatures } from '../../app/features'
 import { openConnection } from '../../app/navigation'
 import styles from './ConnectionChip.module.css'
 
@@ -21,15 +23,15 @@ const TONE: Readonly<Record<ConnectionState, Tone>> = {
 export function connectionLabel(status: ConnectionStatus): string {
   switch (status.state) {
     case 'unsupported':
-      return 'No MIDI in this browser'
+      return msg('No MIDI in this browser')
     case 'denied':
-      return 'MIDI access blocked'
+      return msg('MIDI access blocked')
     case 'disconnected':
-      return 'Piano not connected'
+      return msg('Piano not connected')
     case 'connecting':
-      return 'Connecting…'
+      return msg('Connecting…')
     case 'connected':
-      return status.inputName ? `Connected · ${status.inputName}` : 'Piano connected'
+      return status.inputName ? msg('Connected · {0}', status.inputName) : msg('Piano connected')
   }
 }
 
@@ -48,8 +50,12 @@ export function ConnectionChip({ onOpen = openConnection, compact }: ConnectionC
       class={compact === 'narrow' ? `${styles.chip} ${styles.narrow}` : styles.chip}
       data-tone={TONE[status.state]}
       data-state={status.state}
-      title={status.detail ?? label}
-      aria-label={`MIDI status: ${label}. Open connection setup`}
+      title={
+        status.state === 'unsupported'
+          ? (getFeatures().features.webMidi.explanation ?? label)
+          : msg(status.detail ?? label)
+      }
+      aria-label={msg('MIDI status: {0}. Open connection setup', label)}
       onClick={onOpen}
     >
       <span class={styles.dot} aria-hidden="true" />

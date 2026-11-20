@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Connection and Pedal Setup (spec "Main user journey" step 3; "MIDI input, output, and pedal
  * controls"; "Delivery and device compatibility"): three independent setup steps
@@ -62,8 +63,9 @@ export function ConnectionSetup({
     <div class={styles.page}>
       <header class={styles.hero}>
         <p class={styles.intro}>
-          Connect your piano and make sure the app can play it. Each step works on its own. Everything is remembered on
-          this device.
+          {msg(
+            'Connect your piano and make sure the app can play it. Each step works on its own. Everything is remembered on this device.',
+          )}
         </p>
         <RouteMemory snap={snap} route={current.route} />
       </header>
@@ -85,7 +87,7 @@ export function ConnectionSetup({
         <p>{doneSummary(statuses)}</p>
         <div class={styles.actions}>
           <Button variant="primary" icon="check" onClick={closeConnection}>
-            Done
+            {msg('Done')}
           </Button>
         </div>
       </footer>
@@ -95,31 +97,33 @@ export function ConnectionSetup({
 
 function doneSummary(statuses: Readonly<Record<StepId, StepStatus>>): string {
   if (statuses.piano.tone !== 'done')
-    return 'You can come back here any time from the connection status at the top of the screen.'
+    return msg('You can come back here any time from the connection status at the top of the screen.')
   if (statuses.playback.tone === 'done')
-    return 'Your piano is ready for both-hands and one-hand practice, with the piano playing the other hand.'
-  return 'Your piano is ready for both-hands practice. One-hand practice needs playback to the piano, or browser sound in Settings → Sound.'
+    return msg('Your piano is ready for both-hands and one-hand practice, with the piano playing the other hand.')
+  return msg(
+    'Your piano is ready for both-hands practice. One-hand practice needs playback to the piano, or browser sound in Settings → Sound.',
+  )
 }
 
 /** "Remembered: Piano → Piano, channel 1" and whether it is connected now. */
 function RouteMemory({ snap, route }: { snap: MidiSnapshot; route: MidiRouteSettings }) {
   if (route.inputName === null && route.outputName === null) return null
   const parts = [
-    route.inputName ?? 'no input',
-    route.outputName ? `${route.outputName}, ${channelLabel(route.outputChannel)}` : 'no output',
+    route.inputName ?? msg('no input'),
+    route.outputName ? `${route.outputName}, ${channelLabel(route.outputChannel)}` : msg('no output'),
   ]
   const connected = snap.input?.connected === true
   const state =
     snap.access !== 'granted'
-      ? 'Reconnects once MIDI access is allowed.'
+      ? msg('Reconnects once MIDI access is allowed.')
       : connected
-        ? 'Connected now.'
-        : 'Not connected — it is picked up automatically when the piano is available.'
+        ? msg('Connected now.')
+        : msg('Not connected — it is picked up automatically when the piano is available.')
   return (
     <p class={styles.memory} data-connected={connected ? '' : undefined}>
       <Icon name={connected ? 'check' : 'plug'} size={18} />
       <span>
-        <strong>Remembered:</strong> {parts.join(' → ')}. {state}
+        <strong>{msg('Remembered:')}</strong> {parts.join(' → ')}. {state}
       </span>
     </p>
   )

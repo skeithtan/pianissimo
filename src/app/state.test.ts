@@ -4,6 +4,7 @@ import {
   MAX_NOTICES,
   SETTINGS_SAVE_DEBOUNCE_MS,
   applyLabelSettings,
+  beginSettingsLoad,
   connectionStatus,
   dismissNotice,
   flushSettings,
@@ -73,6 +74,17 @@ describe('updateSettings', () => {
 })
 
 describe('settings persistence', () => {
+  it('saves choices made while the library opens over the settings already on disk', async () => {
+    beginSettingsLoad()
+    updateSettings({ metronome: { outputId: 'usb-piano' }, view: { language: 'fr-CA' } })
+    const store = memoryStore({ view: { theme: 'dark' } })
+    await setSettingsPersistence(store)
+    expect(store.saves.at(-1)).toMatchObject({
+      metronome: { outputId: 'usb-piano' },
+      view: { language: 'fr-CA', theme: 'dark' },
+    })
+  })
+
   it('is in-memory by default: nothing is written anywhere', () => {
     updateSettings({ hints: { fadeMs: 100 } })
     expect(vi.getTimerCount()).toBe(0)

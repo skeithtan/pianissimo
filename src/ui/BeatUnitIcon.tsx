@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Beat-unit note drawn as SVG (spec: the effective BPM is shown with its metronome beat unit).
  * Text glyphs such as ♩ render tiny or misaligned in system fonts, and a dotted unit's dot
@@ -43,7 +44,7 @@ export function BeatUnitIcon({ unit, class: className }: { unit: Rational; class
       width={`${(width / 24) * 1.25}em`}
       height="1.25em"
       role="img"
-      aria-label={beatUnitName(unit)}
+      aria-label={msg(beatUnitName(unit))}
       style={{ verticalAlign: '-0.28em', overflow: 'visible' }}
     >
       <ellipse

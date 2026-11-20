@@ -8,7 +8,11 @@
   justify-content: space-between;
   gap: var(--space-3);
 }
+.body > button {
+  flex: none;
+}
 .list {
+  min-width: 0;
   margin: 0;
   padding-left: var(--space-4);
   display: flex;

@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Pure derivation for the Results view: from the stored attempts of one piece/score version to
  * the selected attempt, its scorecard and the history of its comparison context. No DOM, no
@@ -119,7 +120,7 @@ export function passageText(labeler: BarLabeler, context: ComparisonContext, wor
       // A passage that no longer fits the score: fall back to its bars.
     }
   }
-  return `${bars} (partial)`
+  return msg('{0} (partial)', bars)
 }
 
 /** Wrong attacks that were right pitches pressed too early, when the record carries the count. */

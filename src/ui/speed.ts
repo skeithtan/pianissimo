@@ -1,3 +1,4 @@
+import { msg, decimal, percentage } from '../i18n/messages'
 /**
  * Practice speed as a multiplier of the source tempo (spec "Results and timing": presets and a
  * custom multiplier or BPM; 0.5x of quarter = 120 plays at 60). Pure helpers for the tempo
@@ -61,8 +62,8 @@ const FORMAT_HINT = 'Try 0.6, 60% or 72 BPM.'
 const fail = (error: string): SpeedParseResult => ({ ok: false, error })
 
 function checkRange(multiplier: number, kind: SpeedInputKind): SpeedParseResult {
-  if (multiplier < MIN_MULTIPLIER) return fail('That is slower than 5% of the original tempo.')
-  if (multiplier > MAX_CUSTOM_MULTIPLIER) return fail('That is faster than 10 times the original tempo.')
+  if (multiplier < MIN_MULTIPLIER) return fail(msg('That is slower than 5% of the original tempo.'))
+  if (multiplier > MAX_CUSTOM_MULTIPLIER) return fail(msg('That is faster than 10 times the original tempo.'))
   return { ok: true, multiplier, kind }
 }
 
@@ -78,7 +79,7 @@ export function parseSpeedInput(
   bareAs: 'multiplier' | 'bpm' = 'multiplier',
 ): SpeedParseResult {
   let t = text.trim().toLowerCase().replace(/,/gu, '.').replace(/\s+/gu, '')
-  if (t === '') return fail(`Enter a speed. ${FORMAT_HINT}`)
+  if (t === '') return fail(msg('Enter a speed. {0}', msg(FORMAT_HINT)))
   const equals = t.lastIndexOf('=')
   if (equals >= 0) t = t.slice(equals + 1)
 
@@ -100,30 +101,32 @@ export function parseSpeedInput(
     t = t.slice(0, -1)
   }
 
-  if (!NUMBER.test(t)) return fail(`Could not read "${text.trim()}". ${FORMAT_HINT}`)
+  if (!NUMBER.test(t)) return fail(msg('Could not read "{0}". {1}', text.trim(), msg(FORMAT_HINT)))
   const value = Number(t)
-  if (!Number.isFinite(value)) return fail('Enter a finite number.')
-  if (value <= 0) return fail('Speed must be greater than zero.')
+  if (!Number.isFinite(value)) return fail(msg('Enter a finite number.'))
+  if (value <= 0) return fail(msg('Speed must be greater than zero.'))
 
   if (kind === 'bpm') {
     if (!Number.isFinite(sourceBeatBpm) || sourceBeatBpm <= 0) {
-      return fail('Set the original tempo first. BPM entry needs it as a reference.')
+      return fail(msg('Set the original tempo first. BPM entry needs it as a reference.'))
     }
     return checkRange(value / sourceBeatBpm, 'bpm')
   }
   const multiplier = kind === 'percent' ? value / 100 : value
   if (kind === 'multiplier' && multiplier > MAX_CUSTOM_MULTIPLIER && value <= 1000) {
-    return fail(`That is faster than 10 times the original tempo. Write ${text.trim()}% for ${text.trim()} percent.`)
+    return fail(
+      msg('That is faster than 10 times the original tempo. Write {0}% for {1} percent.', text.trim(), text.trim()),
+    )
   }
   return checkRange(multiplier, kind)
 }
 
 /** "100%", "62.5%": the speed as a percentage with at most one decimal. */
 export function formatSpeedPercent(multiplier: number): string {
-  return `${Number((multiplier * 100).toFixed(1))}%`
+  return percentage(multiplier)
 }
 
 /** Whole BPM when close to one, otherwise one decimal ("72", "43.2"). */
 export function formatBpm(bpm: number): string {
-  return Math.abs(bpm - Math.round(bpm)) < 0.05 ? String(Math.round(bpm)) : bpm.toFixed(1)
+  return decimal(Math.abs(bpm - Math.round(bpm)) < 0.05 ? Math.round(bpm) : Number(bpm.toFixed(1)))
 }

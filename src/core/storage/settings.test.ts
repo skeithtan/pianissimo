@@ -60,7 +60,7 @@ const custom: AppSettings = {
   metronome: { enabled: true, keepTime: false, volume: 0.1, outputId: 'usb-output' },
   rhythm: { toleranceMs: 250, scorePlayback: true, scorePlaybackVolume: 0.45 },
   mic: { follow: true },
-  view: { zoom: 1.75, pageZoom: 1.25, theme: 'dark', scorePaper: 'light' },
+  view: { language: 'es-ES', zoom: 1.75, pageZoom: 1.25, theme: 'dark', scorePaper: 'light' },
   suggestions: { enabled: false },
 }
 

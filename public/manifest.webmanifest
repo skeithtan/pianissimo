@@ -2,6 +2,13 @@
   "name": "Pianissimo",
   "short_name": "Pianissimo",
   "description": "Learn to read piano notation by playing a connected MIDI piano.",
+  "lang": "en-US",
+  "description_localized": {
+    "es-ES": "Aprende a leer partituras de piano tocando con un piano MIDI conectado.",
+    "fr-FR": "Apprenez à lire des partitions en jouant sur un piano MIDI connecté.",
+    "fr-CA": "Apprenez à lire des partitions en jouant sur un piano MIDI connecté.",
+    "fil-PH": "Matutong bumasa ng partitura habang tumutugtog sa nakakabit na piyanong MIDI."
+  },
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

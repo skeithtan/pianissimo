@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Shape checks for records read back from a backup (and for records handed to `putPiece`).
  * Each returns the first problem as readable text, or null when the record is usable. They
@@ -58,12 +59,12 @@ export function ladderOk(v: unknown): boolean {
 
 /** First failing field among `[name, ok]` pairs, as "name is not valid". */
 function firstBad(checks: ReadonlyArray<readonly [string, boolean]>): string | null {
-  for (const [name, ok] of checks) if (!ok) return `${name} is missing or invalid`
+  for (const [name, ok] of checks) if (!ok) return msg('{0} is missing or invalid', name)
   return null
 }
 
 export function pieceProblem(v: unknown): string | null {
-  if (!isObj(v)) return 'is not an object'
+  if (!isObj(v)) return msg('is not an object')
   const tempo = v['userTempo']
   const resume = v['resume']
   return firstBad([
@@ -100,7 +101,7 @@ export function pieceProblem(v: unknown): string | null {
 }
 
 function contextProblem(v: unknown): string | null {
-  if (!isObj(v)) return 'context is not an object'
+  if (!isObj(v)) return msg('context is not an object')
   return firstBad([
     ['context.scoreVersionId', isStr(v['scoreVersionId'])],
     ['context.passage', passage(v['passage'])],
@@ -135,7 +136,7 @@ function traversalOk(t: unknown): boolean {
 const numArray = (v: unknown): boolean => Array.isArray(v) && v.every(isNum)
 
 export function attemptProblem(v: unknown): string | null {
-  if (!isObj(v)) return 'is not an object'
+  if (!isObj(v)) return msg('is not an object')
   const a = v['assistance']
   const base = firstBad([
     ['id', isStr(v['id']) && v['id'] !== ''],
@@ -172,7 +173,7 @@ export function attemptProblem(v: unknown): string | null {
 }
 
 export function barProblem(v: unknown): string | null {
-  if (!isObj(v)) return 'is not an object'
+  if (!isObj(v)) return msg('is not an object')
   return firstBad([
     ['pieceId', isStr(v['pieceId'])],
     ['measureContextKey', isStr(v['measureContextKey'])],
@@ -213,7 +214,7 @@ function suggestionOk(s: unknown): boolean {
 }
 
 export function suggestionStateProblem(v: unknown): string | null {
-  if (!isObj(v)) return 'is not an object'
+  if (!isObj(v)) return msg('is not an object')
   return firstBad([
     ['pieceId', isStr(v['pieceId'])],
     ['disabled', isBool(v['disabled'])],
@@ -222,7 +223,7 @@ export function suggestionStateProblem(v: unknown): string | null {
 }
 
 export function abandonProblem(v: unknown): string | null {
-  if (!isObj(v)) return 'is not an object'
+  if (!isObj(v)) return msg('is not an object')
   return firstBad([
     ['pieceId', isStr(v['pieceId'])],
     ['measureContextKey', isStr(v['measureContextKey'])],
@@ -245,11 +246,15 @@ export function abandonProblem(v: unknown): string | null {
 
 /** A package must be a `ScorePackage` of the format this app reads. */
 export function packageProblem(v: unknown): string | null {
-  if (!isObj(v)) return 'is not an object'
+  if (!isObj(v)) return msg('is not an object')
   const m = v['model']
-  if (!isObj(m)) return 'model is missing'
+  if (!isObj(m)) return msg('model is missing')
   if (m['format'] !== SCORE_PACKAGE_FORMAT) {
-    return `score package format ${String(m['format'])} is not supported (this app reads format ${SCORE_PACKAGE_FORMAT})`
+    return msg(
+      'score package format {0} is not supported (this app reads format {1})',
+      String(m['format']),
+      SCORE_PACKAGE_FORMAT,
+    )
   }
   return (
     firstBad([
@@ -265,7 +270,7 @@ export function packageProblem(v: unknown): string | null {
 }
 
 export function sourceMetaProblem(v: unknown): string | null {
-  if (!isObj(v)) return 'is not an object'
+  if (!isObj(v)) return msg('is not an object')
   return firstBad([
     ['scoreVersionId', isStr(v['scoreVersionId']) && v['scoreVersionId'] !== ''],
     ['fileName', isStr(v['fileName'])],

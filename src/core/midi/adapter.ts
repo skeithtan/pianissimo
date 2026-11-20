@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Web MIDI adapter: feature detection, permission request, port lists, one selected input
  * and one selected output, disconnect/reconnect handling.
@@ -171,7 +172,7 @@ export class MidiAdapter {
         this.setStatus('denied', MIDI_DENIED_EXPLANATION)
       } else {
         const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
-        this.setStatus('error', `MIDI could not be started (${detail}).`)
+        this.setStatus('error', msg('MIDI could not be started ({0}).', detail))
       }
     }
     return this.statusValue

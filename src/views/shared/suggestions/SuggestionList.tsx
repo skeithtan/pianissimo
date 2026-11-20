@@ -1,3 +1,4 @@
+import { msg } from '../../../i18n/messages'
 /**
  * Suggested practice (spec "Suggested practice"): up to three suggestions with their affected
  * bars, context bars kept visibly apart, hand and speed, specific evidence, recovery progress,
@@ -108,7 +109,9 @@ export function SuggestionCard({
           </Heading>
           <p class={styles.facts} title={s.contextLabel}>
             <span class={styles.fact}>{handsText(s.hands)}</span>
-            <span class={styles.fact}>{speedText(s.multiplier)} speed</span>
+            <span class={styles.fact}>
+              {speedText(s.multiplier)} {msg('speed')}
+            </span>
             {kind ? (
               <span class={styles.fact} data-tone="restart">
                 {kind}
@@ -117,14 +120,14 @@ export function SuggestionCard({
           </p>
         </header>
 
-        <ol class={styles.bars} aria-label="Bars in this passage">
+        <ol class={styles.bars} aria-label={msg('Bars in this passage')}>
           {s.bars.map((bar) => (
             <li key={bar.occ} class={styles.bar} data-role={bar.role} aria-label={barSpeech(bar)}>
               <span class={styles.barNumber} aria-hidden="true">
                 {bar.label}
               </span>
               <span class={styles.barRole} aria-hidden="true">
-                {bar.role === 'difficult' ? 'difficult' : 'context'}
+                {bar.role === 'difficult' ? msg('difficult') : msg('context')}
               </span>
             </li>
           ))}
@@ -135,7 +138,9 @@ export function SuggestionCard({
         <p class={styles.evidence}>{s.evidence}</p>
         {s.prompt !== '' ? <p class={styles.prompt}>{s.prompt}</p> : null}
         {s.bars.some((b) => b.role === 'context') && !compact ? (
-          <p class={styles.legend}>Context bars give you a lead-in and lead-out. They do not need to come out clean.</p>
+          <p class={styles.legend}>
+            {msg('Context bars give you a lead-in and lead-out. They do not need to come out clean.')}
+          </p>
         ) : null}
 
         <div class={styles.progress} role="img" aria-label={s.progress.text}>
@@ -148,17 +153,17 @@ export function SuggestionCard({
             variant="primary"
             icon="target"
             onClick={() => onPractice(s)}
-            aria-label={`Practice this passage, ${barsTitle(s.bars).toLowerCase()}`}
+            aria-label={msg('Practice this passage, {0}', barsTitle(s.bars).toLowerCase())}
           >
-            Practice this passage
+            {msg('Practice this passage')}
           </Button>
           {onDismiss ? (
             <Button
               variant="ghost"
               onClick={() => onDismiss(s)}
-              aria-label={`Dismiss suggestion for ${difficultTitle(s.bars).toLowerCase()} for this session`}
+              aria-label={msg('Dismiss suggestion for {0} for this session', difficultTitle(s.bars).toLowerCase())}
             >
-              Not now
+              {msg('Not now')}
             </Button>
           ) : null}
         </div>
@@ -178,7 +183,7 @@ function ImprovedItem({ suggestion: s, headingLevel }: { suggestion: Suggestion;
           {barsTitle(s.bars)}
           <span class={styles.improvedContext}>
             {' '}
-            · {handsText(s.hands)} at {speedText(s.multiplier)}
+            · {handsText(s.hands)} {msg('at')} {speedText(s.multiplier)}
           </span>
         </Heading>
         <p>{s.evidence}</p>
@@ -220,24 +225,30 @@ export function SuggestionList({
               {title}
             </Heading>
           ) : null}
-          {showCount ? <span class={styles.count}>{suggestions.length} of up to 3</span> : null}
+          {showCount ? (
+            <span class={styles.count}>
+              {suggestions.length} {msg('of up to 3')}
+            </span>
+          ) : null}
         </header>
       ) : null}
 
       {disabled ? (
         <div class={styles.empty} data-state="disabled">
           <p>
-            Suggested practice is turned off. Your practice is still recorded, so suggestions will be accurate if you
-            turn it back on.
+            {msg(
+              'Suggested practice is turned off. Your practice is still recorded, so suggestions will be accurate if you turn it back on.',
+            )}
           </p>
-          {onEnableSuggestions ? <Button onClick={onEnableSuggestions}>Turn on suggestions</Button> : null}
+          {onEnableSuggestions ? <Button onClick={onEnableSuggestions}>{msg('Turn on suggestions')}</Button> : null}
         </div>
       ) : suggestions.length === 0 ? (
         hideEmpty ? null : (
           <div class={styles.empty} data-state="none">
             <p>
-              Nothing to suggest right now. A bar appears here when mistakes recur across several comparable passes,
-              never after a single bad one.
+              {msg(
+                'Nothing to suggest right now. A bar appears here when mistakes recur across several comparable passes, never after a single bad one.',
+              )}
             </p>
           </div>
         )
@@ -261,7 +272,10 @@ export function SuggestionList({
         <details class={styles.improved} open={improved.length <= 3}>
           <summary>
             <Icon name="check" size={16} />
-            <span>Improved ({improved.length})</span>
+            <span>
+              {msg('Improved (')}
+              {improved.length})
+            </span>
           </summary>
           <ul class={styles.improvedList}>
             {improved.map((s) => (

@@ -1,3 +1,4 @@
+import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * Sheet music (DECISIONS U72, U105, U106): the score, playback and ungraded live following. A
  * header (back, title, Settings), the whole-piece overview, the notation stage (the landscape
@@ -17,7 +18,7 @@
  * loop handles, no cursor repeat button, no corrections, no receding chrome: the controls stay
  * where the fingers expect them on a small screen.
  */
-import { effect } from '@preact/signals'
+import { effect, untracked } from '@preact/signals'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { createMicFollowerDep, microphoneSupported } from '../../app/audio/micFollower'
 import { connectionOpen, navigate, openSettings, settingsOpen } from '../../app/navigation'
@@ -143,6 +144,10 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
       session.beforeApplyLabels(next)
       if (shown.current?.room === 'hints' && labelRoom(next.mode) === 'all') stripRef.current?.holdLabels?.(true)
     })
+    const offLanguage = effect(() => {
+      messageLanguage()
+      untracked(() => session.refreshLanguage())
+    })
     const offSettings = settings.subscribe(() => session.updateSettings(pickSettings()))
     const offInput = effect(() => session.setInputAvailable(connectionStatus.value.state === 'connected'))
     const offOverlay = effect(() => session.holdInput(settingsOpen.value || connectionOpen.value))
@@ -156,6 +161,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
     return () => {
       offLabels()
       offSettings()
+      offLanguage()
       offInput()
       offOverlay()
       document.removeEventListener('visibilitychange', onVisibility)
@@ -224,7 +230,6 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             onMagnify: (m) => {
               magnifyRef.current = m
             },
-            returnLabel: 'Return to current position',
             // Browsing while the piece plays holds it until the release (U41, U95).
             onBrowse: (browsing) => {
               if (browsing) session.browseStarted()
@@ -247,7 +252,8 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
         strip.respaceFrom?.(snapshot)
         setPrep({ state: 'ready' })
       } catch (e) {
-        if (live) setPrep({ state: 'error', message: e instanceof Error ? e.message : 'The score could not be drawn.' })
+        if (live)
+          setPrep({ state: 'error', message: e instanceof Error ? e.message : msg('The score could not be drawn.') })
       }
     })()
     return () => {
@@ -278,9 +284,9 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
   const followDisabled = !following && (source === null || !canFollow)
   const followTitle = followDisabled
     ? source === null
-      ? 'Set a practice tempo to follow your playing'
-      : 'Connect a piano or use a device with microphone access'
-    : 'Follow my playing'
+      ? msg('Set a practice tempo to follow your playing')
+      : msg('Connect a piano or use a device with microphone access')
+    : msg('Follow my playing')
   const onFollow = () => session.toggleStudyPlayback('follow', followHands)
   // A menu left open across a rotation onto a larger layout has nothing to belong to.
   useEffect(() => {
@@ -303,25 +309,25 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
   )
   const noteNames = (
     <Segmented<PersistentLabelMode>
-      label="Note names on the score"
+      label={msg('Note names on the score')}
       value={appSettings.labels.mode}
-      options={LABEL_OPTIONS}
+      options={LABEL_OPTIONS.map((o) => ({ ...o, label: msg(o.label), title: msg(o.title) }))}
       onChange={onLabels}
       compact
     />
   )
   const followInput = ui.micSupported ? (
     <Segmented
-      label="Follow input"
+      label={msg('Follow input')}
       value={ui.follow}
       options={[
         {
           value: 'piano',
-          label: 'Piano',
-          title: ui.pianoConnected ? 'Follow the connected piano' : 'Piano not connected',
+          label: msg('Piano'),
+          title: ui.pianoConnected ? msg('Follow the connected piano') : msg('Piano not connected'),
           disabled: !ui.pianoConnected,
         },
-        { value: 'mic', label: 'Microphone', title: 'Follow what this device’s microphone hears' },
+        { value: 'mic', label: msg('Microphone'), title: msg('Follow what this device’s microphone hears') },
       ]}
       onChange={(follow) => updateSettings({ mic: { follow: follow === 'mic' } })}
       compact
@@ -329,12 +335,12 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
   ) : null
   const followHandChoice = canFollow ? (
     <Segmented
-      label="Hands to follow"
+      label={msg('Hands to follow')}
       value={followHands}
       options={[
-        { value: 'both', label: 'Both' },
-        { value: 'left', label: 'Left' },
-        { value: 'right', label: 'Right' },
+        { value: 'both', label: msg('Both') },
+        { value: 'left', label: msg('Left') },
+        { value: 'right', label: msg('Right') },
       ]}
       onChange={(hands) => {
         setFollowHands(hands)
@@ -367,7 +373,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
           <button
             type="button"
             class={styles.iconButton}
-            aria-label="Back to Library"
+            aria-label={msg('Back to Library')}
             onClick={() => navigate('library')}
           >
             <Icon name="back" size={22} />
@@ -389,8 +395,8 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             <button
               type="button"
               class={styles.headerPlay}
-              aria-label="Listen"
-              title="Listen"
+              aria-label={msg('Listen')}
+              title={msg('Listen')}
               aria-pressed={listening}
               disabled={listenDisabled}
               onClick={() => session.toggleStudyPlayback('listen')}
@@ -400,7 +406,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             <button
               type="button"
               class={styles.iconButton}
-              aria-label="Follow my playing"
+              aria-label={msg('Follow my playing')}
               title={followTitle}
               aria-pressed={following}
               disabled={followDisabled}
@@ -411,8 +417,8 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             <button
               type="button"
               class={styles.iconButton}
-              aria-label="Menu"
-              title="Menu"
+              aria-label={msg('Menu')}
+              title={msg('Menu')}
               aria-haspopup="dialog"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(true)}
@@ -421,7 +427,13 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             </button>
           </div>
         ) : (
-          <button type="button" class={styles.iconButton} aria-label="Settings" title="Settings" onClick={openSettings}>
+          <button
+            type="button"
+            class={styles.iconButton}
+            aria-label={msg('Settings')}
+            title={msg('Settings')}
+            onClick={openSettings}
+          >
             <Icon name="settings" size={22} />
           </button>
         )}
@@ -439,7 +451,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
         ) : null}
         {phone && status ? (
           <p class={styles.stageNote} role="status">
-            {status}
+            {msg(status)}
           </p>
         ) : null}
       </div>
@@ -452,17 +464,17 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
         <FooterBar
           start={speed('up')}
           end={
-            <FooterMenuPopover label="Sheet music menu">
+            <FooterMenuPopover label={msg('Sheet music menu')}>
               <div class={footerMenuClasses.row}>
                 <span class={footerMenuClasses.label} aria-hidden="true">
-                  Note names
+                  {msg('Note names')}
                 </span>
                 {noteNames}
               </div>
               {followInput ? (
                 <div class={footerMenuClasses.row}>
                   <span class={footerMenuClasses.label} aria-hidden="true">
-                    Follow input
+                    {msg('Follow input')}
                   </span>
                   {followInput}
                 </div>
@@ -470,22 +482,22 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
               {followHandChoice ? (
                 <div class={footerMenuClasses.row}>
                   <span class={footerMenuClasses.label} aria-hidden="true">
-                    Hands to follow
+                    {msg('Hands to follow')}
                   </span>
                   {followHandChoice}
                 </div>
               ) : null}
               <Toggle
                 class={`${footerMenuClasses.row} ${footerMenuClasses.toggle}`}
-                label="Metronome"
+                label={msg('Metronome')}
                 checked={metronomeIsOn}
                 disabled={metronomeDisabled}
-                {...(ui.metronomeMuted ? { description: 'Silent while the microphone follows.' } : {})}
+                {...(ui.metronomeMuted ? { description: msg('Silent while the microphone follows.') } : {})}
                 onChange={toggleMetronome}
               />
               <Toggle
                 class={`${footerMenuClasses.row} ${footerMenuClasses.toggle}`}
-                label="Show keys"
+                label={msg('Show keys')}
                 checked={ui.keyboardVisible}
                 onChange={(on) => session.setKeyboardVisible(on)}
               />
@@ -501,7 +513,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
                   disabled={listenDisabled}
                   onClick={() => session.toggleStudyPlayback('listen')}
                 >
-                  Listen
+                  {msg('Listen')}
                 </Button>
                 <Button
                   icon={following ? 'pause' : 'flow'}
@@ -510,12 +522,12 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
                   disabled={followDisabled}
                   onClick={onFollow}
                 >
-                  Follow my playing
+                  {msg('Follow my playing')}
                 </Button>
               </div>
               {status ? (
                 <p class={practiceStyles.startReason} role="status">
-                  {status}
+                  {msg(status)}
                 </p>
               ) : null}
             </>
@@ -523,28 +535,28 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
         />
       )}
 
-      <Sheet title="Menu" untitled floating open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
+      <Sheet title={msg('Menu')} untitled floating open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
         <div class={styles.menu}>
           <div class={styles.menuRow}>
-            <span class={styles.menuLabel}>Speed</span>
+            <span class={styles.menuLabel}>{msg('Speed')}</span>
             {speed('down')}
           </div>
           <Toggle
             class={`${styles.menuRow} ${styles.menuToggle}`}
-            label="Metronome"
+            label={msg('Metronome')}
             checked={metronomeIsOn}
             disabled={metronomeDisabled}
-            {...(ui.metronomeMuted ? { description: 'Silent while the microphone follows.' } : {})}
+            {...(ui.metronomeMuted ? { description: msg('Silent while the microphone follows.') } : {})}
             onChange={toggleMetronome}
           />
           <div class={styles.menuRow}>
-            <span class={styles.menuLabel}>Note names</span>
+            <span class={styles.menuLabel}>{msg('Note names')}</span>
             {noteNames}
           </div>
           {followInput ? (
             <div class={styles.menuRow}>
               <span class={styles.menuLabel} aria-hidden="true">
-                Follow input
+                {msg('Follow input')}
               </span>
               {followInput}
             </div>
@@ -552,7 +564,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
           {followHandChoice ? (
             <div class={styles.menuRow}>
               <span class={styles.menuLabel} aria-hidden="true">
-                Hands to follow
+                {msg('Hands to follow')}
               </span>
               {followHandChoice}
             </div>
@@ -560,7 +572,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
           {sideways ? null : (
             <Toggle
               class={`${styles.menuRow} ${styles.menuToggle}`}
-              label="Show keys"
+              label={msg('Show keys')}
               checked={ui.keyboardVisible}
               onChange={(on) => session.setKeyboardVisible(on)}
             />
@@ -573,7 +585,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
                 openSettings()
               }}
             >
-              Settings
+              {msg('Settings')}
             </Button>
           </div>
         </div>

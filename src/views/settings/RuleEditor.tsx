@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * One clef's conditional label rule (spec "Persistent score labels"): independent Show below and
  * Show above conditions with strict comparisons, validation, a plain-language summary and a live
@@ -41,14 +42,14 @@ function Condition({
   return (
     <div class={styles.condition}>
       <Toggle
-        label={copy.title}
-        description={`Label notes ${copy.wording} a pitch you choose.`}
+        label={msg(copy.title)}
+        description={msg('Label notes {0} a pitch you choose.', msg(copy.wording))}
         checked={condition.enabled}
         onChange={(enabled) => onChange({ ...condition, enabled })}
       />
       <div class={styles.conditionPitch}>
         <PitchInput
-          label={`${clefDisplayName(clef)} ${copy.title.toLowerCase()} pitch`}
+          label={msg('{0} {1} pitch', clefDisplayName(clef), msg(copy.title).toLowerCase())}
           value={condition.threshold}
           disabled={!condition.enabled}
           error={condition.enabled ? error : null}
@@ -59,7 +60,9 @@ function Condition({
         />
         {condition.enabled && pitch && !error ? (
           <span class={styles.strict}>
-            Notes {copy.wording} {pitch} are labeled. {pitch} itself is not.
+            {which === 'below'
+              ? msg('Notes lower than {0} are labeled. {0} itself is not.', pitch)
+              : msg('Notes higher than {0} are labeled. {0} itself is not.', pitch)}
           </span>
         ) : null}
       </div>
@@ -97,7 +100,7 @@ export function RuleEditor({
   }
   const isTreble = clef === 'G2'
   return (
-    <div class={styles.rule} role="group" aria-label={`${clefDisplayName(clef)} label rule`}>
+    <div class={styles.rule} role="group" aria-label={msg('{0} label rule', clefDisplayName(clef))}>
       <h4 class={styles.groupTitle}>{clefDisplayName(clef)}</h4>
       <Condition
         clef={clef}
@@ -123,13 +126,13 @@ export function RuleEditor({
       {isTreble && !deepEqual(rule, TREBLE_PRESET) ? (
         <div>
           <Button variant="ghost" onClick={() => onRuleChange(TREBLE_PRESET)}>
-            Use preset: below C4 or above C5
+            {msg('Use preset: below C4 or above C5')}
           </Button>
         </div>
       ) : null}
       {clef === 'F4' && !rule.below.enabled && !rule.above.enabled ? (
         <p class={styles.help}>
-          Bass thresholds stay unset until you choose them. Treble settings are never copied here.
+          {msg('Bass thresholds stay unset until you choose them. Treble settings are never copied here.')}
         </p>
       ) : null}
       <p class={styles.summary} data-testid={`summary-${clef}`}>
@@ -144,23 +147,24 @@ function Sample({ clef, rule }: { clef: ClefKey; rule: ClefLabelRule }) {
   const pitches = sampleRule(rule, clef)
   return (
     <div>
-      <ol class={styles.sample} aria-label={`Sample notes for ${clefDisplayName(clef)}`}>
+      <ol class={styles.sample} aria-label={msg('Sample notes for {0}', clefDisplayName(clef))}>
         {pitches.map((p) => (
           <li
             key={p.midi}
             class={styles.samplePitch}
             data-labeled={p.labeled}
             data-threshold={p.isThreshold || undefined}
-            title={p.isThreshold ? 'Boundary pitch' : undefined}
+            title={p.isThreshold ? msg('Boundary pitch') : undefined}
           >
             <span aria-hidden="true">{p.labeled ? '●' : '○'}</span>
             <span>{p.text}</span>
-            <span class="visually-hidden">{p.labeled ? ' labeled' : ' not labeled'}</span>
+            <span class="visually-hidden">{p.labeled ? msg('labeled') : msg(' not labeled')}</span>
           </li>
         ))}
       </ol>
       <p class={styles.legend}>
-        <span aria-hidden="true">{'●'}</span> labeled · <span aria-hidden="true">{'○'}</span> not labeled
+        <span aria-hidden="true">{'●'}</span> {msg('labeled ·')} <span aria-hidden="true">{'○'}</span>{' '}
+        {msg('not labeled')}
       </p>
     </div>
   )

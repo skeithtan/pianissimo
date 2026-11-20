@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Hand selection as two hand toggles around the primary Start/Pause button (spec "Listening and
  * hand practice"): an *on* hand is played by the learner, an *off* hand is played by the piano,
@@ -31,8 +32,8 @@ export function handsFromToggles(left: boolean, right: boolean): HandSelection {
 
 /** Default label of the primary button: Pause while running, Listen with both hands off, otherwise Start. */
 export function playButtonLabel(selection: HandSelection, playing: boolean): string {
-  if (playing) return 'Pause'
-  return selection === 'none' ? 'Listen' : 'Start'
+  if (playing) return msg('Pause')
+  return selection === 'none' ? msg('Listen') : msg('Start')
 }
 
 export interface HandTogglesProps {
@@ -76,7 +77,7 @@ function HandToggle({
   onToggle: () => void
   onUnavailable: (() => void) | undefined
 }) {
-  const name = hand === 'left' ? 'Left hand' : 'Right hand'
+  const name = hand === 'left' ? msg('Left hand') : msg('Right hand')
   const blocked = unavailable !== undefined
   return (
     <button
@@ -85,13 +86,13 @@ function HandToggle({
       aria-pressed={blocked ? false : on}
       aria-disabled={blocked || undefined}
       aria-label={name}
-      title={`${name}: ${blocked ? unavailable : on ? 'you play it' : 'the piano plays it'}`}
+      title={`${name}: ${blocked ? unavailable : on ? msg('you play it') : msg('the piano plays it')}`}
       disabled={disabled}
       onClick={blocked ? onUnavailable : onToggle}
     >
       <Icon name={hand === 'left' ? 'handLeft' : 'hand'} size={compact ? 22 : 30} />
       <span class={styles.letter} aria-hidden="true">
-        {hand === 'left' ? 'L' : 'R'}
+        {hand === 'left' ? msg('L') : msg('R')}
       </span>
     </button>
   )

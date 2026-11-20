@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The expanded result card's contents (DECISIONS U99), fetched on its first expansion: the
  * details module (`ResultDetails.tsx`) pulls in the score excerpts and the Results panels, so it
@@ -41,7 +42,7 @@ export function ResultDetailsLoader(props: ResultDetailsProps) {
   if (Details) return <Details {...props} />
   return (
     <div class={styles.resultDetailsLoading} role="status" data-testid="result-details-loading">
-      {failed ? 'The details could not be loaded. Try again in a moment.' : 'Loading the details…'}
+      {failed ? msg('The details could not be loaded. Try again in a moment.') : msg('Loading the details…')}
     </div>
   )
 }

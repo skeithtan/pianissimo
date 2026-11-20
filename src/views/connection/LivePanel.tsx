@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Live input test (spec "MIDI input, output, and pedal controls": live key and pedal input
  * tests; hardware protocol "Input fidelity"): mini keyboard with held keys and velocity, event
@@ -68,10 +69,10 @@ export function LivePanel({
   return (
     <aside class={styles.live} aria-labelledby="connection-live-title">
       <header class={styles.liveHead}>
-        <h2 id="connection-live-title">Live input</h2>
+        <h2 id="connection-live-title">{msg('Live input')}</h2>
         <span class={styles.liveStatus} data-on={listening ? '' : undefined}>
           <span class={styles.liveDot} aria-hidden="true" />
-          {listening ? `Listening to ${snap.input!.name}` : 'No input selected'}
+          {listening ? msg('Listening to {0}', snap.input!.name) : msg('No input selected')}
         </span>
       </header>
 
@@ -85,15 +86,15 @@ export function LivePanel({
       <div class={styles.counters}>
         <dl>
           <div>
-            <dt>Note on</dt>
+            <dt>{msg('Note on')}</dt>
             <dd data-testid="count-noteon">{counts.noteOn}</dd>
           </div>
           <div>
-            <dt>Note off</dt>
+            <dt>{msg('Note off')}</dt>
             <dd data-testid="count-noteoff">{counts.noteOff}</dd>
           </div>
           <div>
-            <dt>Pedal msgs</dt>
+            <dt>{msg('Pedal msgs')}</dt>
             <dd data-testid="count-cc">{counts.cc}</dd>
           </div>
         </dl>
@@ -102,14 +103,14 @@ export function LivePanel({
           onClick={() => monitor.reset()}
           disabled={counts.noteOn + counts.noteOff + counts.cc === 0}
         >
-          Reset
+          {msg('Reset')}
         </Button>
       </div>
 
-      <section class={styles.liveSection} aria-label="Pedals">
-        <h3>Pedals</h3>
+      <section class={styles.liveSection} aria-label={msg('Pedals')}>
+        <h3>{msg('Pedals')}</h3>
         {meters.length === 0 ? (
-          <p class={styles.help}>Press each pedal slowly. Every controller the piano sends appears here.</p>
+          <p class={styles.help}>{msg('Press each pedal slowly. Every controller the piano sends appears here.')}</p>
         ) : (
           meters.map((m) => {
             const learned =
@@ -117,11 +118,11 @@ export function LivePanel({
             return (
               <PedalMeter
                 key={`${m.channel}:${m.controller}`}
-                label={`${pedalName(m.controller)} · CC ${m.controller}${m.channel === 0 ? '' : ` · ch ${m.channel + 1}`}`}
+                label={`${pedalName(m.controller)} · CC ${m.controller}${m.channel === 0 ? '' : msg(' · ch {0}', m.channel + 1)}`}
                 value={m.value}
                 threshold={learned ? hint.threshold : CONVENTIONAL_THRESHOLD}
                 inverted={learned ? hint.inverted : false}
-                thresholdNote={learned ? 'hint pedal' : 'conventional'}
+                thresholdNote={learned ? msg('hint pedal') : 'conventional'}
               >
                 <span>
                   {meterBehavior(m)} · {m.min}–{m.max}
@@ -132,11 +133,11 @@ export function LivePanel({
         )}
       </section>
 
-      <section class={styles.liveSection} aria-label="Last events">
-        <h3>Last events</h3>
+      <section class={styles.liveSection} aria-label={msg('Last events')}>
+        <h3>{msg('Last events')}</h3>
         {events.length === 0 ? (
           <p class={styles.help}>
-            {listening ? 'Play a key to start.' : 'Choose your piano input to see its keys and pedals.'}
+            {listening ? msg('Play a key to start.') : msg('Choose your piano input to see its keys and pedals.')}
           </p>
         ) : (
           <ol class={styles.events}>
@@ -144,7 +145,7 @@ export function LivePanel({
               const row = eventRow(ev, naming)
               return (
                 <li key={ev.seq} data-kind={ev.kind}>
-                  <span class={styles.evKind}>{row.kind}</span>
+                  <span class={styles.evKind}>{msg(row.kind)}</span>
                   <span class={styles.evWhat}>{row.what}</span>
                   <span class={styles.evValue}>{row.value}</span>
                   <span class={styles.evChannel}>{row.channel}</span>

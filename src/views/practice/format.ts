@@ -1,50 +1,59 @@
+import { msg } from '../../i18n/messages'
 /** Plain-language text shared by the practice result summary and its details. */
 import type { AttemptSummary, AttemptTiming } from '../../app/session'
 import { formatSeconds } from '../../core/history'
 
 /** "On time 38 of 42 · 3 late · 1 missed": a Keep time attempt's timing (zero counts left out). */
 export function timingText(t: AttemptTiming): string {
-  const parts = [`On time ${t.onTime} of ${t.groups}`]
-  if (t.early > 0) parts.push(`${t.early} early`)
-  if (t.late > 0) parts.push(`${t.late} late`)
-  if (t.missed > 0) parts.push(`${t.missed} missed`)
+  const parts = [msg('On time {0} of {1}', t.onTime, t.groups)]
+  if (t.early > 0) parts.push(msg('{0} early', t.early))
+  if (t.late > 0) parts.push(msg('{0} late', t.late))
+  if (t.missed > 0) parts.push(msg('{0} missed', t.missed))
   return parts.join(' · ')
 }
 
 export function wrongText(n: number): string {
-  return n === 0 ? 'No wrong notes' : n === 1 ? '1 wrong note' : `${n} wrong notes`
+  return n === 0 ? msg('No wrong notes') : n === 1 ? msg('1 wrong note') : msg('{0} wrong notes', n)
 }
 
 function passHelpText(result: AttemptSummary): string {
-  if (result.assistance === 'keyboard') return 'Help: the keyboard guide'
-  if (result.assistance === 'names') return 'Help: note names'
-  return result.persistentLabels ? 'Help: note names on the score' : 'No help used'
+  if (result.assistance === 'keyboard') return msg('Help: the keyboard guide')
+  if (result.assistance === 'names') return msg('Help: note names')
+  return result.persistentLabels ? msg('Help: note names on the score') : msg('No help used')
 }
 
 /** The "This pass" lines in display order. The pill previews the beginning of this list. */
 export function passFacts(result: AttemptSummary, goal: number | null): string[] {
   const facts: string[] = []
   if (result.groupsTotal > 0)
-    facts.push(`Right the first time at ${result.groupsFirstPass} of ${result.groupsTotal} places`)
+    facts.push(msg('Right the first time at {0} of {1} places', result.groupsFirstPass, result.groupsTotal))
   facts.push(passHelpText(result))
 
   if (result.timing) facts.push(timingText(result.timing))
   else if (result.completionTimeSec !== null) {
-    const elapsed = `Took ${formatSeconds(result.completionTimeSec)}`
+    const elapsed = msg('Took {0}', formatSeconds(result.completionTimeSec))
     const expected = result.expectedTimeSec
     if (expected !== null && expected > 0) {
       const diff = result.completionTimeSec - expected
       const sign = diff > 0.05 ? '+' : ''
-      facts.push(`${elapsed}; the music lasts ${formatSeconds(expected)} at this speed (${sign}${formatSeconds(diff)})`)
+      facts.push(
+        msg(
+          '{0}; the music lasts {1} at this speed ({2}{3})',
+          elapsed,
+          formatSeconds(expected),
+          sign,
+          formatSeconds(diff),
+        ),
+      )
     } else facts.push(elapsed)
   }
 
   if (goal !== null && goal > 1)
     facts.push(
       result.targetReached
-        ? `Goal reached: ${goal} clean in a row`
-        : `${result.streak} of ${goal} clean in a row toward the goal`,
+        ? msg('Goal reached: {0} clean in a row', goal)
+        : msg('{0} of {1} clean in a row toward the goal', result.streak, goal),
     )
-  else if (result.streak > 1) facts.push(`${result.streak} clean in a row`)
+  else if (result.streak > 1) facts.push(msg('{0} clean in a row', result.streak))
   return facts
 }

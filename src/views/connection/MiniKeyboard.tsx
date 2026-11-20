@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Compact 88-key strip (A0–C8) for the live key test: held keys light up with their velocity
  * (stronger fill = harder press) and carry a dot; keys still sounding only through the sustain
@@ -91,7 +92,8 @@ export function MiniKeyboard({
   }
   const whites = KEYS.filter((k) => !k.black).map(render)
   const blacks = KEYS.filter((k) => k.black).map(render)
-  const label = held.length === 0 ? 'No keys held' : `Held keys: ${held.map((m) => keyName(m, naming)).join(', ')}`
+  const label =
+    held.length === 0 ? msg('No keys held') : msg('Held keys: {0}', held.map((m) => keyName(m, naming)).join(', '))
   return (
     <div class={styles.keyboard}>
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" role="img" aria-label={label}>

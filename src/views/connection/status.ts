@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Plain-language status per setup step, derived from the MIDI snapshot and settings. Pure, so
  * every state is testable; the view shows the text with an icon (never color alone).
@@ -20,31 +21,31 @@ export type StepId = 'piano' | 'playback' | 'pedal'
 export const STEP_ORDER: readonly StepId[] = ['piano', 'playback', 'pedal']
 
 export function channelLabel(channel: number): string {
-  return `channel ${channel + 1}`
+  return msg('channel {0}', channel + 1)
 }
 
 export function accessStatus(s: MidiSnapshot): StepStatus {
   switch (s.access) {
     case 'unsupported':
-      return { tone: 'blocked', text: 'Not available in this browser' }
+      return { tone: 'blocked', text: msg('Not available in this browser') }
     case 'denied':
-      return { tone: 'action', text: 'Blocked by the browser' }
+      return { tone: 'action', text: msg('Blocked by the browser') }
     case 'error':
-      return { tone: 'action', text: 'Could not start' }
+      return { tone: 'action', text: msg('Could not start') }
     case 'requesting':
-      return { tone: 'todo', text: 'Waiting for your answer' }
+      return { tone: 'todo', text: msg('Waiting for your answer') }
     case 'granted':
-      return { tone: 'done', text: 'Allowed' }
+      return { tone: 'done', text: msg('Allowed') }
     case 'idle':
-      return { tone: 'todo', text: s.permission === 'denied' ? 'Blocked by the browser' : 'Not allowed yet' }
+      return { tone: 'todo', text: s.permission === 'denied' ? msg('Blocked by the browser') : msg('Not allowed yet') }
   }
 }
 
 export function inputStatus(s: MidiSnapshot): StepStatus {
-  if (s.access !== 'granted') return { tone: 'blocked', text: 'Needs MIDI access' }
+  if (s.access !== 'granted') return { tone: 'blocked', text: msg('Needs MIDI access') }
   if (s.input?.connected) return { tone: 'done', text: s.input.name }
-  if (s.input) return { tone: 'action', text: `${s.input.name} is disconnected` }
-  return { tone: 'todo', text: s.inputs.length === 0 ? 'No MIDI input found' : 'Choose your piano' }
+  if (s.input) return { tone: 'action', text: msg('{0} is disconnected', s.input.name) }
+  return { tone: 'todo', text: s.inputs.length === 0 ? msg('No MIDI input found') : msg('Choose your piano') }
 }
 
 /** The piano step is MIDI access until it is granted, then the chosen input. */
@@ -58,20 +59,20 @@ export function pianoStatus(s: MidiSnapshot): StepStatus {
  * an echo-free route).
  */
 export function playbackStatus(s: MidiSnapshot, route: MidiRouteSettings): StepStatus {
-  if (s.access !== 'granted') return { tone: 'blocked', text: 'Needs MIDI access' }
-  if (!s.output) return { tone: 'todo', text: 'No output chosen' }
-  if (!s.output.connected) return { tone: 'action', text: `${s.output.name} is disconnected` }
-  if (!route.outputVerified) return { tone: 'action', text: 'Play the test notes' }
-  if (route.echo === 'echo-detected') return { tone: 'action', text: 'Echo detected' }
-  if (route.echo === 'untested') return { tone: 'action', text: 'Echo not checked' }
-  return { tone: 'done', text: `Piano sounds on ${channelLabel(route.outputChannel)}` }
+  if (s.access !== 'granted') return { tone: 'blocked', text: msg('Needs MIDI access') }
+  if (!s.output) return { tone: 'todo', text: msg('No output chosen') }
+  if (!s.output.connected) return { tone: 'action', text: msg('{0} is disconnected', s.output.name) }
+  if (!route.outputVerified) return { tone: 'action', text: msg('Play the test notes') }
+  if (route.echo === 'echo-detected') return { tone: 'action', text: msg('Echo detected') }
+  if (route.echo === 'untested') return { tone: 'action', text: msg('Echo not checked') }
+  return { tone: 'done', text: msg('Piano sounds on {0}', channelLabel(route.outputChannel)) }
 }
 
 export function pedalStatus(settings: AppSettings): StepStatus {
   const mapping = settings.pedal.hintPedal
-  if (!mapping) return { tone: 'optional', text: 'Optional' }
+  if (!mapping) return { tone: 'optional', text: msg('Optional') }
   const name = capitalize(controllerName(mapping.controller))
-  return mapping.verified ? { tone: 'done', text: name } : { tone: 'action', text: `${name}, not tested` }
+  return mapping.verified ? { tone: 'done', text: name } : { tone: 'action', text: msg('{0}, not tested', name) }
 }
 
 export function stepStatuses(s: MidiSnapshot, settings: AppSettings): Readonly<Record<StepId, StepStatus>> {

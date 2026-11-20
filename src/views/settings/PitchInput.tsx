@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Entry for a threshold pitch: note name, accidental and octave ("C4", "F#3", "Bb5"; spec
  * "Persistent score labels": the octave is required even when labels hide octaves).
@@ -77,13 +78,13 @@ function PitchPicker({
 }) {
   const shown = value ?? MIDDLE_C
   return (
-    <div id={id} class={styles.picker} role="group" aria-label={`${label}: picker`}>
+    <div id={id} class={styles.picker} role="group" aria-label={msg('{0}: picker', label)}>
       <div class={styles.pickerRow}>
         <span class={styles.pickerLabel} aria-hidden="true">
-          Note
+          {msg('Note')}
         </span>
         <Segmented<Step>
-          label="Note"
+          label={msg('Note')}
           value={value ? value.step : null}
           options={STEPS.map((step) => ({ value: step, label: step }))}
           onChange={(step) => onPick(pickSpelling(value, { step }))}
@@ -92,13 +93,17 @@ function PitchPicker({
       </div>
       <div class={styles.pickerRow}>
         <span class={styles.pickerLabel} aria-hidden="true">
-          Accidental
+          {msg('Accidental')}
         </span>
         <span class={styles.glyphs}>
           <Segmented<AccidentalKey>
-            label="Accidental"
+            label={msg('Accidental')}
             value={value ? accidentalKey(value.alter) : null}
-            options={ACCIDENTALS.map(({ value: v, label: text, title }) => ({ value: v, label: text, title }))}
+            options={ACCIDENTALS.map(({ value: v, label: text, title }) => ({
+              value: v,
+              label: text,
+              title: msg(title),
+            }))}
             onChange={(key) =>
               onPick(pickSpelling(value, { alter: ACCIDENTALS.find((a) => a.value === key)?.alter ?? 0 }))
             }
@@ -108,13 +113,13 @@ function PitchPicker({
       </div>
       <div class={styles.pickerRow}>
         <span class={styles.pickerLabel} aria-hidden="true">
-          Octave
+          {msg('Octave')}
         </span>
-        <div class={styles.octave} role="group" aria-label="Octave">
+        <div class={styles.octave} role="group" aria-label={msg('Octave')}>
           <button
             type="button"
             class={styles.octaveStep}
-            aria-label="Octave lower"
+            aria-label={msg('Octave lower')}
             disabled={value !== null && shown.octave <= PICKER_OCTAVE_MIN}
             onClick={() => onPick(pickSpelling(value, { octaveBy: -1 }))}
           >
@@ -126,14 +131,14 @@ function PitchPicker({
           <button
             type="button"
             class={styles.octaveStep}
-            aria-label="Octave higher"
+            aria-label={msg('Octave higher')}
             disabled={value !== null && shown.octave >= PICKER_OCTAVE_MAX}
             onClick={() => onPick(pickSpelling(value, { octaveBy: 1 }))}
           >
             <Icon name="plus" size={18} />
           </button>
         </div>
-        <span class={styles.pickerHint}>Middle C is C4.</span>
+        <span class={styles.pickerHint}>{msg('Middle C is C4.')}</span>
       </div>
     </div>
   )
@@ -195,7 +200,7 @@ export function PitchInput({
           spellcheck={false}
           aria-label={label}
           aria-invalid={error ? true : undefined}
-          placeholder="e.g. C4"
+          placeholder={msg('e.g. C4')}
           disabled={disabled}
           value={text}
           onInput={(event) => {
@@ -207,7 +212,7 @@ export function PitchInput({
         <button
           type="button"
           class={styles.pickButton}
-          aria-label={`Choose ${label.charAt(0).toLowerCase()}${label.slice(1)} with buttons`}
+          aria-label={msg('Choose {0}{1} with buttons', label.charAt(0).toLowerCase(), label.slice(1))}
           aria-expanded={picking}
           aria-controls={picking ? pickerId : undefined}
           disabled={disabled}

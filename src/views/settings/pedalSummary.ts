@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /** Plain-language description of the learned hint pedal (spec "MIDI input, output, and pedal controls"). */
 import type { HintPedalMapping, PedalSettings } from '../../core/model/settings'
 
@@ -9,18 +10,27 @@ const CONTROLLER_NAMES: Readonly<Record<number, string>> = {
 
 /** "sustain (right pedal)", or "controller 11" when the piano sent something unusual. */
 export function controllerName(controller: number): string {
-  return CONTROLLER_NAMES[controller] ?? `controller ${controller}`
+  return CONTROLLER_NAMES[controller] ? msg(CONTROLLER_NAMES[controller]!) : msg('controller {0}', controller)
 }
 
 /** One-line summary of a mapping, or why none is set. */
 export function describeHintPedal(mapping: HintPedalMapping | null): string {
   if (mapping === null) {
-    return 'No hint pedal is set. Set one up in Connection to reveal names with your foot, or enable automatic hints in Settings.'
+    return msg(
+      'No hint pedal is set. Set one up in Connection to reveal names with your foot, or enable automatic hints in Settings.',
+    )
   }
-  const channel = mapping.channel === null ? 'any channel' : `channel ${mapping.channel + 1}`
-  const direction = mapping.inverted ? 'down at or below' : 'down at or above'
-  const verified = mapping.verified ? 'Tested.' : 'Not tested yet.'
-  return `${capitalize(controllerName(mapping.controller))}, ${channel}. Counts as pressed ${direction} ${mapping.threshold}. ${verified}`
+  const channel = mapping.channel === null ? msg('any channel') : msg('channel {0}', mapping.channel + 1)
+  const direction = mapping.inverted ? msg('down at or below') : msg('down at or above')
+  const verified = mapping.verified ? msg('Tested.') : msg('Not tested yet.')
+  return msg(
+    '{0}, {1}. Counts as pressed {2} {3}. {4}',
+    capitalize(controllerName(mapping.controller)),
+    channel,
+    direction,
+    mapping.threshold,
+    verified,
+  )
 }
 
 /** Observed pedals as a short list, or null when none were seen. */

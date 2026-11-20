@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Step 2, playback to the piano (spec "MIDI input, output, and pedal controls"): list outputs
  * separately, choose one and the piano's receive channel, then Play test notes followed by
@@ -121,15 +122,15 @@ export function PlaybackStep({
     <Step
       id="playback"
       index={index}
-      title="Playback to the piano"
+      title={msg('Playback to the piano')}
       status={status}
-      lead="The piano plays the hand you are not playing, and both hands in Preview."
+      lead={msg('The piano plays the hand you are not playing, and both hands in Preview.')}
     >
       {!granted ? (
-        <Help>Allow MIDI access first.</Help>
+        <Help>{msg('Allow MIDI access first.')}</Help>
       ) : (
         <PortList
-          label="MIDI outputs"
+          label={msg('MIDI outputs')}
           name="midi-output"
           ports={snap.outputs}
           selected={snap.output}
@@ -139,14 +140,16 @@ export function PlaybackStep({
         />
       )}
       {granted && snap.outputs.length === 0 ? (
-        <Help>No MIDI output found. For 5-pin sockets, connect the interface’s MIDI Out to the piano’s MIDI In.</Help>
+        <Help>
+          {msg('No MIDI output found. For 5-pin sockets, connect the interface’s MIDI Out to the piano’s MIDI In.')}
+        </Help>
       ) : null}
 
       {snap.output ? (
         <>
           <div class={styles.testRow}>
             <label class={styles.select}>
-              <span class={styles.inlineLabel}>Receive channel</span>
+              <span class={styles.inlineLabel}>{msg('Receive channel')}</span>
               <select
                 value={String(route.outputChannel)}
                 onChange={(e) => service.setOutputChannel(Number((e.currentTarget as HTMLSelectElement).value))}
@@ -165,11 +168,13 @@ export function PlaybackStep({
               disabled={!connected || listening}
               aria-busy={listening}
             >
-              {listening ? 'Playing…' : 'Play test notes'}
+              {listening ? msg('Playing…') : msg('Play test notes')}
             </Button>
           </div>
           <Help>
-            Keep your hands off the keys: the piano plays three short notes while the app listens for them coming back.
+            {msg(
+              'Keep your hands off the keys: the piano plays three short notes while the app listens for them coming back.',
+            )}
           </Help>
         </>
       ) : null}
@@ -178,19 +183,21 @@ export function PlaybackStep({
       <EchoFeedback result={echo} route={route} connected={connected} inputConnected={inputConnected} />
 
       <Help>
-        One-hand practice and Preview need the piano itself to play. If it cannot, they stay off. Browser sound (
+        {msg(
+          'One-hand practice and Preview need the piano itself to play. If it cannot, they stay off. Browser sound (',
+        )}
         <button type="button" class={styles.linkButton} onClick={openSettings}>
-          Settings → Sound
+          {msg('Settings → Sound')}
         </button>
-        ) is a separate choice and never replaces the piano without you choosing it.
+        {msg(') is a separate choice and never replaces the piano without you choosing it.')}
         {sound.destination === 'browser'
-          ? ' It is selected now, so Preview and accompaniment play through this device instead.'
+          ? msg(' It is selected now, so Preview and accompaniment play through this device instead.')
           : ''}
       </Help>
 
       <div class={styles.options}>
         <Slider
-          label="Accompaniment level"
+          label={msg('Accompaniment level')}
           min={0}
           max={1}
           step={0.05}
@@ -198,34 +205,38 @@ export function PlaybackStep({
           format={percent}
           onChange={(accompanimentLevel) => updateSettings({ route: { accompanimentLevel } })}
         />
-        <Help>Scales how hard the app plays its notes. Your own keys are never changed.</Help>
+        <Help>{msg('Scales how hard the app plays its notes. Your own keys are never changed.')}</Help>
 
         <Toggle
-          label="Send score pedals in one-hand practice"
-          description="Off by default. Turn on only if you checked that the app’s pedal presses affect just the part the piano plays."
+          label={msg('Send score pedals in one-hand practice')}
+          description={msg(
+            'Off by default. Turn on only if you checked that the app’s pedal presses affect just the part the piano plays.',
+          )}
           checked={route.automaticPedalsInHandPractice}
           onChange={(automaticPedalsInHandPractice) => updateSettings({ route: { automaticPedalsInHandPractice } })}
         />
         <Help>
-          While you play one hand, your own feet control the shared pedals, so two pedal sources never fight over the
-          same sound. Preview always plays the score’s pedals.
+          {msg(
+            'While you play one hand, your own feet control the shared pedals, so two pedal sources never fight over the same sound. Preview always plays the score’s pedals.',
+          )}
         </Help>
       </div>
 
       <div class={styles.stopRow}>
         <Button variant="danger" icon="stop" onClick={stop} disabled={!connected}>
-          Stop sound
+          {msg('Stop sound')}
         </Button>
         <Help>
-          Silences notes the app left sounding, on {channelLabel(route.outputChannel)} of the app’s output only.
+          {msg('Silences notes the app left sounding, on')} {channelLabel(route.outputChannel)}{' '}
+          {msg('of the app’s output only.')}
         </Help>
       </div>
       {stopped ? (
         <Callout tone={stopped.sent ? 'success' : 'warning'} live>
           <p>
             {stopped.sent
-              ? `Sent “all notes off” to ${stopped.outputName} on ${channelLabel(stopped.channel)}.`
-              : 'Nothing could be sent: the output is not connected.'}
+              ? msg('Sent “all notes off” to {0} on {1}.', stopped.outputName, channelLabel(stopped.channel))
+              : msg('Nothing could be sent: the output is not connected.')}
           </p>
         </Callout>
       ) : null}
@@ -247,8 +258,8 @@ function TestFeedback({
 }) {
   if (state === 'failed') {
     return (
-      <Callout tone="warning" title="The test notes could not be sent" live>
-        <p>The output may have just disconnected. Check the cable or Bluetooth link and try again.</p>
+      <Callout tone="warning" title={msg('The test notes could not be sent')} live>
+        <p>{msg('The output may have just disconnected. Check the cable or Bluetooth link and try again.')}</p>
       </Callout>
     )
   }
@@ -256,25 +267,29 @@ function TestFeedback({
     return (
       <div class={styles.question} role="group" aria-labelledby="connection-heard-question">
         <p id="connection-heard-question" class={styles.questionText}>
-          Did the piano itself play three short notes?
+          {msg('Did the piano itself play three short notes?')}
         </p>
         <div class={styles.actions}>
           <Button variant="primary" icon="check" onClick={() => onAnswer(true)}>
-            Yes, I heard them
+            {msg('Yes, I heard them')}
           </Button>
-          <Button onClick={() => onAnswer(false)}>No sound</Button>
+          <Button onClick={() => onAnswer(false)}>{msg('No sound')}</Button>
         </div>
       </div>
     )
   }
   if (state === 'silent') {
     return (
-      <Callout tone="warning" title="The piano did not sound" live>
+      <Callout tone="warning" title={msg('The piano did not sound')} live>
         <ul class={styles.list}>
-          <li>Try another receive channel — many pianos listen on channel 1. Some use 2 or 3 for a second voice.</li>
-          <li>Check the cable direction: the interface’s MIDI Out must go to the piano’s MIDI In.</li>
-          <li>Turn the piano’s volume up and check that it accepts MIDI on this channel.</li>
-          <li>A port in this list is not proof the piano can play what the app sends. Only the sound confirms it.</li>
+          <li>
+            {msg('Try another receive channel — many pianos listen on channel 1. Some use 2 or 3 for a second voice.')}
+          </li>
+          <li>{msg('Check the cable direction: the interface’s MIDI Out must go to the piano’s MIDI In.')}</li>
+          <li>{msg('Turn the piano’s volume up and check that it accepts MIDI on this channel.')}</li>
+          <li>
+            {msg('A port in this list is not proof the piano can play what the app sends. Only the sound confirms it.')}
+          </li>
         </ul>
       </Callout>
     )
@@ -283,14 +298,16 @@ function TestFeedback({
     return (
       <Callout
         tone="success"
-        title={`The piano sounds on ${channelLabel(route.outputChannel)}`}
+        title={msg('The piano sounds on {0}', channelLabel(route.outputChannel))}
         live={state === 'heard'}
       >
         <p>
           {route.echo === 'none'
-            ? 'Accompaniment and Preview play on the piano, and its notes do not come back as if you had played them, so one-hand practice can grade you. '
-            : 'Accompaniment and Preview play on the piano. '}
-          Choosing another output or channel needs a new test.
+            ? msg(
+                'Accompaniment and Preview play on the piano, and its notes do not come back as if you had played them, so one-hand practice can grade you. ',
+              )
+            : msg('Accompaniment and Preview play on the piano. ')}
+          {msg('Choosing another output or channel needs a new test.')}
         </p>
       </Callout>
     )
@@ -313,41 +330,48 @@ function EchoFeedback({
   if (!connected) return null
   if (result?.verdict === 'inconclusive') {
     return (
-      <Callout tone="warning" title="Echo check inconclusive — please play the test notes again" live>
+      <Callout tone="warning" title={msg('Echo check inconclusive — please play the test notes again')} live>
         <p>
-          One test note came back at a different strength, which could have been a key you touched. The previous result
-          is kept. Keep your hands away from the keys and play them again.
+          {msg(
+            'One test note came back at a different strength, which could have been a key you touched. The previous result is kept. Keep your hands away from the keys and play them again.',
+          )}
         </p>
       </Callout>
     )
   }
   if (route.echo === 'echo-detected') {
     return (
-      <Callout tone="danger" title="Echo detected" live={result !== null}>
+      <Callout tone="danger" title={msg('Echo detected')} live={result !== null}>
         <p>
-          Notes the app plays come back from the piano
-          {result?.latencyMs != null ? ` (after ${Math.round(result.latencyMs)} ms)` : ''}. They would look like your
-          own playing, so graded one-hand practice is off for this route until it is fixed. Preview still works, and the
-          app never sends returned notes back to the piano.
+          {msg('Notes the app plays come back from the piano')}
+          {result?.latencyMs != null ? msg(' (after {0} ms)', Math.round(result.latencyMs)) : ''}
+          {msg(
+            '. They would look like your own playing, so graded one-hand practice is off for this route until it is fixed. Preview still works, and the app never sends returned notes back to the piano.',
+          )}
         </p>
         <p>
-          To fix it, turn off MIDI Thru or echo on the piano or interface, or choose another output channel, then play
-          the test notes again.
+          {msg(
+            'To fix it, turn off MIDI Thru or echo on the piano or interface, or choose another output channel, then play the test notes again.',
+          )}
         </p>
         {result?.otherInput ? (
-          <p>Other keys were played during the test. If you touched the piano, play them again with your hands off.</p>
+          <p>
+            {msg(
+              'Other keys were played during the test. If you touched the piano, play them again with your hands off.',
+            )}
+          </p>
         ) : null}
       </Callout>
     )
   }
   if (route.echo === 'untested' && route.outputVerified) {
     return (
-      <Callout tone="info" title="Echo not checked yet" live={result !== null}>
+      <Callout tone="info" title={msg('Echo not checked yet')} live={result !== null}>
         <p>
-          Graded one-hand practice needs to know that the app’s notes do not come back from the piano.{' '}
+          {msg('Graded one-hand practice needs to know that the app’s notes do not come back from the piano.')}{' '}
           {inputConnected
-            ? 'Play the test notes again with your hands off the keys.'
-            : 'Connect the piano input, then play the test notes again.'}
+            ? msg('Play the test notes again with your hands off the keys.')
+            : msg('Connect the piano input, then play the test notes again.')}
         </p>
       </Callout>
     )

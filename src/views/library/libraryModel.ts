@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Library data: the piece list and the actions on it (spec "Main user journey" 1–2, "Storage
  * and recovery"). Framework-light (signals); the components only render it.
@@ -140,10 +141,10 @@ export class LibraryModel {
    */
   async rename(pieceId: string, name: { title: string; composer: string }): Promise<void> {
     const next = normalizePieceName(name)
-    if (next.title === '') throw new Error('A piece needs a title.')
+    if (next.title === '') throw new Error(msg('A piece needs a title.'))
     const storage = await this.#deps.getStorage()
     const updated = await storage.updatePiece(pieceId, { title: next.title, composer: next.composer })
-    if (!updated) throw new Error('This piece is no longer in the library.')
+    if (!updated) throw new Error(msg('This piece is no longer in the library.'))
     await this.refresh()
   }
 
@@ -162,7 +163,7 @@ export class LibraryModel {
     const storage = await this.#deps.getStorage()
     const pkg = await storage.getPackage(piece.scoreVersionId)
     if (!pkg)
-      throw new Error('The score of this piece is missing from this device. Delete it and import its score again.')
+      throw new Error(msg('The score of this piece is missing from this device. Delete it and import its score again.'))
     return { pkg, summary: summarizeImport(pkg.model) }
   }
 
@@ -180,10 +181,12 @@ export class LibraryModel {
     const [source, current] = await Promise.all([storage.getSource(version), storage.getPiece(piece.id)])
     if (!source)
       throw new Error(
-        'The original file of this score is missing from this device. Delete the piece and import its score again.',
+        msg(
+          'The original file of this score is missing from this device. Delete the piece and import its score again.',
+        ),
       )
     if (!current || current.scoreVersionId !== version)
-      throw new Error('This piece changed in the meantime. Close and try again.')
+      throw new Error(msg('This piece changed in the meantime. Close and try again.'))
     const { userTempo: _previous, ...rest } = current
     const next: PieceRecord = { ...rest, ...(fin.userTempo ? { userTempo: fin.userTempo } : {}) }
     await storage.commitImport({
@@ -222,7 +225,7 @@ export class LibraryModel {
     try {
       bytes = new Uint8Array(await file.arrayBuffer())
     } catch (error) {
-      return { ok: false, message: `The file could not be read: ${message(error)}`, problems: [] }
+      return { ok: false, message: msg('The file could not be read: {0}', message(error)), problems: [] }
     }
     try {
       await this.#deps.flushSettings()
@@ -236,13 +239,15 @@ export class LibraryModel {
       if (isQuotaError(error)) {
         return {
           ok: false,
-          message: 'There is not enough storage space in this browser to restore this backup. Nothing was changed.',
+          message: msg(
+            'There is not enough storage space in this browser to restore this backup. Nothing was changed.',
+          ),
           problems: [],
         }
       }
       return {
         ok: false,
-        message: `The backup could not be restored: ${message(error)}. Nothing was changed.`,
+        message: msg('The backup could not be restored: {0}. Nothing was changed.', message(error)),
         problems: [],
       }
     }
@@ -255,26 +260,26 @@ export function describeRestore(report: RestoreReport): string[] {
   const s = report.stores
   const part = (label: string, c: { added: number; updated: number; skipped: number }) => {
     const bits: string[] = []
-    if (c.added) bits.push(`${c.added} added`)
-    if (c.updated) bits.push(`${c.updated} updated`)
-    if (c.skipped) bits.push(`${c.skipped} skipped`)
+    if (c.added) bits.push(msg('{0} added', c.added))
+    if (c.updated) bits.push(msg('{0} updated', c.updated))
+    if (c.skipped) bits.push(msg('{0} skipped', c.skipped))
     return bits.length ? `${label}: ${bits.join(', ')}` : null
   }
   for (const line of [
-    part('Pieces', s.pieces),
-    part('Results', s.attempts),
-    part('Bar histories', s.measureHistory),
-    part('Suggestions', s.suggestionState),
+    part(msg('Pieces'), s.pieces),
+    part(msg('Results'), s.attempts),
+    part(msg('Bar histories'), s.measureHistory),
+    part(msg('Suggestions'), s.suggestionState),
   ]) {
     if (line) lines.push(line)
   }
-  if (lines.length === 0) lines.push('Everything in the backup was already on this device.')
+  if (lines.length === 0) lines.push(msg('Everything in the backup was already on this device.'))
   lines.push(
     report.settings === 'restored'
-      ? 'Settings were restored from the backup (this device keeps its own piano connection).'
+      ? msg('Settings were restored from the backup (this device keeps its own piano connection).')
       : report.settings === 'kept'
-        ? 'Settings on this device were kept.'
-        : 'The backup had no settings. Yours were kept.',
+        ? msg('Settings on this device were kept.')
+        : msg('The backup had no settings. Yours were kept.'),
   )
   return lines
 }

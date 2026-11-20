@@ -1,3 +1,5 @@
+import { importMessage } from '../../i18n/importMessage'
+import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * The import sheet: one modal over the Library showing the `ImportFlow` phase — progress with
  * Cancel, score/part choice, the import summary with hands and tempo, or a readable failure.
@@ -39,7 +41,7 @@ export function ImportSheet({
     onClose()
   }
   return (
-    <Sheet title="Add score" open={open} onClose={closeUnlessSaving} wide>
+    <Sheet title={msg('Add score')} open={open} onClose={closeUnlessSaving} wide>
       {flow ? (
         <FlowBody
           flow={flow}
@@ -92,7 +94,7 @@ const STEP_TEXT = {
 
 function Working({ phase, onCancel }: { phase: Extract<FlowPhase, { kind: 'working' }>; onCancel: () => void }) {
   const fraction = Math.max(0, Math.min(1, phase.fraction))
-  const label = phase.stage && phase.step === 'building' ? STAGE_TEXT[phase.stage] : STEP_TEXT[phase.step]
+  const label = msg(phase.stage && phase.step === 'building' ? STAGE_TEXT[phase.stage] : STEP_TEXT[phase.step])
   return (
     <div class={styles.flow} aria-busy="true">
       <p class={styles.fileName}>{phase.fileName}</p>
@@ -102,17 +104,17 @@ function Working({ phase, onCancel }: { phase: Extract<FlowPhase, { kind: 'worki
       <div
         class={styles.progressTrack}
         role="progressbar"
-        aria-label="Import progress"
+        aria-label={msg('Import progress')}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(fraction * 100)}
       >
         <div class={styles.progressFill} style={{ transform: `scaleX(${Math.max(0.04, fraction)})` }} />
       </div>
-      <p class={styles.muted}>Everything stays on this device. Nothing is uploaded.</p>
+      <p class={styles.muted}>{msg('Everything stays on this device. Nothing is uploaded.')}</p>
       <div class={styles.flowActions}>
         <span />
-        <Button onClick={onCancel}>Cancel import</Button>
+        <Button onClick={onCancel}>{msg('Cancel import')}</Button>
       </div>
     </div>
   )
@@ -134,7 +136,9 @@ function Choose({ flow, phase }: { flow: ImportFlow; phase: Extract<FlowPhase, {
       <p class={styles.fileName}>{phase.fileName}</p>
       {candidates.length > 1 ? (
         <fieldset class={styles.choices}>
-          <legend>This file contains {candidates.length} scores. Which one?</legend>
+          <legend>
+            {msg('This file contains')} {candidates.length} {msg('scores. Which one?')}
+          </legend>
           {candidates.map((c) => (
             <label key={c.id} class={styles.choice}>
               <input
@@ -146,7 +150,7 @@ function Choose({ flow, phase }: { flow: ImportFlow; phase: Extract<FlowPhase, {
               <span>
                 <strong>{candidateTitle(c)}</strong>
                 <small>
-                  {[c.composer, `${c.measures} bars`, `${playableParts(c).length} parts with notes`]
+                  {[c.composer, msg('{0} bars', c.measures), msg('{0} parts with notes', playableParts(c).length)]
                     .filter(Boolean)
                     .join(' · ')}
                 </small>
@@ -158,9 +162,9 @@ function Choose({ flow, phase }: { flow: ImportFlow; phase: Extract<FlowPhase, {
         <p class={styles.stage}>{candidateTitle(candidate)}</p>
       )}
       <fieldset class={styles.choices}>
-        <legend>Which part is the piano?</legend>
+        <legend>{msg('Which part is the piano?')}</legend>
         <p class={styles.muted}>
-          Choose one two-staff piano part, or two one-staff parts (right hand above, left hand below).
+          {msg('Choose one two-staff piano part, or two one-staff parts (right hand above, left hand below).')}
         </p>
         {parts.map((p) => (
           <label key={p.id} class={styles.choice}>
@@ -175,20 +179,20 @@ function Choose({ flow, phase }: { flow: ImportFlow; phase: Extract<FlowPhase, {
                 {p.name}{' '}
                 {p.pianoLike ? (
                   <span class={styles.tag} data-tone="success">
-                    Piano
+                    {msg('Piano')}
                   </span>
                 ) : null}
               </strong>
-              <small>{p.notes === 0 ? 'No notes' : describePart(p)}</small>
+              <small>{p.notes === 0 ? msg('No notes') : describePart(p)}</small>
             </span>
           </label>
         ))}
       </fieldset>
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
       <div class={styles.flowActions}>
-        <Button onClick={() => flow.cancel()}>Cancel</Button>
+        <Button onClick={() => flow.cancel()}>{msg('Cancel')}</Button>
         <Button variant="primary" type="submit" icon="forward">
-          Continue
+          {msg('Continue')}
         </Button>
       </div>
     </form>
@@ -211,7 +215,7 @@ function Review({
   const [triedSave, setTriedSave] = useState(false)
   // A new build (other parts) starts a new draft.
   useEffect(() => setDraft(initialDraft(summary, pkg.model)), [phase.result])
-  const gate = useMemo(() => reviewGate(summary, draft, triedSave), [summary, draft, triedSave])
+  const gate = useMemo(() => reviewGate(summary, draft, triedSave), [summary, draft, triedSave, messageLanguage()])
   const duplicate = pieces.find((p) => p.scoreVersionId === pkg.model.scoreVersionId)
   const save = () => {
     setTriedSave(true)
@@ -222,31 +226,31 @@ function Review({
     return (
       <div class={styles.flow}>
         <div class={importStyles.duplicate}>
-          <p class={styles.muted}>Already in your library</p>
+          <p class={styles.muted}>{msg('Already in your library')}</p>
           <h3>{duplicate.title}</h3>
           {duplicate.composer ? <p class={styles.composer}>{duplicate.composer}</p> : null}
-          <p>Open the piece you already have to keep your place and practice history.</p>
+          <p>{msg('Open the piece you already have to keep your place and practice history.')}</p>
         </div>
-        {phase.saveError ? <Notice tone="danger">{phase.saveError}</Notice> : null}
+        {phase.saveError ? <Notice tone="danger">{importMessage(phase.saveError)}</Notice> : null}
         <details class={importStyles.details}>
-          <summary>Add a separate library entry</summary>
+          <summary>{msg('Add a separate library entry')}</summary>
           <div class={importStyles.detailsBody}>
             <p class={styles.muted}>
-              Another copy starts with fresh practice history and shares this score’s hands and tempo.
+              {msg('Another copy starts with fresh practice history and shares this score’s hands and tempo.')}
             </p>
             <div>
               <Button disabled={phase.saving} onClick={() => void flow.saveCopy(duplicate.id)}>
-                {phase.saving ? 'Saving…' : 'Add another copy'}
+                {phase.saving ? msg('Saving…') : msg('Add another copy')}
               </Button>
             </div>
           </div>
         </details>
         <div class={styles.flowActions}>
           <Button disabled={phase.saving} onClick={() => flow.cancel()}>
-            Cancel
+            {msg('Cancel')}
           </Button>
           <Button variant="primary" icon="forward" disabled={phase.saving} onClick={() => onOpenExisting(duplicate.id)}>
-            Open existing piece
+            {msg('Open existing piece')}
           </Button>
         </div>
       </div>
@@ -256,19 +260,19 @@ function Review({
     <div class={styles.flow}>
       <ImportSummaryView summary={summary} draft={draft} gate={gate} onDraft={setDraft} compact />
       <div class={styles.footer}>
-        {phase.saveError ? <Notice tone="danger">{phase.saveError}</Notice> : null}
+        {phase.saveError ? <Notice tone="danger">{importMessage(phase.saveError)}</Notice> : null}
         <div class={styles.flowActions}>
           {phase.choiceOffered ? (
             <Button onClick={() => flow.backToChoice()} disabled={phase.saving}>
-              Change parts
+              {msg('Change parts')}
             </Button>
           ) : (
             <Button onClick={() => flow.cancel()} disabled={phase.saving}>
-              Cancel
+              {msg('Cancel')}
             </Button>
           )}
           <Button variant="primary" icon="check" disabled={!gate.canSave || phase.saving} onClick={save}>
-            {phase.saving ? 'Saving…' : 'Add and open'}
+            {phase.saving ? msg('Saving…') : msg('Add and open')}
           </Button>
         </div>
       </div>
@@ -282,15 +286,15 @@ export function StorageStatusLine({ status }: { status: StorageStatus | null }) 
   const usage =
     e?.usageBytes !== undefined
       ? e.quotaBytes !== undefined
-        ? `${formatBytes(e.usageBytes)} of about ${formatBytes(e.quotaBytes)} used.`
-        : `${formatBytes(e.usageBytes)} used.`
+        ? msg('{0} of about {1} used.', formatBytes(e.usageBytes), formatBytes(e.quotaBytes))
+        : msg('{0} used.', formatBytes(e.usageBytes))
       : ''
   const persistence =
     status.persistence === 'granted'
-      ? 'This browser keeps your library even when space runs low.'
+      ? msg('This browser keeps your library even when space runs low.')
       : status.persistence === 'denied'
-        ? 'This browser may clear stored data when space runs low. Export a backup now and then.'
-        : 'Export a backup now and then: browser storage is not the only copy you should keep.'
+        ? msg('This browser may clear stored data when space runs low. Export a backup now and then.')
+        : msg('Export a backup now and then: browser storage is not the only copy you should keep.')
   return (
     <p class={styles.storageLine}>
       <Icon name={status.persistence === 'granted' ? 'check' : 'alert'} size={16} />
@@ -316,28 +320,29 @@ function Failed({
     <div class={styles.flow}>
       {phase.fileName ? <p class={styles.fileName}>{phase.fileName}</p> : null}
       <Notice tone="danger">
-        <strong>This file could not be imported.</strong> {phase.message}
+        <strong>{msg('This file could not be imported.')}</strong> {importMessage(phase.message)}
         {details.length ? (
           <ul class={styles.diagList}>
             {details.slice(0, 8).map((d, i) => (
-              <li key={i}>{(d.measure ? `Bar ${d.measure}: ` : '') + d.message}</li>
+              <li key={i}>{(d.measure ? msg('Bar {0}: ', d.measure) : '') + importMessage(d.message)}</li>
             ))}
           </ul>
         ) : null}
       </Notice>
       <p class={styles.muted}>
-        Pianissimo imports MusicXML: .musicxml, compressed .mxl, or .xml files that contain a MusicXML score. Most
-        notation programs can export it (File → Export → MusicXML).
+        {msg(
+          'Pianissimo imports MusicXML: .musicxml, compressed .mxl, or .xml files that contain a MusicXML score. Most notation programs can export it (File → Export → MusicXML).',
+        )}
       </p>
       <div class={styles.flowActions}>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={onClose}>{msg('Close')}</Button>
         <FileButton
           variant="primary"
           icon="upload"
           accept={deps.isAppleMobile() ? undefined : SCORE_ACCEPT}
           onFile={(file) => void flow.openFile(file)}
         >
-          Choose another file
+          {msg('Choose another file')}
         </FileButton>
       </div>
     </div>

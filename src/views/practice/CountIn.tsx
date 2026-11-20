@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The Keep time count-in (rhythm mode, DECISIONS P13): the beats left, large and centered over the
  * stage while the session counts in (`ui.countIn`). Inside the stage only, so it never covers the
@@ -9,7 +10,7 @@ import styles from './practice.module.css'
 export function CountIn({ beats }: { readonly beats: number | null }) {
   if (beats === null) return null
   return (
-    <div class={styles.countIn} role="status" aria-label={`Count-in: ${beats}`} data-testid="count-in">
+    <div class={styles.countIn} role="status" aria-label={msg('Count-in: {0}', beats)} data-testid="count-in">
       {/* A new element per beat restarts the pop. */}
       <span key={beats} class={styles.countInBeat} aria-hidden="true">
         {beats}

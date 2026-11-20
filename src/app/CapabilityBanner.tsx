@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Library-screen notice for missing browser capabilities that matter (spec "Delivery and device
  * compatibility": Safari has no Web MIDI, so say so plainly and point to MIDIWeb or Chrome).
@@ -31,7 +32,7 @@ export function CapabilityBanner({ report }: { report: FeatureReport }) {
             ))}
           </ul>
           <Button variant="ghost" onClick={() => (dismissed.value = true)}>
-            Dismiss
+            {msg('Dismiss')}
           </Button>
         </div>
       </Notice>

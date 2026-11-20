@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * History for one comparison context only (spec "Results and timing"): best clean unassisted
  * runs are ranked on their own, assisted practice is listed apart and never ranked, and
@@ -24,7 +25,7 @@ function rowSummary(a: AttemptRecord, kind: RowKind): string {
   } else {
     parts.push(timeText(a))
     if (kind !== 'clean') parts.push(plural(a.wrongAttacks, 'wrong attack'))
-    if (kind === 'assisted') parts.push(a.assistance.level === 'keyboard' ? 'keyboard guide' : 'note names')
+    if (kind === 'assisted') parts.push(a.assistance.level === 'keyboard' ? msg('keyboard guide') : msg('note names'))
   }
   return parts.join(' · ')
 }
@@ -57,7 +58,7 @@ function AttemptRow({
       >
         <span class={styles.rowMain}>
           <span class={styles.rowWhen}>{whenText(attempt.createdAt, now)}</span>
-          {best ? <span class={styles.badge}>Best</span> : null}
+          {best ? <span class={styles.badge}>{msg('Best')}</span> : null}
         </span>
         <span class={styles.rowStat}>{rowSummary(attempt, kind)}</span>
         <span class={styles.rowChevron} aria-hidden="true">
@@ -118,7 +119,7 @@ function Group({
       )}
       {attempts.length > INITIAL_ROWS ? (
         <Button variant="ghost" onClick={() => setAll(!all)}>
-          {all ? 'Show fewer' : `Show all ${attempts.length}`}
+          {all ? msg('Show fewer') : msg('Show all {0}', attempts.length)}
         </Button>
       ) : null}
     </section>
@@ -141,18 +142,19 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
     <section class={styles.panel} aria-labelledby={headingId} data-panel="history">
       <header class={styles.panelHead}>
         <div>
-          <h2 id={headingId}>History in this setting</h2>
+          <h2 id={headingId}>{msg('History in this setting')}</h2>
           <p class={styles.muted}>{contextText}</p>
         </div>
       </header>
       <p class={styles.note}>
-        Only attempts with the same score version, passage, hands, speed, accompaniment or keep-time mode (and its
-        timing window) and matching rules are compared here. Change any of them and a separate history starts.
+        {msg(
+          'Only attempts with the same score version, passage, hands, speed, accompaniment or keep-time mode (and its timing window) and matching rules are compared here. Change any of them and a separate history starts.',
+        )}
       </p>
 
       <div class={styles.bestRow}>
         <div class={styles.bestCard} data-state={best ? 'has-best' : 'no-best'} data-row="best-clean">
-          <h3>Best clean unassisted</h3>
+          <h3>{msg('Best clean unassisted')}</h3>
           {best ? (
             <>
               <p class={styles.bestValue}>
@@ -163,32 +165,36 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
                     : formatSeconds(best.completionTimeSec)}
               </p>
               <p class={styles.muted}>
-                {signedTime(best) !== null ? `${signedTime(best)} from expected · ` : ''}
+                {signedTime(best) !== null ? msg('{0} from expected · ', signedTime(best)) : ''}
                 {whenText(best.createdAt, now)}
               </p>
               <p class={styles.muted}>
                 {best.context.transport === 'strict'
-                  ? 'Smallest average offset from the music, over all groups.'
-                  : 'Closest to the expected time, because faster is not automatically better.'}
+                  ? msg('Smallest average offset from the music, over all groups.')
+                  : msg('Closest to the expected time, because faster is not automatically better.')}
               </p>
             </>
           ) : (
-            <p class={styles.muted}>No completion with zero wrong notes and no assistance yet in this setting.</p>
+            <p class={styles.muted}>
+              {msg('No completion with zero wrong notes and no assistance yet in this setting.')}
+            </p>
           )}
         </div>
         <div class={styles.bestCard} data-row="streak">
-          <h3>Practice streak</h3>
+          <h3>{msg('Practice streak')}</h3>
           <p class={styles.bestValue}>{history.streak.current}</p>
-          <p class={styles.muted}>Best {history.streak.best} in this setting</p>
+          <p class={styles.muted}>
+            {msg('Best')} {history.streak.best} {msg('in this setting')}
+          </p>
         </div>
       </div>
 
       <Group
-        title="Clean and unassisted"
+        title={msg('Clean and unassisted')}
         note={
           history.cleanRanking.some((a) => a.context.transport === 'strict')
-            ? 'Ranked by average offset from the music.'
-            : 'Ranked by closeness to the expected time.'
+            ? msg('Ranked by average offset from the music.')
+            : msg('Ranked by closeness to the expected time.')
         }
         kind="clean"
         attempts={history.cleanRanking}
@@ -198,7 +204,7 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
         now={now}
       />
       <Group
-        title="Unassisted, with wrong notes"
+        title={msg('Unassisted, with wrong notes')}
         note="Newest first. Not ranked."
         kind="errors"
         attempts={history.unassistedWithErrors}
@@ -207,7 +213,7 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
         now={now}
       />
       <Group
-        title="Assisted practice"
+        title={msg('Assisted practice')}
         note="Note names or the keyboard guide were shown. Kept apart from your clean results and never ranked."
         kind="assisted"
         attempts={history.assisted}
@@ -216,7 +222,7 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
         now={now}
       />
       <Group
-        title="Incomplete attempts"
+        title={msg('Incomplete attempts')}
         note="Diagnostics only: paused, interrupted or stopped attempts are not ranked and have no completion time."
         kind="incomplete"
         attempts={history.incomplete}

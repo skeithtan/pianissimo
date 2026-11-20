@@ -1,3 +1,4 @@
+import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * The expanded result card (DECISIONS U99), loaded on its first expansion
  * (`ResultDetailsLoader`). The music is the point: the pass's mistakes ranked by severity
@@ -49,7 +50,7 @@ export function ResultDetails(p: ResultDetailsProps) {
   }, [p.session, p.result.id])
   const mistakes = useMemo(
     () => (details ? (p.rank ?? rankMistakes)(details.records, details.timeline, p.model, details.marks) : []),
-    [details, p.model, p.rank],
+    [details, p.model, p.rank, messageLanguage()],
   )
   const timing = useMemo(
     () => (details && p.result.timing ? buildTimingReview(details) : null),
@@ -108,14 +109,14 @@ export function ResultDetails(p: ResultDetailsProps) {
       </p>
       {shown.length === 0 ? (
         <p class={styles.clean} data-testid="result-clean">
-          {p.result.passed ? 'No mistakes in this pass.' : 'No wrong keys or timing marks in this pass.'}
+          {p.result.passed ? msg('No mistakes in this pass.') : msg('No wrong keys or timing marks in this pass.')}
         </p>
       ) : null}
       <PassFacts result={p.result} goal={p.goal} />
       {keeps.length ? (
         <section class={styles.group} data-group="keeps" aria-labelledby="result-keeps">
           <h3 id="result-keeps" class={styles.keepsHeading}>
-            Keeps happening
+            {msg('Keeps happening')}
           </h3>
           {keeps.map(excerpt)}
         </section>
@@ -123,21 +124,23 @@ export function ResultDetails(p: ResultDetailsProps) {
       {once.length ? (
         <section class={styles.group} data-group="once" aria-labelledby="result-once">
           <h3 id="result-once" class={styles.groupHeading}>
-            {keeps.length ? 'Also in this pass' : 'In this pass'}
+            {keeps.length ? msg('Also in this pass') : msg('In this pass')}
           </h3>
           {once.map(excerpt)}
         </section>
       ) : null}
       {more.length ? (
         <Button class={styles.more} onClick={() => setLimit((n) => n + MORE_STEP)}>
-          {more.length === 1 ? 'Show 1 more bar' : `Show ${more.length} more bars`}
+          {more.length === 1 ? msg('Show 1 more bar') : msg('Show {0} more bars', more.length)}
         </Button>
       ) : null}
       <div class={styles.folds}>
         {timing && !hasTimingCorrections ? (
           <details class={styles.fold} data-testid="timing-review-steady">
-            <summary>Timing strip</summary>
-            <p class={styles.muted}>All measured attacks were within {timing.nearBeat} ms of the beat.</p>
+            <summary>{msg('Timing strip')}</summary>
+            <p class={styles.muted}>
+              {msg('All measured attacks were within')} {timing.nearBeat} {msg('ms of the beat.')}
+            </p>
           </details>
         ) : null}
         <Earlier pieceId={p.pieceId} attemptId={p.result.id} {...(p.loadHistory ? { load: p.loadHistory } : {})} />
@@ -169,10 +172,10 @@ function ListenControls({ occ, bar, listen }: { occ: number; bar: string; listen
   const kinds: SnippetKind[] = ['played', 'written']
   const blocked = kinds.map((k) => listen.blocked(occ, k))
   const on = listen.playing?.occ === occ ? listen.playing : null
-  const note = on?.shortened ? 'Long pauses are shortened.' : (refused ?? blocked[0] ?? blocked[1])
+  const note = on?.shortened ? msg('Long pauses are shortened.') : (refused ?? blocked[0] ?? blocked[1])
   return (
     <div class={styles.listen} data-testid="excerpt-listen">
-      <div class={styles.listenButtons} role="group" aria-label={`Listen to bar ${bar}`}>
+      <div class={styles.listenButtons} role="group" aria-label={msg('Listen to bar {0}', bar)}>
         {kinds.map((kind, i) => {
           const sounding = on?.kind === kind
           return (
@@ -190,7 +193,7 @@ function ListenControls({ occ, bar, listen }: { occ: number; bar: string; listen
               }}
             >
               <Icon name={sounding ? 'stop' : 'play'} size={16} />
-              <span>{SNIPPET_LABEL[kind]}</span>
+              <span>{msg(SNIPPET_LABEL[kind])}</span>
             </button>
           )
         })}
@@ -261,10 +264,12 @@ function Excerpt({
       data-testid="result-excerpt"
       data-occ={plan.occ}
       data-level={level}
-      aria-label={`Bar ${barLabel}`}
+      aria-label={msg('Bar {0}', barLabel)}
     >
       <figcaption class={styles.caption}>
-        <span class={styles.bar}>Bar {barLabel}</span>
+        <span class={styles.bar}>
+          {msg('Bar')} {barLabel}
+        </span>
         <span class={styles.reason} data-level={level}>
           {lead?.reason ?? timingTitle}
         </span>
@@ -301,7 +306,11 @@ function Excerpt({
               {line.flag ? <strong class={styles.flag}> ({line.flag})</strong> : null}
             </li>
           ))}
-          {extra > 0 ? <li class={styles.muted}>and {extra + 1} more wrong keys here</li> : null}
+          {extra > 0 ? (
+            <li class={styles.muted}>
+              {msg('and')} {extra + 1} {msg('more wrong keys here')}
+            </li>
+          ) : null}
         </ul>
       ) : null}
       {timing && timedBar ? (
@@ -327,24 +336,24 @@ function itemLines(m: RankedMistake, model: ScoreModel, naming: NamingSettings):
   if (m.presses.length > 0)
     return m.presses.map((press) => ({ text: wrongPressLine(press, model, naming), flag: passesText(press.passes) }))
   const words = (m.mark && MARK_WORDS[m.mark.kind]) ?? m.mark?.text ?? m.reason
-  return [{ text: words, flag: '' }]
+  return [{ text: msg(words), flag: '' }]
 }
 
 /** "Clean pass: no wrong notes and no help." or why not, in one plain sentence. */
 export function verdict(r: AttemptSummary): string {
-  if (r.passed) return 'Clean pass: no wrong notes and no help.'
-  if (r.wrongAttacks > 0) return `Not clean: ${wrongText(r.wrongAttacks).toLowerCase()}.`
-  if (r.timing && r.timing.onTime < r.timing.groups) return 'Not clean: the timing slipped.'
-  if (r.assistance === 'keyboard') return 'Not clean: the keyboard guide helped.'
-  if (r.assistance === 'names') return 'Not clean: note names helped.'
-  return 'Completed, but not counted as clean.'
+  if (r.passed) return msg('Clean pass: no wrong notes and no help.')
+  if (r.wrongAttacks > 0) return msg('Not clean: {0}.', wrongText(r.wrongAttacks).toLowerCase())
+  if (r.timing && r.timing.onTime < r.timing.groups) return msg('Not clean: the timing slipped.')
+  if (r.assistance === 'keyboard') return msg('Not clean: the keyboard guide helped.')
+  if (r.assistance === 'names') return msg('Not clean: note names helped.')
+  return msg('Completed, but not counted as clean.')
 }
 
 function PassFacts({ result, goal }: { result: AttemptSummary; goal: number | null }) {
   return (
     <section class={styles.group} aria-labelledby="result-facts">
       <h3 id="result-facts" class={styles.groupHeading}>
-        This pass
+        {msg('This pass')}
       </h3>
       <ul class={styles.facts} data-testid="result-facts">
         {passFacts(result, goal).map((line) => (
@@ -399,26 +408,29 @@ function Earlier({
         : null,
     [data, selected],
   )
-  if (data === 'loading') return <p class={styles.muted}>Loading earlier passes…</p>
+  if (data === 'loading') return <p class={styles.muted}>{msg('Loading earlier passes…')}</p>
   if (data === 'error' || data === null || !model?.attempt || !model.scorecard)
-    return <p class={styles.muted}>Earlier passes could not be loaded.</p>
+    return <p class={styles.muted}>{msg('Earlier passes could not be loaded.')}</p>
   const attempt = model.attempt
   const isThis = attempt.id === attemptId
   const context = `${passageText(model.labeler, attempt.context, data.words)} · ${handsAndSpeed(attempt.context)}`
   return (
     <>
       <details ref={numbers} class={styles.fold} data-testid="result-numbers" open={!isThis || undefined}>
-        <summary>{isThis ? 'All the numbers for this pass' : 'An earlier pass'}</summary>
+        <summary>{isThis ? msg('All the numbers for this pass') : msg('An earlier pass')}</summary>
         {!isThis ? (
           <Button class={styles.backToPass} icon="back" onClick={() => setSelected(attemptId)}>
-            Back to this pass
+            {msg('Back to this pass')}
           </Button>
         ) : null}
         <ScorecardPanel attempt={attempt} scorecard={model.scorecard} isLatest={isThis} />
       </details>
       {model.history && model.historyCount > 1 ? (
         <details class={styles.fold} data-testid="result-history">
-          <summary>Earlier passes of this loop ({model.historyCount - 1})</summary>
+          <summary>
+            {msg('Earlier passes of this loop (')}
+            {model.historyCount - 1})
+          </summary>
           <HistoryPanel history={model.history} contextText={context} selectedId={attempt.id} onSelect={setSelected} />
         </details>
       ) : null}

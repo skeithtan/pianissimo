@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The app's MIDI connection owner: one lazily created `MidiAdapter`, the remembered route, and
  * a small framework-free state store that drives the shell's connection status.
@@ -120,7 +121,7 @@ export function connectionStatusFor(s: MidiSnapshot, unsupportedDetail?: string 
       }
       return {
         state: 'disconnected',
-        detail: input ? `${input.name} is disconnected.` : 'Choose your piano in Connection.',
+        detail: input ? msg('{0} is disconnected.', input.name) : msg('Choose your piano in Connection.'),
       }
     }
   }
@@ -393,7 +394,7 @@ export class MidiService {
     const selected = this.applyRemembered()
     const after = this.adapterValue?.selectedInput
     if (selected && this.announce && !before && after) {
-      this.deps.notify({ kind: 'success', text: `Piano connected: ${after.name}.` })
+      this.deps.notify({ kind: 'success', text: msg('Piano connected: {0}.', after.name) })
     }
   }
 
@@ -453,14 +454,14 @@ export class MidiService {
     if (p.lost.size > 0 && !this.deps.coversDisconnect?.()) {
       const id = this.deps.notify({
         kind: 'warning',
-        text: `Piano disconnected (${list(p.lost)}). Reconnect it to continue.`,
+        text: msg('Piano disconnected ({0}). Reconnect it to continue.', list(p.lost)),
       })
       if (typeof id === 'number') this.lostNotices.push(id)
     }
     if (p.back.size > 0) {
       this.deps.notify({
         kind: 'success',
-        text: `Piano reconnected (${list(p.back)}). Release all keys and pedals before starting again.`,
+        text: msg('Piano reconnected ({0}). Release all keys and pedals before starting again.', list(p.back)),
       })
     }
   }

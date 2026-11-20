@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Small purpose-built controls (spec: no large component suite). Every control meets a 48 px
  * touch target so it is comfortable from a piano bench.
@@ -274,7 +275,7 @@ export function Sheet({
     >
       <header class={[styles.sheetHeader, untitled ? styles.untitled : ''].join(' ')}>
         {untitled ? null : <h2>{title}</h2>}
-        <Button icon="close" variant="ghost" aria-label="Close" onClick={onClose} />
+        <Button icon="close" variant="ghost" aria-label={msg('Close')} onClick={onClose} />
       </header>
       <div class={[styles.sheetBody, flush ? styles.flush : ''].join(' ')}>{presence.mounted ? children : null}</div>
     </dialog>

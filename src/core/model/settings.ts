@@ -1,3 +1,4 @@
+import type { LanguagePreference } from './language'
 /**
  * App settings shared by naming, labels, hints, MIDI routing, playback and storage.
  * Defaults follow the spec's "Recommended defaults" table. Settings are plain JSON and
@@ -159,6 +160,7 @@ export interface MicSettings {
 }
 
 export interface ViewSettings {
+  readonly language: LanguagePreference
   /** Notation scale factor (pinch zoom) of the landscape strip. */
   readonly zoom: number
   /**
@@ -239,6 +241,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   metronome: { enabled: false, keepTime: true, volume: 0.6, outputId: null },
   rhythm: { toleranceMs: 150, scorePlayback: false, scorePlaybackVolume: 1 },
   mic: { follow: false },
-  view: { zoom: 1, pageZoom: 1, theme: 'system', scorePaper: 'theme' },
+  view: { language: 'system', zoom: 1, pageZoom: 1, theme: 'system', scorePaper: 'theme' },
   suggestions: { enabled: true },
 }

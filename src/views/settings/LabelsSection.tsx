@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Score labels (spec "Persistent score labels"): Off, All notes or Conditional with per-clef
  * rules, and whether tie continuations are labeled (U69). Everything here is staged in `labelDraft` and applies only on Apply, which calls the
@@ -57,29 +58,30 @@ export function LabelsSection() {
   return (
     <>
       <Group>
-        <Setting label="Persistent labels" description={MODE_HELP[labels.mode]}>
+        <Setting label={msg('Persistent labels')} description={msg(MODE_HELP[labels.mode])}>
           <Segmented
-            label="Persistent labels"
+            label={msg('Persistent labels')}
             value={labels.mode}
             options={[
-              { value: 'off', label: 'Off' },
-              { value: 'conditional', label: 'Conditional' },
-              { value: 'all', label: 'All notes' },
+              { value: 'off', label: msg('Off') },
+              { value: 'conditional', label: msg('Conditional') },
+              { value: 'all', label: msg('All notes') },
             ]}
             onChange={setDraftMode}
           />
         </Setting>
         {labels.mode !== 'off' ? (
           <Toggle
-            label="Label tied notes"
-            description="Also name the later notes of a tie, which are held rather than played."
+            label={msg('Label tied notes')}
+            description={msg('Also name the later notes of a tie, which are held rather than played.')}
             checked={labels.tiedContinuations}
             onChange={setDraftTiedContinuations}
           />
         ) : null}
         <Help>
-          Visible labels count as note-name assistance in your practice results. Applying a change during a scored
-          attempt interrupts that attempt.
+          {msg(
+            'Visible labels count as note-name assistance in your practice results. Applying a change during a scored attempt interrupts that attempt.',
+          )}
         </Help>
       </Group>
 
@@ -100,35 +102,35 @@ export function LabelsSection() {
         <div class={styles.applyStatus} role="status" aria-live="polite">
           {dirty
             ? blocked
-              ? 'Fix the highlighted problems to apply these changes.'
-              : 'These changes are not applied yet.'
+              ? msg('Fix the highlighted problems to apply these changes.')
+              : msg('These changes are not applied yet.')
             : applied
-              ? 'Label settings applied.'
+              ? msg('Label settings applied.')
               : ''}
         </div>
         <div class={styles.applyButtons}>
           {dirty ? (
             <Button
               variant="ghost"
-              aria-label="Discard changes"
+              aria-label={msg('Discard changes')}
               onClick={() => {
                 discardLabelDraft()
                 setTextErrors({})
               }}
             >
-              Discard
+              {msg('Discard')}
             </Button>
           ) : null}
           <Button
             variant="primary"
-            aria-label="Apply label changes"
+            aria-label={msg('Apply label changes')}
             disabled={!canApply}
             onClick={() => {
               if (applyLabelDraft()) setApplied(true)
               setTextErrors({})
             }}
           >
-            Apply
+            {msg('Apply')}
           </Button>
         </div>
       </div>

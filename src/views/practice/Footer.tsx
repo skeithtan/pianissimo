@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The practice footer (DECISIONS U4, U9, U12, U17, U76): the always-visible Speed control on the
  * start side; the hand toggles around the large Start / Pause / Listen button in the middle; the
@@ -125,8 +126,8 @@ export function Footer({
           <HandToggles
             hands={ui.hands}
             onHandsChange={(hands) => session.setSelection({ hands })}
-            handsUnavailable={ui.handsAvailable ? undefined : HANDS_UNAVAILABLE}
-            onHandsUnavailable={() => pushNotice({ kind: 'info', text: HANDS_UNAVAILABLE_NOTICE })}
+            handsUnavailable={ui.handsAvailable ? undefined : msg(HANDS_UNAVAILABLE)}
+            onHandsUnavailable={() => pushNotice({ kind: 'info', text: msg(HANDS_UNAVAILABLE_NOTICE) })}
             playing={ui.playing}
             onPlayPause={() => session.togglePlay()}
             playLabel={playLabel}
@@ -135,7 +136,7 @@ export function Footer({
           />
           {!ui.playing && ui.startReason ? (
             <p class={styles.startReason} role="note">
-              {ui.startReason}
+              {msg(ui.startReason)}
             </p>
           ) : null}
         </>

@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The Settings overlay (spec "Main user journey": Settings open without losing the selected score
  * or passage). A full-height sheet over the current view, which stays mounted underneath.
@@ -81,7 +82,7 @@ function Panel({ features }: { features: FeatureReport }) {
 
   return (
     <div class={styles.panel}>
-      <div class={styles.tabs} role="tablist" aria-label="Settings sections">
+      <div class={styles.tabs} role="tablist" aria-label={msg('Settings sections')}>
         {TABS.map((tab, i) => (
           <button
             key={tab.id}
@@ -96,11 +97,11 @@ function Panel({ features }: { features: FeatureReport }) {
             onClick={() => setActive(tab.id)}
             onKeyDown={(e) => move(e, i)}
           >
-            <span>{tab.label}</span>
+            <span>{msg(tab.label)}</span>
             {tab.id === 'labels' && labelsDirty ? (
               <>
                 <span class={styles.pending} aria-hidden="true" />
-                <span class="visually-hidden"> (changes not applied)</span>
+                <span class="visually-hidden"> {msg('(changes not applied)')}</span>
               </>
             ) : null}
           </button>
@@ -117,8 +118,8 @@ function Panel({ features }: { features: FeatureReport }) {
             class={styles.section}
           >
             <header class={styles.sectionHead}>
-              <h3>{tab.label}</h3>
-              <p>{tab.intro}</p>
+              <h3>{msg(tab.label)}</h3>
+              <p>{msg(tab.intro)}</p>
             </header>
             {body(tab.id)}
           </section>
@@ -131,7 +132,7 @@ function Panel({ features }: { features: FeatureReport }) {
 /** Drop staged label edits, telling the learner when there were any. */
 function dropStagedLabelEdits(): void {
   if (isLabelDraftDirty()) {
-    pushNotice({ kind: 'info', text: 'Label changes were not applied, so they were discarded.' })
+    pushNotice({ kind: 'info', text: msg('Label changes were not applied, so they were discarded.') })
   }
   discardLabelDraft()
 }
@@ -151,7 +152,7 @@ export function SettingsOverlay({ features = getFeatures() }: { features?: Featu
     if (!open) dropStagedLabelEdits()
   }, [open])
   return (
-    <Sheet title="Settings" open={open} onClose={requestCloseSettings} wide tall flush>
+    <Sheet title={msg('Settings')} open={open} onClose={requestCloseSettings} wide tall flush>
       <Panel features={features} />
     </Sheet>
   )

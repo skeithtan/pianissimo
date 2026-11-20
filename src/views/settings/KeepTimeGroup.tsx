@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Keep time (rhythm mode, DECISIONS P13): how close to its scheduled time a note must be to count
  * as on time. Tight ±80 ms / Normal ±150 ms (the default) / Loose ±250 ms. Applies immediately;
@@ -20,19 +21,26 @@ export function KeepTimeGroup() {
   const toleranceMs = settings.value.rhythm.toleranceMs
   const value = TOLERANCE_OPTIONS.find((o) => o.value === String(toleranceMs))?.value ?? null
   return (
-    <Group title="Keep time">
+    <Group title={msg('Keep time')}>
       <Setting
-        label="Timing window"
-        description="With Keep time on, the music never waits: a note played within this window of its beat counts as on time, a later one is missed."
+        label={msg('Timing window')}
+        description={msg(
+          'With Keep time on, the music never waits: a note played within this window of its beat counts as on time, a later one is missed.',
+        )}
       >
         <Segmented
-          label="Keep time window"
+          label={msg('Keep time window')}
           value={value}
-          options={TOLERANCE_OPTIONS}
+          options={TOLERANCE_OPTIONS.map((o) => ({ ...o, label: msg(o.label) }))}
           onChange={(choice) => updateSettings({ rhythm: { toleranceMs: Number(choice) } })}
         />
       </Setting>
-      {value === null ? <Help>Now ±{toleranceMs} ms.</Help> : null}
+      {value === null ? (
+        <Help>
+          {msg('Now ±')}
+          {toleranceMs} ms.
+        </Help>
+      ) : null}
     </Group>
   )
 }

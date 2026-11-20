@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import type { ExcerptMarkup } from '../../render/excerpt'
 import { positionToX } from '../../render/strip/scroll'
 import type { PreparedLayout } from '../../render/types'
@@ -36,15 +37,17 @@ export function TimingBarPlot({
   return (
     <>
       <div class={styles.axis} aria-hidden="true">
-        <span class={styles.early}>Early</span>
-        <span class={styles.beat}>On beat</span>
-        <span class={styles.late}>Late</span>
-        {hasMiss ? <span class={styles.missed}>Missed</span> : null}
+        <span class={styles.early}>{msg('Early')}</span>
+        <span class={styles.beat}>{msg('On beat')}</span>
+        <span class={styles.late}>{msg('Late')}</span>
+        {hasMiss ? <span class={styles.missed}>{msg('Missed')}</span> : null}
       </div>
       <div
         class={styles.chart}
         role="img"
-        aria-label="Timing by attack. Early above the beat line, late below, and missed entries shown as crosses."
+        aria-label={msg(
+          'Timing by attack. Early above the beat line, late below, and missed entries shown as crosses.',
+        )}
         data-testid="timing-review"
       >
         <svg
@@ -84,10 +87,10 @@ export function TimingBarPlot({
               data-offset-ms={point.offset ?? undefined}
               title={
                 point.missed
-                  ? 'Missed'
+                  ? msg('Missed')
                   : offset === 0
-                    ? 'On the beat'
-                    : `${Math.abs(offset)} ms ${offset < 0 ? 'early' : 'late'}`
+                    ? msg('On the beat')
+                    : msg('{0} ms {1}', Math.abs(offset), offset < 0 ? msg('early') : msg('late'))
               }
               style={{ left: `${(100 * point.x) / WIDTH}%`, top: `${point.missed ? MISS_Y : y(offset)}px` }}
               aria-hidden="true"

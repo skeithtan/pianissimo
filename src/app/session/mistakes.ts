@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Repeated mistakes (DECISIONS P24): the same wrong key at the same place of a loop, pass after
  * pass, found in the per-group outcomes of the session's recent scored attempts (pure). The
@@ -173,5 +174,5 @@ export function repeatedMistakeLine(
 ): string {
   const [wrong, expected] = pressNames(m.wrongPitch, m.expectedPitch, m.expectedNote, score, naming)
   const passes = COUNTS[m.passes] ?? String(m.passes)
-  return `${wrong} instead of ${expected} in bar ${m.bar}, ${passes} passes running`
+  return msg('{0} instead of {1} in bar {2}, {3} passes running', wrong, expected, m.bar, passes)
 }

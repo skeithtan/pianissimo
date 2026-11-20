@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Step 5, "Set hint pedal" (spec "MIDI input, output, and pedal controls"): press the desired
  * pedal, the app observes its message, a test press confirms the mapping (one press = one
@@ -94,12 +95,12 @@ export function HintPedalStep({
     <Step
       id="pedal"
       index={index}
-      title="Hint pedal"
+      title={msg('Hint pedal')}
       status={status}
-      lead="Reveal a hint with your foot instead of touching the screen. The middle pedal works best."
+      lead={msg('Reveal a hint with your foot instead of touching the screen. The middle pedal works best.')}
     >
       {!inputReady && !active ? (
-        <Help>Choose your piano input first, then press the pedal you want to use.</Help>
+        <Help>{msg('Choose your piano input first, then press the pedal you want to use.')}</Help>
       ) : null}
 
       {phase === 'idle' ? (
@@ -108,21 +109,21 @@ export function HintPedalStep({
             {describeHintPedal(saved)}
           </p>
           {justSaved ? (
-            <Callout tone="success" title="Hint pedal saved" live>
-              <p>One press reveals one hint during practice.</p>
+            <Callout tone="success" title={msg('Hint pedal saved')} live>
+              <p>{msg('One press reveals one hint during practice.')}</p>
             </Callout>
           ) : null}
           <div class={styles.actions}>
             <Button variant={saved ? 'secondary' : 'primary'} onClick={start} disabled={!inputReady}>
-              {saved ? 'Set hint pedal again' : 'Set hint pedal'}
+              {saved ? msg('Set hint pedal again') : msg('Set hint pedal')}
             </Button>
             {saved ? (
               <>
                 <Button onClick={testSaved} disabled={!inputReady}>
-                  Test it
+                  {msg('Test it')}
                 </Button>
                 <Button variant="ghost" onClick={() => updateSettings({ pedal: { hintPedal: null } })}>
-                  Remove
+                  {msg('Remove')}
                 </Button>
               </>
             ) : null}
@@ -134,15 +135,15 @@ export function HintPedalStep({
 
       <div class={styles.inline}>
         <span class={styles.inlineLabel} aria-hidden="true">
-          A press shows
+          {msg('A press shows')}
         </span>
         <Segmented
-          label="Hint pedal action"
+          label={msg('Hint pedal action')}
           value={pedal.hintPedalAction}
           compact
           options={[
-            { value: 'names', label: 'Note names' },
-            { value: 'keys', label: 'Show keys' },
+            { value: 'names', label: msg('Note names') },
+            { value: 'keys', label: msg('Show keys') },
           ]}
           onChange={(hintPedalAction) => updateSettings({ pedal: { hintPedalAction } })}
         />
@@ -150,28 +151,30 @@ export function HintPedalStep({
 
       {mapping ? (
         <details class={styles.details}>
-          <summary>Advanced: inversion and threshold</summary>
+          <summary>{msg('Advanced: inversion and threshold')}</summary>
           <div class={styles.detailsBody}>
             <Toggle
-              label="Inverted pedal"
-              description="For pedals that send a high value at rest and a low value when pressed."
+              label={msg('Inverted pedal')}
+              description={msg('For pedals that send a high value at rest and a low value when pressed.')}
               checked={mapping.inverted}
               onChange={(inverted) => adjust({ inverted })}
             />
             <Slider
-              label="Threshold"
+              label={msg('Threshold')}
               min={1}
               max={127}
               step={1}
               value={mapping.threshold}
               onChange={(threshold) => adjust({ threshold })}
             />
-            <Help>Changing either needs a new test press before saving.</Help>
+            <Help>{msg('Changing either needs a new test press before saving.')}</Help>
           </div>
         </details>
       ) : null}
 
-      <Help>You can enable automatic hints in Settings without a pedal. {PEDAL_SOUND_CAVEAT}</Help>
+      <Help>
+        {msg('You can enable automatic hints in Settings without a pedal.')} {msg(PEDAL_SOUND_CAVEAT)}
+      </Help>
     </Step>
   )
 }
@@ -205,16 +208,19 @@ function FlowPanel({
         <div class={styles.listening} role="status">
           <span class={styles.pulse} aria-hidden="true" />
           <div>
-            <strong>Press and release the pedal you want to use.</strong>
-            <p class={styles.help}>The middle pedal is best: it rarely matters for the music you are reading.</p>
+            <strong>{msg('Press and release the pedal you want to use.')}</strong>
+            <p class={styles.help}>
+              {msg('The middle pedal is best: it rarely matters for the music you are reading.')}
+            </p>
           </div>
         </div>
       ) : null}
       {phase === 'listening' && quiet ? (
-        <Callout tone="warning" title="No pedal message yet">
+        <Callout tone="warning" title={msg('No pedal message yet')}>
           <p>
-            If you are pressing the middle pedal, your piano may not send it. Try another pedal, or enable automatic
-            hints in Settings.
+            {msg(
+              'If you are pressing the middle pedal, your piano may not send it. Try another pedal, or enable automatic hints in Settings.',
+            )}
           </p>
         </Callout>
       ) : null}
@@ -225,7 +231,7 @@ function FlowPanel({
             {detected ? 'Detected: ' : 'Testing: '}
             <strong>{name}</strong>
             {mapping.channel === null ? '' : `, ${channelLabel(mapping.channel)}`}
-            {detected ? ` — values ${mapping.observedMin}–${mapping.observedMax}` : ''}.
+            {detected ? msg(' — values {0}–{1}', mapping.observedMin, mapping.observedMax) : ''}.
           </p>
           <PedalMeter
             label={name}
@@ -235,16 +241,16 @@ function FlowPanel({
             thresholdNote="learned"
           />
           {detected?.preferredMiddle ? (
-            <Help>The middle pedal was chosen because it sends a usable message.</Help>
+            <Help>{msg('The middle pedal was chosen because it sends a usable message.')}</Help>
           ) : null}
           {missingMiddle ? (
-            <Callout tone="info" title="The middle pedal was not received">
-              <p>{NO_MIDDLE_PEDAL_EXPLANATION}</p>
+            <Callout tone="info" title={msg('The middle pedal was not received')}>
+              <p>{msg(NO_MIDDLE_PEDAL_EXPLANATION)}</p>
             </Callout>
           ) : null}
           {mapping.controller === CC_SUSTAIN ? (
-            <Callout tone="warning" title="This is the sustain pedal">
-              <p>You will want it for playing. The middle or soft pedal usually makes a better hint pedal.</p>
+            <Callout tone="warning" title={msg('This is the sustain pedal')}>
+              <p>{msg('You will want it for playing. The middle or soft pedal usually makes a better hint pedal.')}</p>
             </Callout>
           ) : null}
         </>
@@ -253,15 +259,15 @@ function FlowPanel({
       {phase === 'confirming' ? (
         <div class={styles.listening} role="status">
           <span class={styles.pulse} aria-hidden="true" />
-          <strong>Now press it once more to test it.</strong>
+          <strong>{msg('Now press it once more to test it.')}</strong>
         </div>
       ) : null}
-      {phase === 'pressed' ? <Callout tone="success" title="Hint! Now release the pedal." live /> : null}
+      {phase === 'pressed' ? <Callout tone="success" title={msg('Hint! Now release the pedal.')} live /> : null}
       {phase === 'confirmed' ? (
-        <Callout tone="success" title="It works: one press, one hint" live>
+        <Callout tone="success" title={msg('It works: one press, one hint')} live>
           <p>
-            Hints triggered: <strong data-testid="hint-trigger-count">{setup.triggerCount}</strong>. Hold the pedal
-            down: the count does not rise until you release and press again.
+            {msg('Hints triggered:')} <strong data-testid="hint-trigger-count">{setup.triggerCount}</strong>
+            {msg('. Hold the pedal down: the count does not rise until you release and press again.')}
           </p>
         </Callout>
       ) : null}
@@ -269,12 +275,12 @@ function FlowPanel({
       <div class={styles.actions}>
         {phase === 'confirmed' ? (
           <Button variant="primary" icon="check" onClick={onSave}>
-            Save hint pedal
+            {msg('Save hint pedal')}
           </Button>
         ) : null}
-        {phase !== 'listening' ? <Button onClick={onRestart}>Start over</Button> : null}
+        {phase !== 'listening' ? <Button onClick={onRestart}>{msg('Start over')}</Button> : null}
         <Button variant="ghost" onClick={onCancel}>
-          Cancel
+          {msg('Cancel')}
         </Button>
       </div>
     </div>

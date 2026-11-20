@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Renders the current view from the registry, loading lazily imported views on demand. Loaded
  * components are cached for the life of the page. A slow load shows a quiet status after a short
@@ -78,21 +79,21 @@ export function LazyView({ name }: { name: ScreenName }) {
   if (failed && failed.name === name && failed.attempt === attempt) {
     return (
       <div class={styles.status} role="alert">
-        <p>This screen could not be loaded. Check your connection and try again.</p>
+        <p>{msg('This screen could not be loaded. Check your connection and try again.')}</p>
         <Button
           onClick={() => {
             setFailed(null)
             setAttempt((n) => n + 1)
           }}
         >
-          Try again
+          {msg('Try again')}
         </Button>
       </div>
     )
   }
   return slow ? (
     <div class={styles.status} role="status">
-      Loading…
+      {msg('Loading…')}
     </div>
   ) : null
 }

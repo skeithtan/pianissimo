@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Loop edge steppers (DECISIONS U6, U22): one rounded selector, ‹ 12 › – ‹ 14 ›, where each
  * number has its own pair of chevrons. A chevron moves an edge to the previous or next barline;
@@ -35,7 +36,7 @@ export interface LoopSteppersProps {
   readonly class?: string | undefined
 }
 
-const defaultBarLabel = (occ: number): string => `Bar ${occ + 1}`
+const defaultBarLabel = (occ: number): string => msg('Bar {0}', occ + 1)
 
 function StepButton({
   edge,
@@ -54,8 +55,8 @@ function StepButton({
     <button
       type="button"
       class={styles.step}
-      aria-label={`Move ${title.toLowerCase()} one bar ${dir < 0 ? 'earlier' : 'later'}`}
-      title={`One bar ${dir < 0 ? 'earlier' : 'later'}`}
+      aria-label={msg('Move {0} one bar {1}', title.toLowerCase(), dir < 0 ? msg('earlier') : msg('later'))}
+      title={msg('One bar {0}', dir < 0 ? msg('earlier') : msg('later'))}
       disabled={!enabled}
       onClick={() => onStep(edge, dir)}
     >
@@ -108,7 +109,7 @@ export function LoopSteppers({
     if (next) onLoopChange(next)
   }
   const full = (edge: LoopEdge): string => {
-    if (!loop) return 'No loop'
+    if (!loop) return msg('No loop')
     if (edgeLabel) return edgeLabel(loop, edge)
     return barLabel(edge === 'start' ? loop.fromOcc : loop.toOcc)
   }
@@ -122,7 +123,7 @@ export function LoopSteppers({
     <div class={[styles.steppers, className].filter(Boolean).join(' ')}>
       <Group
         edge="start"
-        title="Loop start"
+        title={msg('Loop start')}
         short={short('start')}
         full={full('start')}
         bars={{ earlier: on(bars.startEarlier), later: on(bars.startLater) }}
@@ -133,7 +134,7 @@ export function LoopSteppers({
       </span>
       <Group
         edge="end"
-        title="Loop end"
+        title={msg('Loop end')}
         short={short('end')}
         full={full('end')}
         bars={{ earlier: on(bars.endEarlier), later: on(bars.endLater) }}

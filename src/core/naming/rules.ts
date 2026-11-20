@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import type { ClefKey } from '../model/score'
 import type { ClefLabelRule, LabelCondition } from '../model/settings'
 import type { Spelling } from '../music/pitch'
@@ -24,11 +25,11 @@ const CONDITION_TITLE = { below: 'Show below', above: 'Show above' } as const
 
 /** Why a threshold is not a usable pitch, or null when it is valid. */
 export function thresholdProblem(s: Spelling): string | null {
-  if (!isStep(s.step)) return 'the note name must be C, D, E, F, G, A or B'
-  if (!Number.isInteger(s.alter) || Math.abs(s.alter) > 2) return 'the accidental must be ♮, ♯, ♭, 𝄪 or 𝄫'
-  if (!Number.isInteger(s.octave)) return 'the octave must be a whole number'
+  if (!isStep(s.step)) return msg('the note name must be C, D, E, F, G, A or B')
+  if (!Number.isInteger(s.alter) || Math.abs(s.alter) > 2) return msg('the accidental must be ♮, ♯, ♭, 𝄪 or 𝄫')
+  if (!Number.isInteger(s.octave)) return msg('the octave must be a whole number')
   const midi = spellingToMidi(s)
-  if (midi < MIDI_LOW || midi > MIDI_HIGH) return `${formatSpelling(s)} is outside the MIDI range (C-1 to G9)`
+  if (midi < MIDI_LOW || midi > MIDI_HIGH) return msg('{0} is outside the MIDI range (C-1 to G9)', formatSpelling(s))
   return null
 }
 
@@ -37,11 +38,11 @@ function checkCondition(
   condition: LabelCondition,
 ): { midi: number | null; issue?: RuleIssue } {
   if (!condition.enabled) return { midi: null }
-  const title = CONDITION_TITLE[field]
+  const title = msg(CONDITION_TITLE[field])
   if (condition.threshold === null) {
     return {
       midi: null,
-      issue: { field, message: `${title} is on but has no pitch. Enter a pitch such as C4 or B♭3.` },
+      issue: { field, message: msg('{0} is on but has no pitch. Enter a pitch such as C4 or B♭3.', title) },
     }
   }
   const problem = thresholdProblem(condition.threshold)
@@ -73,8 +74,8 @@ export function validateRule(rule: ClefLabelRule): RuleValidation {
     issues.push({
       field: 'range',
       message:
-        `Show below ${lower} is higher than Show above ${upper}, so every note would be labeled. ` +
-        `Choose a "below" pitch of ${upper} or lower, or an "above" pitch of ${lower} or higher.`,
+        msg('Show below {0} is higher than Show above {1}, so every note would be labeled. ', lower, upper) +
+        msg('Choose a "below" pitch of {0} or lower, or an "above" pitch of {1} or higher.', upper, lower),
     })
   }
   return { ok: issues.length === 0, issues }
@@ -91,28 +92,47 @@ function activeThreshold(condition: LabelCondition): Spelling | null {
  * "Treble clef: label notes below C4 or above C5. Notes from C4 through C5 stay unlabeled."
  */
 export function describeRule(rule: ClefLabelRule, clefKey: ClefKey): string {
-  const clef = `${clefShortName(clefKey)} clef`
+  const clef = msg('{0} clef', clefShortName(clefKey))
   const validation = validateRule(rule)
   if (validation.issues.some((i) => i.field === 'range')) {
-    return `${clef}: the two conditions overlap, so every note would be labeled.`
+    return msg('{0}: the two conditions overlap, so every note would be labeled.', clef)
   }
   const below = activeThreshold(rule.below)
   const above = activeThreshold(rule.above)
-  const pending = validation.issues.map((i) => CONDITION_TITLE[i.field as 'below' | 'above'])
-  const needs = pending.length > 0 ? ` ${pending.join(' and ')} still needs a valid pitch.` : ''
+  const pending = validation.issues.map((i) => msg(CONDITION_TITLE[i.field as 'below' | 'above']))
+  const needs = pending.length > 0 ? msg(' {0} still needs a valid pitch.', pending.join(` ${msg('and')} `)) : ''
 
   if (below && above) {
-    return `${clef}: label notes below ${formatSpelling(below)} or above ${formatSpelling(above)}. Notes from ${formatSpelling(below)} through ${formatSpelling(above)} stay unlabeled.`
+    return msg(
+      '{0}: label notes below {1} or above {2}. Notes from {3} through {4} stay unlabeled.',
+      clef,
+      formatSpelling(below),
+      formatSpelling(above),
+      formatSpelling(below),
+      formatSpelling(above),
+    )
   }
   if (below) {
-    return `${clef}: label notes below ${formatSpelling(below)}. Notes from ${formatSpelling(below)} upward stay unlabeled.${needs}`
+    return msg(
+      '{0}: label notes below {1}. Notes from {2} upward stay unlabeled.{3}',
+      clef,
+      formatSpelling(below),
+      formatSpelling(below),
+      needs,
+    )
   }
   if (above) {
-    return `${clef}: label notes above ${formatSpelling(above)}. Notes up to ${formatSpelling(above)} stay unlabeled.${needs}`
+    return msg(
+      '{0}: label notes above {1}. Notes up to {2} stay unlabeled.{3}',
+      clef,
+      formatSpelling(above),
+      formatSpelling(above),
+      needs,
+    )
   }
   return pending.length > 0
-    ? `${clef}: no notes are labeled yet.${needs}`
-    : `${clef}: no notes are labeled (both conditions are off).`
+    ? msg('{0}: no notes are labeled yet.{1}', clef, needs)
+    : msg('{0}: no notes are labeled (both conditions are off).', clef)
 }
 
 /** One pitch of the live sample shown beside a rule. */

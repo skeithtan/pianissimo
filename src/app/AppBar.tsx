@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /** Compact app bar for the non-practice views: app name, MIDI status chip and Settings. */
 import { Button } from '../ui/controls'
 import { Icon } from '../ui/icons'
@@ -12,15 +13,15 @@ export function AppBar() {
         type="button"
         class={styles.brand}
         onClick={() => navigate('library')}
-        aria-label="Pianissimo, go to the library"
+        aria-label={msg('Pianissimo, go to the library')}
       >
         <Icon name="music" size={24} />
         <span class={styles.brandText}>Pianissimo</span>
       </button>
       <div class={styles.actions}>
         <ConnectionChip />
-        <Button icon="settings" variant="ghost" onClick={openSettings} aria-label="Settings">
-          <span class={styles.settingsText}>Settings</span>
+        <Button icon="settings" variant="ghost" onClick={openSettings} aria-label={msg('Settings')}>
+          <span class={styles.settingsText}>{msg('Settings')}</span>
         </Button>
       </div>
     </header>

@@ -1,3 +1,4 @@
+import { bindScoreLanguage } from '../shared/scoreLanguage'
 /**
  * The practice strip (spec "Practice screen", "Persistent score labels" layout, ottava paragraphs
  * of "Mistake feedback and hints", "Execution and rendering architecture"). Framework-free DOM:
@@ -396,7 +397,6 @@ export class StripView {
     this.root = div('pn-strip pn-instant')
     // A group, not an img: an img's children are presentational, hiding the strip's buttons.
     this.root.setAttribute('role', 'group')
-    this.root.setAttribute('aria-label', 'Score')
     this.stage = div('pn-stage')
     this.content = div('pn-content')
     this.content.style.width = `${layout.width}px`
@@ -416,30 +416,21 @@ export class StripView {
     grip.setAttribute('data-testid', 'cursor-grip')
     // Keyboard: a slider over the snap onsets (arrow keys step notes, Shift bars, Home / End).
     grip.setAttribute('role', 'slider')
-    grip.setAttribute('aria-label', opts.cursorLabel ?? 'Playhead: drag or use arrow keys')
     grip.setAttribute('aria-orientation', 'horizontal')
     grip.tabIndex = 0
     grip.toggleAttribute('inert', true)
     this.cursorGrip = grip
     this.readoutEl = div('pn-cursor-readout')
     this.readoutEl.setAttribute('aria-hidden', 'true')
-    this.cursorBtn = this.button('pn-cursor-action', icon.repeat, opts.cursorActionLabel ?? 'Repeat from here')
+    this.cursorBtn = this.button('pn-cursor-action', icon.repeat, '')
     this.cursorBtn.toggleAttribute('inert', true)
     // Without a handler (Study mode, U72) the button is never shown, so it is not in the DOM.
     this.cursorEl.append(bar, grip, this.readoutEl)
     if (opts.onCursorAction) this.cursorEl.append(this.cursorBtn)
 
-    this.startHandle = this.button(
-      'pn-loop-ctl pn-handle pn-handle-start',
-      icon.left,
-      'Passage start: drag or use arrow keys',
-    )
-    this.endHandle = this.button(
-      'pn-loop-ctl pn-handle pn-handle-end',
-      icon.right,
-      'Passage end: drag or use arrow keys',
-    )
-    this.clearBtn = this.button('pn-loop-ctl pn-loop-clear', icon.clear, 'Clear passage selection')
+    this.startHandle = this.button('pn-loop-ctl pn-handle pn-handle-start', icon.left, '')
+    this.endHandle = this.button('pn-loop-ctl pn-handle pn-handle-end', icon.right, '')
+    this.clearBtn = this.button('pn-loop-ctl pn-loop-clear', icon.clear, '')
 
     this.content.append(this.loopEl, this.segLayer, this.corrLayer, this.startHandle, this.endHandle, this.clearBtn)
     this.stickyEl = div('pn-sticky')
@@ -448,14 +439,11 @@ export class StripView {
     this.stage.append(this.content)
     this.root.append(this.stage, this.stickyEl, this.cursorEl)
     if (opts.returnButton !== false) {
-      const ret = this.button(
-        'pn-score-action pn-return',
-        `${icon.back}<span>${escapeText(opts.returnLabel ?? 'Return to current position')}</span>`,
-        '',
-      )
+      const ret = this.button('pn-score-action pn-return', `${icon.back}<span></span>`, '')
       ret.addEventListener('click', () => this.returnToCurrent())
       this.root.append(ret)
     }
+    this.cleanup.push(bindScoreLanguage(this.root, opts))
     this.timingCue = new TimingCue(host, this.root)
 
     this.store = new SegmentStore(
@@ -2242,8 +2230,4 @@ export class StripView {
 
 function r2(v: number): number {
   return Math.round(v * 100) / 100
-}
-
-function escapeText(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 }

@@ -1,3 +1,4 @@
+import { msg, percentage } from '../../i18n/messages'
 /**
  * The Practice footer menu (DECISIONS U76): one Menu button at the footer's end edge (U88), across
  * from the always-visible Speed control, that opens an anchored popover (never a modal sheet) holding Note
@@ -104,30 +105,34 @@ export function PracticeMenuItems({
     <>
       <div class={rowClass} data-keeps-ahead>
         <span class={labelClass} aria-hidden="true">
-          Note names
+          {msg('Note names')}
         </span>
         <Segmented<PersistentLabelMode>
-          label="Note names on the score"
+          label={msg('Note names on the score')}
           value={labels}
-          options={LABEL_OPTIONS}
+          options={LABEL_OPTIONS.map((o) => ({ ...o, label: msg(o.label), title: msg(o.title) }))}
           onChange={onLabels}
           compact
         />
       </div>
-      <div class={menuStyles.keepTimeGroup} role="group" aria-label="Keep time settings">
+      <div class={menuStyles.keepTimeGroup} role="group" aria-label={msg('Keep time settings')}>
         <Toggle
           class={toggleRow}
-          label="Keep time"
+          label={msg('Keep time')}
           checked={ui.rhythm}
           disabled={!ui.handsAvailable || ui.hands === 'none' || !hasTempo || !ui.pianoConnected}
-          description={ui.pianoConnected ? KEEP_TIME_DESCRIPTION : `${KEEP_TIME_DESCRIPTION} Needs a connected piano.`}
+          description={
+            ui.pianoConnected
+              ? msg(KEEP_TIME_DESCRIPTION)
+              : msg('{0} Needs a connected piano.', msg(KEEP_TIME_DESCRIPTION))
+          }
           onChange={(on) => session.setRhythmMode(on)}
         />
         <MenuReveal open={showScorePlayback}>
           <Toggle
             class={`${toggleRow} ${menuStyles.scorePlayback}`}
-            label="Score playback"
-            description="Hear both hands while you play."
+            label={msg('Score playback')}
+            description={msg('Hear both hands while you play.')}
             checked={scorePlayback.on}
             disabled={ui.playing}
             onChange={scorePlayback.onToggle}
@@ -135,12 +140,12 @@ export function PracticeMenuItems({
           <MenuReveal open={scorePlayback.on}>
             <div class={menuStyles.scorePlaybackVolume}>
               <Slider
-                label="Playback volume"
+                label={msg('Playback volume')}
                 value={Math.round(scorePlayback.volume * 100)}
                 min={0}
                 max={100}
                 step={1}
-                format={(value) => `${value}%`}
+                format={(value) => percentage(value / 100)}
                 disabled={ui.playing}
                 onChange={(value) => scorePlayback.onVolume(value / 100)}
               />
@@ -150,7 +155,7 @@ export function PracticeMenuItems({
       </div>
       <Toggle
         class={toggleRow}
-        label="Metronome"
+        label={msg('Metronome')}
         checked={metronome.on}
         disabled={metronome.disabled}
         {...(metronome.note ? { description: metronome.note } : {})}
@@ -159,7 +164,7 @@ export function PracticeMenuItems({
       {showKeys ? (
         <Toggle
           class={toggleRow}
-          label="Show keys"
+          label={msg('Show keys')}
           checked={ui.keyboardVisible}
           onChange={(on) => session.setKeyboardVisible(on)}
         />
@@ -230,8 +235,8 @@ export function FooterMenuPopover({ label, closed = false, badge, children }: Fo
         ref={button}
         type="button"
         class={`${styles.tool} ${menuStyles.menuButton}`}
-        aria-label="Menu"
-        title="Menu"
+        aria-label={msg('Menu')}
+        title={msg('Menu')}
         data-keeps-ahead
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -274,7 +279,7 @@ export function FooterMenu({
 }: FooterMenuProps) {
   return (
     <FooterMenuPopover
-      label="Practice menu"
+      label={msg('Practice menu')}
       closed={ui.playing || receded}
       badge={
         ui.rhythm ? (

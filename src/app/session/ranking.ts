@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The expanded result card's ranking of a pass's mistakes (DECISIONS U99), with the wrong keys in
  * words and as ghost notes. Pure; kept apart from `mistakes.ts` (which the session needs on every
@@ -16,8 +17,8 @@ type Group = Timeline['groups'][number]
 
 /** "three passes running", "twice now" (2), "" for a mistake of this pass only. */
 export function passesText(passes: number): string {
-  if (passes >= 3) return `${COUNTS[passes] ?? String(passes)} passes running`
-  return passes === 2 ? 'twice now' : ''
+  if (passes >= 3) return msg('{0} passes running', msg(COUNTS[passes] ?? String(passes)))
+  return passes === 2 ? msg('twice now') : ''
 }
 
 /**
@@ -199,19 +200,23 @@ function reasonFor(
 ): string {
   switch (level) {
     case 'repeated':
-      return `Same wrong key ${passesText(passes)}`
+      return msg('Same wrong key {0}', passesText(passes))
     case 'habit':
-      return 'Same wrong key twice now'
+      return msg('Same wrong key twice now')
     case 'trouble':
-      return `Wrong here in ${COUNTS[passesWrong] ?? passesWrong} of the last ${COUNTS[reached] ?? reached} passes`
+      return msg(
+        'Wrong here in {0} of the last {1} passes',
+        msg(COUNTS[passesWrong] ?? String(passesWrong)),
+        msg(COUNTS[reached] ?? String(reached)),
+      )
     case 'replaced':
-      return 'A wrong key in place of a written note'
+      return msg('A wrong key in place of a written note')
     case 'extra':
-      return 'A key that is not in the score here'
+      return msg('A key that is not in the score here')
     case 'missed':
-      return 'The music moved on before it was played'
+      return msg('The music moved on before it was played')
     case 'timing':
-      return mark?.text ?? 'Timing'
+      return mark?.text ?? msg('Timing')
   }
 }
 
@@ -226,15 +231,15 @@ export function wrongPressLine(p: WrongPress, score: Pick<ScoreModel, 'notes'>, 
     const note = score.notes[p.expectedNote]
     const prefer = (note?.accidentalContext.keyFifths ?? 0) < 0 ? 'flat' : 'sharp'
     const shown: NamingSettings = { ...naming, alwaysShowEffectiveAccidentals: true, showOctave: true }
-    return `You pressed ${labelForMidi(p.pitch, shown, prefer).text}: it is not in the score here`
+    return msg('You pressed {0}: it is not in the score here', labelForMidi(p.pitch, shown, prefer).text)
   }
   if (p.kind === 'octave') {
     const shown: NamingSettings = { ...naming, showOctave: true }
     const [wrong, expected] = pressNames(p.pitch, p.expectedPitch, p.expectedNote, score, shown)
-    return `You pressed ${wrong}; the note is ${expected}`
+    return msg('You pressed {0}; the note is {1}', wrong, expected)
   }
   const [wrong, expected] = pressNames(p.pitch, p.expectedPitch, p.expectedNote, score, naming)
-  return `You pressed ${wrong} where ${expected} is written`
+  return msg('You pressed {0} where {1} is written', wrong, expected)
 }
 
 /**

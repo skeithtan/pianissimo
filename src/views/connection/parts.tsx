@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /** Layout pieces shared by the setup steps: step card, status pill, port list, frame-batched rendering. */
 import type { ComponentChildren } from 'preact'
 import { useCallback, useEffect, useId, useRef, useState } from 'preact/hooks'
@@ -50,7 +51,9 @@ export function Step({
         </span>
         <div class={styles.stepTitle}>
           <h2 id={headingId} tabIndex={-1}>
-            <span class="visually-hidden">Step {index}: </span>
+            <span class="visually-hidden">
+              {msg('Step')} {index}:{' '}
+            </span>
             {title}
           </h2>
           {lead ? <p class={styles.lead}>{lead}</p> : null}
@@ -122,11 +125,13 @@ export function PortList({
   const rows: { id: string | null; title: string; meta: string; connected: boolean }[] = ports.map((p) => ({
     id: p.id,
     title: p.name,
-    meta: [p.manufacturer, p.state === 'connected' ? 'Connected' : 'Disconnected'].filter(Boolean).join(' · '),
+    meta: [p.manufacturer, p.state === 'connected' ? msg('Connected') : msg('Disconnected')]
+      .filter(Boolean)
+      .join(' · '),
     connected: p.state === 'connected',
   }))
   if (selected && !ports.some((p) => p.id === selected.id)) {
-    rows.unshift({ id: selected.id, title: selected.name, meta: 'Disconnected', connected: false })
+    rows.unshift({ id: selected.id, title: selected.name, meta: msg('Disconnected'), connected: false })
   }
   if (none) rows.push({ id: null, title: none, meta: '', connected: true })
   const current = selected?.id ?? null
@@ -147,7 +152,9 @@ export function PortList({
               <span class={styles.portName}>{row.title}</span>
               {row.meta ? <span class={styles.portMeta}>{row.meta}</span> : null}
             </span>
-            {row.id !== null && row.title === rememberedName ? <span class={styles.tag}>Remembered</span> : null}
+            {row.id !== null && row.title === rememberedName ? (
+              <span class={styles.tag}>{msg('Remembered')}</span>
+            ) : null}
           </label>
         )
       })}

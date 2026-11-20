@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Included scores are ordinary pieces. Their sources are bundled with the app;
  * normalization uses the same worker as a user import. No notation engine or audio loads here.
@@ -59,7 +60,7 @@ export interface InitialPiecesDeps {
 
 async function loadBundledFile(path: string): Promise<ArrayBuffer> {
   const response = await fetch(`${import.meta.env.BASE_URL}scores/${path}`)
-  if (!response.ok) throw new Error(`Could not open ${path}`)
+  if (!response.ok) throw new Error(msg('Could not open {0}', path))
   return response.arrayBuffer()
 }
 
@@ -81,11 +82,11 @@ export async function ensureInitialPieces(storage: PianissimoStorage, deps: Init
       const inspected = await client.inspect({ name: file.file, bytes: file.bytes })
       const [candidate] = inspected.candidates
       if (!candidate || inspected.candidates.length !== 1 || candidate.parts.length !== 1) {
-        throw new Error(`The bundled score ${file.file} needs a part selection`)
+        throw new Error(msg('The bundled score {0} needs a part selection', file.file))
       }
       const result = await client.build({ candidate: candidate.id, partIds: candidate.parts.map((part) => part.id) })
       if (!result.summary.readiness.scoredPractice || result.summary.unsupported.length > 0) {
-        throw new Error(`The bundled score ${file.file} is not ready for practice`)
+        throw new Error(msg('The bundled score {0} is not ready for practice', file.file))
       }
       // Retain the exact licensed source bytes; the library uses normal English metadata.
       const pkg = {

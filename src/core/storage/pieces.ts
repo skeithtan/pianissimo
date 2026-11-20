@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import type { IDBPTransaction } from 'idb'
 import type { ScorePackage, SourceFileRecord } from '../model/score'
 import { SCORE_PACKAGE_FORMAT } from '../model/score'
@@ -10,14 +11,14 @@ import { pieceProblem } from './validate'
 
 function assertPiece(piece: PieceRecord): void {
   const problem = pieceProblem(piece)
-  if (problem !== null) throw new TypeError(`Invalid piece record: ${problem}`)
+  if (problem !== null) throw new TypeError(msg('Invalid piece record: {0}', problem))
 }
 
 function assertPackage(pkg: ScorePackage): void {
   if (pkg.model.format !== SCORE_PACKAGE_FORMAT) {
-    throw new TypeError(`Unsupported score package format ${String(pkg.model.format)}`)
+    throw new TypeError(msg('Unsupported score package format {0}', String(pkg.model.format)))
   }
-  if (pkg.model.scoreVersionId === '') throw new TypeError('Score package has no scoreVersionId')
+  if (pkg.model.scoreVersionId === '') throw new TypeError(msg('Score package has no scoreVersionId'))
 }
 
 /** Library entries, most recently opened first. */
@@ -93,10 +94,10 @@ export function assertImport(input: ImportCommit): void {
   assertPiece(piece)
   assertPackage(pkg)
   if (source.bytes.byteLength === 0) {
-    throw new TypeError('The source file is empty (or its buffer was already transferred to a worker)')
+    throw new TypeError(msg('The source file is empty (or its buffer was already transferred to a worker)'))
   }
   if (piece.scoreVersionId !== pkg.model.scoreVersionId) {
-    throw new TypeError('Piece and package disagree about the score version')
+    throw new TypeError(msg('Piece and package disagree about the score version'))
   }
 }
 

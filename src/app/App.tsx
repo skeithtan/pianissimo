@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * App shell: renders the current view from the registry (`views.ts`), the compact app bar for
  * non-practice views, the toast area and the two overlays, Settings and the Connection setup
@@ -20,6 +21,7 @@ import styles from './App.module.css'
 export function App({ features = getFeatures() }: { features?: FeatureReport }) {
   const view = currentView.value
   const entry = views[view]
+  const title = msg(entry.title)
   const main = useRef<HTMLElement>(null)
   const first = useRef(true)
 
@@ -34,8 +36,8 @@ export function App({ features = getFeatures() }: { features?: FeatureReport }) 
 
   // The tab title (and the browser's Back-button history list) names the page.
   useEffect(() => {
-    document.title = view === 'library' ? 'Pianissimo' : `${entry.title} · Pianissimo`
-  }, [view, entry.title])
+    document.title = view === 'library' ? 'Pianissimo' : `${title} · Pianissimo`
+  }, [view, title])
 
   // After navigating, move focus to the new view so keyboard and screen-reader users start there.
   useEffect(() => {
@@ -50,14 +52,7 @@ export function App({ features = getFeatures() }: { features?: FeatureReport }) 
     <div class={styles.shell}>
       {entry.chrome === 'bar' ? <AppBar /> : null}
       {view === 'library' ? <CapabilityBanner report={features} /> : null}
-      <main
-        ref={main}
-        class={styles.main}
-        data-chrome={entry.chrome}
-        data-view={view}
-        tabIndex={-1}
-        aria-label={entry.title}
-      >
+      <main ref={main} class={styles.main} data-chrome={entry.chrome} data-view={view} tabIndex={-1} aria-label={title}>
         <LazyView name={view} />
       </main>
       <NoticeArea />

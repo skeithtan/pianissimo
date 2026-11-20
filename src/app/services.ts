@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * App services: lazily created singletons shared by every view and the practice session.
  *
@@ -105,7 +106,7 @@ export function getStorage(): Promise<PianissimoStorage> {
         console.error('Library initialization failed', error)
         pushNotice({
           kind: 'warning',
-          text: 'Your library could not finish loading. You can still add a score, or reload to try again.',
+          text: msg('Your library could not finish loading. You can still add a score, or reload to try again.'),
           timeoutMs: null,
         })
       }

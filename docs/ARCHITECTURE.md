@@ -2,6 +2,12 @@
 
 How the pieces fit. Module owners update their section when they change a public API.
 
+## Interface languages
+
+`core/model/language.ts` defines supported language tags and matches ordered device preferences. The persisted `AppSettings.view.language` field defaults to `system`. Missing and unrecognized settings normalize to that default. `app/language.ts` observes the setting and browser language changes, loads catalogs, and updates the document language and reactive message reader together. The English shell starts without loading a catalog. The service worker precaches every production language chunk.
+
+Use `msg('English source', ...literalValues)` from `i18n/messages.ts` when presenting text. Keep score content and hardware names as literal arguments. Translated templates may move or repeat numbered fields. Add the next unused ID to `i18n/locales/en-US.json` and use the same ID in each full catalog. Canadian French inherits the French catalog and overrides regional wording. `i18n/importMessage.ts` recognizes diagnostic templates produced by import workers and older saved scores. Stored comparison keys and score data retain their original meaning when the interface language changes.
+
 ## Data flow
 
 ```

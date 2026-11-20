@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Hints (spec "Mistake feedback and hints"): when names appear automatically (1, 2, 3, a custom
  * positive number of wrong attacks, or off), how long a temporary hint lasts (10 / 20 / 30 /
@@ -99,18 +100,20 @@ export function HintsSection() {
     <>
       <Group>
         <Setting
-          label="Show note names automatically"
-          description="After this many wrong attacks at the same notes. Your configured hint pedal remains available when automatic hints are off."
+          label={msg('Show note names automatically')}
+          description={msg(
+            'After this many wrong attacks at the same notes. Your configured hint pedal remains available when automatic hints are off.',
+          )}
         >
           <Segmented
-            label="Show note names automatically"
+            label={msg('Show note names automatically')}
             value={threshold}
             options={[
-              { value: '1', label: '1 mistake' },
-              { value: '2', label: '2 mistakes' },
-              { value: '3', label: '3 mistakes' },
-              { value: 'custom', label: 'Custom' },
-              { value: 'off', label: 'Off' },
+              { value: '1', label: msg('1 mistake') },
+              { value: '2', label: msg('2 mistakes') },
+              { value: '3', label: msg('3 mistakes') },
+              { value: 'custom', label: msg('Custom') },
+              { value: 'off', label: msg('Off') },
             ]}
             onChange={(choice) => {
               setCustomThreshold(choice === 'custom')
@@ -121,12 +124,12 @@ export function HintsSection() {
           />
           {threshold === 'custom' ? (
             <CustomNumber
-              label="Custom number of wrong attacks"
-              unit="wrong attacks"
+              label={msg('Custom number of wrong attacks')}
+              unit={msg('wrong attacks')}
               initial={hints.autoThreshold}
               integer
               max={99}
-              what="a number of wrong attacks"
+              what={msg('a number of wrong attacks')}
               onValid={(autoThreshold) => updateSettings({ hints: { autoThreshold } })}
             />
           ) : null}
@@ -135,19 +138,21 @@ export function HintsSection() {
 
       <Group>
         <Setting
-          label="Hint lifetime"
-          description="How long names stay after they appear, counted in active practice time. Pausing freezes the timer."
+          label={msg('Hint lifetime')}
+          description={msg(
+            'How long names stay after they appear, counted in active practice time. Pausing freezes the timer.',
+          )}
         >
           <Segmented
-            label="Hint lifetime"
+            label={msg('Hint lifetime')}
             value={lifetime}
             options={[
               { value: '10', label: '10 s' },
               { value: '20', label: '20 s' },
               { value: '30', label: '30 s' },
               { value: '60', label: '60 s' },
-              { value: 'custom', label: 'Custom' },
-              { value: 'until-correct', label: 'Until correct' },
+              { value: 'custom', label: msg('Custom') },
+              { value: 'until-correct', label: msg('Until correct') },
             ]}
             onChange={(choice) => {
               setCustomLifetime(choice === 'custom')
@@ -158,13 +163,13 @@ export function HintsSection() {
           />
           {lifetime === 'custom' ? (
             <CustomNumber
-              label="Custom hint lifetime in seconds"
-              unit="seconds"
+              label={msg('Custom hint lifetime in seconds')}
+              unit={msg('seconds')}
               initial={typeof hints.lifetime === 'number' ? hints.lifetime : null}
               integer={false}
               min={MIN_HINT_LIFETIME_SECONDS}
               max={3600}
-              what="a number of seconds"
+              what={msg('a number of seconds')}
               onValid={(seconds) => updateSettings({ hints: { lifetime: seconds } })}
             />
           ) : null}
@@ -173,7 +178,7 @@ export function HintsSection() {
 
       <Group>
         <Slider
-          label="Fade-out duration"
+          label={msg('Fade-out duration')}
           min={100}
           max={1000}
           step={50}
@@ -182,15 +187,16 @@ export function HintsSection() {
           onChange={(fadeMs) => updateSettings({ hints: { fadeMs } })}
         />
         <Help>
-          Names fade out smoothly instead of disappearing. The default is 300 ms. It is shortened if the hint lifetime
-          is shorter.
+          {msg(
+            'Names fade out smoothly instead of disappearing. The default is 300 ms. It is shortened if the hint lifetime is shorter.',
+          )}
         </Help>
       </Group>
 
       <Group>
         <Toggle
-          label="Red flash on a wrong note"
-          description="Flash the screen edges red when you play a wrong note."
+          label={msg('Red flash on a wrong note')}
+          description={msg('Flash the screen edges red when you play a wrong note.')}
           checked={hints.damageFlash}
           onChange={(damageFlash) => updateSettings({ hints: { damageFlash } })}
         />

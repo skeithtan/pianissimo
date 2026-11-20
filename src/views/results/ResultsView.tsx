@@ -1,3 +1,4 @@
+import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * Passage Results (spec "Results and timing", "Repeating passages", "Suggested practice").
  * `ResultsView` reads `resultsRequest` and loads from storage; `ResultsPage` is the presentation
@@ -50,7 +51,7 @@ export function ResultsPage(props: ResultsPageProps) {
         occurrences: data.occurrences,
         attemptId: props.selectedId ?? undefined,
       }),
-    [data.attempts, data.occurrences, props.selectedId],
+    [data.attempts, data.occurrences, props.selectedId, messageLanguage()],
   )
   const { attempt, scorecard, labeler } = model
   const piece = data.piece
@@ -70,9 +71,9 @@ export function ResultsPage(props: ResultsPageProps) {
   )
   const globalOff = props.suggestionsGloballyOff ? (
     <p class={styles.note}>
-      Suggested practice is switched off in Settings.{' '}
+      {msg('Suggested practice is switched off in Settings.')}{' '}
       <Button variant="ghost" onClick={props.onOpenSettings}>
-        Open Settings
+        {msg('Open Settings')}
       </Button>
     </p>
   ) : null
@@ -81,10 +82,10 @@ export function ResultsPage(props: ResultsPageProps) {
     <div class={styles.page} data-view="results">
       <header class={styles.hero}>
         <Button variant="ghost" icon="back" onClick={props.onOpenLibrary}>
-          Library
+          {msg('Library')}
         </Button>
         <div>
-          <h1>Results</h1>
+          <h1>{msg('Results')}</h1>
           <p class={styles.pieceName}>
             {piece.title}
             {piece.composer ? <span class={styles.muted}> · {piece.composer}</span> : null}
@@ -93,20 +94,21 @@ export function ResultsPage(props: ResultsPageProps) {
       </header>
 
       {model.requestedMissing ? (
-        <Notice tone="warning">That attempt could not be found, so the most recent one is shown.</Notice>
+        <Notice tone="warning">{msg('That attempt could not be found, so the most recent one is shown.')}</Notice>
       ) : null}
 
       {attempt === null || scorecard === null ? (
         <>
           <section class={styles.empty} data-state="no-attempts">
-            <h2>No attempts yet</h2>
+            <h2>{msg('No attempts yet')}</h2>
             <p>
-              Scored attempts appear here after you finish or leave a passage. Choose a passage in Practice and play it
-              through. Ordinary reading and Preview are not scored.
+              {msg(
+                'Scored attempts appear here after you finish or leave a passage. Choose a passage in Practice and play it through. Ordinary reading and Preview are not scored.',
+              )}
             </p>
             <div class={styles.actions}>
               <Button variant="primary" icon="target" onClick={() => openPractice({ pieceId: piece.id })}>
-                Open Practice
+                {msg('Open Practice')}
               </Button>
             </div>
           </section>
@@ -115,7 +117,7 @@ export function ResultsPage(props: ResultsPageProps) {
         </>
       ) : (
         <>
-          <section class={styles.context} aria-label="Comparison context" data-row="context">
+          <section class={styles.context} aria-label={msg('Comparison context')} data-row="context">
             <div class={styles.contextFacts}>
               <span class={styles.contextMain}>{passageText(labeler, attempt.context, data.words)}</span>
               <span class={styles.fact}>{handsAndSpeed(attempt.context)}</span>
@@ -130,15 +132,16 @@ export function ResultsPage(props: ResultsPageProps) {
                 disabled={!current || attempt.context.hands === 'none'}
                 onClick={() => props.onPracticeAgain(attempt)}
               >
-                Practice again
+                {msg('Practice again')}
               </Button>
-              {!model.isLatest ? <Button onClick={() => props.onSelect(null)}>Back to latest</Button> : null}
+              {!model.isLatest ? <Button onClick={() => props.onSelect(null)}>{msg('Back to latest')}</Button> : null}
             </div>
           </section>
           {!current ? (
             <Notice tone="info">
-              This attempt used an earlier version of the score, so it cannot be practiced again from here and the bar
-              numbers may differ.
+              {msg(
+                'This attempt used an earlier version of the score, so it cannot be practiced again from here and the bar numbers may differ.',
+              )}
             </Notice>
           ) : null}
 
@@ -168,16 +171,17 @@ export function ResultsPage(props: ResultsPageProps) {
                 />
               ) : (
                 <section class={styles.panel} data-panel="history">
-                  <h2>History</h2>
-                  <p class={styles.note}>Ordinary reading is not compared with scored attempts.</p>
+                  <h2>{msg('History')}</h2>
+                  <p class={styles.note}>{msg('Ordinary reading is not compared with scored attempts.')}</p>
                 </section>
               )}
               {model.others.length > 0 ? (
                 <section class={styles.panel} aria-labelledby="others-heading" data-panel="others">
-                  <h2 id="others-heading">Other settings you have practiced</h2>
+                  <h2 id="others-heading">{msg('Other settings you have practiced')}</h2>
                   <p class={styles.note}>
-                    Results are never mixed across different passages, hands, speeds, accompaniment or keep-time
-                    windows, so each is kept on its own.
+                    {msg(
+                      'Results are never mixed across different passages, hands, speeds, accompaniment or keep-time windows, so each is kept on its own.',
+                    )}
                   </p>
                   <ul class={styles.others}>
                     {model.others.map((o) => (
@@ -189,20 +193,25 @@ export function ResultsPage(props: ResultsPageProps) {
                           <p class={styles.muted}>
                             {plural(o.count, 'attempt')} ·{' '}
                             {o.results.bestClean?.completionTimeSec !== undefined
-                              ? `best clean unassisted ${
+                              ? msg(
+                                  'best clean unassisted {0}',
                                   o.results.context.transport === 'strict'
                                     ? `±${Math.round(timingAccuracy(o.results.bestClean)?.meanAbsOffsetMs ?? 0)} ms`
-                                    : formatSeconds(o.results.bestClean.completionTimeSec)
-                                }`
-                              : 'no clean unassisted run yet'}{' '}
-                            · last {whenText(o.latest.createdAt, now)}
+                                    : formatSeconds(o.results.bestClean.completionTimeSec),
+                                )
+                              : msg('no clean unassisted run yet')}{' '}
+                            {msg('· last')} {whenText(o.latest.createdAt, now)}
                           </p>
                         </div>
                         <Button
                           onClick={() => props.onSelect(o.latest.id)}
-                          aria-label={`View latest attempt: ${passageText(labeler, o.results.context, data.words)}, ${handsAndSpeed(o.results.context)}`}
+                          aria-label={msg(
+                            'View latest attempt: {0}, {1}',
+                            passageText(labeler, o.results.context, data.words),
+                            handsAndSpeed(o.results.context),
+                          )}
                         >
-                          View latest
+                          {msg('View latest')}
                         </Button>
                       </li>
                     ))}
@@ -222,14 +231,15 @@ function EmptyResults() {
     <div class={styles.page} data-view="results">
       <section class={styles.empty} data-state="no-request">
         <Icon name="chart" size={32} />
-        <h1>Results</h1>
+        <h1>{msg('Results')}</h1>
         <p>
-          Your scorecards, history and suggested practice appear here after you practice a passage. Pick a piece in the
-          Library to begin.
+          {msg(
+            'Your scorecards, history and suggested practice appear here after you practice a passage. Pick a piece in the Library to begin.',
+          )}
         </p>
         <div class={styles.actions}>
           <Button variant="primary" onClick={() => navigate('library')}>
-            Go to the Library
+            {msg('Go to the Library')}
           </Button>
         </div>
       </section>
@@ -268,13 +278,13 @@ function ResultsLoader({ request }: { request: ResultsRequest }) {
     return () => {
       live = false
     }
-  }, [request.pieceId, request.attemptId, attempt])
+  }, [request.pieceId, request.attemptId, attempt, messageLanguage()])
 
   if (load.status === 'loading') {
     return (
       <div class={styles.page} data-view="results" aria-busy="true">
         <p class={styles.muted} role="status">
-          Loading results…
+          {msg('Loading results…')}
         </p>
       </div>
     )
@@ -283,11 +293,11 @@ function ResultsLoader({ request }: { request: ResultsRequest }) {
     return (
       <div class={styles.page} data-view="results">
         <section class={styles.empty} data-state="missing">
-          <h1>Results</h1>
-          <p>That piece is no longer in your library, so there are no results to show.</p>
+          <h1>{msg('Results')}</h1>
+          <p>{msg('That piece is no longer in your library, so there are no results to show.')}</p>
           <div class={styles.actions}>
             <Button variant="primary" onClick={() => navigate('library')}>
-              Go to the Library
+              {msg('Go to the Library')}
             </Button>
           </div>
         </section>
@@ -297,11 +307,11 @@ function ResultsLoader({ request }: { request: ResultsRequest }) {
   if (load.status === 'error') {
     return (
       <div class={styles.page} data-view="results">
-        <Notice tone="danger">Results could not be loaded from this browser's storage.</Notice>
+        <Notice tone="danger">{msg("Results could not be loaded from this browser's storage.")}</Notice>
         <div class={styles.actions}>
-          <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button>
+          <Button onClick={() => setAttempt((n) => n + 1)}>{msg('Try again')}</Button>
           <Button variant="ghost" onClick={() => navigate('library')}>
-            Library
+            {msg('Library')}
           </Button>
         </div>
       </div>

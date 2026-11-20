@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The import summary's user input (spec "MusicXML score import": ambiguous hand assignments
  * require confirmation; missing numerical tempo requires a practice tempo; DECISIONS M2, I6, E5)
@@ -69,11 +70,11 @@ export function initialDraft(summary: ImportSummary, model: ScoreModel): ReviewD
 /** Parse the typed practice tempo; a number or a readable problem. */
 export function parsePracticeBpm(text: string): number | string {
   const trimmed = text.trim().replace(',', '.')
-  if (trimmed === '') return 'Enter a practice tempo.'
+  if (trimmed === '') return msg('Enter a practice tempo.')
   const value = Number(trimmed)
-  if (!Number.isFinite(value)) return 'Enter the tempo as a number of beats per minute, such as 80.'
+  if (!Number.isFinite(value)) return msg('Enter the tempo as a number of beats per minute, such as 80.')
   if (value < MIN_PRACTICE_BPM || value > MAX_PRACTICE_BPM) {
-    return `Enter a tempo between ${MIN_PRACTICE_BPM} and ${MAX_PRACTICE_BPM} beats per minute.`
+    return msg('Enter a tempo between {0} and {1} beats per minute.', MIN_PRACTICE_BPM, MAX_PRACTICE_BPM)
   }
   return value
 }
@@ -93,20 +94,26 @@ export function reviewGate(
   let tempoError: string | null = null
   if (summary.diagnostics.errors > 0) {
     blockers.push(
-      `The import found ${summary.diagnostics.errors === 1 ? 'an error' : `${summary.diagnostics.errors} errors`} (listed below), so notes may be missing. Fix the file and import it again.`,
+      msg(
+        'The import found {0} (listed below), so notes may be missing. Fix the file and import it again.',
+        summary.diagnostics.errors === 1 ? msg('an error') : msg('{0} errors', summary.diagnostics.errors),
+      ),
     )
   }
   if (tempoEntry) {
     const parsed = parsePracticeBpm(draft.bpmText)
     if (typeof parsed === 'string') {
-      blockers.push('Enter a practice tempo: the score has no numerical tempo.')
+      blockers.push(msg('Enter a practice tempo: the score has no numerical tempo.'))
       if (touchedTempo || draft.bpmText.trim() !== '') tempoError = parsed
     }
   }
   if (!draft.handsConfirmed) {
-    const names = summary.voices.filter((v) => v.ambiguous).map((v) => `voice ${v.voice} of ${v.partName}`)
+    const names = summary.voices.filter((v) => v.ambiguous).map((v) => msg('voice {0} of {1}', v.voice, v.partName))
     blockers.push(
-      `Choose which hand plays ${names.join(', ')}: its notes are split between the staves, so the file does not say.`,
+      msg(
+        'Choose which hand plays {0}: its notes are split between the staves, so the file does not say.',
+        names.join(', '),
+      ),
     )
   }
   return { canSave: blockers.length === 0, blockers, tempoError }
@@ -204,7 +211,7 @@ export function finalizeStoredReview(
   const gate = reviewGate(summary, draft, true, userTempo !== undefined)
   if (!gate.canSave) throw new Error(gate.blockers.join(' '))
   const changes = storedReviewChanges(summary, draft, userTempo)
-  if (!changes.hands && !changes.tempo) throw new Error('Nothing has changed.')
+  if (!changes.hands && !changes.tempo) throw new Error(msg('Nothing has changed.'))
   let next = model
   if (changes.hands) {
     const byVoice: Record<VoiceKey, Hand> = {}
@@ -229,11 +236,15 @@ export function describeStaffUse(notesPerStaff: Readonly<Record<number, number>>
     .map(([staff, count]) => [Number(staff), count] as const)
     .filter(([, count]) => count > 0)
     .sort((a, b) => a[0] - b[0])
-  return entries.map(([staff, count]) => `${count} on ${staffName(staff, staffCount)}`).join(', ')
+  return entries.map(([staff, count]) => msg('{0} on {1}', count, staffName(staff, staffCount))).join(', ')
 }
 
 export function staffName(staff: number, staffCount: number): string {
-  return staffCount === 2 ? (staff === 0 ? 'the upper staff' : 'the lower staff') : `staff ${staff + 1}`
+  return staffCount === 2
+    ? staff === 0
+      ? msg('the upper staff')
+      : msg('the lower staff')
+    : msg('staff {0}', staff + 1)
 }
 
 /** "6 notes written on the upper staff in bar 22" for a cross-staff voice; '' for a single-staff voice. */
@@ -245,10 +256,10 @@ export function describeCrossStaff(v: SummaryVoice, staffCount: number): string 
   const staves = Object.keys(v.notesPerStaff)
     .map(Number)
     .filter((staff) => staff !== v.homeStaff && (v.notesPerStaff[staff] ?? 0) > 0)
-  const where = staves.length === 1 ? staffName(staves[0]!, staffCount) : 'other staves'
+  const where = staves.length === 1 ? staffName(staves[0]!, staffCount) : msg('other staves')
   const bars = v.crossStaffBars
-  const barText = `${bars.length === 1 ? 'bar' : 'bars'} ${bars.slice(0, 6).join(', ')}${bars.length > 6 ? ', …' : ''}`
-  return `${away} ${away === 1 ? 'note' : 'notes'} written on ${where} in ${barText}`
+  const barText = `${bars.length === 1 ? msg('bar') : msg('bars')} ${bars.slice(0, 6).join(', ')}${bars.length > 6 ? ', …' : ''}`
+  return msg('{0} {1} written on {2} in {3}', away, away === 1 ? msg('note') : msg('notes'), where, barText)
 }
 
 export interface HandLine {
@@ -263,8 +274,9 @@ export function handLines(voices: readonly SummaryVoice[], hands: Readonly<Recor
   const multiPart = new Set(voices.map((v) => v.partId)).size > 1
   return (['R', 'L'] as const).map((hand) => {
     const own = voices.filter((v) => (hands[v.key] ?? v.hand) === hand)
-    const names = own.map((v) => (multiPart ? `voice ${v.voice} of ${v.partName}` : `voice ${v.voice}`))
-    const list = names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+    const names = own.map((v) => (multiPart ? msg('voice {0} of {1}', v.voice, v.partName) : msg('voice {0}', v.voice)))
+    const list =
+      names.length <= 1 ? names.join('') : msg('{0} and {1}', names.slice(0, -1).join(', '), names[names.length - 1])
     const notes = own.reduce((sum, v) => sum + Object.values(v.notesPerStaff).reduce((a, b) => a + b, 0), 0)
     return { hand, voices: list, notes }
   })

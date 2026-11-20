@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Browser capability detection (spec "Technical design": feature-detect MIDI, audio, workers,
  * storage and optional wake prevention; "Delivery and device compatibility": Safari has no Web
@@ -131,7 +132,17 @@ function probe(test: () => boolean): boolean {
 
 function build(id: FeatureId, supported: boolean): FeatureStatus {
   const def = DEFINITIONS[id]
-  return { id, label: def.label, severity: def.severity, supported, explanation: supported ? null : def.explanation }
+  return {
+    id,
+    get label() {
+      return msg(def.label)
+    },
+    severity: def.severity,
+    supported,
+    get explanation() {
+      return supported ? null : msg(def.explanation)
+    },
+  }
 }
 
 /** Detect every capability the app uses. Cheap; call once at startup (see `getFeatures`). */

@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Global app state: settings, MIDI connection status and the notice queue. Signals are coarse
  * on purpose (spec "Technical design": small view state, never per-note reactive state), and
@@ -51,6 +52,12 @@ export function updateSettings(patch: SettingsPatch<AppSettings>): void {
   else scheduleSave()
 }
 
+/** Collect edits as soon as boot starts, including time spent opening the database and library. */
+export function beginSettingsLoad(): void {
+  pendingPatches ??= []
+  settingsLoading.value = true
+}
+
 function scheduleSave(): void {
   if (!persistence) return
   if (saveTimer !== null) clearTimeout(saveTimer)
@@ -74,7 +81,7 @@ function writeSettings(): Promise<void> {
       saveFailureReported = true
       pushNotice({
         kind: 'warning',
-        text: 'Settings could not be saved on this device. They will reset when the page reloads.',
+        text: msg('Settings could not be saved on this device. They will reset when the page reloads.'),
       })
     })
   return saveChain
@@ -105,13 +112,12 @@ export async function setSettingsPersistence(next: SettingsPersistence | null): 
     return
   }
   settingsLoading.value = true
-  const replay: SettingsPatch<AppSettings>[] = []
-  pendingPatches = replay
+  const replay = (pendingPatches ??= [])
   let stored: unknown = null
   try {
     stored = await next.load()
   } catch {
-    pushNotice({ kind: 'warning', text: 'Saved settings could not be read, so defaults are in use.' })
+    pushNotice({ kind: 'warning', text: msg('Saved settings could not be read, so defaults are in use.') })
   }
   if (persistence !== next) return
   pendingPatches = null
@@ -119,7 +125,7 @@ export async function setSettingsPersistence(next: SettingsPersistence | null): 
   let loaded = settingsFromStored(stored)
   for (const patch of replay) loaded = normalizeSettings(mergeSettings(loaded, patch))
   settings.value = loaded
-  if (replay.length > 0) scheduleSave()
+  if (replay.length > 0) await writeSettings()
 }
 
 // ---------------------------------------------------------------------------------------------

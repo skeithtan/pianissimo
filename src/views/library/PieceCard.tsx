@@ -1,3 +1,4 @@
+import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * An ordinary library entry: the whole row opens Practice, with Sheet music, an Options menu and
  * useful suggestions as separate controls. Saved practice context can be featured for
@@ -71,7 +72,7 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
         { getStorage: deps.getStorage, beforePractice: (id) => model.markOpened(id) },
         piece.id,
       ),
-    [piece.id, deps, model],
+    [piece.id, deps, model, messageLanguage()],
   )
   const previousSuggestions = useRef({ model: suggestions, piece })
   useEffect(() => {
@@ -156,9 +157,9 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
                 icon="play"
                 class={cardStyles.stretched}
                 onClick={practice}
-                aria-label={`Continue practice ${piece.title}`}
+                aria-label={msg('Continue practice {0}', piece.title)}
               >
-                Continue practice
+                {msg('Continue practice')}
               </Button>
             ) : null}
             <Button
@@ -166,9 +167,9 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
               icon="music"
               class={cardStyles.above}
               onClick={() => void model.study(piece.id)}
-              aria-label={`Open sheet music for ${piece.title}`}
+              aria-label={msg('Open sheet music for {0}', piece.title)}
             >
-              Sheet music
+              {msg('Sheet music')}
             </Button>
             <div
               class={cardStyles.options}
@@ -184,25 +185,25 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
                 icon="more"
                 class={cardStyles.iconButton}
                 data-piece-options=""
-                aria-label={`Options for ${piece.title}`}
+                aria-label={msg('Options for {0}', piece.title)}
                 aria-expanded={optionsOpen}
                 aria-controls={menuId}
                 onClick={() => setOptionsOpen((open) => !open)}
               />
               {optionsOpen ? (
-                <div class={cardStyles.menu} id={menuId} role="group" aria-label={`Manage ${piece.title}`}>
+                <div class={cardStyles.menu} id={menuId} role="group" aria-label={msg('Manage {0}', piece.title)}>
                   <Button variant="ghost" icon="pencil" onClick={() => show('rename')}>
-                    Rename…
+                    {msg('Rename…')}
                   </Button>
                   <Button variant="ghost" icon="hand" onClick={() => show('review')}>
-                    Review hands and tempo…
+                    {msg('Review hands and tempo…')}
                   </Button>
                   <SuggestionOptions model={suggestions} onClose={closeOptions} />
                   <Button variant="ghost" icon="restart" onClick={() => show('clear')}>
-                    Clear practice history…
+                    {msg('Clear practice history…')}
                   </Button>
                   <Button variant="ghost" icon="trash" onClick={() => show('delete')}>
-                    Delete…
+                    {msg('Delete…')}
                   </Button>
                 </div>
               ) : null}
@@ -213,7 +214,7 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
                 icon="forward"
                 class={`${cardStyles.stretched} ${cardStyles.chevron}`}
                 onClick={practice}
-                aria-label={`Practice ${piece.title}`}
+                aria-label={msg('Practice {0}', piece.title)}
               />
             )}
           </div>
@@ -252,26 +253,28 @@ function DeleteSheet({
     setError(null)
     try {
       await model.remove(piece.id)
-      pushNotice({ kind: 'success', text: `Deleted “${piece.title}”.` })
+      pushNotice({ kind: 'success', text: msg('Deleted “{0}”.', piece.title) })
       onClose()
     } catch (e) {
-      setError(`It could not be deleted: ${e instanceof Error ? e.message : String(e)}`)
+      setError(msg('It could not be deleted: {0}', e instanceof Error ? e.message : String(e)))
     } finally {
       setBusy(false)
     }
   }
   return (
-    <Sheet title="Delete this piece?" open={open} onClose={onClose}>
+    <Sheet title={msg('Delete this piece?')} open={open} onClose={onClose}>
       <div class={styles.flow}>
         <p>
-          “{piece.title}” will be removed from this device with its score, results and practice history. This cannot be
-          undone. Export a backup first if you might want it back.
+          “{piece.title}
+          {msg(
+            '” will be removed from this device with its score, results and practice history. This cannot be undone. Export a backup first if you might want it back.',
+          )}
         </p>
         {error ? <Notice tone="danger">{error}</Notice> : null}
         <div class={styles.flowActions}>
-          <Button onClick={onClose}>Keep it</Button>
+          <Button onClick={onClose}>{msg('Keep it')}</Button>
           <Button variant="danger" icon="trash" disabled={busy} onClick={() => void run()}>
-            Delete piece
+            {msg('Delete piece')}
           </Button>
         </div>
       </div>
@@ -303,24 +306,27 @@ function ClearSheet({
       pushNotice({
         kind: 'success',
         text: alsoResults
-          ? `Cleared the practice history and results of “${piece.title}”.`
-          : `Cleared the practice history of “${piece.title}”.`,
+          ? msg('Cleared the practice history and results of “{0}”.', piece.title)
+          : msg('Cleared the practice history of “{0}”.', piece.title),
       })
       setAlsoResults(false)
       onCleared()
       onClose()
     } catch (e) {
-      setError(`It could not be cleared: ${e instanceof Error ? e.message : String(e)}`)
+      setError(msg('It could not be cleared: {0}', e instanceof Error ? e.message : String(e)))
     } finally {
       setBusy(false)
     }
   }
   return (
-    <Sheet title="Clear practice history?" open={open} onClose={onClose}>
+    <Sheet title={msg('Clear practice history?')} open={open} onClose={onClose}>
       <div class={styles.flow}>
         <p>
-          This forgets which bars of “{piece.title}” gave you trouble: bar histories, suggestions (including Improved)
-          and restart records. The score itself stays.
+          {msg('This forgets which bars of “')}
+          {piece.title}
+          {msg(
+            '” gave you trouble: bar histories, suggestions (including Improved) and restart records. The score itself stays.',
+          )}
         </p>
         <label class={styles.choice}>
           <input
@@ -329,15 +335,15 @@ function ClearSheet({
             onChange={(e) => setAlsoResults((e.currentTarget as HTMLInputElement).checked)}
           />
           <span>
-            <strong>Also delete results</strong>
-            <small>Scorecards, best times and streaks for this piece.</small>
+            <strong>{msg('Also delete results')}</strong>
+            <small>{msg('Scorecards, best times and streaks for this piece.')}</small>
           </span>
         </label>
         {error ? <Notice tone="danger">{error}</Notice> : null}
         <div class={styles.flowActions}>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{msg('Cancel')}</Button>
           <Button variant="danger" disabled={busy} onClick={() => void run()}>
-            {alsoResults ? 'Clear history and results' : 'Clear history'}
+            {alsoResults ? msg('Clear history and results') : msg('Clear history')}
           </Button>
         </div>
       </div>

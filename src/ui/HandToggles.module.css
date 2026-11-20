@@ -55,6 +55,7 @@
   right: -3px;
   bottom: -3px;
   min-width: 20px;
+  padding-inline: 2px;
   height: 20px;
   display: grid;
   place-items: center;

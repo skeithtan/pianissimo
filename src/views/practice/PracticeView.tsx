@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Practice view entry (lazily loaded from `app/views.ts`). Reads `practiceRequest`, loads the
  * piece and its score package from storage, and hands them to `PracticeScreen`. Without a
@@ -39,14 +40,14 @@ function Loaded({ env, request }: { env: PracticeEnv; request: PracticeRequest }
       try {
         const storage = await env.storage()
         const piece = await storage.getPiece(request.pieceId)
-        if (!piece) throw new Error('This piece is no longer in the library.')
+        if (!piece) throw new Error(msg('This piece is no longer in the library.'))
         const pkg = await storage.getPackage(piece.scoreVersionId)
-        if (!pkg) throw new Error('The score for this piece is missing. Import it again from the Library.')
+        if (!pkg) throw new Error(msg('The score for this piece is missing. Import it again from the Library.'))
         void storage.updatePiece(piece.id, { lastOpenedAt: Date.now() }).catch(() => undefined)
         if (live) setLoad({ state: 'ready', piece, pkg })
       } catch (e) {
         if (live)
-          setLoad({ state: 'missing', message: e instanceof Error ? e.message : 'The piece could not be opened.' })
+          setLoad({ state: 'missing', message: e instanceof Error ? e.message : msg('The piece could not be opened.') })
       }
     })()
     return () => {
@@ -57,17 +58,17 @@ function Loaded({ env, request }: { env: PracticeEnv; request: PracticeRequest }
   if (load.state === 'loading') {
     return (
       <section class={styles.center} aria-busy="true">
-        <p class={styles.muted}>Opening the piece…</p>
+        <p class={styles.muted}>{msg('Opening the piece…')}</p>
       </section>
     )
   }
   if (load.state === 'missing') {
     return (
       <section class={styles.center}>
-        <h1 class={styles.emptyTitle}>Can’t open this piece</h1>
+        <h1 class={styles.emptyTitle}>{msg('Can’t open this piece')}</h1>
         <p class={styles.muted}>{load.message}</p>
         <Button variant="primary" icon="back" onClick={() => navigate('library')}>
-          Back to Library
+          {msg('Back to Library')}
         </Button>
       </section>
     )
@@ -110,15 +111,15 @@ function EmptyState({ env }: { env: PracticeEnv }) {
   }, [env])
   return (
     <section class={styles.center}>
-      <span class={styles.eyebrow}>Practice</span>
-      <h1 class={styles.emptyTitle}>Choose a piece to practice</h1>
-      <p class={styles.muted}>Pick a score in the Library, then practice it here.</p>
+      <span class={styles.eyebrow}>{msg('Practice')}</span>
+      <h1 class={styles.emptyTitle}>{msg('Choose a piece to practice')}</h1>
+      <p class={styles.muted}>{msg('Pick a score in the Library, then practice it here.')}</p>
       <Button variant="primary" icon="back" onClick={() => navigate('library')}>
-        Back to Library
+        {msg('Back to Library')}
       </Button>
       {recent.length > 0 ? (
         <div class={styles.recent}>
-          <h2 class={styles.recentTitle}>Recently opened</h2>
+          <h2 class={styles.recentTitle}>{msg('Recently opened')}</h2>
           <ul>
             {recent.map((p) => (
               <li key={p.id}>

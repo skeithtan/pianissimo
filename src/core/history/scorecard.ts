@@ -1,3 +1,4 @@
+import { msg, percentage, formatTenths } from '../../i18n/messages'
 import type { AttemptRecord, Completion, InterruptReason } from '../model/practice'
 import { isAssistedAttempt, timeDifferenceSec, timingAccuracy } from './results'
 import type { PracticeStreak } from './results'
@@ -106,9 +107,9 @@ const ASSISTANCE_TEXT = { none: 'None', names: 'Note names', keyboard: 'Keyboard
 export function formatSeconds(sec: number): string {
   const tenths = Math.round(Math.abs(sec) * 10)
   const sign = sec < 0 && tenths > 0 ? '-' : ''
-  if (tenths < 600) return `${sign}${(tenths / 10).toFixed(1)} s`
+  if (tenths < 600) return `${sign}${formatTenths(tenths / 10)} s`
   const minutes = Math.floor(tenths / 600)
-  const rest = ((tenths - minutes * 600) / 10).toFixed(1).padStart(4, '0')
+  const rest = formatTenths((tenths - minutes * 600) / 10).padStart(4, '0')
   return `${sign}${minutes}:${rest}`
 }
 
@@ -122,11 +123,11 @@ function offsetText(meanMs: number, toleranceMs: number): string {
   const rounded = Math.round(meanMs)
   const text = rounded === 0 ? '0 ms' : `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)} ms`
   if (Math.abs(meanMs) <= toleranceMs / 3) return text
-  return `${text}, ${meanMs > 0 ? 'dragging' : 'rushing'}`
+  return `${text}, ${meanMs > 0 ? msg('dragging') : msg('rushing')}`
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`
+  return `${n} ${msg(n === 1 ? one : many)}`
 }
 
 function timingKind(a: AttemptRecord): TimingKind {
@@ -154,18 +155,22 @@ function assistanceDetails(a: AttemptRecord): AssistanceDetails {
 }
 
 function assistanceText(d: AssistanceDetails): { value: string; detail?: string } {
-  if (!d.assisted) return { value: ASSISTANCE_TEXT.none }
+  if (!d.assisted) return { value: msg(ASSISTANCE_TEXT.none) }
   const parts: string[] = []
   if (d.persistentLabelNotes > 0) {
     parts.push(
-      `persistent labels on ${plural(d.persistentLabelNotes, 'note')} in ${plural(d.persistentLabelGroups, 'group')}`,
+      msg(
+        'persistent labels on {0} in {1}',
+        plural(d.persistentLabelNotes, 'note'),
+        plural(d.persistentLabelGroups, 'group'),
+      ),
     )
   }
   if (d.hintRequests > 0) parts.push(plural(d.hintRequests, 'hint request'))
   if (d.autoHints > 0) parts.push(plural(d.autoHints, 'automatic hint'))
-  if (d.hintGroups > 0) parts.push(`${plural(d.hintGroups, 'group')} revealed by hints`)
-  if (d.keyboardShown) parts.push('keyboard guide shown')
-  return { value: ASSISTANCE_TEXT[d.level], detail: parts.join(', ') }
+  if (d.hintGroups > 0) parts.push(msg('{0} revealed by hints', plural(d.hintGroups, 'group')))
+  if (d.keyboardShown) parts.push(msg('keyboard guide shown'))
+  return { value: msg(ASSISTANCE_TEXT[d.level]), detail: parts.join(', ') }
 }
 
 /**
@@ -186,16 +191,16 @@ export function buildScorecard(a: AttemptRecord, streak?: PracticeStreak): Score
   const rows: ScorecardRow[] = [
     {
       id: 'completion',
-      label: 'Completion',
-      value: COMPLETION_TEXT[a.completion],
-      ...(a.interruptReason !== undefined ? { detail: REASON_TEXT[a.interruptReason] } : {}),
+      label: msg('Completion'),
+      value: msg(COMPLETION_TEXT[a.completion]),
+      ...(a.interruptReason !== undefined ? { detail: msg(REASON_TEXT[a.interruptReason]) } : {}),
     },
-    { id: 'wrong-attacks', label: 'Wrong-note attacks', value: String(a.wrongAttacks) },
+    { id: 'wrong-attacks', label: msg('Wrong-note attacks'), value: String(a.wrongAttacks) },
     {
       id: 'first-pass',
-      label: 'First-pass groups',
-      value: firstPassPercent === null ? '—' : `${Math.round(firstPassPercent)}%`,
-      detail: `${a.groupsFirstPass} of ${a.groupsTotal}`,
+      label: msg('First-pass groups'),
+      value: firstPassPercent === null ? '—' : percentage(Math.round(firstPassPercent) / 100),
+      detail: msg('{0} of {1}', a.groupsFirstPass, a.groupsTotal),
     },
   ]
 
@@ -205,41 +210,57 @@ export function buildScorecard(a: AttemptRecord, streak?: PracticeStreak): Score
     const tol = a.rhythm.toleranceMs
     const percent = accuracy.groups > 0 ? Math.round((accuracy.onTime / accuracy.groups) * 100) : 0
     rows.push(
-      { id: 'on-time', label: 'On-time groups', value: `${accuracy.onTime} of ${accuracy.groups} (${percent}%)` },
-      { id: 'early', label: 'Early groups', value: String(accuracy.early), detail: `more than ${tol} ms early` },
-      { id: 'late', label: 'Late groups', value: String(accuracy.late), detail: `more than ${tol} ms late` },
-      { id: 'missed', label: 'Missed groups', value: String(accuracy.missed) },
-      { id: 'offset', label: 'Average offset', value: offsetText(accuracy.meanOffsetMs, tol) },
-      { id: 'tolerance', label: 'Timing window', value: `within ±${tol} ms` },
+      {
+        id: 'on-time',
+        label: msg('On-time groups'),
+        value: msg('{0} of {1} ({2}%)', accuracy.onTime, accuracy.groups, percent),
+      },
+      {
+        id: 'early',
+        label: msg('Early groups'),
+        value: String(accuracy.early),
+        detail: msg('more than {0} ms early', tol),
+      },
+      {
+        id: 'late',
+        label: msg('Late groups'),
+        value: String(accuracy.late),
+        detail: msg('more than {0} ms late', tol),
+      },
+      { id: 'missed', label: msg('Missed groups'), value: String(accuracy.missed) },
+      { id: 'offset', label: msg('Average offset'), value: offsetText(accuracy.meanOffsetMs, tol) },
+      { id: 'tolerance', label: msg('Timing window'), value: msg('within ±{0} ms', tol) },
     )
   } else if (a.context.transport === 'strict') {
     // The music set the pace: no completion time, and an incomplete attempt shows no timing.
   } else if (timing === 'scored' || timing === 'ungraded') {
     rows.push({
       id: 'completion-time',
-      label: timing === 'ungraded' ? 'Time to solve' : 'Completion time',
+      label: timing === 'ungraded' ? msg('Time to solve') : msg('Completion time'),
       value: completionTime === null ? '—' : formatSeconds(completionTime),
-      detail: timing === 'ungraded' ? 'Single onset group: ungraded' : COMPLETION_TIME_DEFINITION,
+      detail: timing === 'ungraded' ? msg('Single onset group: ungraded') : msg(COMPLETION_TIME_DEFINITION),
     })
   } else {
     rows.push({
       id: 'completion-time',
-      label: 'Completion time',
+      label: msg('Completion time'),
       value: '—',
-      detail: timing === 'unscored' ? (a.timingUnscoredReason ?? 'Timing not scored') : 'Not completed',
+      detail: timing === 'unscored' ? (a.timingUnscoredReason ?? msg('Timing not scored')) : msg('Not completed'),
     })
   }
   if (timing === 'scored' && expected !== null) {
     rows.push({
       id: 'expected-time',
-      label: 'Expected time',
+      label: msg('Expected time'),
       value: formatSeconds(expected),
-      ...(a.notatedDurationSec !== null ? { detail: `Notated passage ${formatSeconds(a.notatedDurationSec)}` } : {}),
+      ...(a.notatedDurationSec !== null
+        ? { detail: msg('Notated passage {0}', formatSeconds(a.notatedDurationSec)) }
+        : {}),
     })
     if (diff !== null) {
       rows.push({
         id: 'time-difference',
-        label: 'Time difference',
+        label: msg('Time difference'),
         value:
           diffPercent === null
             ? signed(diff)
@@ -249,16 +270,16 @@ export function buildScorecard(a: AttemptRecord, streak?: PracticeStreak): Score
   }
   rows.push({
     id: 'assistance',
-    label: 'Assistance',
+    label: msg('Assistance'),
     value: assistanceRow.value,
     ...(assistanceRow.detail !== undefined ? { detail: assistanceRow.detail } : {}),
   })
   if (streak) {
     rows.push({
       id: 'streak',
-      label: 'Practice streak',
+      label: msg('Practice streak'),
       value: String(streak.current),
-      detail: `Best ${streak.best}`,
+      detail: msg('Best {0}', streak.best),
     })
   }
 

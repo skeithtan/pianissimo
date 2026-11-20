@@ -1,3 +1,4 @@
+import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * Status over the preserved score: a piano disconnect, sound loading, interruptions,
  * Ready/waiting (`Banners`, rendered into the stage's top overlay column, under the Repeat panel;
@@ -48,36 +49,36 @@ export function Banners(p: BannersProps) {
       {ui.inputDisconnected ? (
         <div class={`${styles.banner} ${styles.bannerWarn}`} role="alert" data-testid="input-disconnected">
           <Icon name="plug" size={20} />
-          <span>Piano disconnected. Reconnect it to continue.</span>
-          <Button onClick={p.onConnection}>Connection</Button>
+          <span>{msg('Piano disconnected. Reconnect it to continue.')}</span>
+          <Button onClick={p.onConnection}>{msg('Connection')}</Button>
         </div>
       ) : null}
       {ui.soundStatus && !ui.inputDisconnected ? (
         <div class={styles.banner} role="status">
           <Icon name="sound" size={20} />
-          <span>{ui.soundStatus}</span>
+          <span>{msg(ui.soundStatus)}</span>
         </div>
       ) : null}
       {ui.micStatus ? (
         <div class={styles.banner} role="status" data-testid="mic-status">
           <Icon name="mic" size={20} />
-          <span>{ui.micStatus}</span>
+          <span>{msg(ui.micStatus)}</span>
         </div>
       ) : null}
       {interruption ? (
         <div class={`${styles.banner} ${styles.bannerWarn}`} role="status" data-testid="interruption">
           <Icon name="alert" size={20} />
-          <span>{interruption.text}</span>
+          <span>{msg(interruption.text)}</span>
           {interruption.canResume ? (
             <>
               <Button variant="primary" onClick={p.onResume}>
-                Resume from here
+                {msg('Resume from here')}
               </Button>
-              <Button onClick={p.onRestart}>Restart</Button>
+              <Button onClick={p.onRestart}>{msg('Restart')}</Button>
             </>
           ) : (
             <Button variant="primary" icon="restart" onClick={p.onRestart}>
-              Restart passage
+              {msg('Restart passage')}
             </Button>
           )}
         </div>
@@ -91,7 +92,7 @@ export function Banners(p: BannersProps) {
       {ui.phase === 'ready' && ui.activity === 'scored' && !r && !ui.rhythm ? (
         <div class={`${styles.banner} ${styles.bannerReady}`} role="status" data-testid="ready">
           <Icon name="target" size={20} />
-          <span>Ready. The clock starts with your first note.</span>
+          <span>{msg('Ready. The clock starts with your first note.')}</span>
         </div>
       ) : null}
     </>
@@ -105,8 +106,8 @@ export function Banners(p: BannersProps) {
 export function ladderResultText(r: AttemptSummary, multiplier: number): string | null {
   const l = r.ladder
   if (!l) return null
-  if (l.climbedTo !== undefined) return `Speed up: next at ${formatSpeedPercent(l.climbedTo)}`
-  if (l.done) return `Goal reached: ${formatSpeedPercent(multiplier)}`
+  if (l.climbedTo !== undefined) return msg('Speed up: next at {0}', formatSpeedPercent(l.climbedTo))
+  if (l.done) return msg('Goal reached: {0}', formatSpeedPercent(multiplier))
   return null
 }
 
@@ -115,11 +116,11 @@ export function ladderResultText(r: AttemptSummary, multiplier: number): string 
  * first of: wrong notes ("2 wrong notes"), timing (Keep time), help; "Completed" otherwise.
  */
 export function resultTitle(r: AttemptSummary): string {
-  if (r.passed) return 'Clean pass'
+  if (r.passed) return msg('Clean pass')
   if (r.wrongAttacks > 0) return wrongText(r.wrongAttacks)
-  if (r.timing && r.timing.onTime < r.timing.groups) return 'Timing slipped'
-  if (r.assistance !== 'none') return 'Played with help'
-  return 'Completed'
+  if (r.timing && r.timing.onTime < r.timing.groups) return msg('Timing slipped')
+  if (r.assistance !== 'none') return msg('Played with help')
+  return msg('Completed')
 }
 
 export interface AttemptResultProps {
@@ -200,7 +201,10 @@ export function AttemptResult(p: AttemptResultProps) {
   }, [r?.id])
   // Worded here, on a render, never in the input path; it follows the naming settings live.
   const first = shown?.repeatedMistakes?.[0]
-  const note = useMemo(() => (first ? repeatedMistakeLine(first, p.model, p.naming) : null), [first, p.model, p.naming])
+  const note = useMemo(
+    () => (first ? repeatedMistakeLine(first, p.model, p.naming) : null),
+    [first, p.model, p.naming, messageLanguage()],
+  )
   // Expanded for one result only: a new pass (or none) folds it.
   const [ownId, setOwnId] = useState<string | null>(null)
   const expandedId = p.onExpandedChange ? (p.expandedId ?? null) : ownId
@@ -478,13 +482,17 @@ function ResultCard({
         {timing}
       </span>
     ) : null,
-    r.streak > 1 ? <span key="streak">{r.streak} clean in a row</span> : null,
+    r.streak > 1 ? (
+      <span key="streak">
+        {r.streak} {msg('clean in a row')}
+      </span>
+    ) : null,
     ladder ? (
       <span key="ladder" data-testid="ladder-result">
         {ladder}
       </span>
     ) : null,
-    r.targetReached ? <span key="goal">Goal reached. Repeat is off.</span> : null,
+    r.targetReached ? <span key="goal">{msg('Goal reached. Repeat is off.')}</span> : null,
   ].filter((part) => part !== null)
   return (
     <div
@@ -540,7 +548,7 @@ function ResultCard({
           // the rest is not reachable). A tablet: a plain labeled region over the score.
           role={phone ? 'dialog' : undefined}
           aria-modal={phone ? 'true' : undefined}
-          aria-label="Details of this pass"
+          aria-label={msg('Details of this pass')}
           inert={unfold === 'leaving' || undefined}
           data-testid="result-details"
           data-layout={phone ? 'screen' : 'panel'}
@@ -553,8 +561,8 @@ function ResultCard({
                 ref={hide}
                 type="button"
                 class={styles.screenBack}
-                aria-label="Hide details"
-                title="Hide details"
+                aria-label={msg('Hide details')}
+                title={msg('Hide details')}
                 data-testid="result-details-hide"
                 onClick={onToggle}
               >
@@ -563,7 +571,11 @@ function ResultCard({
               <h2 class={styles.screenTitle}>
                 <span>{resultTitle(r)}</span>
                 {dots !== null ? (
-                  <span class={styles.resultGoal} role="img" aria-label={`${filled} of ${dots} clean toward the goal`}>
+                  <span
+                    class={styles.resultGoal}
+                    role="img"
+                    aria-label={msg('{0} of {1} clean toward the goal', filled, dots)}
+                  >
                     {Array.from({ length: dots }, (_, i) => (
                       <span key={i} class={styles.resultDot} data-on={i < filled || undefined} />
                     ))}
@@ -572,14 +584,14 @@ function ResultCard({
               </h2>
               {showAgain ? (
                 <Button variant="primary" icon="restart" class={styles.resultAgain} onClick={onRestart}>
-                  Again
+                  {msg('Again')}
                 </Button>
               ) : null}
               <button
                 type="button"
                 class={styles.resultIconButton}
-                aria-label="Hide result"
-                title="Hide"
+                aria-label={msg('Hide result')}
+                title={msg('Hide')}
                 onClick={onDismiss}
               >
                 <Icon name="close" size={20} />
@@ -610,7 +622,11 @@ function ResultCard({
             <p class={styles.resultTitle}>
               <span>{resultTitle(r)}</span>
               {dots !== null ? (
-                <span class={styles.resultGoal} role="img" aria-label={`${filled} of ${dots} clean toward the goal`}>
+                <span
+                  class={styles.resultGoal}
+                  role="img"
+                  aria-label={msg('{0} of {1} clean toward the goal', filled, dots)}
+                >
                   {Array.from({ length: dots }, (_, i) => (
                     <span key={i} class={styles.resultDot} data-on={i < filled || undefined} />
                   ))}
@@ -629,7 +645,7 @@ function ResultCard({
           <div class={styles.resultActions}>
             {showAgain ? (
               <Button variant="primary" icon="restart" class={styles.resultAgain} onClick={onRestart}>
-                Again
+                {msg('Again')}
               </Button>
             ) : null}
             {hasDetails ? (
@@ -639,8 +655,8 @@ function ResultCard({
                 class={open ? styles.resultDetailsButton : styles.resultSurface}
                 aria-expanded={expanded}
                 aria-controls={expanded ? detailsId : undefined}
-                aria-label={expanded ? 'Hide details' : 'Show details of this pass'}
-                title={expanded ? 'Hide details' : undefined}
+                aria-label={expanded ? msg('Hide details') : msg('Show details of this pass')}
+                title={expanded ? msg('Hide details') : undefined}
                 data-testid="result-details-toggle"
                 onClick={onToggle}
               >
@@ -648,7 +664,7 @@ function ResultCard({
                   <>
                     <Icon name="down" size={20} />
                     <span class={styles.resultDetailsLabel} aria-hidden="true">
-                      Details
+                      {msg('Details')}
                     </span>
                   </>
                 ) : (
@@ -661,8 +677,8 @@ function ResultCard({
             <button
               type="button"
               class={styles.resultIconButton}
-              aria-label="Hide result"
-              title="Hide"
+              aria-label={msg('Hide result')}
+              title={msg('Hide')}
               onClick={onDismiss}
             >
               <Icon name="close" size={20} />

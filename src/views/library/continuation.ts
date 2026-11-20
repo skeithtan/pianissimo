@@ -1,8 +1,8 @@
+import { msg } from '../../i18n/messages'
 import type { ScoreModel } from '../../core/model/score'
 import { beatText, describePassage, normalizePassage, positionText } from '../../core/model/passage'
 import { cmp, isZero, ZERO, type Rational } from '../../core/music/rational'
 import type { PieceRecord } from '../../core/storage/records'
-import { formatSpeedPercent } from '../../ui/speed'
 import { formatLastSpeed, formatRelativeTime } from './format'
 
 /** An import alone is not a practice session, even though it receives a last-opened time. */
@@ -29,7 +29,7 @@ export function neverOpened(piece: Pick<PieceRecord, 'createdAt' | 'lastOpenedAt
  * Study updates `lastOpenedAt` too (DECISIONS L9).
  */
 export function openedStatus(piece: Pick<PieceRecord, 'createdAt' | 'lastOpenedAt'>, now: number): string {
-  return neverOpened(piece) ? 'Not opened yet' : `Opened ${formatRelativeTime(piece.lastOpenedAt, now)}`
+  return neverOpened(piece) ? msg('Not opened yet') : msg('Opened {0}', formatRelativeTime(piece.lastOpenedAt, now))
 }
 
 const HANDS = { both: 'both hands', right: 'right hand', left: 'left hand', none: 'listening' } as const
@@ -39,7 +39,7 @@ const lowerFirst = (text: string): string => text.charAt(0).toLowerCase() + text
 function resumeText(score: ScoreModel, position: Rational): string {
   const text = positionText(score, position)
   const beat = beatText(score, position)
-  const suffix = `, beat ${beat}`
+  const suffix = msg(', beat {0}', beat)
   return beat === '1' && text.endsWith(suffix) ? text.slice(0, -suffix.length) : text
 }
 
@@ -53,23 +53,26 @@ export function continuationContext(piece: PieceRecord, score: ScoreModel | null
   if (piece.repeatOpen) {
     position = piece.lastPassage
       ? score
-        ? `Repeat ${lowerFirst(describePassage(score, normalizePassage(score, piece.lastPassage), piece.lastHands))}`
-        : 'Repeat saved passage'
-      : 'Repeat whole piece'
+        ? msg(
+            'Repeat {0}',
+            lowerFirst(describePassage(score, normalizePassage(score, piece.lastPassage), piece.lastHands)),
+          )
+        : msg('Repeat saved passage')
+      : msg('Repeat whole piece')
   } else {
     const resume = piece.resume?.position
     position =
       resume && isZero(resume)
-        ? 'From the start'
+        ? msg('From the start')
         : score &&
             score.occurrences.length > 0 &&
             resume &&
             cmp(resume, ZERO) > 0 &&
             cmp(resume, score.totalDuration) < 0
-          ? `From ${lowerFirst(resumeText(score, resume))}`
-          : 'Saved position'
+          ? msg('From {0}', lowerFirst(resumeText(score, resume)))
+          : msg('Saved position')
   }
-  const parts = [position, HANDS[piece.lastHands]]
-  if (formatSpeedPercent(piece.lastMultiplier) !== '100%') parts.push(formatLastSpeed(piece.lastMultiplier))
+  const parts = [position, msg(HANDS[piece.lastHands])]
+  if (piece.lastMultiplier !== 1) parts.push(formatLastSpeed(piece.lastMultiplier))
   return parts.join(' · ')
 }

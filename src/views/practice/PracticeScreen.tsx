@@ -1,3 +1,4 @@
+import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * The practice screen (spec "Practice screen"; DECISIONS U1–U14): a header that blends into the
  * background (back, title, connection, Settings), the full-width score overview (which never
@@ -19,7 +20,7 @@
  * small subscribed children.
  */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { effect } from '@preact/signals'
+import { effect, untracked } from '@preact/signals'
 import { connectionOpen, navigate, openSettings, settingsOpen, type PracticePreset } from '../../app/navigation'
 import {
   PracticeSession,
@@ -362,6 +363,10 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       // Names about to show on the tight engraving stay hidden until the roomy one glides in.
       if (shown.current?.room === 'hints' && labelRoom(next.mode) === 'all') stripRef.current?.holdLabels?.(true)
     })
+    const offLanguage = effect(() => {
+      messageLanguage()
+      untracked(() => session.refreshLanguage())
+    })
     const offSettings = settings.subscribe(() => session.updateSettings(pickSettings()))
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
@@ -386,6 +391,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     return () => {
       offLabels()
       offSettings()
+      offLanguage()
       offOverlay()
       offInput()
       document.removeEventListener('visibilitychange', onVisibility)
@@ -470,7 +476,6 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             onMagnify: (m) => {
               magnifyRef.current = m
             },
-            returnLabel: 'Return to current position',
             // Browsing while something plays holds it and drops that attempt (U41); the release
             // continues from the note under the cursor line (U95).
             onBrowse: (browsing) => {
@@ -507,7 +512,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         strip.respaceFrom?.(snapshot)
         setPrep({ state: 'ready' })
       } catch (e) {
-        if (live) setPrep({ state: 'error', message: e instanceof Error ? e.message : 'The score could not be drawn.' })
+        if (live)
+          setPrep({ state: 'error', message: e instanceof Error ? e.message : msg('The score could not be drawn.') })
       }
     })()
     return () => {
@@ -625,7 +631,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const metronome: MetronomeRow = {
     on: !ui.metronomeMuted && metronomeOn(appSettings.metronome, ui.metronomeScope),
     disabled: ui.metronomeMuted || source === null || env.hasWebAudio?.() === false,
-    ...(ui.metronomeMuted ? { note: 'Silent while the microphone follows.' } : {}),
+    ...(ui.metronomeMuted ? { note: msg('Silent while the microphone follows.') } : {}),
   }
   const onMetronome = (on: boolean) => {
     // Inside the tap: iPadOS starts an AudioContext only during a gesture.
@@ -652,29 +658,29 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const playLabel =
     ui.activity === 'playing'
       ? ui.playing
-        ? 'Pause'
+        ? msg('Pause')
         : ui.phase === 'paused'
-          ? 'Resume'
-          : 'Start'
+          ? msg('Resume')
+          : msg('Start')
       : ui.playing && ui.activity === 'listening'
-        ? 'Pause'
+        ? msg('Pause')
         : ui.activity === 'listening'
-          ? 'Play'
+          ? msg('Play')
           : ui.playing
-            ? 'Pause'
+            ? msg('Pause')
             : ui.startAction === 'listen'
-              ? 'Listen'
+              ? msg('Listen')
               : ui.activity === 'reading' &&
                   (ui.phase === 'paused' || ui.interruption?.reason === 'disconnect') &&
                   ui.startAction !== 'scored'
-                ? 'Resume'
-                : 'Start'
+                ? msg('Resume')
+                : msg('Start')
 
   const back = (
     <button
       type="button"
       class={phone ? `${styles.iconButton} ${styles.recedes}` : styles.iconButton}
-      aria-label="Back to Library"
+      aria-label={msg('Back to Library')}
       onClick={() => navigate('library')}
     >
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -699,8 +705,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     <HandToggles
       hands={ui.hands}
       onHandsChange={(hands) => session.setSelection({ hands })}
-      handsUnavailable={ui.handsAvailable ? undefined : HANDS_UNAVAILABLE}
-      onHandsUnavailable={() => pushNotice({ kind: 'info', text: HANDS_UNAVAILABLE_NOTICE })}
+      handsUnavailable={ui.handsAvailable ? undefined : msg(HANDS_UNAVAILABLE)}
+      onHandsUnavailable={() => pushNotice({ kind: 'info', text: msg(HANDS_UNAVAILABLE_NOTICE) })}
       playing={ui.playing}
       onPlayPause={() => session.togglePlay()}
       playLabel={playLabel}
@@ -714,7 +720,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     ui.canRestartLoop && prep.state === 'ready' && !(ui.lastResult && expandedResult === ui.lastResult.id) ? (
       <button type="button" class={`pn-score-action ${styles.loopRestart}`} onClick={() => void session.restartLoop()}>
         <Icon name="restart" size={18} />
-        <span>Restart loop</span>
+        <span>{msg('Restart loop')}</span>
       </button>
     ) : null
 
@@ -784,9 +790,9 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
               <button
                 type="button"
                 class={`${styles.iconButton} ${styles.menuButton} ${styles.recedes}`}
-                aria-label="Menu"
+                aria-label={msg('Menu')}
                 data-keeps-ahead
-                title="Menu"
+                title={msg('Menu')}
                 aria-haspopup="dialog"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen(true)}
@@ -814,8 +820,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
                 <button
                   type="button"
                   class={styles.iconButton}
-                  aria-label="Settings"
-                  title="Settings"
+                  aria-label={msg('Settings')}
+                  title={msg('Settings')}
                   onClick={openSettings}
                 >
                   <Icon name="settings" size={22} />
@@ -943,7 +949,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       )}
 
       <Sheet
-        title="Repeat options"
+        title={msg('Repeat options')}
         floating
         open={phone && ui.repeat && repeatOptionsOpen}
         onClose={() => setRepeatOptionsOpen(false)}
@@ -951,10 +957,10 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         <RepeatOptions session={session} repeatTarget={ui.repeatTarget} multiplier={ui.multiplier} ladder={ui.ladder} />
       </Sheet>
 
-      <Sheet title="Menu" untitled floating open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
+      <Sheet title={msg('Menu')} untitled floating open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
         <div class={styles.menu}>
           <div class={styles.menuRow}>
-            <span class={styles.menuLabel}>Speed</span>
+            <span class={styles.menuLabel}>{msg('Speed')}</span>
             <TempoControl
               multiplier={ui.multiplier}
               sourceBeatBpm={source?.beatBpm ?? 0}
@@ -983,7 +989,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             toggleClass={styles.menuToggle}
           />
           <div class={styles.menuRow}>
-            <span class={styles.menuLabel}>Piano</span>
+            <span class={styles.menuLabel}>{msg('Piano')}</span>
             <ConnectionChip
               onOpen={() => {
                 setMenuOpen(false)
@@ -999,7 +1005,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
                 openSettings()
               }}
             >
-              Settings
+              {msg('Settings')}
             </Button>
           </div>
         </div>

@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Score / movement and piano-part choice before building (spec "MusicXML score import": if an
  * import contains several scores or movements, let the user select one; DECISIONS I8: one part
@@ -28,15 +29,20 @@ export function needsChoice(inspect: InspectResult): boolean {
 /** A readable reason the selection cannot be built, or null when it can. */
 export function selectionProblem(candidate: ImportCandidate, partIds: readonly string[]): string | null {
   const chosen = candidate.parts.filter((p) => partIds.includes(p.id))
-  if (chosen.length === 0) return 'Choose the piano part to practice.'
-  if (chosen.length > 2) return 'Choose one two-staff piano part, or two one-staff parts (right hand, then left hand).'
+  if (chosen.length === 0) return msg('Choose the piano part to practice.')
+  if (chosen.length > 2)
+    return msg('Choose one two-staff piano part, or two one-staff parts (right hand, then left hand).')
   if (chosen.length === 2 && chosen.some((p) => p.staves !== 1)) {
-    return 'Two parts can be combined only when each has a single staff (right hand above, left hand below).'
+    return msg('Two parts can be combined only when each has a single staff (right hand above, left hand below).')
   }
   if (chosen.length === 1 && chosen[0]!.staves > 2) {
-    return `“${chosen[0]!.name}” has ${chosen[0]!.staves} staves. Only one- or two-staff piano parts are supported.`
+    return msg(
+      '“{0}” has {1} staves. Only one- or two-staff piano parts are supported.',
+      chosen[0]!.name,
+      chosen[0]!.staves,
+    )
   }
-  if (chosen.every((p) => p.notes === 0)) return 'The chosen part has no notes to practice.'
+  if (chosen.every((p) => p.notes === 0)) return msg('The chosen part has no notes to practice.')
   return null
 }
 
@@ -50,7 +56,7 @@ export function togglePart(candidate: ImportCandidate, partIds: readonly string[
 
 /** "Piano · 2 staves · 412 notes". */
 export function describePart(part: CandidatePart): string {
-  const bits = [`${part.staves} ${part.staves === 1 ? 'staff' : 'staves'}`, `${part.notes} notes`]
+  const bits = [`${part.staves} ${part.staves === 1 ? msg('staff') : msg('staves')}`, msg('{0} notes', part.notes)]
   if (part.instrument && part.instrument !== part.name) bits.unshift(part.instrument)
   return bits.join(' · ')
 }

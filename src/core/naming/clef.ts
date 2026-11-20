@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import type { ClefKey } from '../model/score'
 import type { Step } from '../music/pitch'
 import { diatonicIndex, STEPS } from '../music/pitch'
@@ -48,7 +49,7 @@ export function clefShortName(clefKey: ClefKey): string {
   const clef = parseClefKey(clefKey)
   if (!clef) return clefKey
   const named = NAMED[`${clef.sign}${clef.line}`]
-  const base = named ? named[0] : `${clef.sign}-clef line ${clef.line}`
+  const base = named ? msg(named[0]) : msg('{0}-clef line {1}', clef.sign, clef.line)
   return `${base}${octaveSuffix(clef.octaveChange)}`
 }
 

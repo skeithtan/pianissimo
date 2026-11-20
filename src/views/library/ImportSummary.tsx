@@ -1,3 +1,5 @@
+import { importMessage } from '../../i18n/importMessage'
+import { msg } from '../../i18n/messages'
 /**
  * Import summary (spec "MusicXML score import": selected piano parts, hand assignments,
  * numerical tempo, and any missing or unsupported information; the checks before scored
@@ -20,6 +22,7 @@ import {
   describeCrossStaff,
   describeStaffUse,
   handLines,
+  parsePracticeBpm,
   type BeatUnitChoice,
   type ReviewDraft,
   type ReviewGate,
@@ -53,17 +56,17 @@ export function ImportSummaryView({
   compact?: boolean
 }) {
   const c = summary.counts
-  const bars = c.occurrences === c.measures ? `${c.measures}` : `${c.measures} (${c.occurrences} played)`
+  const bars = c.occurrences === c.measures ? `${c.measures}` : msg('{0} ({1} played)', c.measures, c.occurrences)
   const needsHands = !summary.handsConfirmed
   const assignedHands = handLines(summary.voices, draft.hands).filter((line) => line.notes > 0)
   const facts = (
-    <dl class={styles.facts} aria-label="Score contents">
-      <Fact label="Bars" value={bars} />
-      <Fact label="Notes" value={String(c.performedNotes)} />
-      <Fact label="Chords" value={String(c.chords)} />
-      <Fact label="Voices" value={String(c.voices)} />
-      <Fact label="Ties" value={String(c.tiedContinuations)} />
-      <Fact label="Tuplet notes" value={String(c.tupletNotes)} />
+    <dl class={styles.facts} aria-label={msg('Score contents')}>
+      <Fact label={msg('Bars')} value={bars} />
+      <Fact label={msg('Notes')} value={String(c.performedNotes)} />
+      <Fact label={msg('Chords')} value={String(c.chords)} />
+      <Fact label={msg('Voices')} value={String(c.voices)} />
+      <Fact label={msg('Ties')} value={String(c.tiedContinuations)} />
+      <Fact label={msg('Tuplet notes')} value={String(c.tupletNotes)} />
     </dl>
   )
   const hands = <HandsSection summary={summary} draft={draft} onDraft={onDraft} editHands={editHands} />
@@ -75,7 +78,7 @@ export function ImportSummaryView({
         {summary.composer ? <p class={styles.composer}>{summary.composer}</p> : null}
         <p class={styles.muted}>
           {summary.parts
-            .map((p) => `${p.name} (${p.staffCount} ${p.staffCount === 1 ? 'staff' : 'staves'})`)
+            .map((p) => `${p.name} (${p.staffCount} ${p.staffCount === 1 ? msg('staff') : msg('staves')})`)
             .join(' + ')}
         </p>
       </header>
@@ -84,14 +87,14 @@ export function ImportSummaryView({
         <>
           {summary.diagnostics.errors > 0 ? (
             <Notice tone="danger">
-              <strong>This score needs a correction before it can be added.</strong>
+              <strong>{msg('This score needs a correction before it can be added.')}</strong>
               <ul class={importStyles.issues}>
                 {summary.diagnostics.list
                   .filter((d) => d.severity === 'error')
                   .map((d, i) => (
                     <li key={i}>
-                      {d.measure ? `Bar ${d.measure}: ` : ''}
-                      {d.message}
+                      {d.measure ? msg('Bar {0}: ', d.measure) : ''}
+                      {importMessage(d.message)}
                     </li>
                   ))}
               </ul>
@@ -102,28 +105,28 @@ export function ImportSummaryView({
           {gate.canSave ? (
             <p class={importStyles.ready}>
               <Icon name="check" size={18} />
-              Ready to open
+              {msg('Ready to open')}
             </p>
           ) : null}
           <dl class={importStyles.overview}>
             {!needsHands ? (
               <div>
-                <dt>Hands</dt>
+                <dt>{msg('Hands')}</dt>
                 <dd>
                   {assignedHands.length === 2
-                    ? 'Both hands assigned'
+                    ? msg('Both hands assigned')
                     : assignedHands[0]?.hand === 'R'
-                      ? 'Right hand assigned'
-                      : 'Left hand assigned'}
+                      ? msg('Right hand assigned')
+                      : msg('Left hand assigned')}
                 </dd>
               </div>
             ) : null}
             {!tempoEntry && summary.tempo.initial ? (
               <div>
-                <dt>Tempo from the score</dt>
+                <dt>{msg('Tempo from the score')}</dt>
                 <dd
                   class={importStyles.tempo}
-                  aria-label={`${summary.tempo.initial.beatUnitName} = ${formatBpm(summary.tempo.initial.beatBpm)}`}
+                  aria-label={`${msg(summary.tempo.initial.beatUnitName)} = ${formatBpm(summary.tempo.initial.beatBpm)}`}
                 >
                   <BeatUnitIcon unit={summary.tempo.initial.beatUnit} />
                   <span>= {formatBpm(summary.tempo.initial.beatBpm)}</span>
@@ -133,7 +136,7 @@ export function ImportSummaryView({
           </dl>
           <ImportIssues summary={summary} />
           <details class={importStyles.details}>
-            <summary>Import details</summary>
+            <summary>{msg('Import details')}</summary>
             <div class={importStyles.detailsBody}>
               {!needsHands ? hands : null}
               {!tempoEntry ? tempo : null}
@@ -164,28 +167,31 @@ function ImportIssues({ summary }: { summary: Summary }) {
     return null
   return (
     <Notice tone="warning">
-      <strong>Before you play</strong>
+      <strong>{msg('Before you play')}</strong>
       <ul class={importStyles.issues}>
         {summary.unsupported.map((passage, i) => (
           <li key={`unsupported-${i}`}>
-            {passage.bars.includes('–') ? 'Bars' : 'Bar'} {passage.bars}: {passage.message} You can view this passage,
-            but it cannot be scored.
+            {passage.bars.includes('–') ? msg('Bars') : msg('Bar')} {passage.bars}: {importMessage(passage.message)}{' '}
+            {msg('You can view this passage, but it cannot be scored.')}
           </li>
         ))}
         {summary.timingIssues.length ? (
           <li>
-            Timing is not scored across {summary.timingIssues.length === 1 ? 'the timing mark' : 'the timing marks'} in{' '}
-            {summary.timingIssues.length === 1 ? 'bar' : 'bars'}{' '}
-            {summary.timingIssues.map((issue) => issue.bar).join(', ')}.
+            {msg(
+              summary.timingIssues.length === 1
+                ? 'Timing is not scored across the timing mark in bar {0}.'
+                : 'Timing is not scored across the timing marks in bars {0}.',
+              summary.timingIssues.map((issue) => issue.bar).join(', '),
+            )}
           </li>
         ) : null}
         {summary.tempo.conflicts ? (
-          <li>Some playback tempos differ from the printed marks. The printed tempos are used.</li>
+          <li>{msg('Some playback tempos differ from the printed marks. The printed tempos are used.')}</li>
         ) : null}
         {warnings.map((warning, i) => (
           <li key={`warning-${i}`}>
-            {warning.measure ? `Bar ${warning.measure}: ` : ''}
-            {warning.message}
+            {warning.measure ? msg('Bar {0}: ', warning.measure) : ''}
+            {importMessage(warning.message)}
           </li>
         ))}
       </ul>
@@ -212,7 +218,7 @@ function StateTag({ ok, okText, needsText }: { ok: boolean; okText: string; need
 }
 
 function voiceTitle(v: SummaryVoice, multiPart: boolean): string {
-  return multiPart ? `Voice ${v.voice} · ${v.partName}` : `Voice ${v.voice}`
+  return multiPart ? msg('Voice {0} · {1}', v.voice, v.partName) : msg('Voice {0}', v.voice)
 }
 
 function HandsSection({
@@ -237,22 +243,27 @@ function HandsSection({
   return (
     <section class={styles.section} data-state={draft.handsConfirmed ? 'ok' : 'needs'} aria-labelledby="import-hands">
       <div class={styles.sectionHead}>
-        <h4 id="import-hands">Hands</h4>
-        <StateTag ok={draft.handsConfirmed} okText="From the score" needsText="Needs your confirmation" />
+        <h4 id="import-hands">{msg('Hands')}</h4>
+        <StateTag ok={draft.handsConfirmed} okText={msg('From the score')} needsText={msg('Needs your confirmation')} />
       </div>
       {!draft.handsConfirmed ? (
         <p class={styles.muted}>
-          {ambiguous.length === 1 ? 'One voice has' : 'Some voices have'} notes on both staves in similar numbers, so
-          the file does not say which hand plays {ambiguous.length === 1 ? 'it' : 'them'}. Choose a hand, then confirm.
+          {ambiguous.length === 1
+            ? msg(
+                'One voice has notes on both staves in similar numbers, so the file does not say which hand plays it. Choose a hand, then confirm.',
+              )
+            : msg(
+                'Some voices have notes on both staves in similar numbers, so the file does not say which hand plays them. Choose a hand, then confirm.',
+              )}
         </p>
       ) : (
-        <ul class={styles.handLines} aria-label="Hands">
+        <ul class={styles.handLines} aria-label={msg('Hands')}>
           {handLines(summary.voices, draft.hands).map((line) => (
             <li key={line.hand} data-hand={line.hand}>
-              <strong>{line.hand === 'R' ? 'Right hand' : 'Left hand'}</strong>
+              <strong>{line.hand === 'R' ? msg('Right hand') : msg('Left hand')}</strong>
               <span>
-                {line.voices ? `${line.voices[0]!.toUpperCase()}${line.voices.slice(1)}` : 'No voices'}
-                {line.notes ? ` · ${line.notes} notes` : ''}
+                {line.voices ? `${line.voices[0]!.toUpperCase()}${line.voices.slice(1)}` : msg('No voices')}
+                {line.notes ? msg(' · {0} notes', line.notes) : ''}
               </span>
             </li>
           ))}
@@ -261,7 +272,7 @@ function HandsSection({
       {draft.handsConfirmed && !editing && crossStaff.length > 0 ? (
         <p class={styles.muted}>
           {crossStaff
-            .map((v) => `${voiceTitle(v, multiPart)} stays one hand: ${describeCrossStaff(v, staffCount)}.`)
+            .map((v) => msg('{0} stays one hand: {1}.', voiceTitle(v, multiPart), describeCrossStaff(v, staffCount)))
             .join(' ')}
         </p>
       ) : null}
@@ -274,20 +285,20 @@ function HandsSection({
                   <strong>{voiceTitle(v, multiPart)}</strong>{' '}
                   {v.ambiguous ? (
                     <span class={styles.tag} data-tone="warning">
-                      Split between staves
+                      {msg('Split between staves')}
                     </span>
                   ) : null}
                 </span>
                 <small>
-                  Notes: {describeStaffUse(v.notesPerStaff, staffCount) || 'none'}
+                  {msg('Notes:')} {describeStaffUse(v.notesPerStaff, staffCount) || msg('none')}
                   {v.crossStaffBars.length > 0 && !v.ambiguous ? ` (${describeCrossStaff(v, staffCount)})` : ''}
                 </small>
               </div>
               <Segmented
                 compact
-                label={`Hand for ${voiceTitle(v, multiPart)}`}
+                label={msg('Hand for {0}', voiceTitle(v, multiPart))}
                 value={draft.hands[v.key] ?? v.hand}
-                options={HAND_OPTIONS}
+                options={HAND_OPTIONS.map((o) => ({ ...o, label: msg(o.label) }))}
                 onChange={(hand) => setHand(v.key, hand)}
               />
             </li>
@@ -297,15 +308,15 @@ function HandsSection({
       <div>
         {!draft.handsConfirmed ? (
           <Button variant="primary" icon="check" onClick={() => onDraft({ ...draft, handsConfirmed: true })}>
-            Confirm hands
+            {msg('Confirm hands')}
           </Button>
         ) : editHands ? null : opened ? (
           <Button icon="check" onClick={() => setOpened(false)}>
-            Done
+            {msg('Done')}
           </Button>
         ) : (
           <Button icon="hand" onClick={() => setOpened(true)}>
-            Change hands
+            {msg('Change hands')}
           </Button>
         )}
       </div>
@@ -332,26 +343,34 @@ function TempoSection({
     return (
       <section class={styles.section} data-state="ok" aria-labelledby="import-tempo">
         <div class={styles.sectionHead}>
-          <h4 id="import-tempo">Tempo</h4>
-          <StateTag ok okText="From the score" needsText="" />
+          <h4 id="import-tempo">{msg('Tempo')}</h4>
+          <StateTag ok okText={msg('From the score')} needsText="" />
         </div>
-        <p class={styles.tempoLine} aria-label={`${t.initial.beatUnitName} = ${formatBpm(t.initial.beatBpm)}`}>
+        <p class={styles.tempoLine} aria-label={`${msg(t.initial.beatUnitName)} = ${formatBpm(t.initial.beatBpm)}`}>
           <BeatUnitIcon unit={t.initial.beatUnit} class={styles.tempoIcon} />
           <span>= {formatBpm(t.initial.beatBpm)}</span>
         </p>
         <p class={styles.muted}>
           {changes > 0
-            ? `${changes} tempo change${changes === 1 ? '' : 's'} (quarter note ${formatBpm(t.minQuarterBpm ?? 0)}–${formatBpm(t.maxQuarterBpm ?? 0)} per minute).`
-            : 'One tempo throughout.'}{' '}
-          You can practice at any speed. This is the reference tempo.
+            ? msg(
+                '{0} tempo change{1} (quarter note {2}–{3} per minute).',
+                changes,
+                changes === 1 ? '' : 's',
+                formatBpm(t.minQuarterBpm ?? 0),
+                formatBpm(t.maxQuarterBpm ?? 0),
+              )
+            : msg('One tempo throughout.')}{' '}
+          {msg('You can practice at any speed. This is the reference tempo.')}
         </p>
         {t.conflicts > 0 ? (
           <p class={styles.muted}>
             <span class={styles.tag} data-tone="warning">
-              Review
+              {msg('Review')}
             </span>{' '}
-            {t.conflicts === 1 ? 'One place states' : `${t.conflicts} places state`} a playback tempo that disagrees
-            with the printed metronome mark. The printed mark is used (see the warnings below).
+            {t.conflicts === 1 ? msg('One place states') : msg('{0} places state', t.conflicts)}{' '}
+            {msg(
+              'a playback tempo that disagrees with the printed metronome mark. The printed mark is used (see the warnings below).',
+            )}
           </p>
         ) : null}
       </section>
@@ -361,26 +380,28 @@ function TempoSection({
   return (
     <section
       class={styles.section}
-      data-state={gate.blockers.some((b) => b.startsWith('Enter a practice tempo')) ? 'needs' : 'ok'}
+      data-state={typeof parsePracticeBpm(draft.bpmText) === 'string' ? 'needs' : 'ok'}
       aria-labelledby="import-tempo"
     >
       <div class={styles.sectionHead}>
-        <h4 id="import-tempo">Practice tempo</h4>
+        <h4 id="import-tempo">{msg('Practice tempo')}</h4>
         <StateTag
-          ok={!gate.blockers.some((b) => b.startsWith('Enter a practice tempo'))}
-          okText="Set"
-          needsText="Required"
+          ok={typeof parsePracticeBpm(draft.bpmText) !== 'string'}
+          okText={msg('Set')}
+          needsText={msg('Required')}
         />
       </div>
       <p class={styles.muted}>
-        This score has no numerical tempo. Choose a tempo and beat unit to begin. You can adjust the speed in Practice.
+        {msg(
+          'This score has no numerical tempo. Choose a tempo and beat unit to begin. You can adjust the speed in Practice.',
+        )}
       </p>
       <div class={styles.tempoEntry}>
         <Segmented<BeatUnitChoice>
           compact
-          label="Beat unit"
+          label={msg('Beat unit')}
           value={draft.beatUnit}
-          options={BEAT_UNIT_CHOICES.map((c) => ({ value: c.value, label: c.label }))}
+          options={BEAT_UNIT_CHOICES.map((c) => ({ value: c.value, label: msg(c.label) }))}
           onChange={(beatUnit) => onDraft({ ...draft, beatUnit })}
         />
         <label class={styles.bpmRow}>
@@ -390,11 +411,11 @@ function TempoSection({
             autoComplete="off"
             placeholder="80"
             value={draft.bpmText}
-            aria-label="Beats per minute"
+            aria-label={msg('Beats per minute')}
             aria-invalid={error ? 'true' : undefined}
             onInput={(e) => onDraft({ ...draft, bpmText: (e.currentTarget as HTMLInputElement).value })}
           />
-          <span>beats per minute</span>
+          <span>{msg('beats per minute')}</span>
         </label>
         {error ? (
           <p class={styles.error} role="alert">
@@ -438,147 +459,177 @@ function ScoreChecks({ summary }: { summary: Summary }) {
   const errors = d.list.filter((x) => x.severity === 'error')
   const warnings = d.list.filter((x) => x.severity === 'warning')
   const infos = d.list.filter((x) => x.severity === 'info')
-  const where = (m: { measure?: string }) => (m.measure ? `Bar ${m.measure}: ` : '')
+  const where = (m: { measure?: string }) => (m.measure ? msg('Bar {0}: ', m.measure) : '')
   const r = summary.repeats
   const ch = summary.changes
   return (
     <section class={styles.checks} aria-labelledby="import-checks">
       <h4 id="import-checks" class={styles.sectionHead}>
-        Score check
+        {msg('Score check')}
       </h4>
       {errors.length > 0 ? (
-        <Check title="Errors" count={String(errors.length)} tone="danger">
+        <Check title={msg('Errors')} count={String(errors.length)} tone="danger">
           <ul>
             {errors.map((x, i) => (
-              <li key={i}>{where(x) + x.message}</li>
+              <li key={i}>{where(x) + importMessage(x.message)}</li>
             ))}
           </ul>
         </Check>
       ) : null}
       <Check
-        title="Unsupported passages"
-        count={summary.unsupported.length ? String(summary.unsupported.length) : 'None'}
+        title={msg('Unsupported passages')}
+        count={summary.unsupported.length ? String(summary.unsupported.length) : msg('None')}
         {...(summary.unsupported.length ? { tone: 'warning' as const } : {})}
       >
         {summary.unsupported.length ? (
           <>
             <p class={styles.muted}>
-              You can view these bars, but they are left out of scored practice. No notes are dropped.
+              {msg('You can view these bars, but they are left out of scored practice. No notes are dropped.')}
             </p>
             <ul>
               {summary.unsupported.map((u, i) => (
                 <li key={i}>
-                  {u.bars.includes('–') ? 'Bars' : 'Bar'} {u.bars}: {u.message}
+                  {u.bars.includes('–') ? msg('Bars') : msg('Bar')} {u.bars}: {importMessage(u.message)}
                 </li>
               ))}
             </ul>
           </>
         ) : (
-          <p class={styles.muted}>Everything in the selected parts can be scored.</p>
+          <p class={styles.muted}>{msg('Everything in the selected parts can be scored.')}</p>
         )}
       </Check>
       <Check
-        title="Timing issues"
-        count={summary.timingIssues.length ? String(summary.timingIssues.length) : 'None'}
+        title={msg('Timing issues')}
+        count={summary.timingIssues.length ? String(summary.timingIssues.length) : msg('None')}
         {...(summary.timingIssues.length ? { tone: 'warning' as const } : {})}
       >
         {summary.timingIssues.length ? (
           <>
             <p class={styles.muted}>
-              Fermatas, rit. and similar marks have no exact duration, so timing is not scored across them.
+              {msg('Fermatas, rit. and similar marks have no exact duration, so timing is not scored across them.')}
             </p>
             <ul>
               {summary.timingIssues.map((t, i) => (
                 <li key={i}>
-                  Bar {t.bar}: {t.text}
+                  {msg('Bar')} {t.bar}: {importMessage(t.text)}
                 </li>
               ))}
             </ul>
           </>
         ) : (
-          <p class={styles.muted}>No fermatas or verbal tempo changes.</p>
+          <p class={styles.muted}>{msg('No fermatas or verbal tempo changes.')}</p>
         )}
       </Check>
-      <Check title="Ottava lines" count={summary.ottavas.length ? String(summary.ottavas.length) : 'None'}>
+      <Check title={msg('Ottava lines')} count={summary.ottavas.length ? String(summary.ottavas.length) : msg('None')}>
         {summary.ottavas.length ? (
           <ul>
             {summary.ottavas.map((o) => (
               <li key={o.index}>
-                {o.label} on the {o.staff === 0 ? 'upper' : 'lower'} staff,{' '}
-                {o.fromBar === o.toBar ? `bar ${o.fromBar}` : `bars ${o.fromBar}–${o.toBar}`} ({o.notes} notes)
+                {msg(
+                  o.staff === 0 ? '{0} on the upper staff, {1} ({2})' : '{0} on the lower staff, {1} ({2})',
+                  o.label,
+                  o.fromBar === o.toBar ? msg('bar {0}', o.fromBar) : msg('bars {0}–{1}', o.fromBar, o.toBar),
+                  msg(o.notes === 1 ? '{0} note' : '{0} notes', o.notes),
+                )}
               </li>
             ))}
           </ul>
         ) : (
-          <p class={styles.muted}>No 8va, 8vb or 15ma lines.</p>
+          <p class={styles.muted}>{msg('No 8va, 8vb or 15ma lines.')}</p>
         )}
       </Check>
-      <Check title="Rolled chords" count={summary.rolls.length ? String(summary.rolls.length) : 'None'}>
+      <Check title={msg('Rolled chords')} count={summary.rolls.length ? String(summary.rolls.length) : msg('None')}>
         {summary.rolls.length ? (
           <ul>
             {summary.rolls.map((g) => (
               <li key={g.index}>
-                Bar {g.bar}: {g.pitches} notes, rolled {g.direction}
-                {g.directionDefaulted ? ' (direction not marked)' : ''}
-                {g.crossStaff ? ', across both staves' : ''}
+                {msg('Bar')} {g.bar}: {g.pitches} {msg('notes, rolled')} {msg(g.direction)}
+                {g.directionDefaulted ? msg(' (direction not marked)') : ''}
+                {g.crossStaff ? msg(', across both staves') : ''}
               </li>
             ))}
           </ul>
         ) : (
-          <p class={styles.muted}>No arpeggiated chords.</p>
+          <p class={styles.muted}>{msg('No arpeggiated chords.')}</p>
         )}
       </Check>
-      <Check title="Repeats" count={r.unfolded ? `${r.repeatedBars.length} bars repeat` : 'None'}>
+      <Check title={msg('Repeats')} count={r.unfolded ? msg('{0} bars repeat', r.repeatedBars.length) : msg('None')}>
         {r.unfolded ? (
           <>
             <p class={styles.muted}>
-              Repeats are played out in order. A repeated bar shows as, for example, “12 (pass 2)”.
+              {msg('Repeats are played out in order. A repeated bar shows as, for example, “12 (pass 2)”.')}
             </p>
             <ul>
               {r.repeatedBars.slice(0, 12).map((b) => (
                 <li key={b.bar}>
-                  Bar {b.bar}: {b.passes} passes
+                  {msg('Bar')} {b.bar}: {b.passes} {msg('passes')}
                 </li>
               ))}
-              {r.repeatedBars.length > 12 ? <li>…and {r.repeatedBars.length - 12} more</li> : null}
+              {r.repeatedBars.length > 12 ? (
+                <li>
+                  {msg('…and')} {r.repeatedBars.length - 12} {msg('more')}
+                </li>
+              ) : null}
             </ul>
-            {r.endings.length ? <p class={styles.muted}>Endings: {r.endings.join(', ')}</p> : null}
+            {r.endings.length ? (
+              <p class={styles.muted}>
+                {msg('Endings:')} {r.endings.join(', ')}
+              </p>
+            ) : null}
           </>
         ) : (
-          <p class={styles.muted}>The score plays straight through.</p>
+          <p class={styles.muted}>{msg('The score plays straight through.')}</p>
         )}
       </Check>
-      <Check title="Key, meter and clef changes" count={String(ch.keys + ch.meters + ch.clefs)}>
+      <Check title={msg('Key, meter and clef changes')} count={String(ch.keys + ch.meters + ch.clefs)}>
         <ul>
-          <li>Key changes: {ch.keys}</li>
-          <li>Meter changes: {ch.meters}</li>
-          <li>Clef changes: {ch.clefs}</li>
-          <li>Pedal marks: {summary.counts.pedalMarks}</li>
-          <li>Dynamics: {summary.counts.dynamicMarks}</li>
-          {summary.counts.graceNotes ? <li>Grace notes: {summary.counts.graceNotes}</li> : null}
-          {summary.counts.cueNotes ? <li>Cue notes (not played): {summary.counts.cueNotes}</li> : null}
+          <li>
+            {msg('Key changes:')} {ch.keys}
+          </li>
+          <li>
+            {msg('Meter changes:')} {ch.meters}
+          </li>
+          <li>
+            {msg('Clef changes:')} {ch.clefs}
+          </li>
+          <li>
+            {msg('Pedal marks:')} {summary.counts.pedalMarks}
+          </li>
+          <li>
+            {msg('Dynamics:')} {summary.counts.dynamicMarks}
+          </li>
+          {summary.counts.graceNotes ? (
+            <li>
+              {msg('Grace notes:')} {summary.counts.graceNotes}
+            </li>
+          ) : null}
+          {summary.counts.cueNotes ? (
+            <li>
+              {msg('Cue notes (not played):')} {summary.counts.cueNotes}
+            </li>
+          ) : null}
         </ul>
       </Check>
       <Check
-        title="Warnings"
-        count={warnings.length ? String(warnings.length) : 'None'}
+        title={msg('Warnings')}
+        count={warnings.length ? String(warnings.length) : msg('None')}
         {...(warnings.length ? { tone: 'warning' as const } : {})}
       >
         {warnings.length ? (
           <ul>
             {warnings.map((x, i) => (
-              <li key={i}>{where(x) + x.message}</li>
+              <li key={i}>{where(x) + importMessage(x.message)}</li>
             ))}
           </ul>
         ) : (
-          <p class={styles.muted}>No warnings.</p>
+          <p class={styles.muted}>{msg('No warnings.')}</p>
         )}
       </Check>
       {infos.length ? (
-        <Check title="Notes from the importer" count={String(infos.length)}>
+        <Check title={msg('Notes from the importer')} count={String(infos.length)}>
           <ul>
             {infos.map((x, i) => (
-              <li key={i}>{where(x) + x.message}</li>
+              <li key={i}>{where(x) + importMessage(x.message)}</li>
             ))}
           </ul>
         </Check>

@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * Note names (spec "Mistake feedback and hints"): letter or fixed-do names, si/ti, octave display,
  * "Always show effective accidentals" (default on) and "Simplify enharmonic names" (default off).
@@ -15,21 +16,21 @@ export function NamingSection() {
   return (
     <>
       <Group>
-        <Setting label="Naming system" description="Fixed do means C is always do.">
+        <Setting label={msg('Naming system')} description={msg('Fixed do means C is always do.')}>
           <Segmented
-            label="Naming system"
+            label={msg('Naming system')}
             value={naming.system}
             options={[
-              { value: 'letter', label: 'Letter names', title: 'C D E F G A B' },
-              { value: 'fixed-do', label: 'Fixed do', title: 'do re mi fa sol la si' },
+              { value: 'letter', label: msg('Letter names'), title: 'C D E F G A B' },
+              { value: 'fixed-do', label: msg('Fixed do'), title: msg('do re mi fa sol la si') },
             ]}
             onChange={(system) => updateSettings({ naming: { system } })}
           />
         </Setting>
         {naming.system === 'fixed-do' ? (
-          <Setting label="Seventh note">
+          <Setting label={msg('Seventh note')}>
             <Segmented
-              label="Seventh note"
+              label={msg('Seventh note')}
               value={naming.seventh}
               options={[
                 { value: 'si', label: 'si' },
@@ -40,29 +41,31 @@ export function NamingSection() {
           </Setting>
         ) : null}
         <Toggle
-          label="Show octave number"
-          description="C4 is middle C."
+          label={msg('Show octave number')}
+          description={msg('C4 is middle C.')}
           checked={naming.showOctave}
           onChange={(showOctave) => updateSettings({ naming: { showOctave } })}
         />
         <Toggle
-          label="Always show effective accidentals"
-          description="Name the actual pitch as if there were no key signature: a C made sharp by the key is C♯."
+          label={msg('Always show effective accidentals')}
+          description={msg('Name the actual pitch as if there were no key signature: a C made sharp by the key is C♯.')}
           checked={naming.alwaysShowEffectiveAccidentals}
           onChange={(alwaysShowEffectiveAccidentals) => updateSettings({ naming: { alwaysShowEffectiveAccidentals } })}
         />
         <Toggle
-          label="Simplify enharmonic names"
-          description="B♯ becomes C, C♭ becomes B, E♯ becomes F, F♭ becomes E, and double accidentals are reduced."
+          label={msg('Simplify enharmonic names')}
+          description={msg(
+            'B♯ becomes C, C♭ becomes B, E♯ becomes F, F♭ becomes E, and double accidentals are reduced.',
+          )}
           checked={naming.simplifyEnharmonics}
           onChange={(simplifyEnharmonics) => updateSettings({ naming: { simplifyEnharmonics } })}
         />
       </Group>
-      <Group title="Example">
-        <ul class={styles.examples} aria-label="Example labels">
+      <Group title={msg('Example')}>
+        <ul class={styles.examples} aria-label={msg('Example labels')}>
           {exampleLabels(naming).map(({ example, label }) => (
             <li key={example.id} class={styles.example}>
-              <span class={styles.exampleWritten}>{example.description}</span>
+              <span class={styles.exampleWritten}>{msg(example.description)}</span>
               <span class={styles.exampleArrow} aria-hidden="true">
                 →
               </span>
@@ -73,8 +76,9 @@ export function NamingSection() {
           ))}
         </ul>
         <Help>
-          These preferences only change label text. The printed score, matching and which notes are labeled stay the
-          same.
+          {msg(
+            'These preferences only change label text. The printed score, matching and which notes are labeled stay the same.',
+          )}
         </Help>
       </Group>
     </>

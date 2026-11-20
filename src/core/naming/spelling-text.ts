@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import type { Spelling, Step } from '../music/pitch'
 import { spellingToMidi } from '../music/pitch'
 import { accidentalGlyph } from './glyphs'
@@ -39,13 +40,13 @@ function fail(error: string): ParseSpellingResult {
 function parseAlter(marks: readonly string[]): number | string {
   if (marks.length === 0) return 0
   const natural = marks.filter((m) => m === '♮').length
-  if (natural > 0) return marks.length === 1 ? 0 : 'A natural sign cannot be combined with other accidentals.'
+  if (natural > 0) return marks.length === 1 ? 0 : msg('A natural sign cannot be combined with other accidentals.')
   const values = marks.map((m) => ACCIDENTAL_ALTER[m] ?? 0)
   const sharp = values.some((v) => v > 0)
   const flat = values.some((v) => v < 0)
-  if (sharp && flat) return 'Use sharps or flats, not both.'
+  if (sharp && flat) return msg('Use sharps or flats, not both.')
   const total = values.reduce((sum, v) => sum + v, 0)
-  if (Math.abs(total) > 2) return 'At most two sharps or two flats are supported (𝄪 or 𝄫).'
+  if (Math.abs(total) > 2) return msg('At most two sharps or two flats are supported (𝄪 or 𝄫).')
   return total
 }
 
@@ -57,29 +58,36 @@ function parseAlter(marks: readonly string[]): number | string {
  */
 export function parseSpelling(text: string): ParseSpellingResult {
   const input = text.replace(/\s+/gu, '').replace(/−/gu, '-').toLowerCase()
-  if (input === '') return fail('Enter a pitch such as C4 or B♭3.')
+  if (input === '') return fail(msg('Enter a pitch such as C4 or B♭3.'))
 
   const match = /^(do|re|mi|fa|sol|la|si|ti|[a-g])([^\d-]*)(-?\d+)?$/u.exec(input)
   if (!match) {
     const first = Array.from(input)[0] ?? ''
     return /[a-z]/u.test(first)
-      ? fail(`"${text.trim()}" is not a note name. Use C D E F G A B (or do re mi fa sol la si/ti). ${FORMAT_HINT}`)
-      : fail(`Could not read "${text.trim()}". ${FORMAT_HINT}`)
+      ? fail(
+          msg(
+            '"{0}" is not a note name. Use C D E F G A B (or do re mi fa sol la si/ti). {1}',
+            text.trim(),
+            msg(FORMAT_HINT),
+          ),
+        )
+      : fail(msg('Could not read "{0}". {1}', text.trim(), msg(FORMAT_HINT)))
   }
   const [, name = '', accidentals = '', octaveText] = match
   const step = SOLFEGE_STEP[name] ?? (name.toUpperCase() as Step)
 
   const marks = Array.from(accidentals)
   const unknown = marks.find((m) => !(m in ACCIDENTAL_ALTER))
-  if (unknown !== undefined) return fail(`"${unknown}" is not an accidental. Use ♯ (#), ♭ (b), 𝄪 (x), 𝄫 (bb) or ♮.`)
+  if (unknown !== undefined)
+    return fail(msg('"{0}" is not an accidental. Use ♯ (#), ♭ (b), 𝄪 (x), 𝄫 (bb) or ♮.', unknown))
   const alter = parseAlter(marks)
   if (typeof alter === 'string') return fail(alter)
 
-  if (octaveText === undefined) return fail(`Add the octave number, for example ${step}4. Middle C is C4.`)
+  if (octaveText === undefined) return fail(msg('Add the octave number, for example {0}4. Middle C is C4.', step))
   const spelling: Spelling = { step, alter, octave: Number.parseInt(octaveText, 10) }
   const midi = spellingToMidi(spelling)
   if (midi < MIDI_LOW || midi > MIDI_HIGH) {
-    return fail(`${formatSpelling(spelling)} is outside the MIDI range (C-1 to G9).`)
+    return fail(msg('{0} is outside the MIDI range (C-1 to G9).', formatSpelling(spelling)))
   }
   return { ok: true, spelling }
 }

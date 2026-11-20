@@ -1,3 +1,4 @@
+import { msg } from '../i18n/messages'
 /**
  * Scrubbable overview of the whole unfolded piece: measure divisions, section markers, the
  * played portion, the current position and the practice loop. Bar widths are proportional to
@@ -70,7 +71,7 @@ export interface ScoreOverviewProps {
   readonly disabled?: boolean
 }
 
-const defaultDescribe = (occ: number, count: number): string => `Bar ${occ + 1} of ${count}`
+const defaultDescribe = (occ: number, count: number): string => msg('Bar {0} of {1}', occ + 1, count)
 
 export function ScoreOverview({
   measures,
@@ -290,13 +291,13 @@ export function ScoreOverview({
       class={styles.overview}
       role="slider"
       tabIndex={inactive ? -1 : 0}
-      aria-label="Piece overview"
+      aria-label={msg('Piece overview')}
       aria-orientation="horizontal"
       aria-valuemin={1}
       aria-valuemax={Math.max(1, count)}
       aria-valuenow={count === 0 ? 0 : current + 1}
       aria-valuetext={
-        count === 0 ? 'No score' : section ? `${describe(current, count)}, ${section}` : describe(current, count)
+        count === 0 ? msg('No score') : section ? `${describe(current, count)}, ${section}` : describe(current, count)
       }
       aria-disabled={inactive || undefined}
       data-disabled={inactive || undefined}
@@ -334,12 +335,12 @@ export function ScoreOverview({
                 data-phase={loopPresence.phase}
                 role="slider"
                 tabIndex={0}
-                aria-label={edge === 'start' ? 'Overview loop start' : 'Overview loop end'}
+                aria-label={edge === 'start' ? msg('Overview loop start') : msg('Overview loop end')}
                 aria-orientation="horizontal"
                 aria-valuemin={1}
                 aria-valuemax={count}
                 aria-valuenow={occ + 1}
-                aria-valuetext={exact ? `${describe(occ, count)}, inside the bar` : describe(occ, count)}
+                aria-valuetext={exact ? msg('{0}, inside the bar', describe(occ, count)) : describe(occ, count)}
                 style={{ left: `${x * 100}%` }}
                 onPointerDown={(event) => onHandleDown(edge, event)}
                 onKeyDown={(event) => onHandleKey(edge, event)}

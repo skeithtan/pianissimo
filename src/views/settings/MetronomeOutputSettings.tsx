@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { settings, updateSettings } from '../../app/state'
 import { loadWebAudioMetronome } from '../../core/playback/lazy'
@@ -65,11 +66,13 @@ export function MetronomeOutputSettings() {
   return (
     <>
       <Field
-        label="Metronome output"
+        label={msg('Metronome output')}
         hint={
           canSelect && devices.length > 0
-            ? 'For piano speakers, connect the piano by USB and choose its audio output here or in your system audio settings.'
-            : 'For piano speakers, connect the piano by USB and use your device’s audio output controls.'
+            ? msg(
+                'For piano speakers, connect the piano by USB and choose its audio output here or in your system audio settings.',
+              )
+            : msg('For piano speakers, connect the piano by USB and use your device’s audio output controls.')
         }
       >
         <select
@@ -80,21 +83,21 @@ export function MetronomeOutputSettings() {
             updateSettings({ metronome: { outputId: event.currentTarget.value || null } })
           }}
         >
-          <option value="">System audio</option>
-          {outputMissing ? <option value={outputId}>Saved output unavailable</option> : null}
+          <option value="">{msg('System audio')}</option>
+          {outputMissing ? <option value={outputId}>{msg('Saved output unavailable')}</option> : null}
           {devices.map(({ deviceId, label }, index) => (
             <option key={deviceId} value={deviceId}>
-              {label || `Audio output ${index + 1}`}
+              {label || msg('Audio output {0}', index + 1)}
             </option>
           ))}
         </select>
       </Field>
       <div>
         <Button icon="sound" disabled={testing || volume === 0} onClick={() => void testClick()}>
-          Test click
+          {msg('Test click')}
         </Button>
       </div>
-      {error ? <Notice tone="warning">{error}</Notice> : null}
+      {error ? <Notice tone="warning">{msg(error)}</Notice> : null}
     </>
   )
 }

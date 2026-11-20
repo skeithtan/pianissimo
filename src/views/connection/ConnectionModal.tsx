@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 /**
  * The Connection and Pedal Setup modal: a large sheet over whichever view is current (the view
  * stays mounted, like Settings). Opened by the connection status chip (`openConnection`) or the
@@ -12,7 +13,7 @@ import { Sheet } from '../../ui/controls'
 
 export function ConnectionModal() {
   return (
-    <Sheet title="Connection and Pedal Setup" open={connectionOpen.value} onClose={closeConnection} wide>
+    <Sheet title={msg('Connection and Pedal Setup')} open={connectionOpen.value} onClose={closeConnection} wide>
       <LazyView name="connection" />
     </Sheet>
   )

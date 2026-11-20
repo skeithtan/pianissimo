@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/messages'
 import type { MeasureOccurrence } from '../model/score'
 
 export interface BarLabeler {
@@ -19,12 +20,13 @@ export function createBarLabeler(occurrences: readonly MeasureOccurrence[]): Bar
   const passOf = (occ: number): number => occurrences[occ]?.pass ?? 1
   const label = (occ: number): string => {
     const pass = passOf(occ)
-    return pass > 1 ? `${numberOf(occ)} (pass ${pass})` : numberOf(occ)
+    return pass > 1 ? msg('{0} (pass {1})', numberOf(occ), pass) : numberOf(occ)
   }
   return {
     label,
     number: numberOf,
     pass: passOf,
-    range: (fromOcc, toOcc) => (fromOcc === toOcc ? `bar ${label(fromOcc)}` : `bars ${label(fromOcc)}–${label(toOcc)}`),
+    range: (fromOcc, toOcc) =>
+      fromOcc === toOcc ? msg('bar {0}', label(fromOcc)) : msg('bars {0}–{1}', label(fromOcc), label(toOcc)),
   }
 }
