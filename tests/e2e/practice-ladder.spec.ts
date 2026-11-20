@@ -3,7 +3,7 @@
  * and "Until 3 clean in a row"; the third clean pass climbs one 5% step, the card says so, and
  * the setting is still on after a reload, with Repeat open over its loop (U98).
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../browser-test'
 import { installFakeMidi, openSeededPractice, playWhenDue, seedPiece } from './practice-helpers'
 
 test('three clean passes climb the ladder one step, and the ladder survives a reload', async ({ page }) => {

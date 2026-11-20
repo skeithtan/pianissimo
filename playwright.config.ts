@@ -24,6 +24,7 @@ export default defineConfig({
   reporter: process.env['CI'] ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://localhost:${appPort}/pianissimo/`,
+    headless: true,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -31,7 +32,7 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        launchOptions: chromiumPath ? { executablePath: chromiumPath } : {},
+        launchOptions: { args: ['--mute-audio'], ...(chromiumPath ? { executablePath: chromiumPath } : {}) },
       },
     },
     {

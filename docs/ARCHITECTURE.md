@@ -394,11 +394,11 @@ groups and resetting on a miss or phase change. The session sends the direction 
 `StripSink.setTimingCue` in the animation frame. Strip and Page share a screen-space cue
 anchored to their playheads. The result card's timing line comes from `timingAccuracy`.
 The lazy Details view uses `buildTimingReview` on the completed record and its timeline.
-`TimingReviewStrip` mounts up to three score excerpts with their onset plot below them.
-It uses the same engraving anchors and scrolls the score, graph, and bar controls together.
-A pass with drift outside the live cue's near-beat window or a missed entry shows the strip
-among the corrections. Otherwise the strip appears as a folded row beneath the pass facts and
-mounts its content when opened.
+`ResultDetails` merges bars with timing deviations into the ranked correction excerpts by
+occurrence, putting timing-only bars afterward. `TimingBarPlot` uses the excerpt's engraving
+anchors for the onset plot under the score. A miss breaks the plot line and appears as a cross.
+All affected bars are listed, and later excerpts wait until visible to build their notation.
+A pass within the near-beat window has a folded timing summary beneath the pass facts.
 Keep time is exclusive with play-through and disables Repeat lead-ins. The view adds a
 footer-menu switch with a badge on the Menu button, the `CountIn` overlay on the stage and
 the tolerance choice in Settings →
@@ -463,9 +463,9 @@ written note a wrong key stood for); it changes no render contract. The card reu
 Mistake playback (U100, `app/session/snippets.ts`): `PassCapture` keeps a scored pass's key
 and pedal events (sustain, sostenuto, soft; never the hint pedal; U101) in memory (one bounded
 append per event in the input path, the last completed pass only, never stored);
-`playedSnippet` / `writtenSnippet` build one bar's notes and pedal moves (the learner's presses
-and pedals, long pauses shortened; or the score with its pedal marks at the pass's speed), every
-pedal let up by the end, and `SnippetPlayer` hands them to the practice output when due and
+`playedSnippet` builds a bar from the learner's presses and pedals, shortening pauses in waiting
+practice. `writtenSnippet` uses the score and its pedal marks at the pass's speed. Every pedal
+is released by the end. `SnippetPlayer` hands them to the practice output when due and
 releases only its own notes and pedals. The session's `playSnippet`, `stopSnippet`,
 `snippetBlocked` and `snippet` store drive it; on a route not verified echo-free the snippet's own
 notes coming back are dropped from the input while they sound (its pedal controllers while it

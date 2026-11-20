@@ -4,7 +4,7 @@
  * to a visible notehead, ottavas map to their brackets, all-note labels never overlap noteheads
  * or each other, and traversal keeps mounted notation bounded. Measurements are attached.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../browser-test'
 import { REFERENCE_PIECE, referencePresent, openHarness, overlaps, type Box } from './render-helpers'
 
 const FIXTURES = ['basic', 'ottava', 'voices', 'changes'] as const

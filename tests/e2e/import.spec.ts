@@ -3,7 +3,7 @@
  * validation", "Import memory lifecycle"): each extension, an unrelated XML file refused with a
  * readable message, and cancelation of a long import in the real worker.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../browser-test'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { addToLibrary, fixtureFile, idbAll, importFile, mxlFile, sheet } from './app-helpers'
 

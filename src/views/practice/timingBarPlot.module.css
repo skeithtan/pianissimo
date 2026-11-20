@@ -1,0 +1,64 @@
+.axis {
+  position: relative;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.axis span {
+  position: absolute;
+  inset-inline-end: 0;
+  transform: translateY(-50%);
+}
+
+.early { top: 14px; color: var(--hand-control-left); }
+.beat { top: 39px; }
+.late { top: 64px; color: var(--warning); }
+.missed { top: 89px; color: var(--danger); }
+
+.chart {
+  position: relative;
+  color: var(--fg-muted);
+}
+
+.chart [data-offset='early'] { color: var(--hand-control-left); }
+.chart [data-offset='late'] { color: var(--warning); }
+
+.chart > svg {
+  display: block;
+  pointer-events: none;
+}
+
+.band {
+  fill: var(--bg-sunken);
+  opacity: 0.55;
+}
+
+.pulse {
+  stroke: var(--fg-muted);
+  opacity: 0.6;
+}
+
+.track {
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.dot,
+.cross {
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.cross {
+  color: var(--danger);
+  font-size: var(--text-m);
+  line-height: 1;
+}

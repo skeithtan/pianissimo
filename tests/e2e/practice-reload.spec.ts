@@ -6,7 +6,7 @@
  * appear a beat after the screen mounts (the fake piano connects a moment later), so every
  * check waits through Playwright's auto-waiting assertions.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { installFakeMidi, openSeededPractice, PIECE_ID, playWhenDue, seedPiece } from './practice-helpers'
 
 const TABLET = { width: 1180, height: 820 }

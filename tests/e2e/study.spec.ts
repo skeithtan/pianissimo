@@ -7,7 +7,7 @@
  * the start, Play, Name the notes at the cursor and a Menu button whose popover ("Sheet music menu")
  * holds Note names, Metronome and Show keys.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { idbAll } from './app-helpers'
 import { PIECE_ID, installFakeMidi, play, seedPiece } from './practice-helpers'

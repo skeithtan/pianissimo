@@ -4,7 +4,7 @@
  * keep their bars) and it may then scroll sideways; the app itself never zooms; a reload opens
  * fitted again. A page zoom saved before U83 (when a pinch re-engraved the page) does not apply.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { storedSettings } from './app-helpers'
 import { seedPiece } from './practice-helpers'

@@ -3,7 +3,7 @@
  * together with its results, and settings survive a reload. Real downloads and real file inputs.
  */
 import { readFileSync } from 'node:fs'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { idbAll, sheet, storedSettings } from './app-helpers'
 import {
   installFakeMidi,

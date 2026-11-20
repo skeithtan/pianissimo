@@ -12,7 +12,7 @@
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/core/model/settings'
 import { installFakeMidi, loopWholePiece, openSeededPractice, play, playWhenDue, seedPiece } from './practice-helpers'
 

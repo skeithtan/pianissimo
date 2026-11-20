@@ -5,7 +5,8 @@
  * teacher's ring and a ghost note for each key pressed that is not written there, and a plain
  * sentence per wrong key ("You pressed D♭ where D♮ is written"). The same wrong key pass after
  * pass leads the excerpts, under "Keeps happening". The pill previews the pass facts at the top.
- * Below the excerpts sit all the numbers and the earlier passes of this loop, folded. Nothing here
+ * Timing evidence and playback sit with each bar's other corrections. The pass numbers and earlier
+ * passes sit below the corrections. Nothing here
  * navigates: a history row shows that pass's numbers in the card; an excerpt is only a picture.
  */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
@@ -27,8 +28,8 @@ import { handsAndSpeed } from '../results/format'
 import { deriveResults, passageText } from '../results/model'
 import { passFacts, wrongText } from './format'
 import type { ResultDetailsProps } from './resultDetailsTypes'
-import { buildTimingReview } from './timingReview'
-import { TimingReviewStrip } from './TimingReviewStrip'
+import { TimingBarPlot } from './TimingBarPlot'
+import { buildTimingReview, timingBarDetail, timingBarTitle, type TimingReviewData } from './timingReview'
 import { useStore } from './useStore'
 import '../../render/excerpt.css'
 import styles from './resultDetails.module.css'
@@ -55,9 +56,19 @@ export function ResultDetails(p: ResultDetailsProps) {
     [details, p.result.timing],
   )
   const [limit, setLimit] = useState(EXCERPT_LIMIT)
-  const { shown, more } = useMemo(() => planExcerpts(mistakes, limit), [mistakes, limit])
-  const keeps = shown.filter((plan) => KEEPS.has(plan.items[0]!.level))
-  const once = shown.filter((plan) => !KEEPS.has(plan.items[0]!.level))
+  const hasTimingCorrections = !!timing?.bars.size
+  const { shown, more } = useMemo(() => {
+    const plans = planExcerpts(mistakes, timing?.bars.size ? Infinity : limit)
+    if (timing?.bars.size) {
+      const rankedBars = new Set(plans.shown.map((plan) => plan.occ))
+      for (const occ of timing.bars.keys()) {
+        if (!rankedBars.has(occ)) plans.shown.push({ occ, items: [] })
+      }
+    }
+    return plans
+  }, [mistakes, timing, limit])
+  const keeps = shown.filter((plan) => KEEPS.has(plan.items[0]?.level ?? 'timing'))
+  const once = shown.filter((plan) => !KEEPS.has(plan.items[0]?.level ?? 'timing'))
   const measurer = useMemo(
     () => (typeof document === 'undefined' ? estimateMeasurer : (canvasMeasurer(document) ?? estimateMeasurer)),
     [],
@@ -67,7 +78,6 @@ export function ResultDetails(p: ResultDetailsProps) {
   const session = p.session
   useEffect(() => () => session.stopSnippet(), [session])
   const listen: Listen = {
-    attemptId: p.result.id,
     playing,
     blocked: (occ, kind) => session.snippetBlocked(p.result.id, occ, kind),
     toggle: (occ, kind) => {
@@ -78,7 +88,7 @@ export function ResultDetails(p: ResultDetailsProps) {
       return session.playSnippet(p.result.id, occ, kind)
     },
   }
-  const excerpt = (plan: ExcerptPlan<RankedMistake>) => (
+  const excerpt = (plan: ExcerptPlan<RankedMistake>, index: number) => (
     <Excerpt
       key={plan.occ}
       plan={plan}
@@ -87,18 +97,16 @@ export function ResultDetails(p: ResultDetailsProps) {
       naming={p.naming}
       measurer={measurer}
       listen={listen}
+      timing={timing}
+      deferMusic={hasTimingCorrections && index >= EXCERPT_LIMIT}
     />
   )
-  const timingStrip =
-    timing && details ? (
-      <TimingReviewStrip key={p.result.id} data={timing} layout={p.layout} marks={details.marks} measurer={measurer} />
-    ) : null
   return (
     <div class={styles.details}>
       <p class={styles.verdict} data-testid="result-verdict">
         {verdict(p.result)}
       </p>
-      {mistakes.length === 0 && !timing?.hasTimingDeviation ? (
+      {shown.length === 0 ? (
         <p class={styles.clean} data-testid="result-clean">
           {p.result.passed ? 'No mistakes in this pass.' : 'No wrong keys or timing marks in this pass.'}
         </p>
@@ -125,16 +133,21 @@ export function ResultDetails(p: ResultDetailsProps) {
           {more.length === 1 ? 'Show 1 more bar' : `Show ${more.length} more bars`}
         </Button>
       ) : null}
-      {timing?.hasTimingDeviation ? timingStrip : null}
-      {timing?.hasTimingDeviation ? null : timingStrip}
-      <Earlier pieceId={p.pieceId} attemptId={p.result.id} {...(p.loadHistory ? { load: p.loadHistory } : {})} />
+      <div class={styles.folds}>
+        {timing && !hasTimingCorrections ? (
+          <details class={styles.fold} data-testid="timing-review-steady">
+            <summary>Timing strip</summary>
+            <p class={styles.muted}>All measured attacks were within {timing.nearBeat} ms of the beat.</p>
+          </details>
+        ) : null}
+        <Earlier pieceId={p.pieceId} attemptId={p.result.id} {...(p.loadHistory ? { load: p.loadHistory } : {})} />
+      </div>
     </div>
   )
 }
 
 /** The excerpts' playback controls (U100). */
 interface Listen {
-  readonly attemptId: string
   readonly playing: SnippetState | null
   blocked(occ: number, kind: SnippetKind): string | null
   /** Plays (or stops, when it is the one playing); resolves with why it did not play. */
@@ -195,6 +208,8 @@ function Excerpt({
   naming,
   measurer,
   listen,
+  timing,
+  deferMusic,
 }: {
   plan: ExcerptPlan<RankedMistake>
   layout: PreparedLayout | null
@@ -202,10 +217,26 @@ function Excerpt({
   naming: NamingSettings
   measurer: NonNullable<Parameters<typeof excerptMarkup>[2]>['measurer']
   listen: Listen
+  timing: TimingReviewData | null
+  deferMusic: boolean
 }) {
-  const lead = plan.items[0]!
+  const lead = plan.items[0]
+  const timedBar = timing?.bars.get(plan.occ)
+  const barLabel = lead?.bar ?? timedBar!.label
+  const level = lead?.level ?? 'timing'
+  const timingTitle = timedBar ? timingBarTitle(timedBar) : ''
+  const figure = useRef<HTMLElement>(null)
+  const [showMusic, setShowMusic] = useState(() => !deferMusic || typeof IntersectionObserver === 'undefined')
+  useEffect(() => {
+    if (showMusic || !figure.current) return
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) setShowMusic(true)
+    })
+    observer.observe(figure.current)
+    return () => observer.disconnect()
+  }, [showMusic])
   const markup = useMemo(() => {
-    if (!layout) return null
+    if (!layout || !showMusic) return null
     const marks: CorrectionMark[] = plan.items
       .filter((m) => m.mark)
       .map((m) => ({ notes: m.notes, kind: m.mark!.kind as CorrectionMark['kind'], text: m.mark!.text }))
@@ -213,42 +244,73 @@ function Excerpt({
       m.presses.map((press) => pressGhost(press, m.notes, model)).filter((g): g is GhostNote => g !== null),
     )
     return excerptMarkup(layout, plan.occ, { marks, ghosts, ...(measurer ? { measurer } : {}) })
-  }, [layout, plan, model, measurer])
+  }, [layout, plan, model, measurer, showMusic])
+  const score = markup ? (
+    <div
+      class={styles.score}
+      // Sanitized segment markup plus shapes built from numbers and escaped text (render/excerpt).
+      dangerouslySetInnerHTML={{ __html: markup.svg }}
+    />
+  ) : null
   const lines = plan.items.flatMap((m) => itemLines(m, model, naming))
   const extra = lines.length - LINES_PER_PLACE
   return (
     <figure
       class={styles.excerpt}
+      ref={figure}
       data-testid="result-excerpt"
       data-occ={plan.occ}
-      data-level={lead.level}
-      aria-label={`Bar ${lead.bar}`}
+      data-level={level}
+      aria-label={`Bar ${barLabel}`}
     >
       <figcaption class={styles.caption}>
-        <span class={styles.bar}>Bar {lead.bar}</span>
-        <span class={styles.reason} data-level={lead.level}>
-          {lead.reason}
+        <span class={styles.bar}>Bar {barLabel}</span>
+        <span class={styles.reason} data-level={level}>
+          {lead?.reason ?? timingTitle}
         </span>
       </figcaption>
-      {markup ? (
+      {showMusic && (markup || timedBar) ? (
         <div
           class={`${styles.music} pn-excerpt`}
-          data-testid="excerpt-music"
-          style={{ '--excerpt-w': `${markup.width}px` }}
-          // Sanitized segment markup plus shapes built from numbers and escaped text (render/excerpt).
-          dangerouslySetInnerHTML={{ __html: markup.svg }}
-        />
+          data-testid={markup ? 'excerpt-music' : undefined}
+          style={{ '--excerpt-w': `${markup?.width ?? 240}px` }}
+        >
+          {timing && timedBar ? (
+            <div class={styles.timedScore}>
+              {score}
+              <TimingBarPlot
+                bar={timedBar}
+                layout={layout}
+                markup={markup}
+                tolerance={timing.tolerance}
+                nearBeat={timing.nearBeat}
+              />
+            </div>
+          ) : (
+            score
+          )}
+        </div>
+      ) : layout && !showMusic ? (
+        <div class={styles.musicPlaceholder} aria-hidden="true" />
       ) : null}
-      <ul class={styles.lines}>
-        {lines.slice(0, extra > 0 ? LINES_PER_PLACE - 1 : LINES_PER_PLACE).map((line, i) => (
-          <li key={i} data-repeat={line.flag ? '' : undefined}>
-            {line.text}
-            {line.flag ? <strong class={styles.flag}> ({line.flag})</strong> : null}
-          </li>
-        ))}
-        {extra > 0 ? <li class={styles.muted}>and {extra + 1} more wrong keys here</li> : null}
-      </ul>
-      <ListenControls occ={plan.occ} bar={lead.bar} listen={listen} />
+      {lines.length ? (
+        <ul class={styles.lines}>
+          {lines.slice(0, extra > 0 ? LINES_PER_PLACE - 1 : LINES_PER_PLACE).map((line, i) => (
+            <li key={i} data-repeat={line.flag ? '' : undefined}>
+              {line.text}
+              {line.flag ? <strong class={styles.flag}> ({line.flag})</strong> : null}
+            </li>
+          ))}
+          {extra > 0 ? <li class={styles.muted}>and {extra + 1} more wrong keys here</li> : null}
+        </ul>
+      ) : null}
+      {timing && timedBar ? (
+        <p class={styles.timingDetail} data-testid="timing-review-summary">
+          {lead && lead.level !== 'missed' ? `${timingTitle} · ` : null}
+          {timingBarDetail(timedBar, timing.nearBeat)}
+        </p>
+      ) : null}
+      <ListenControls occ={plan.occ} bar={barLabel} listen={listen} />
     </figure>
   )
 }

@@ -5,7 +5,7 @@
  * HTML parser, into allow-listed elements and attributes with no unsafe value.
  */
 import { readFileSync } from 'node:fs'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { REFERENCE_PIECE, openHarness, referencePresent } from './render-helpers'
 
 /** The sanitizer's allow-lists (`ELEMENTS`, `ATTRIBUTES`, `UNSAFE_VALUE` in src/render/sanitize.ts). */

@@ -5,7 +5,7 @@
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../browser-test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { installFakeMidi, seedPiece } from './practice-helpers'
 

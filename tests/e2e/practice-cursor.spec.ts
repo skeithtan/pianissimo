@@ -1,5 +1,5 @@
 /** Playback must start at the visible cursor after browsing and keep following the sound. */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { importFixture } from '../unit/import/fixtures'
 import { installFakeMidi, openSeededPractice, playWhenDue, seedPiece } from './practice-helpers'
 

@@ -172,8 +172,8 @@ const PEDAL_DOWN = 64
  * "What you played" for the groups `groups` (one bar's): the presses that arrived while the
  * cursor waited at one of them, with their own velocities and the time until each key's release,
  * from the first such press. Pauses longer than `MAX_GAP_MS` between one press and the next are
- * shortened to it (the learner may have stopped to think: a replay of six silent seconds helps
- * nobody), and the snippet says so. Empty when nothing was captured there.
+ * shortened to it in waiting practice, and the snippet says so. Keep time preserves the
+ * attack intervals, including any written rests or missed attacks. Empty if nothing was captured.
  *
  * The learner's pedals come with it (U101): the pedals down at the first press go down at the
  * start, every pedal move until the last key sound ends follows on the same shortened clock, and a
@@ -184,6 +184,7 @@ export function playedSnippet(
   keys: readonly CapturedKey[],
   groups: ReadonlySet<number>,
   pedals: readonly CapturedPedal[] = [],
+  preserveTiming = false,
 ): Snippet {
   const notes: SnippetNote[] = []
   const open = new Map<number, number[]>()
@@ -208,7 +209,7 @@ export function playedSnippet(
   let prev = raw[0]!.time
   for (const r of raw) {
     const gap = r.time - prev
-    if (gap > MAX_GAP_MS) {
+    if (!preserveTiming && gap > MAX_GAP_MS) {
       shift += gap - MAX_GAP_MS
       shortened = true
     }

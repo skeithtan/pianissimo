@@ -4,7 +4,7 @@
  * note-level loop scored and see it repeat. Fake Web MIDI as in practice.spec.ts.
  */
 import { join } from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { importFixture } from '../unit/import/fixtures'
 import { SHOT_DIR, installFakeMidi, openSeededPractice, playWhenDue, seedPiece } from './practice-helpers'
 

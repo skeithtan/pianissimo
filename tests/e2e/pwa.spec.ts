@@ -8,7 +8,7 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { writeServiceWorker } from '../../scripts/pwa'
 import { addToLibrary, fixtureFile, importFile, sheet } from './app-helpers'
 

@@ -4,7 +4,7 @@
  * at its scheduled time (Two Hands is quarter = 60, so at 100% a beat is exactly one second and
  * bar 1 holds C4+C3, D4, E4, F4 on beats 1 to 4), measured from the moment the count-in goes.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../browser-test'
 import {
   installFakeMidi,
   openFooterMenu,
@@ -107,31 +107,24 @@ test.describe('Keep time', () => {
       const card = page.getByTestId('attempt-result')
       await expect(card).toContainText('On time 6 of 6')
       await card.getByRole('button', { name: 'Show details of this pass' }).click({ position: { x: 28, y: 37 } })
-      const strip = page.getByTestId('timing-review')
-      const disclosure = strip.locator('summary')
-      const summary = strip.getByTestId('timing-review-summary')
+      const details = page.getByTestId('result-details')
       if (example.sign) {
-        await expect(strip.getByRole('heading', { name: 'Timing strip' })).toBeVisible()
-        await expect(disclosure).toHaveCount(0)
-        await expect(summary).toContainText(`${example.label} in bar 1`)
+        const correction = details.getByTestId('result-excerpt')
+        await expect(correction).toHaveCount(1)
+        await expect(correction).toHaveAttribute('aria-label', 'Bar 1')
+        await expect(correction).toContainText(example.label)
+        await expect(correction.getByTestId('excerpt-music')).toBeVisible()
+        await expect(correction.getByTestId('timing-review').locator('span[data-offset-ms]')).toHaveCount(4)
+        await expect(correction.getByRole('button', { name: 'What you played' })).toBeEnabled()
+        await expect(correction.getByRole('button', { name: 'As written' })).toBeEnabled()
+        await expect(details.getByTestId('timing-review-steady')).toHaveCount(0)
+        await expect(details.getByRole('combobox')).toHaveCount(0)
       } else {
-        await expect(strip).toHaveJSProperty('open', false)
-        await expect(disclosure).toHaveText('Timing strip')
-        await expect(strip.getByTestId('timing-review-score')).toHaveCount(0)
-        await disclosure.click()
-        await expect(strip).toHaveJSProperty('open', true)
-      }
-      await expect(strip.getByTestId('timing-review-score')).toBeVisible()
-      await expect(strip.locator('span[data-offset-ms]')).toHaveCount(6)
-      await strip.getByRole('button', { name: 'Bar 2', exact: true }).click()
-      await expect(strip.getByRole('button', { name: 'Bar 2', exact: true })).toHaveAttribute('aria-pressed', 'true')
-      await expect(summary).toContainText('Timing in bar 2')
-      if (!example.sign) {
-        await disclosure.click()
-        await expect(strip).toHaveJSProperty('open', false)
-        await expect(strip.getByTestId('timing-review-score')).toHaveCount(0)
-        await disclosure.click()
-        await expect(summary).toContainText('Timing in bar 2')
+        const steady = details.getByTestId('timing-review-steady')
+        await expect(steady).toHaveJSProperty('open', false)
+        await expect(details.getByTestId('result-excerpt')).toHaveCount(0)
+        await steady.locator('summary').click()
+        await expect(steady.getByText('All measured attacks were within 30 ms of the beat.')).toBeVisible()
       }
     })
   }
@@ -173,13 +166,16 @@ test.describe('Keep time', () => {
     // The details open in place over Practice (U99), never another screen.
     const details = page.getByTestId('result-details')
     await expect(details).toBeVisible()
-    const strip = details.getByTestId('timing-review')
-    await expect(strip.getByRole('heading', { name: 'Timing strip' })).toBeVisible()
-    await expect(strip.locator('summary')).toHaveCount(0)
-    await expect(strip.getByTestId('timing-review-summary')).toContainText('1 missed')
-    await expect(strip.getByText('×', { exact: true })).toBeVisible()
-    await expect(strip.locator('line[data-offset]')).toHaveCount(1)
-    expect((await strip.getByTestId('timing-review-score').boundingBox())!.height).toBeLessThanOrEqual(191)
+    const correction = details.getByTestId('result-excerpt')
+    await expect(correction).toHaveCount(1)
+    await expect(correction.getByTestId('timing-review-summary')).toContainText('1 missed')
+    await expect(correction.getByTestId('timing-review').getByText('×', { exact: true })).toBeVisible()
+    await expect(correction.getByTestId('excerpt-music').locator('.pn-corr-ring').first()).toBeVisible()
+    await expect(correction.getByTestId('timing-review').locator('line[data-offset]')).toHaveCount(1)
+    await correction.getByRole('button', { name: 'What you played' }).click()
+    await expect(correction.getByRole('button', { name: 'What you played' })).toHaveAttribute('aria-pressed', 'true')
+    await correction.getByRole('button', { name: 'As written' }).click()
+    await expect(correction.getByRole('button', { name: 'As written' })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
     await expect(details.getByTestId('result-facts')).toContainText('On time 3 of 4')
     await details.getByText('All the numbers for this pass').click()

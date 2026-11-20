@@ -5,7 +5,7 @@
  * barline, then jumped to the next bar's first note) and no step in speed — while the cursor stays
  * at its one-third anchor.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { REFERENCE_PIECE, referencePresent, openHarness } from './render-helpers'
 
 interface Sample {

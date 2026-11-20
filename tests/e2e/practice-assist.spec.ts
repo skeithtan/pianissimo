@@ -5,7 +5,7 @@
  * completed attempt, the Details link into the Results scorecard, and Listen.
  * Uses the injected fake Web MIDI of practice-helpers.ts and a piece seeded in IndexedDB.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { idbAll } from './app-helpers'
 import {

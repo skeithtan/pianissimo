@@ -1,5 +1,5 @@
 /** Portrait loop handles cross systems without losing pointer capture or their snap bounds. */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { installFakeMidi } from './practice-helpers'
 

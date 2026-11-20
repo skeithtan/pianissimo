@@ -4,7 +4,7 @@
  * the first system while the page stays still; a seek to a later bar scrolls the page.
  */
 import { join } from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/core/model/settings'
 import { newPieceRecord } from '../../src/core/storage/records'
 import { generateLongScore } from '../fixtures/generate-long-score'

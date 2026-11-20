@@ -529,6 +529,19 @@ describe('Keep time: modes', () => {
     expect(ui(h)).toMatchObject({ countIn: 4, playing: true, reviewing: false, lastResult: null })
   })
 
+  it('lets the completed full-piece pass replay a bar while its automatic tail was still playing', async () => {
+    const h = open()
+    await begin(h)
+    playOnTime(h, [60, 62, 64, 65, 67, 69, 71, 72])
+    const { id } = ui(h).lastResult!
+    expect(h.session.snippetBlocked(id, 0, 'played')).toBe('Plays once the music stops.')
+    h.session.openResultDetails(id)
+    expect(h.session.snippetBlocked(id, 0, 'played')).toBeNull()
+    expect(h.session.snippetBlocked(id, 0, 'written')).toBeNull()
+    expect(h.attempts).toHaveLength(1)
+    expect(ui(h).lastResult?.id).toBe(id)
+  })
+
   it('restores review when opening result details during the zoom back in', async () => {
     const h = open({ range: LOOP })
     await begin(h)

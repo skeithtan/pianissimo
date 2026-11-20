@@ -4,7 +4,7 @@
  * its hidden container, and a finished one keeps none of its engraved SVG alive (OSMD's statics
  * held the last engraving until the next one), on the strip and the page path alike.
  */
-import { expect, test, type CDPSession } from '@playwright/test'
+import { expect, test, type CDPSession } from '../browser-test'
 import { openHarness } from './render-helpers'
 
 const STAGES = ['start', 'loading', 'engraving', 'extracting', 'labels', 'partitioning'] as const

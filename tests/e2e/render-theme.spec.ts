@@ -3,7 +3,7 @@
  * no colors; switching the theme recolors ink, paper and overlays through CSS variables only,
  * without re-engraving. Screenshots for light, dark and dark with pinned light paper are attached.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { openHarness } from './render-helpers'
 
 interface ScoreColors {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../browser-test'
 import { openHarness, REFERENCE_PIECE, referencePresent } from './render-helpers'
 
 /** Portrait labels need horizontal space even when collision layout can hide them in stacks. */

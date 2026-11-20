@@ -34,6 +34,7 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL: `http://localhost:${port}/pianissimo/`,
+    headless: true,
     viewport: { width: vw, height: vh },
     deviceScaleFactor: 2,
     colorScheme: 'light',
@@ -46,7 +47,8 @@ export default defineConfig({
       name: 'chromium',
       use: {
         browserName: 'chromium',
-        ...(chromiumPath ? { launchOptions: { executablePath: chromiumPath } } : { channel: 'chromium' as const }),
+        ...(chromiumPath ? {} : { channel: 'chromium' as const }),
+        launchOptions: { args: ['--mute-audio'], ...(chromiumPath ? { executablePath: chromiumPath } : {}) },
       },
     },
     { name: 'webkit', use: { browserName: 'webkit' } },

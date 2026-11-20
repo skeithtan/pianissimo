@@ -9,7 +9,7 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { idbAll } from './app-helpers'
 import { installFakeMidi } from './practice-helpers'

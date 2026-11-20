@@ -4,7 +4,7 @@
  * are written outside the repository (SHOT_DIR) and attached to the report.
  */
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../browser-test'
 import { importFixture } from '../unit/import/fixtures'
 import {
   SHOT_DIR,

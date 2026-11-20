@@ -4,7 +4,7 @@
  * hands selected the app makes no other browser sound, so the metronome's oscillators are the
  * clicks: a wrapper around `AudioContext.prototype.createOscillator` counts them.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { storedSettings } from './app-helpers'
 import { installFakeMidi, openFooterMenu, openSeededPractice, seedPiece } from './practice-helpers'
 

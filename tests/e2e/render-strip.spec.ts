@@ -3,7 +3,7 @@
  * assets", "Live rendering isolation"): cursor placement, zoom, browsing, passage handles, label
  * fades, warnings, sanitization and lazy loading of the notation engine.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { openHarness } from './render-helpers'
 
 async function setup(page: Page, name = 'changes', size = { width: 1000, height: 360 }): Promise<void> {

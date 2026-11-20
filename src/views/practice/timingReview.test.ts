@@ -37,21 +37,19 @@ describe('Keep time review strip', () => {
         group(5, { offsetMs: 55 }),
       ]),
     )
-    expect(review?.firstBar).toBe(0)
-    expect(review?.bars[0]?.direction).toBe('rushing')
-    expect(review?.bars[0]?.points.map((point) => point.offset)).toEqual([-8, -48, -88, -110])
-    expect(review?.bars[1]?.direction).toBeNull()
-    expect(review?.bars[1]?.points[0]).toMatchObject({ offset: null, missed: true })
-    expect(timingBarDetail(review!.bars[1]!)).toBe('1 late, by 55 ms · 1 missed')
+    expect([...review!.bars.keys()]).toEqual([0, 1])
+    expect(review?.bars.get(0)?.direction).toBe('rushing')
+    expect(review?.bars.get(0)?.points.map((point) => point.offset)).toEqual([-8, -48, -88, -110])
+    expect(review?.bars.get(1)?.direction).toBeNull()
+    expect(review?.bars.get(1)?.points[0]).toMatchObject({ offset: null, missed: true })
+    expect(timingBarDetail(review!.bars.get(0)!, review!.nearBeat)).toBe('3 early, by 48–110 ms · 1 on the beat')
+    expect(timingBarDetail(review!.bars.get(1)!, review!.nearBeat)).toBe('1 late, by 55 ms · 1 missed')
   })
 
-  it('starts at the first useful bar and keeps missing measurements distinct from missed attacks', () => {
+  it('lists missed attacks and skips bars without measurements', () => {
     const review = buildTimingReview(details([group(4, { missed: true })]))
-    expect(review?.firstBar).toBe(1)
-    expect(review?.hasTimingDeviation).toBe(true)
-    expect(review?.bars[0]?.points[0]).toMatchObject({ offset: null, missed: false })
-    expect(timingBarDetail(review!.bars[0]!)).toBe('No measured attacks')
-    expect(timingBarDetail(review!.bars[1]!)).toBe('1 missed')
+    expect([...review!.bars.keys()]).toEqual([1])
+    expect(timingBarDetail(review!.bars.get(1)!, review!.nearBeat)).toBe('1 missed')
     expect(buildTimingReview(details([group(0, { offsetMs: 20 })], 'free'))).toBeNull()
     expect(buildTimingReview(details([]))).toBeNull()
   })
@@ -60,17 +58,17 @@ describe('Keep time review strip', () => {
     const review = buildTimingReview(
       details([group(0, { offsetMs: 65, onsetOffsetMs: 0 }), group(1, { offsetMs: -30 }), group(2, { offsetMs: 30 })]),
     )
-    expect(review?.hasTimingDeviation).toBe(false)
+    expect(review?.bars.size).toBe(0)
   })
 
   it.each([
     { tolerance: 150, offset: -31 },
     { tolerance: 150, offset: 31 },
     { tolerance: 40, offset: 21 },
-  ])('opens for a single $offset ms offset with a ±$tolerance ms scoring window', ({ tolerance, offset }) => {
+  ])('lists the bar for a single $offset ms offset with a ±$tolerance ms scoring window', ({ tolerance, offset }) => {
     const review = buildTimingReview(
       details([group(0, { offsetMs: 0 }), group(4, { offsetMs: offset })], 'strict', tolerance),
     )
-    expect(review).toMatchObject({ hasTimingDeviation: true, firstBar: 1 })
+    expect([...review!.bars.keys()]).toEqual([1])
   })
 })

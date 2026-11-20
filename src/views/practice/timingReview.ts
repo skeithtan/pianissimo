@@ -21,10 +21,9 @@ export interface TimingBar {
 }
 
 export interface TimingReviewData {
-  readonly bars: readonly TimingBar[]
-  readonly firstBar: number
+  readonly bars: ReadonlyMap<number, TimingBar>
   readonly tolerance: number
-  readonly hasTimingDeviation: boolean
+  readonly nearBeat: number
 }
 
 /** The pass's original timeline keeps exact loop boundaries and repeat occurrences in order. */
@@ -41,17 +40,16 @@ export function buildTimingReview(details: ResultDetails): TimingReviewData | nu
   const { timeline } = details
   const outcomes = new Map(attempt.groups.map((group) => [group.group, group]))
   const tolerance = attempt.rhythm?.toleranceMs ?? DEFAULT_RHYTHM_TOLERANCE_MS
-  const threshold = timingFeedbackThreshold(tolerance)
-  const drift = new TimingDrift()
-  const bars: TimingBar[] = []
-  let firstDrift = -1
-  let firstMiss = -1
-  let firstOffBeat = -1
+  const nearBeat = timingFeedbackThreshold(tolerance)
+  const bars = new Map<number, TimingBar>()
+  let measured = false
   for (const measure of timeline.measures) {
     const occ = timeline.model.occurrences[measure.occ]
     if (!occ) continue
+    const drift = new TimingDrift()
     const points: TimingPoint[] = []
     let direction: TimingDirection | null = null
+    let needsReview = false
     for (const index of measure.groups) {
       const group = timeline.groups[index]
       if (!group) continue
@@ -60,38 +58,34 @@ export function buildTimingReview(details: ResultDetails): TimingReviewData | nu
       const value = outcome?.onsetOffsetMs ?? outcome?.offsetMs
       const offset = !missed && value !== undefined && Number.isFinite(value) ? value : null
       points.push({ group: index, position: toNumber(group.position), offset, missed })
-      if (missed && firstMiss < 0) firstMiss = bars.length
+      if (offset !== null || missed) measured = true
+      if (missed || (offset !== null && Math.abs(offset) > nearBeat)) needsReview = true
       if (offset === null) {
         drift.reset()
       } else {
-        if (Math.abs(offset) > threshold && firstOffBeat < 0) firstOffBeat = bars.length
         drift.observe(offset, tolerance)
-        if (drift.direction) {
-          direction = drift.direction
-          if (firstDrift < 0) firstDrift = bars.length
-        }
+        if (Math.abs(offset) > nearBeat && drift.direction) direction = drift.direction
       }
     }
-    bars.push({
-      occ: measure.occ,
-      label: barLabel(timeline.model, measure.occ),
-      start: toNumber(occ.start),
-      duration: toNumber(occ.duration),
-      points,
-      direction,
-    })
+    if (needsReview)
+      bars.set(measure.occ, {
+        occ: measure.occ,
+        label: barLabel(timeline.model, measure.occ),
+        start: toNumber(occ.start),
+        duration: toNumber(occ.duration),
+        points,
+        direction,
+      })
   }
-  if (!bars.some((bar) => bar.points.some((point) => point.offset !== null || point.missed))) return null
-  const firstTimingIssue = firstMiss >= 0 ? firstMiss : firstOffBeat
-  return {
-    bars,
-    firstBar: firstDrift >= 0 ? firstDrift : Math.max(0, firstTimingIssue),
-    tolerance,
-    hasTimingDeviation: firstTimingIssue >= 0,
-  }
+  return measured ? { bars, tolerance, nearBeat } : null
 }
 
-export function timingBarDetail(bar: TimingBar): string {
+export function timingBarTitle(bar: TimingBar): string {
+  if (bar.direction === 'rushing') return 'Rushing'
+  return bar.direction === 'dragging' ? 'Dragging' : 'Timing slipped'
+}
+
+export function timingBarDetail(bar: TimingBar, nearBeat: number): string {
   const early: number[] = []
   const late: number[] = []
   let onBeat = 0
@@ -99,11 +93,10 @@ export function timingBarDetail(bar: TimingBar): string {
   for (const point of bar.points) {
     if (point.missed) missed++
     if (point.offset === null) continue
-    if (point.offset < 0) early.push(-point.offset)
-    else if (point.offset > 0) late.push(point.offset)
+    if (point.offset < -nearBeat) early.push(-point.offset)
+    else if (point.offset > nearBeat) late.push(point.offset)
     else onBeat++
   }
-  if (early.length + late.length + onBeat + missed === 0) return 'No measured attacks'
   const parts: string[] = []
   if (early.length) parts.push(offsetRange(early, 'early'))
   if (onBeat) parts.push(`${onBeat} on the beat`)

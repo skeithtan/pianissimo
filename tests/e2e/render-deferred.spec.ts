@@ -1,5 +1,5 @@
 /** Spec "Deferred assets": opening the library must not load the notation engine. */
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../browser-test'
 
 test('the app shell does not fetch the notation engine', async ({ page }) => {
   const requested: string[] = []

@@ -5,7 +5,7 @@
  * piece, with a stop in the middle, so the cursor has both something to follow and something to
  * wait for.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { perform } from '../../src/core/audio/evaluate'
 import { attackGroups } from '../../src/core/audio/templates'
 import { renderNotes } from '../../src/core/audio/testkit'

@@ -4,7 +4,7 @@
  * places around the cursor: the cursor note stays put, the rest opens up or closes in.
  */
 import { join } from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { SHOT_DIR, installFakeMidi, openFooterMenu, openSeededPractice, seedPiece } from './practice-helpers'
 
 /** Screen x of every notehead, left to right (first engraving of each note only). */

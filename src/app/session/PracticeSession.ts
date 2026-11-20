@@ -1857,6 +1857,7 @@ export class PracticeSession {
       this.#publishUi()
       return
     }
+    this.#capture.begin(at)
     this.#engine.startRunning(at)
     for (let g = 0; g < this.#engine.timeline.groups.length; g++) t.releaseGate(g + this.#gateOffset)
     t.play(at)
@@ -2120,10 +2121,12 @@ export class PracticeSession {
     return { attemptId: result.id, records: [...this.#recentScored], timeline, marks }
   }
 
-  /** Opening details stops the next Keep time pass while it is preparing or counting in. */
+  /** Opening Keep time details makes room for bar playback by stopping the tail or next count-in. */
   openResultDetails(attemptId: string): void {
     if (this.#lastResult?.id !== attemptId || this.#engine.transport !== 'strict') return
-    if (!this.#pendingRepeat && !this.#countIn && this.#engine.state.phase !== 'preparing') return
+    const phase = this.#engine.state.phase
+    const finishing = phase === 'completed' && this.#accomp?.state === 'playing'
+    if (!finishing && !this.#pendingRepeat && !this.#countIn && phase !== 'preparing') return
     this.#reviewReturnBy = null
     this.pause()
   }
@@ -2202,7 +2205,7 @@ export class PracticeSession {
     if (!pass || !timeline) return { notes: [], pedals: [], length: 0, shortened: false }
     const groups = new Set<number>()
     for (const g of timeline.groups) if (g.occ === occ) groups.add(g.index)
-    return playedSnippet(pass.keys, groups, pass.pedals)
+    return playedSnippet(pass.keys, groups, pass.pedals, this.#lastResult?.timing !== undefined)
   }
 
   /** The speed the last result's pass ran at (its record's), else the current one. */

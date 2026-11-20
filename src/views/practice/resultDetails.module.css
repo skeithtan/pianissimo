@@ -1,5 +1,4 @@
-/* The pass facts sit under the verdict, followed by the timing strip or score excerpts
-   and the folded numbers and history (ResultDetails.tsx, DECISIONS U99 and U110). */
+/* Pass facts, bar corrections, and folded numbers and history (DECISIONS U99, U108, U110). */
 .details {
   display: flex;
   flex-direction: column;
@@ -113,25 +112,50 @@
   overscroll-behavior-x: contain;
   border-radius: var(--radius-s);
 }
-.music > svg {
+.music > :is(.score, .timedScore) {
   width: 100%;
   max-width: min(calc(var(--excerpt-w) * 1.4), 720px);
   min-width: calc(var(--excerpt-w) * 0.6);
-  height: auto;
   margin: 0 auto;
 }
 
+.score > svg {
+  width: 100%;
+  height: auto;
+}
+
+.timedScore {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  column-gap: var(--space-2);
+  padding-block-end: var(--space-1);
+}
+
+.timedScore > .score {
+  grid-column: 2;
+}
+
+.musicPlaceholder {
+  height: 12rem;
+  border-radius: var(--radius-s);
+  background: var(--score-paper);
+}
+
 @media (max-width: 520px), (orientation: landscape) and (max-height: 520px) {
-  .music > svg {
+  .music > :is(.score, .timedScore) {
     max-width: min(calc(var(--excerpt-w) * 2), 100%);
   }
 }
 
 /* A phone on its side has little height: a bar may not fill the screen. */
 @media (orientation: landscape) and (max-height: 520px) {
-  .music > svg {
+  .music > :is(.score, .timedScore) {
     max-width: min(calc(var(--excerpt-w) * 1.3), 100%);
   }
+}
+
+.timingDetail {
+  margin: 0;
 }
 
 .lines {
@@ -214,22 +238,49 @@
   color: var(--fg);
 }
 
-.fold {
-  border-top: 1px solid var(--border);
-  padding-top: var(--space-2);
+.folds {
+  display: flex;
+  flex-direction: column;
 }
+
 .fold > summary {
-  min-height: 44px;
+  min-height: var(--touch);
   display: flex;
   align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-1);
+  list-style: none;
   cursor: pointer;
   font-weight: 600;
   color: var(--fg);
 }
+
+.fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fold > summary::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border: solid var(--fg-muted);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+}
+
+.fold[open] > summary::before {
+  transform: rotate(45deg);
+}
+
 .fold > summary:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: var(--radius-s);
+}
+
+.fold[open] {
+  padding-block-end: var(--space-3);
 }
 
 .backToPass {

@@ -10,7 +10,7 @@
  * system fallback is tenths of a pixel to pixels away. At 1350 px the rounding is at most one
  * pixel, a hundredth of a pixel back at label size, and a fallback stays as far off as before.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../browser-test'
 import { installFakeMidi, openSeededPractice, seedPiece } from './practice-helpers'
 
 /** Advances at 13.5 px from the bundled files (hmtx / unitsPerEm × 13.5). */

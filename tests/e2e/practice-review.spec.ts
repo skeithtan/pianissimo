@@ -15,7 +15,7 @@
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/core/model/settings'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { importBytes } from '../unit/import/fixtures'

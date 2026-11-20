@@ -1,6 +1,6 @@
 /** Focus mode collapses chrome without replacing the score or interrupting playback. */
 import { join } from 'node:path'
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '../browser-test'
 import { REVEAL_MS } from '../../src/views/practice/recede'
 import { SHOT_DIR, installFakeMidi, openSeededPractice, seedPiece } from './practice-helpers'
 

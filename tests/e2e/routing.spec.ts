@@ -3,7 +3,7 @@
  * follows the screen, Back/Forward behave, reloads and deep links reopen what they name, and the
  * overlays (Connection, Settings) are history entries that Back and Escape close.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../browser-test'
 import { installFakeMidi, PIECE_ID, seedPiece } from './practice-helpers'
 
 const hash = (page: Page) => page.evaluate(() => location.hash)

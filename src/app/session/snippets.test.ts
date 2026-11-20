@@ -95,6 +95,13 @@ describe('playedSnippet', () => {
     expect(playedSnippet(keys, new Set([5]))).toEqual({ notes: [], pedals: [], length: 0, shortened: false })
   })
 
+  it('preserves the attack gap across a missed beat in Keep time replay', () => {
+    const keys = [key(90, 60, 80, 1), key(200, 60, 0, 1), key(2110, 64, 80, 3), key(2200, 64, 0, 3)]
+    const snippet = playedSnippet(keys, new Set([1, 2, 3]), [], true)
+    expect(snippet.notes.map((note) => note.at)).toEqual([0, 2020])
+    expect(snippet.shortened).toBe(false)
+  })
+
   it('replays the learner’s pedal on the replay’s clock and lets it up (U101)', () => {
     const keys = [key(1000, 60, 80, 1), key(1200, 60, 0, 1), key(1500, 62, 80, 1), key(1700, 62, 0, 1)]
     const pedals: CapturedPedal[] = [
