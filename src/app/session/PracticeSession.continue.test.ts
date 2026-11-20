@@ -282,23 +282,39 @@ describe('Browsing while playing holds, the release continues (U95)', () => {
     expect(h.session.engine.state.phase).toBe('ready')
   })
 
-  it('Restart loop skips a paused lead-in and returns the browsed score to the loop start', async () => {
-    const h = harness(threeBars, { hands: 'right', range: { fromOcc: 1, toOcc: 1 } })
-    h.session.seekPosition(rat(5, 4))
-    expect(ui(h).canRestartLoop).toBe(false)
-    await h.session.start()
-    h.play(69)
-    h.session.pause()
-    h.frames.flush()
-    browse(h, rat(2))
-    expect(ui(h)).toMatchObject({ playing: false, leadIn: true, canRestartLoop: true })
+  for (const started of [true, false]) {
+    it(`Restart loop skips a ${started ? 'paused' : 'not-yet-started'} lead-in and restores score following`, async () => {
+      const h = harness(threeBars, { hands: 'right', range: { fromOcc: 1, toOcc: 1 } })
+      h.session.seekPosition(rat(5, 4))
+      if (started) {
+        await h.session.start()
+        h.play(69)
+        h.session.pause()
+        h.frames.flush()
+      }
+      browse(h, rat(2))
+      expect(ui(h)).toMatchObject({ playing: false, leadIn: true, canRestartLoop: true })
 
-    h.session.restartLoop()
+      await h.session.restartLoop()
+      h.frames.flush()
+      expect(ui(h)).toMatchObject({ phase: 'ready', playing: true, leadIn: false, canRestartLoop: false })
+      expect(h.session.progress.get().position).toBe(1)
+      expect(h.strip.browsing).toBe(false)
+      expect(h.attempts).toHaveLength(0)
+    })
+  }
+
+  it('Restart loop starts Listen at the loop boundary after seeking before the first play', async () => {
+    const h = harness(threeBars, { hands: 'none', range: { fromOcc: 1, toOcc: 1 } })
+    expect(h.session.seekPosition(rat(5, 4))).toBe(true)
     h.frames.flush()
-    expect(ui(h)).toMatchObject({ phase: 'ready', playing: true, leadIn: false, canRestartLoop: false })
+    expect(h.session.progress.get().position).toBe(1.25)
+
+    await h.session.restartLoop()
+    h.frames.flush()
+    expect(ui(h)).toMatchObject({ activity: 'listening', playing: true, canRestartLoop: false })
     expect(h.session.progress.get().position).toBe(1)
-    expect(h.strip.browsing).toBe(false)
-    expect(h.attempts).toHaveLength(0)
+    expect(notesSince(h, 0).slice(0, 2)).toEqual(expect.arrayContaining([43, 67]))
   })
 
   it('Listen holds its sound while the finger is down, then plays from the browsed note', async () => {

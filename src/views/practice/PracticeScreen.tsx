@@ -700,7 +700,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
 
   const restartLoop =
     ui.canRestartLoop && prep.state === 'ready' && !(ui.lastResult && expandedResult === ui.lastResult.id) ? (
-      <button type="button" class={`pn-score-action ${styles.loopRestart}`} onClick={() => session.restartLoop()}>
+      <button type="button" class={`pn-score-action ${styles.loopRestart}`} onClick={() => void session.restartLoop()}>
         <Icon name="restart" size={18} />
         <span>Restart loop</span>
       </button>

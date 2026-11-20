@@ -630,7 +630,7 @@ export class PracticeSession {
    * one while sounds load joins the first (it would otherwise stop the transport the first one
    * started at Ready), unless a Pause canceled the first meanwhile: then it runs after it.
    */
-  start(): Promise<void> {
+  start({ fromLoopStart = false }: { readonly fromLoopStart?: boolean } = {}): Promise<void> {
     // A Start (also the release of a browse hold) is what the hold waited for.
     this.#browseHold = null
     this.#unlockAudio()
@@ -638,15 +638,15 @@ export class PracticeSession {
     const before = this.#starting
     const gen = (this.#startingGen = this.#startGen)
     // Queued behind a canceled Start: a Pause meanwhile cancels this one too.
-    const queued = () => (this.#startCanceled(gen) ? undefined : this.#start())
-    const run: Promise<void> = (before ? before.then(queued) : this.#start()).finally(() => {
+    const queued = () => (this.#startCanceled(gen) ? undefined : this.#start(fromLoopStart))
+    const run: Promise<void> = (before ? before.then(queued) : this.#start(fromLoopStart)).finally(() => {
       if (this.#starting === run) this.#starting = null
     })
     this.#starting = run
     return run
   }
 
-  async #start(): Promise<void> {
+  async #start(fromLoopStart: boolean): Promise<void> {
     const gen = this.#startGen
     const first = this.#plan()
     if (!first.enabled) return
@@ -657,7 +657,7 @@ export class PracticeSession {
     this.#followBrowsedCursor()
     this.#clearCorrections()
     if (first.action === 'listen') {
-      await this.#startListening()
+      await this.#startListening(fromLoopStart)
       return
     }
     if (this.#listen) this.#stopListening()
@@ -672,7 +672,7 @@ export class PracticeSession {
     const plan = this.#plan()
     if (!plan.enabled) return
     if (plan.action === 'listen') {
-      await this.#startListening()
+      await this.#startListening(fromLoopStart)
       return
     }
     if (plan.action === 'play') {
@@ -680,7 +680,7 @@ export class PracticeSession {
       return
     }
     // One hand chosen meanwhile on browser sound not loaded yet: load it first.
-    if (this.#sel.hands !== 'both' && !this.#ensureOutputSync()) return this.#start()
+    if (this.#sel.hands !== 'both' && !this.#ensureOutputSync()) return this.#start(fromLoopStart)
     this.#followBrowsedCursor()
     this.#ensureAccompaniment()
     const t = this.#deps.clock()
@@ -764,16 +764,17 @@ export class PracticeSession {
     this.#process(now)
   }
 
-  /** Restart a paused loop, including playback when both hands are off. */
-  restartLoop(): void {
-    if (this.#disposed || !this.#computeUi().canRestartLoop) return
-    this.restart()
+  /** Start a fresh pass at the loop boundary, even when no transport has been started yet. */
+  restartLoop(): Promise<void> {
+    if (this.#disposed || !this.#computeUi().canRestartLoop) return Promise.resolve()
+    if (this.#leadIn && this.#engine.mode === 'reading') this.#leaveLeadIn(this.#deps.clock())
     const strip = this.#strip
     if (strip?.isBrowsing()) {
-      strip.setCursor(this.#cursorPosition(), { smooth: false })
+      const { start } = passageRange(this.#model, this.#sel.range)
+      strip.setCursor(toNumber(start), { smooth: false })
       strip.returnToCurrent?.()
     }
-    if (this.#listen) void this.start()
+    return this.start({ fromLoopStart: true })
   }
 
   /** Restart passage / Repeat now: a running attempt is abandoned ('user-restart'). */
@@ -1158,7 +1159,7 @@ export class PracticeSession {
    * destination resolves now (S4); a destination that changed since the last Play rebuilds the
    * transport instead of resuming it.
    */
-  async #startListening(): Promise<void> {
+  async #startListening(fromLoopStart: boolean): Promise<void> {
     if (!hasTempo(this.#tempo)) return
     const key = outputKey(this.#settings, this.#destination())
     const position = this.#listen ? this.#listen.transport.positionNow() : null
@@ -1176,6 +1177,10 @@ export class PracticeSession {
         await this.#ensureMetronome()
         if (this.#startCanceled(gen) || this.#listen !== listen) return
       }
+      if (fromLoopStart && this.#repeat) {
+        listen.transport.seek(passageRange(this.#model, this.#sel.range).start)
+        this.#clearSounding()
+      }
       listen.transport.play()
       listen.playing = true
       this.#process(this.#deps.clock())
@@ -1192,7 +1197,7 @@ export class PracticeSession {
     // Start honors the new plan instead (its own load is done, so it does not come back here).
     const plan = this.#plan()
     if (!plan.enabled) return
-    if (plan.action !== 'listen') return this.#start()
+    if (plan.action !== 'listen') return this.#start(fromLoopStart)
     this.#followBrowsedCursor()
     const t = this.#deps.clock()
     // Leaving practice for Preview: a scored attempt is interrupted, reading pauses.
@@ -1205,12 +1210,13 @@ export class PracticeSession {
     if (this.#listen) this.#disposeListen()
     const range = passageRange(this.#model, this.#sel.range)
     let start = range.start
-    if (this.#lastSeek && this.#lastSeek !== seek) start = this.#lastSeek.position
-    else if (position !== null) {
-      start = seek && toNumber(seek.position) === position ? seek.position : this.#positionRational(position, range)
-    } else {
-      const g = this.#engine.state.position
-      if (g) start = g
+    if (!fromLoopStart || !this.#repeat) {
+      if (this.#lastSeek && this.#lastSeek !== seek) start = this.#lastSeek.position
+      else if (position !== null) {
+        start = seek && toNumber(seek.position) === position ? seek.position : this.#positionRational(position, range)
+      } else {
+        start = this.#engine.state.position ?? range.start
+      }
     }
     this.#playListen(output, range, start)
     this.#process(this.#deps.clock())
@@ -4156,11 +4162,6 @@ export class PracticeSession {
     const leadIn = this.#leadIn !== null && !this.#leadIn.handedOver && this.#engine.mode === 'reading'
     // A browse hold reads Pause until the release continues (U95).
     const playing = this.#isPlaying() || this.#browseHold !== null
-    const pausedTransport = (this.#listen?.transport ?? this.#accomp)?.state === 'paused'
-    const pausedLoop =
-      this.#listen !== null ||
-      (leadIn && this.#readingStarted) ||
-      (s.phase === 'interrupted' && s.interruptReason === 'pause')
     return {
       activity: this.#activity(),
       phase: s.phase,
@@ -4182,7 +4183,7 @@ export class PracticeSession {
         s.phase !== 'interrupted' &&
         !this.#listen,
       repeat: this.#repeat,
-      canRestartLoop: this.#repeat && !playing && !this.#inputHeld && plan.enabled && pausedTransport && pausedLoop,
+      canRestartLoop: this.#repeat && !playing && !this.#inputHeld && plan.enabled && this.#accomp?.state !== 'playing',
       leadIn,
       repeatTarget: this.#repeatTarget,
       ladder: this.#ladder,

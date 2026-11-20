@@ -623,6 +623,14 @@ describe('PracticeSession: scored attempts', () => {
     expect(h.session.ui.get().repeat).toBe(true)
     expect(h.session.engine.state.phase).toBe('completed')
     expect(h.saves.some((x) => x.patch.repeatTarget === 2)).toBe(true)
+    // Wait for the last note's tail before offering to start a fresh run.
+    expect(h.session.ui.get().canRestartLoop).toBe(false)
+    h.step(1000)
+    expect(h.session.ui.get().canRestartLoop).toBe(true)
+    await h.session.restartLoop()
+    h.frames.flush()
+    expect(h.session.engine.state.phase).toBe('ready')
+    expect(h.session.ui.get().lastResult).toBeNull()
   })
 
   it('a tempo change during a scored attempt interrupts it and prepares a new context', async () => {

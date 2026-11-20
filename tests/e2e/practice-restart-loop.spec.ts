@@ -26,12 +26,15 @@ for (const { name, width, height, theme, mode } of layouts) {
     const speedX = name === 'tablet' ? (await speed.boundingBox())!.x : null
     await expect(restart).toHaveCount(0)
     await page.getByRole('button', { name: 'Repeat from here' }).click()
+    await expect(restart).toBeVisible()
     await page.getByRole('button', { name: /^Passage start/ }).press('ArrowRight')
     const loopStart = page.getByRole('group', { name: 'Loop start' })
     await expect(loopStart).toContainText('Bar 1, beat 2')
-    await expect(restart).toHaveCount(0)
+    await expect(restart).toBeVisible()
+    if (shots && name === 'tablet')
+      await page.screenshot({ path: join(shots, `${browserName}-${name}-loop-before-start.png`) })
 
-    await start.click()
+    await (name === 'tablet' ? restart : start).click()
     await waitForOnset(page, 62)
     // The sustained left-hand C also needs a fresh attack at this mid-bar loop boundary.
     await play(page, 62, 48)
@@ -82,7 +85,7 @@ test.describe('Repeat playback and results', () => {
     await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
   })
 
-  test('Keep time restarts with a fresh count-in after a mid-loop pause', async ({ page }) => {
+  test('Keep time restarts with a fresh count-in after pausing before or during playback', async ({ page }) => {
     await page.getByRole('button', { name: 'Repeat from here' }).click()
     const menu = await openFooterMenu(page)
     await menu.getByRole('switch', { name: 'Keep time' }).click()
@@ -90,19 +93,26 @@ test.describe('Repeat playback and results', () => {
     await page.clock.install()
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     const countIn = page.getByTestId('count-in')
+    const pause = page.getByRole('button', { name: 'Pause', exact: true })
+    const restart = page.getByRole('button', { name: 'Restart loop', exact: true })
     await expect(countIn).toBeVisible()
+    await pause.click()
+    await expect(countIn).toHaveCount(0)
+    await restart.click()
+    await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 4')
+
     await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 150)))
     await page.clock.runFor(5000)
     await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'running')
     await page.clock.resume()
-    await page.getByRole('button', { name: 'Pause', exact: true }).click()
+    await pause.click()
 
-    await page.getByRole('button', { name: 'Restart loop', exact: true }).click()
+    await restart.click()
     await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 4')
     await expect(page.getByTestId('attempt-result')).toHaveCount(0)
   })
 
-  test('Listen plays the first chord again when a paused loop is restarted', async ({ page }) => {
+  test('Restart loop plays Listen from the beginning before and after pausing', async ({ page }) => {
     await page.getByRole('button', { name: 'Left hand', exact: true }).click()
     await page.getByRole('button', { name: 'Right hand', exact: true }).click()
     await page.getByRole('button', { name: 'Repeat from here' }).click()
@@ -116,15 +126,17 @@ test.describe('Repeat playback and results', () => {
         pitch,
       )
 
-    await page.getByRole('button', { name: 'Listen', exact: true }).click()
+    const restart = page.getByRole('button', { name: 'Restart loop', exact: true })
+    await restart.click()
     const pause = page.getByRole('button', { name: 'Pause', exact: true })
+    await expect.poll(() => sentNote(60)).toBe(true)
     await expect.poll(() => sentNote(62)).toBe(true)
     await pause.click()
     await page.evaluate(() => {
       window.__midi.sent.length = 0
     })
 
-    await page.getByRole('button', { name: 'Restart loop', exact: true }).click()
+    await restart.click()
     await expect(pause).toBeVisible()
     await expect.poll(() => sentNote(60)).toBe(true)
   })

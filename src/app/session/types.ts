@@ -328,7 +328,7 @@ export interface SessionUi {
   readonly keyboardVisible: boolean
   readonly canHint: boolean
   readonly repeat: boolean
-  /** A paused Repeat transport can start over at the selected loop's beginning. */
+  /** An open loop can start from its beginning while playback is stopped. */
   readonly canRestartLoop: boolean
   /**
    * The current reading is a lead-in (Repeat mode, a seek anywhere but the loop start): unscored
