@@ -87,10 +87,9 @@ export function buildContexts(input: ContextInput): { contexts: ContextState[]; 
     if (g?.time) st.time = piece(g.time, s)
     return st
   })
-  const initialEnd = Math.max(
-    0,
-    ...state.flatMap((st) => [st.clef, st.key, st.time].filter((p): p is Piece => !!p).map((p) => p.box.x + p.box.w)),
-  )
+  const opening = state.flatMap((st) => [st.clef, st.key, st.time].filter((p): p is Piece => !!p))
+  const openingX = opening.length ? Math.min(...opening.map((p) => p.box.x)) - PAD : undefined
+  const initialEnd = Math.max(0, ...opening.map((p) => bboxRight(p.box)))
 
   const changeOccs = new Set<number>([
     ...input.clefs.filter((c) => !isMid(c)).map((c) => c.occ),
@@ -115,19 +114,22 @@ export function buildContexts(input: ContextInput): { contexts: ContextState[]; 
   const contexts: ContextState[] = []
   const signatures = new Map<string, number>()
   const changes: ContextChange[] = []
-  const emit = (occ: number, x: number, glyphEnd: number): void => {
+  const emit = (occ: number, x: number, glyphEnd: number, openingX?: number): void => {
     const sig = state.map((st) => [st.clef?.html, st.key?.html, st.time?.html].join('|')).join('||')
     let id = signatures.get(sig)
     if (id === undefined) {
       id = contexts.length
       signatures.set(sig, id)
-      contexts.push(compose(id, staves, state))
+      contexts.push(compose(id, staves, state, openingX, glyphEnd))
     }
     // Kept in x order for the strip's binary search.
     const last = changes.at(-1)
-    if (last?.context !== id) changes.push({ x: Math.max(x, last?.x ?? x), occ, context: id, glyphEnd })
+    if (last?.context !== id) {
+      const change = { x: Math.max(x, last?.x ?? x), occ, context: id, glyphEnd }
+      changes.push(openingX === undefined ? change : { ...change, openingX })
+    }
   }
-  emit(0, 0, initialEnd)
+  emit(0, 0, initialEnd, openingX)
 
   const setClef = (s: StaffGeometry, ev: ClefInput, small: Element | undefined): void => {
     const st = state[s.index]!
@@ -244,7 +246,13 @@ function keyPiece(el: Element, count: number, staff: StaffGeometry, bbox: (el: E
   }
 }
 
-function compose(id: number, staves: readonly StaffGeometry[], state: readonly StaffState[]): ContextState {
+function compose(
+  id: number,
+  staves: readonly StaffGeometry[],
+  state: readonly StaffState[],
+  openingX: number | undefined,
+  glyphEnd: number,
+): ContextState {
   const col = (pick: (st: StaffState) => Piece | undefined): number =>
     Math.max(
       0,
@@ -259,11 +267,17 @@ function compose(id: number, staves: readonly StaffGeometry[], state: readonly S
   const clefX = PAD
   const keyX = clefX + clefW + (clefW ? GAP : 0)
   const timeX = keyX + keyW + (keyW ? GAP : 0)
-  const width = timeX + timeW + (timeW ? GAP : 0) + PAD
+  const width = openingX === undefined ? timeX + timeW + (timeW ? GAP : 0) + PAD : glyphEnd - openingX + PAD
+  const xOf = (p: Piece | undefined, compactX: number): number =>
+    p && openingX !== undefined ? p.box.x - openingX : compactX
 
   const staffContexts: StaffContext[] = staves.map((s) => {
     const st = state[s.index]!
-    const parts = [place(st.clef, clefX, s), place(st.key, keyX, s), place(st.time, timeX, s)].join('')
+    const parts = [
+      place(st.clef, xOf(st.clef, clefX), s),
+      place(st.key, xOf(st.key, keyX), s),
+      place(st.time, xOf(st.time, timeX), s),
+    ].join('')
     return { staff: s.index, glyph: { svg: parts, width } }
   })
   return { id, staves: staffContexts, width }

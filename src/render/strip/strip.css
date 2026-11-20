@@ -103,7 +103,7 @@
   top: 0;
   transform-origin: 0 0;
   will-change: transform;
-  transition: transform var(--pn-scroll-ms) var(--pn-ease);
+  transition: transform var(--pn-scroll-ms) var(--pn-scroll-ease, var(--pn-ease));
 }
 
 /* The review after a completed pass (StripView.setReview, U97): the zoom itself is driven frame by
@@ -115,13 +115,17 @@
 
 .pn-instant .pn-content,
 .pn-instant .pn-cursor,
-.pn-instant .pn-sticky-inner {
+.pn-instant .pn-sticky-inner,
+.pn-instant .pn-sticky-staff svg,
+.pn-instant .pn-stage,
+.pn-instant .pn-sticky-staff {
   transition: none;
 }
 
 /* Loop wrap (StripView.wrapTo): a fast ease-out pan back to the loop start. */
-.pn-wrap .pn-content {
-  transition: transform var(--pn-wrap-ms) cubic-bezier(0.22, 1, 0.36, 1);
+.pn-wrap {
+  --pn-scroll-ms: var(--pn-wrap-ms);
+  --pn-scroll-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .pn-seg {
@@ -879,24 +883,38 @@
 /* Sticky clef / key / meter at the left edge. */
 .pn-sticky {
   position: absolute;
-  left: 0;
-  top: 0;
-  height: 100%;
+  inset: 0;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity var(--pn-medium) var(--pn-ease);
 }
 
-.pn-sticky.pn-on {
-  opacity: 1;
+.pn-sticky:not(.pn-on),
+.pn-pin-opening .pn-music .pn-opening-signature {
+  visibility: hidden;
 }
 
-.pn-sticky-inner {
+.pn-sticky-inner,
+.pn-sticky-staff svg {
   position: absolute;
   left: 0;
   top: 0;
   transform-origin: 0 0;
+  transition: transform var(--pn-scroll-ms) var(--pn-scroll-ease, var(--pn-ease));
+}
 
+.pn-sticky-staff {
+  position: absolute;
+  inset: 0;
+}
+
+.pn-sticky-staff svg {
+  transform: var(--pn-staff-transform);
+}
+
+.pn-stage,
+.pn-sticky-staff {
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  transition: mask-position var(--pn-scroll-ms) var(--pn-scroll-ease, var(--pn-ease));
 }
 
 .pn-sticky-inner svg {

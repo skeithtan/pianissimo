@@ -245,7 +245,8 @@ ends. CSS zoom is capped so the grand staff fits vertically and the fixed signat
 fade stay left of the cursor. Overlays are class/attribute writes batched in one rAF, O(changed notes).
 Label text nodes exist only while opacity > 0; visible ones are reported via
 `onVisibleLabels`. Also: passage band with handles, tap selection and ✕ clear (U5), ottava
-emphasis + offscreen reminder, sticky clef/key/meter on staff lines with an opacity fade,
+emphasis + offscreen reminder, opening clef/key/meter that glide with the strip and pin to the
+left edge, with aligned staff lines and an opacity mask for passing notation,
 cursor timing tint (`setTimingCue`), theme via `--score-*` tokens (U8). Learner targets and accepted notes set the notehead color (U121).
 A change of label room swaps the engraving with a glide (`shared/respace.ts`: the wider engraving cut into onset
 columns that move from the old view's places to the new view's, cursor note anchored; Practice

@@ -196,8 +196,10 @@ export interface ContextChange {
   readonly x: number
   readonly occ: number
   readonly context: number
-  /** x where the change's own engraved glyphs end; sticky shows once this scrolls away. */
+  /** x where the change's own engraved glyphs end. */
   readonly glyphEnd: number
+  /** For the opening signatures, layout x of their edge-aligned origin before pinning. */
+  readonly openingX?: number
 }
 
 export interface SegmentData {

@@ -71,7 +71,7 @@ export const OSMD_VERSION = '2.2.1'
  * pn-10: portrait note-name spacing reserves room before stacking labels (U65).
  * pn-11: local ink bounds for the timing cue (U114).
  */
-export const ADAPTER_VERSION = 'pn-11'
+export const ADAPTER_VERSION = 'pn-12'
 export const RENDERER_NAME = 'osmd'
 export const RENDERER_VERSION = `${OSMD_VERSION}+${ADAPTER_VERSION}`
 
@@ -286,6 +286,16 @@ export class OsmdRenderer implements RendererAdapter {
           meters: input.meters,
           bbox: bboxOf,
         })
+        // The strip draws these glyphs in its own layer so they can stop at the viewport edge.
+        // Keep the tagged originals in the segments for first-bar excerpts.
+        if (changes[0]?.openingX !== undefined) {
+          for (const staff of ex.glyphs) {
+            const opening = staff[0]
+            opening?.clef?.classList.add('pn-opening-signature')
+            opening?.key?.classList.add('pn-opening-signature')
+            opening?.time?.classList.add('pn-opening-signature')
+          }
+        }
 
         const extraInk = [
           ...labels.map((l) => l.box),

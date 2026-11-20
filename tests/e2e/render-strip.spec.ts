@@ -267,6 +267,91 @@ test('the fixed signatures share the staff lines and notes fade at the stage edg
   }
 })
 
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  test(`opening clefs stay visible as they pin and release on a tablet (${reducedMotion})`, async ({ page }) => {
+    await page.setViewportSize({ width: 1194, height: 834 })
+    await page.emulateMedia({ reducedMotion })
+    await setup(page, 'long-500', { width: 1194, height: 500 })
+    const frames = await page.evaluate(() => {
+      const strip = window.harness.strip()!
+      const layout = window.harness.layout()!
+      const root = document.querySelector('.pn-strip')!
+      const sticky = root.querySelector('.pn-sticky-inner')!
+      const stage = root.querySelector('.pn-stage')!
+      const clefs = [...sticky.querySelectorAll('.vf-clef')]
+      const original = [...stage.querySelectorAll('.pn-opening-signature.vf-clef')]
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(root.querySelector('.pn-content')!).transform)
+      const edge = root.getBoundingClientRect().left
+      const sample = () => ({
+        x: clefs.map((clef) => clef.getBoundingClientRect().left - edge),
+        visible: clefs.every((clef) => getComputedStyle(clef).visibility === 'visible'),
+        mask: parseFloat(getComputedStyle(stage).maskPosition),
+      })
+      const begin = sample()
+      const normal = original.map((clef) => clef.getBoundingClientRect().left - edge)
+      const originalsHidden = original.every((clef) => getComputedStyle(clef).visibility === 'hidden')
+      const pinAt = root.getBoundingClientRect().width / 3 / matrix.a + layout.contextChanges[0]!.openingX!
+      const next = layout.occurrences
+        .flatMap((o) => o.anchors.slice(0, -1).map(([offset, x]) => ({ position: o.start + offset, x })))
+        .find(({ x }) => x > pinAt + 120)!
+      const step = (position: number) => {
+        strip.setCursor(position)
+        strip.flushNow()
+        // Read the positions to commit the transition before sampling its midpoint.
+        sample()
+        const animations = [...sticky.getAnimations(), ...stage.getAnimations()]
+        for (const animation of animations) {
+          animation.pause()
+          animation.currentTime = 60
+        }
+        const middle = sample()
+        for (const animation of animations) animation.finish()
+        return { middle, end: sample(), animated: animations.length > 0 }
+      }
+      const forward = step(next.position)
+      strip.setCursor(next.position + 0.25, { smooth: false })
+      strip.flushNow()
+      const later = sample()
+      const back = step(0)
+      return { begin, normal, originalsHidden, forward, later, back }
+    })
+
+    expect(frames.begin.x).toHaveLength(2)
+    expect(frames.normal).toHaveLength(2)
+    expect(frames.originalsHidden).toBe(true)
+    expect(frames.begin.mask).toBeLessThan(0)
+    expect(frames.forward.end.mask).toBe(0)
+    expect(frames.later).toEqual(frames.forward.end)
+    expect(frames.back.end.mask).toBe(frames.begin.mask)
+    expect(frames.forward.animated).toBe(reducedMotion !== 'reduce')
+    expect(frames.back.animated).toBe(reducedMotion !== 'reduce')
+    if (reducedMotion === 'no-preference') {
+      expect(frames.forward.middle.mask).toBeGreaterThan(frames.begin.mask)
+      expect(frames.forward.middle.mask).toBeLessThan(0)
+      expect(frames.back.middle.mask).toBeGreaterThan(frames.begin.mask)
+      expect(frames.back.middle.mask).toBeLessThan(0)
+    }
+    for (const [index, start] of frames.begin.x.entries()) {
+      const pinned = frames.forward.end.x[index]!
+      expect(start).toBeCloseTo(frames.normal[index]!, 1)
+      expect(pinned).toBeGreaterThan(0)
+      expect(pinned).toBeLessThan(10)
+      expect(frames.back.end.x[index]).toBeCloseTo(start, 1)
+      if (reducedMotion === 'no-preference') {
+        expect(frames.forward.middle.x[index]).toBeGreaterThan(pinned)
+        expect(frames.forward.middle.x[index]).toBeLessThan(start)
+        expect(frames.back.middle.x[index]).toBeGreaterThan(pinned)
+        expect(frames.back.middle.x[index]).toBeLessThan(start)
+      }
+    }
+    expect(
+      [frames.begin, frames.forward.middle, frames.forward.end, frames.back.middle, frames.back.end].every(
+        (frame) => frame.visible,
+      ),
+    ).toBe(true)
+  })
+}
+
 test('fixed signatures and their fade stay clear of the cursor at 360 px while zooming', async ({ page }) => {
   await setup(page, 'changes', { width: 360, height: 360 })
   const geometry = await page.evaluate(() => {

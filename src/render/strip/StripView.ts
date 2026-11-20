@@ -224,6 +224,7 @@ export class StripView {
   private readonly path: CursorPath
   private readonly stickyEl: HTMLDivElement
   private readonly stickyInner: HTMLDivElement
+  private readonly stickyStaff: HTMLDivElement
   private readonly loopEl: HTMLDivElement
   /** Teacher's corrections (`setCorrections`): layout px inside the content, above the notation. */
   private readonly corrLayer: HTMLDivElement
@@ -309,6 +310,8 @@ export class StripView {
   private selectMode: LoopSelectMode = 'off'
   private tapAnchor: number | null = null
   private stickyMask = ''
+  private stickyShift = NaN
+  private stickyTransform = ''
   private stickyContext = -1
 
   private readonly pointers = new Map<number, Pointer>()
@@ -434,8 +437,11 @@ export class StripView {
 
     this.content.append(this.loopEl, this.segLayer, this.corrLayer, this.startHandle, this.endHandle, this.clearBtn)
     this.stickyEl = div('pn-sticky')
+    this.stickyEl.setAttribute('aria-hidden', 'true')
     this.stickyInner = div('pn-sticky-inner')
-    this.stickyEl.append(this.stickyInner)
+    this.stickyStaff = div('pn-sticky-staff')
+    this.stickyEl.append(this.stickyStaff, this.stickyInner)
+    this.root.classList.toggle('pn-pin-opening', layout.contextChanges[0]?.openingX !== undefined)
     this.stage.append(this.content)
     this.root.append(this.stage, this.stickyEl, this.cursorEl)
     if (opts.returnButton !== false) {
@@ -1199,7 +1205,12 @@ export class StripView {
     const moved = this.tx !== prevTx || scale !== prevScale || this.ty !== this.applied.ty
     if (moved) {
       this.content.style.transform = `translate3d(${r2(this.tx)}px, ${r2(this.ty)}px, 0) scale(${scale})`
-      this.stickyInner.style.transform = `translate3d(0, ${r2(this.ty)}px, 0) scale(${scale})`
+      if (this.ty !== this.applied.ty || scale !== prevScale) {
+        this.stickyStaff.style.setProperty(
+          '--pn-staff-transform',
+          `translate3d(0, ${r2(this.ty)}px, 0) scale(${scale})`,
+        )
+      }
       this.applied.tx = this.tx
       this.applied.ty = this.ty
       this.applied.scale = scale
@@ -1648,7 +1659,7 @@ export class StripView {
     const changes = L.contextChanges
     const first = changes[0]
     if (!first) return 0
-    const on = viewX0 > first.glyphEnd - 2
+    const on = first.openingX !== undefined || viewX0 > first.glyphEnd - 2
     this.stickyEl.classList.toggle('pn-on', on)
     let lo = 0
     let hi = changes.length - 1
@@ -1675,19 +1686,48 @@ export class StripView {
           }).join(''),
         )
         .join('')
-      this.stickyInner.innerHTML = `<svg xmlns="${SVG_NS}" width="${ctx.width + CONTEXT_FADE}" height="${L.height}" viewBox="0 0 ${ctx.width + CONTEXT_FADE} ${L.height}"><g class="pn-context-staff">${lines}</g>${parts}</svg>`
+      const svg = (width: number, body: string) =>
+        `<svg xmlns="${SVG_NS}" width="${width}" height="${L.height}" viewBox="0 0 ${width} ${L.height}">${body}</svg>`
+      this.stickyStaff.innerHTML = svg(ctx.width + CONTEXT_FADE, `<g class="pn-context-staff">${lines}</g>`)
+      this.stickyInner.innerHTML = svg(ctx.width, parts)
       this.stickyInner.style.width = `${ctx.width}px`
       this.stickyInner.style.height = `${L.height}px`
     }
-    const mask = on
-      ? `linear-gradient(to right, transparent ${r2(ctx.width * this.shown)}px, #000 ${r2((ctx.width + CONTEXT_FADE) * this.shown)}px)`
-      : ''
+    // Start at the engraved position and glide to the edge with the score. The same glyphs
+    // remain visible as the score moves underneath them, including when browsing backward.
+    const offset = lo === 0 && first.openingX !== undefined ? Math.max(0, this.tx + first.openingX * this.shown) : 0
+    const transform = `translate3d(${r2(offset)}px, ${r2(this.ty)}px, 0) scale(${this.shown})`
+    if (transform !== this.stickyTransform) {
+      this.stickyTransform = transform
+      this.stickyInner.style.transform = transform
+    }
+    const width = r2(ctx.width * this.shown)
+    const end = r2((ctx.width + CONTEXT_FADE) * this.shown)
+    const mask = on ? `linear-gradient(to right, transparent ${width}px, #000 ${end}px)` : ''
     if (this.stickyMask !== mask) {
       this.stickyMask = mask
-      this.stage.style.maskImage = mask
-      this.stage.style.webkitMaskImage = mask
+      const staffMask = on ? `linear-gradient(to right, #000 ${width}px, transparent ${end}px)` : ''
+      for (const [el, image] of [
+        [this.stage, mask],
+        [this.stickyStaff, staffMask],
+      ] as const) {
+        el.style.maskImage = image
+        el.style.webkitMaskImage = image
+        // Extra width keeps the far-right score visible when the gradient is shifted left.
+        el.style.maskSize = `calc(100% + ${end}px) 100%`
+        el.style.webkitMaskSize = el.style.maskSize
+      }
     }
-    return on ? ctx.width : 0
+    // Slide both masks in over the last few pixels of travel. The replacement lines fill
+    // only the portion of the moving staff hidden by the stage mask.
+    const shift = r2(-end * Math.min(1, offset / (CONTEXT_FADE * this.shown)))
+    if (shift !== this.stickyShift) {
+      this.stickyShift = shift
+      const position = `${shift}px 0px`
+      this.stage.style.maskPosition = this.stickyStaff.style.maskPosition = position
+      this.stage.style.webkitMaskPosition = this.stickyStaff.style.webkitMaskPosition = position
+    }
+    return on ? Math.max(0, width + shift) / this.shown : 0
   }
 
   // ---------------------------------------------------------------- input
