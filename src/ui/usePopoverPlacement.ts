@@ -1,6 +1,6 @@
 /**
  * Keeps an anchored popover fully inside the viewport (`placePopover`): measures the anchor and
- * the panel's natural size before paint, on open and on resize / orientation change. Shared by
+ * the panel's natural size before paint and whenever the panel or viewport resizes. Shared by
  * the tempo popover and the Practice footer menu (DECISIONS U76).
  */
 import { useLayoutEffect, useState } from 'preact/hooks'
@@ -36,8 +36,13 @@ export function usePopoverPlacement(
       )
     }
     measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    if (panel.current) observer?.observe(panel.current)
     window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', measure)
+    }
   }, [mounted, preferred, anchor, panel])
   return placement
 }

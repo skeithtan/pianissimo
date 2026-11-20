@@ -72,6 +72,8 @@ export interface FooterProps {
   readonly labels: PersistentLabelMode
   readonly onLabels: (mode: PersistentLabelMode) => void
   readonly onRequestTempo: () => void
+  readonly scorePlayback: boolean
+  readonly onScorePlayback: (on: boolean) => void
   /** The menu's Metronome row (U87) and its handler. */
   readonly metronome: MetronomeRow
   readonly onMetronome: (on: boolean) => void
@@ -87,6 +89,8 @@ export function Footer({
   labels,
   onLabels,
   onRequestTempo,
+  scorePlayback,
+  onScorePlayback,
   metronome,
   onMetronome,
 }: FooterProps) {
@@ -113,6 +117,8 @@ export function Footer({
           labels={labels}
           onLabels={onLabels}
           hasTempo={tempo !== null}
+          scorePlayback={scorePlayback}
+          onScorePlayback={onScorePlayback}
           metronome={metronome}
           onMetronome={onMetronome}
         />

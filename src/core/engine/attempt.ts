@@ -340,8 +340,9 @@ export function comparisonContextOf(
   timeline: Timeline,
   transport: ComparisonContext['transport'],
   matchingRules: string = timeline.context.matchingRules,
+  scorePlayback = false,
 ): ComparisonContext {
-  return { ...timeline.context, transport, matchingRules }
+  return { ...timeline.context, transport, matchingRules, ...(scorePlayback ? { scorePlayback: true } : {}) }
 }
 
 /**
@@ -359,7 +360,6 @@ export function comparisonContextOf(
  */
 export function buildAttemptRecord(input: RecordInput): AttemptRecord {
   const { log, timeline, completion, kind } = input
-  const context = comparisonContextOf(timeline, input.transport, input.matchingRules)
   const assistance = log.assistance(input.labelSettings)
   const scored = kind === 'scored'
   const completionTimeSec =
@@ -370,6 +370,7 @@ export function buildAttemptRecord(input: RecordInput): AttemptRecord {
   const unscoredReason = scored ? timeline.timingUnscoredReason : READING_UNTIMED
   const strict = input.transport === 'strict' ? (input.rhythm ?? null) : null
   if (input.transport === 'strict' && strict === null) throw new RangeError('Strict records need rhythm parameters')
+  const context = comparisonContextOf(timeline, input.transport, input.matchingRules, strict?.scorePlayback)
   const tolerance = input.timeTolerance
   const withinTolerance =
     strict !== null

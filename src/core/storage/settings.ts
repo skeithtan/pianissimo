@@ -237,6 +237,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
       toleranceMs: Math.round(
         clamped(rhythm['toleranceMs'], d.rhythm.toleranceMs, MIN_RHYTHM_TOLERANCE_MS, MAX_RHYTHM_TOLERANCE_MS),
       ),
+      scorePlayback: bool(rhythm['scorePlayback'], d.rhythm.scorePlayback),
     },
     mic: { follow: bool(mic['follow'], d.mic.follow) },
     view: {

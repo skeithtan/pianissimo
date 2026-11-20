@@ -5,6 +5,7 @@
  * bar 1 holds C4+C3, D4, E4, F4 on beats 1 to 4), measured from the moment the count-in goes.
  */
 import { expect, test } from '../browser-test'
+import { storedSettings } from './app-helpers'
 import {
   installFakeMidi,
   loopWholePiece,
@@ -41,6 +42,42 @@ test.describe('Keep time', () => {
     await expect(keep).not.toBeChecked()
     await keep.click()
     await expect(keep).toBeChecked()
+  })
+
+  test('plays the full score after the count-in when Score playback is enabled', async ({ page }) => {
+    const menu = await openFooterMenu(page)
+    const keepTimeSettings = menu.getByRole('group', { name: 'Keep time settings' })
+    const score = keepTimeSettings.getByRole('switch', { name: 'Score playback' })
+    await expect(score).toHaveCount(0)
+    await keepTimeSettings.getByRole('switch', { name: 'Keep time' }).click()
+    await expect(keepTimeSettings.getByRole('switch', { name: 'Metronome' })).toHaveCount(0)
+    await expect(score).not.toBeChecked()
+    await expect(score).toHaveAccessibleDescription('Hear both hands while you play.')
+    const keepTimeLabel = await keepTimeSettings.getByText('Keep time', { exact: true }).boundingBox()
+    const scorePlaybackLabel = await keepTimeSettings.getByText('Score playback', { exact: true }).boundingBox()
+    expect(scorePlaybackLabel!.x).toBeCloseTo(keepTimeLabel!.x)
+    await score.click()
+    const metronome = menu.getByRole('switch', { name: 'Metronome' })
+    await expect(metronome).toBeChecked()
+    await metronome.click()
+    await expect(score).toBeChecked()
+    await expect.poll(async () => (await storedSettings(page))?.['rhythm']).toMatchObject({ scorePlayback: true })
+    await page.keyboard.press('Escape')
+    const attacks = () =>
+      page.evaluate(() => window.__midi.sent.filter(([status, , velocity]) => (status! & 0xf0) === 0x90 && velocity))
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    await expect(page.getByTestId('count-in')).toBeVisible()
+    expect(await attacks()).toEqual([])
+    await expect(page.getByTestId('count-in')).toHaveCount(0)
+    await expect
+      .poll(async () =>
+        (await attacks())
+          .slice(0, 2)
+          .map((message) => message[1])
+          .sort(),
+      )
+      .toEqual([48, 60])
+    await page.getByRole('button', { name: 'Pause', exact: true }).click()
   })
 
   test('Pause during the count-in cancels it', async ({ page }) => {
@@ -256,5 +293,28 @@ test.describe('Keep time', () => {
     await expect(countIn).toHaveCount(0)
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 4')
+  })
+})
+
+test.describe('Keep time phone menu', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
+
+  test('nests Score playback under Keep time and hides it when Keep time is off', async ({ page }) => {
+    await installFakeMidi(page)
+    await seedPiece(page)
+    await openSeededPractice(page)
+    const menu = await openFooterMenu(page)
+    const keepTimeSettings = menu.getByRole('group', { name: 'Keep time settings' })
+    const score = keepTimeSettings.getByRole('switch', { name: 'Score playback' })
+    await expect(score).toHaveCount(0)
+    const keepTime = keepTimeSettings.getByRole('switch', { name: 'Keep time' })
+    await keepTime.click()
+    await expect(score).toBeVisible()
+    await score.click()
+    await expect(score).toBeChecked()
+    await keepTime.click()
+    await expect(score).toHaveCount(0)
+    await keepTime.click()
+    await expect(score).toBeChecked()
   })
 })

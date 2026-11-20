@@ -58,7 +58,7 @@ const custom: AppSettings = {
   },
   sound: { destination: 'browser', browserVolume: 0.25, monitorInput: true },
   metronome: { enabled: true, keepTime: false, volume: 0.1, outputId: 'usb-output' },
-  rhythm: { toleranceMs: 250 },
+  rhythm: { toleranceMs: 250, scorePlayback: true },
   mic: { follow: true },
   view: { zoom: 1.75, pageZoom: 1.25, theme: 'dark', scorePaper: 'light' },
   suggestions: { enabled: false },
@@ -85,7 +85,7 @@ describe('normalizeSettings', () => {
     const { metronome: _m, view: _v, suggestions: _s, rhythm: _r, mic: _mic, ...older } = custom
     const loaded = normalizeSettings(older)
     expect(loaded.metronome).toEqual(DEFAULT_SETTINGS.metronome)
-    expect(loaded.rhythm).toEqual({ toleranceMs: 150 })
+    expect(loaded.rhythm).toEqual(DEFAULT_SETTINGS.rhythm)
     expect(loaded.mic).toEqual({ follow: false })
     expect(loaded.view).toEqual(DEFAULT_SETTINGS.view)
     expect(loaded.suggestions).toEqual(DEFAULT_SETTINGS.suggestions)
@@ -119,7 +119,7 @@ describe('normalizeSettings', () => {
   })
 
   it('reads the Keep time tolerance: clamped to 40–500 ms, whole ms, the default for anything else', () => {
-    expect(DEFAULT_SETTINGS.rhythm).toEqual({ toleranceMs: 150 })
+    expect(DEFAULT_SETTINGS.rhythm).toEqual({ toleranceMs: 150, scorePlayback: false })
     expect(normalizeSettings({ rhythm: { toleranceMs: 80 } }).rhythm.toleranceMs).toBe(80)
     expect(normalizeSettings({ rhythm: { toleranceMs: 10 } }).rhythm.toleranceMs).toBe(40)
     expect(normalizeSettings({ rhythm: { toleranceMs: 9000 } }).rhythm.toleranceMs).toBe(500)
@@ -128,6 +128,8 @@ describe('normalizeSettings', () => {
       expect(normalizeSettings({ rhythm: { toleranceMs } }).rhythm.toleranceMs).toBe(150)
     }
     expect(normalizeSettings({ rhythm: 'loose' }).rhythm.toleranceMs).toBe(150)
+    expect(normalizeSettings({ rhythm: { scorePlayback: true } }).rhythm.scorePlayback).toBe(true)
+    expect(normalizeSettings({ rhythm: { scorePlayback: 'true' } }).rhythm.scorePlayback).toBe(false)
   })
 
   it('falls back per field for wrong types and unknown enum values', () => {

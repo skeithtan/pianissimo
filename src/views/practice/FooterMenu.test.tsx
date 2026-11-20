@@ -36,6 +36,8 @@ function render(
       labels="off"
       onLabels={() => undefined}
       hasTempo
+      scorePlayback={false}
+      onScorePlayback={() => undefined}
       metronome={metronome}
       onMetronome={onMetronome}
       rowClass={undefined}

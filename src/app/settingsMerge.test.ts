@@ -131,9 +131,10 @@ describe('settingsFromStored', () => {
 
   it('merges a tolerance patch and clamps an out-of-range one', () => {
     const next = mergeSettings(DEFAULT_SETTINGS, { rhythm: { toleranceMs: 80 } })
-    expect(normalizeSettings(next).rhythm).toEqual({ toleranceMs: 80 })
+    expect(normalizeSettings(next).rhythm).toEqual({ toleranceMs: 80, scorePlayback: false })
     expect(normalizeSettings(mergeSettings(DEFAULT_SETTINGS, { rhythm: { toleranceMs: 2 } })).rhythm).toEqual({
       toleranceMs: 40,
+      scorePlayback: false,
     })
   })
 

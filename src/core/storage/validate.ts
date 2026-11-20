@@ -111,6 +111,10 @@ function contextProblem(v: unknown): string | null {
     ['context.rollPolicy', isStr(v['rollPolicy'])],
     ['context.transport', isOneOf(v['transport'], TRANSPORT_KINDS)],
     ['context.matchingRules', isStr(v['matchingRules'])],
+    [
+      'context.scorePlayback',
+      v['scorePlayback'] === undefined || (v['transport'] === 'strict' && v['scorePlayback'] === true),
+    ],
   ])
 }
 

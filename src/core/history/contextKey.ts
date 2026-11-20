@@ -16,6 +16,7 @@ export function toMeasureContext(c: ComparisonContext | MeasureContext): Measure
     rollPolicy: c.rollPolicy,
     transport: c.transport,
     matchingRules: c.matchingRules,
+    ...(c.scorePlayback ? { scorePlayback: true } : {}),
   }
 }
 
@@ -28,6 +29,8 @@ export function toMeasureContext(c: ComparisonContext | MeasureContext): Measure
 export function parseMeasureContextKey(key: string): MeasureContext | null {
   const parts = key.split('|')
   if (parts.length < 8) return null
+  const scorePlayback = parts.at(-1) === 'score-playback' && parts.length >= 9 && parts.at(-3) === 'strict'
+  if (scorePlayback) parts.pop()
   const matchingRules = parts.pop()
   const transport = parts.pop()
   const rollPolicy = parts.pop()
@@ -60,6 +63,7 @@ export function parseMeasureContextKey(key: string): MeasureContext | null {
     rollPolicy,
     transport: transport as TransportKind,
     matchingRules,
+    ...(scorePlayback ? { scorePlayback: true } : {}),
   }
   return measureContextKey(context) === key ? context : null
 }

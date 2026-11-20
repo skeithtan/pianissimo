@@ -112,6 +112,8 @@ export interface StartPlanOptions {
    * Hands 'none' stays Listen; play-through wins (the session never sets both).
    */
   readonly rhythm?: boolean
+  /** Keep time plays both parts, using a route that is safe for grading. */
+  readonly scorePlayback?: boolean
   /**
    * Play-through follows the microphone (DECISIONS P15, P22): it needs no piano input, and with
    * one hand the app plays nothing (no output or echo check needed). Without a piano everything
@@ -155,6 +157,15 @@ export function startPlan(
         enabled: false,
         reason: `${action === 'scored' ? 'Scored practice' : 'Reading'} needs a connected piano. Play through follows the microphone instead.`,
       }
+    }
+  }
+  if (action === 'scored' && opts.rhythm && opts.scorePlayback && (!ctx.hasOutput || !ctx.accompanimentAllowed)) {
+    return {
+      action,
+      enabled: false,
+      reason: ctx.hasOutput
+        ? 'Score playback needs an echo-free output. Play the test notes in Connection or choose Browser sound in Settings → Sound.'
+        : `Score playback needs a sound output. ${noOutput}`,
     }
   }
   // One hand through the microphone: the app plays nothing (the microphone must never hear it).

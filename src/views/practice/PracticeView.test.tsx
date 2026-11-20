@@ -145,9 +145,13 @@ function switchName(el: HTMLElement): string | undefined {
   return id ? el.ownerDocument.getElementById(id)?.textContent?.trim() : undefined
 }
 
-/** A switch in the footer menu, by its label (Play through, Show keys). */
+function accessibleMenuSwitches(menu: HTMLElement): HTMLElement[] {
+  return $$(menu, 'input[role="switch"]').filter((el) => !el.closest('[inert], [aria-hidden="true"]'))
+}
+
+/** A switch in the footer menu, by its label. */
 function menuSwitch(root: HTMLElement, name: string): HTMLInputElement {
-  return $$(openMenu(root), 'input[role="switch"]').find((el) => switchName(el) === name) as HTMLInputElement
+  return accessibleMenuSwitches(openMenu(root)).find((el) => switchName(el) === name) as HTMLInputElement
 }
 
 let view: Mounted | null = null
@@ -1200,7 +1204,7 @@ describe('PracticeView', () => {
       ).toEqual(['Note names', 'Keep time', 'Metronome', 'Show keys'])
       expect(byLabel(dialog, 'Faster by 5 percent')).toBeNull()
       expect(byLabel(dialog, 'Note names on the score')).not.toBeNull()
-      expect(dialog.querySelectorAll('input[role="switch"]')).toHaveLength(3)
+      expect(accessibleMenuSwitches(dialog)).toHaveLength(3)
       expect(dialog.contains(document.activeElement)).toBe(true)
       // The Menu button again closes it.
       click(button)
@@ -1546,12 +1550,12 @@ describe('PracticeView', () => {
       expect(menu.getAttribute('aria-label')).toBe('Menu')
       expect(menu.textContent).toContain('Speed')
       expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
-      const switches = $$(menu, 'input[role="switch"]').map(switchName)
+      const switches = accessibleMenuSwitches(menu).map(switchName)
       expect(switches).toEqual(['Keep time', 'Metronome', 'Show keys'])
       expect(menu.textContent).toContain('Connected · Test piano')
       expect(byLabel(menu, 'Settings')).not.toBeNull()
       // Show keys opens the guide slot from the sheet.
-      const keys = $$(menu, 'input[role="switch"]')[2]!
+      const keys = accessibleMenuSwitches(menu).find((el) => switchName(el) === 'Show keys')
       click(keys)
       await settle(r, 1)
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('true')
@@ -1575,7 +1579,7 @@ describe('PracticeView', () => {
       click(byLabel(bar(root), 'Menu'))
       await settle(r, 1)
       const menu = dialog()!
-      const switches = $$(menu, 'input[role="switch"]').map(switchName)
+      const switches = accessibleMenuSwitches(menu).map(switchName)
       expect(switches).toEqual(['Keep time', 'Metronome'])
       expect(menu.textContent).toContain('Connected · Test piano')
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('false')

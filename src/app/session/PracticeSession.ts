@@ -661,7 +661,7 @@ export class PracticeSession {
       return
     }
     if (this.#listen) this.#stopListening()
-    if (this.#sel.hands !== 'both') {
+    if (!this.#practiceSilent()) {
       const output = await this.#ensureOutput()
       if (!output || this.#startCanceled(gen)) return
     }
@@ -679,8 +679,8 @@ export class PracticeSession {
       await this.#startPlay()
       return
     }
-    // One hand chosen meanwhile on browser sound not loaded yet: load it first.
-    if (this.#sel.hands !== 'both' && !this.#ensureOutputSync()) return this.#start(fromLoopStart)
+    // A changed selection may need browser sound that has yet to load.
+    if (!this.#practiceSilent() && !this.#ensureOutputSync()) return this.#start(fromLoopStart)
     this.#followBrowsedCursor()
     this.#ensureAccompaniment()
     const t = this.#deps.clock()
@@ -1854,11 +1854,16 @@ export class PracticeSession {
     return settings.rhythm?.toleranceMs ?? DEFAULT_RHYTHM_TOLERANCE_MS
   }
 
+  #rhythmParams(settings = this.#settings): RhythmParams {
+    return {
+      toleranceMs: this.#toleranceMs(settings),
+      ...(settings.rhythm?.scorePlayback ? { scorePlayback: true } : {}),
+    }
+  }
+
   /** The engine transport and rhythm parameters of a scored attempt (strict in Keep time). */
   #scoredKind(): { transport: TransportKind; rhythm?: RhythmParams } {
-    return this.#rhythm
-      ? { transport: 'strict', rhythm: { toleranceMs: this.#toleranceMs(this.#settings) } }
-      : { transport: 'accompaniment' }
+    return this.#rhythm ? { transport: 'strict', rhythm: this.#rhythmParams() } : { transport: 'accompaniment' }
   }
 
   /**
@@ -2664,14 +2669,23 @@ export class PracticeSession {
         this.#lastVersion = -1
       }
     }
-    if (this.#toleranceMs(prev) !== this.#toleranceMs(next)) {
-      // A different tolerance is a different comparison context: the engine interrupts an active
-      // Keep time attempt by itself ('setting-change').
+    const playbackChanged = (prev.rhythm?.scorePlayback ?? false) !== (next.rhythm?.scorePlayback ?? false)
+    if (this.#toleranceMs(prev) !== this.#toleranceMs(next) || playbackChanged) {
+      // These settings define the comparison context of a Keep time pass.
       const was = this.#engine.state.phase
-      this.#engine.updateSettings({ rhythm: { toleranceMs: this.#toleranceMs(next) } }, now)
+      this.#engine.updateSettings({ rhythm: this.#rhythmParams(next) }, now)
       if (was !== 'interrupted' && this.#engine.state.phase === 'interrupted') {
         this.#cancelCountIn(now)
-        this.#interruptText = 'The Keep time tolerance changed, so the attempt stopped.'
+        this.#interruptText = playbackChanged
+          ? 'The score playback setting changed, so the attempt stopped.'
+          : 'The Keep time tolerance changed, so the attempt stopped.'
+      }
+      if (playbackChanged && this.#rhythm && this.#sel.hands !== 'none') {
+        this.#startGen++
+        this.#pauseTransports()
+        this.#disposeAccompaniment()
+        this.#awaitPrepared = false
+        this.#pendingRepeat = false
       }
     }
     if (prev.pedal !== next.pedal) {
@@ -3576,17 +3590,20 @@ export class PracticeSession {
     }
   }
 
-  /** Every practice mode uses gates; both hands has no automatic notes or sound backend. */
+  /** Every practice mode uses the same transport for its gates, clock, click and score sound. */
   #ensureAccompaniment(): void {
     if (this.#sel.hands === 'none' || !hasTempo(this.#tempo)) return
-    const both = this.#sel.hands === 'both'
-    const output = both ? null : (this.#output ?? this.#ensureOutputSync())
-    if (!both && !output) return
+    const scorePlayback = this.#scorePlayback()
+    if (scorePlayback && !accompanimentAllowed(this.#settings, this.#deps.midi.output(), this.#browserSoundPossible()))
+      return
+    const silent = this.#practiceSilent()
+    const output = silent ? null : this.#ensureOutputSync()
+    if (!silent && !output) return
     // A lead-in that has not reached the loop plays on one transport into the loop: its gates are
     // the lead-in's groups, then the loop's (engine group i = gate i + `#gateOffset`). One from
     // inside or after the loop has only its own gates: at its end the music wraps (`#wrapLeadIn`).
     const lead = this.#leadIn && !this.#leadIn.handedOver ? this.#leadIn : null
-    const key = `${performanceKey(this.#settings)}|${this.#outputKey}${lead ? `|lead ${ratKey(lead.start)}` : ''}`
+    const key = `${performanceKey(this.#settings)}|${this.#outputKey}|${scorePlayback}${lead ? `|lead ${ratKey(lead.start)}` : ''}`
     if (this.#accomp && this.#accompKey === key) return
     this.#disposeAccompaniment()
     const range = passageRange(this.#model, lead ? lead.span : this.#sel.range)
@@ -3597,11 +3614,11 @@ export class PracticeSession {
         : [...transportGates(lead.timeline), ...transportGates(this.#timeline)]
     const leadGroups = lead ? lead.timeline.groups.length : 0
     const route = this.#settings.route
-    const sendPedals = !both && route.automaticPedalsInHandPractice
-    const events = both
+    const sendPedals = route.automaticPedalsInHandPractice || (scorePlayback && this.#outputKind === 'browser')
+    const events = silent
       ? []
       : buildPerformance(this.#model, {
-          hands: this.#sel.hands,
+          hands: scorePlayback ? 'none' : this.#sel.hands,
           range,
           accompanimentLevel: level(route.accompanimentLevel),
           sendPedals,
@@ -3645,12 +3662,11 @@ export class PracticeSession {
   }
 
   /**
-   * `#ensureAccompaniment`, and when one hand needs browser sound that is not loaded yet (both
-   * hands never loads it), load it and build the transport afterwards, then `then(now)`.
+   * Build the practice transport, loading browser sound first if the automatic part needs it.
    */
   #ensureTransport(then: (now: number) => void): void {
     this.#ensureAccompaniment()
-    if (this.#accomp || this.#sel.hands === 'both' || this.#sel.hands === 'none') return
+    if (this.#accomp || this.#practiceSilent() || this.#sel.hands === 'none' || !this.#plan().enabled) return
     void this.#ensureOutput().then(() => {
       if (this.#disposed) return
       this.#ensureAccompaniment()
@@ -3981,7 +3997,12 @@ export class PracticeSession {
         hasInput: this.#inputAvailable,
         micSupported: this.#micPossible(),
       },
-      { playThrough: this.#playThrough, rhythm: this.#rhythm, mic: this.#micActive() },
+      {
+        playThrough: this.#playThrough,
+        rhythm: this.#rhythm,
+        scorePlayback: this.#scorePlayback(),
+        mic: this.#micActive(),
+      },
     )
   }
 
@@ -4011,9 +4032,17 @@ export class PracticeSession {
     return !this.#inputAvailable && this.#sel.hands !== 'none'
   }
 
-  /** Practice plays nothing through the output: both hands, or a play-through the microphone follows. */
+  #scorePlayback(): boolean {
+    return this.#rhythm && this.#sel.hands !== 'none' && this.#settings.rhythm?.scorePlayback === true
+  }
+
+  #practiceSilent(): boolean {
+    return this.#sel.hands === 'both' && !this.#scorePlayback()
+  }
+
+  /** Whether a route change can remove the backend without stopping the active transport. */
   #playsNothing(): boolean {
-    return this.#sel.hands === 'both' || (this.#playThrough && this.#micActive())
+    return this.#practiceSilent() || (this.#playThrough && this.#micActive())
   }
 
   /** The play-through transport plays nothing: both hands, or the microphone follows. */

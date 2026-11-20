@@ -64,6 +64,8 @@ export type TimingDirection = 'rushing' | 'dragging'
 export interface RhythmParams {
   /** A group completed within this many ms of its scheduled time is on time (pass condition). */
   readonly toleranceMs: number
+  /** Full score playback is recorded on the comparison context. */
+  readonly scorePlayback?: true
 }
 
 export interface ComparisonContext {
@@ -81,6 +83,8 @@ export interface ComparisonContext {
   /** See `TransportKind`. Strict attempts are their own comparison contexts. */
   readonly transport: TransportKind
   readonly matchingRules: string
+  /** Present when the Keep time attempt heard the full score. */
+  readonly scorePlayback?: true
 }
 
 export function contextKey(c: ComparisonContext): string {
@@ -95,6 +99,7 @@ export function contextKey(c: ComparisonContext): string {
     c.rollPolicy,
     c.transport,
     c.matchingRules,
+    ...(c.scorePlayback ? ['score-playback'] : []),
   ].join('|')
 }
 
@@ -126,6 +131,7 @@ export function measureContextKey(c: Omit<ComparisonContext, 'passage'>): string
     c.rollPolicy,
     c.transport,
     c.matchingRules,
+    ...(c.scorePlayback ? ['score-playback'] : []),
   ].join('|')
 }
 

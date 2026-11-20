@@ -78,7 +78,7 @@ function checkRhythm(r: RhythmParams | null | undefined): RhythmParams {
   if (!Number.isFinite(r.toleranceMs) || r.toleranceMs < 0) {
     throw new RangeError(`Invalid rhythm tolerance: ${r.toleranceMs}`)
   }
-  return { toleranceMs: r.toleranceMs }
+  return { toleranceMs: r.toleranceMs, ...(r.scorePlayback ? { scorePlayback: true } : {}) }
 }
 
 function checkStrictMode(mode: PracticeMode): void {
@@ -1077,7 +1077,7 @@ export class PracticeEngine {
     }
     if (patch.rhythm) {
       const rhythm = checkRhythm(patch.rhythm)
-      if (rhythm.toleranceMs !== this.#rhythm?.toleranceMs) {
+      if (rhythm.toleranceMs !== this.#rhythm?.toleranceMs || rhythm.scorePlayback !== this.#rhythm?.scorePlayback) {
         if (this.#strict && this.#attemptActive()) this.interrupt('setting-change', now)
         this.#rhythm = rhythm
       }
@@ -1395,7 +1395,12 @@ export class PracticeEngine {
   #end(completion: Completion, reason: InterruptReason | null, now: number): void {
     const log = this.#log
     const g = this.#currentGroup()
-    const context = comparisonContextOf(this.#timeline, this.#transport, this.matchingRules)
+    const context = comparisonContextOf(
+      this.#timeline,
+      this.#transport,
+      this.matchingRules,
+      this.#strict && this.#rhythm?.scorePlayback,
+    )
     if (completion === 'abandoned' && reason !== null && log.started && g && log.measureWrong(g.occ) > 0) {
       this.#emit({
         type: 'abandon',

@@ -47,6 +47,14 @@ describe('measure context keys', () => {
     }
   })
 
+  it('separates Keep time with score playback and round-trips its key', () => {
+    const strict = comparisonContext({ transport: 'strict', matchingRules: 'strict-v1-tol-150ms' })
+    const plain = toMeasureContext(strict)
+    const withPlayback = toMeasureContext({ ...strict, scorePlayback: true })
+    expect(measureContextKey(withPlayback)).not.toBe(measureContextKey(plain))
+    expect(parseMeasureContextKey(measureContextKey(withPlayback))).toEqual(withPlayback)
+  })
+
   it('rejects keys it did not produce', () => {
     expect(parseMeasureContextKey('')).toBeNull()
     expect(parseMeasureContextKey('legacy-key')).toBeNull()

@@ -1,8 +1,8 @@
 /**
  * The Practice footer menu (DECISIONS U76): one Menu button at the footer's end edge (U88), across
  * from the always-visible Speed control, that opens an anchored popover (never a modal sheet) holding Note
- * names, Keep time (rhythm mode, P13), Metronome (U87, P20) and Show keys. While Keep time is on the Menu button carries a small
- * metronome badge, so the mode shows with the menu closed. The popover opens upward, stays on screen (`placePopover`)
+ * names, Keep time, Score playback, Metronome and Show keys. The Menu button carries a small
+ * metronome badge while Keep time is on. The popover opens upward, stays on screen (`placePopover`)
  * and fades. It
  * closes on Escape, a press outside it, the Menu button again, when playback starts and when the
  * chrome recedes. Focus moves into the panel on open and back to the button on close.
@@ -47,6 +47,8 @@ export interface FooterMenuProps {
   readonly onLabels: (mode: PersistentLabelMode) => void
   /** The score (or the piece) has a numerical tempo: Keep time needs one. */
   readonly hasTempo: boolean
+  readonly scorePlayback: boolean
+  readonly onScorePlayback: (on: boolean) => void
   readonly metronome: MetronomeRow
   /** Turns the click on or off for the current mode (the screen primes audio, then edits the settings). */
   readonly onMetronome: (on: boolean) => void
@@ -59,9 +61,8 @@ export interface FooterMenuProps {
 export const KEEPS_AHEAD = 'data-keeps-ahead'
 
 /**
- * The menu's rows: Note names, Keep time, Metronome and (unless `showKeys` is false: a phone
- * on its side has no keyboard guide, U80) Show keys. The footer popover and the phone's menu
- * sheet (`PracticeScreen`, U80) share them; the classes come from the host.
+ * The footer popover and phone sheet share these rows and supply their own classes. The phone
+ * sheet hides Show keys in landscape, where there is no keyboard guide (U80).
  */
 export function PracticeMenuItems({
   ui,
@@ -69,19 +70,33 @@ export function PracticeMenuItems({
   labels,
   onLabels,
   hasTempo,
+  scorePlayback,
+  onScorePlayback,
   metronome,
   onMetronome,
   showKeys = true,
   rowClass,
   labelClass,
   toggleClass,
-}: Pick<FooterMenuProps, 'ui' | 'session' | 'labels' | 'onLabels' | 'hasTempo' | 'metronome' | 'onMetronome'> & {
+}: Pick<
+  FooterMenuProps,
+  | 'ui'
+  | 'session'
+  | 'labels'
+  | 'onLabels'
+  | 'hasTempo'
+  | 'scorePlayback'
+  | 'onScorePlayback'
+  | 'metronome'
+  | 'onMetronome'
+> & {
   readonly showKeys?: boolean
   readonly rowClass: string | undefined
   readonly labelClass: string | undefined
   readonly toggleClass: string | undefined
 }) {
   const toggleRow = [rowClass, toggleClass].filter(Boolean).join(' ')
+  const showScorePlayback = ui.rhythm && ui.hands !== 'none' && ui.pianoConnected && hasTempo
   return (
     <>
       <div class={rowClass} data-keeps-ahead>
@@ -96,14 +111,33 @@ export function PracticeMenuItems({
           compact
         />
       </div>
-      <Toggle
-        class={toggleRow}
-        label="Keep time"
-        checked={ui.rhythm}
-        disabled={!ui.handsAvailable || ui.hands === 'none' || !hasTempo || !ui.pianoConnected}
-        description={ui.pianoConnected ? KEEP_TIME_DESCRIPTION : `${KEEP_TIME_DESCRIPTION} Needs a connected piano.`}
-        onChange={(on) => session.setRhythmMode(on)}
-      />
+      <div class={menuStyles.keepTimeGroup} role="group" aria-label="Keep time settings">
+        <Toggle
+          class={toggleRow}
+          label="Keep time"
+          checked={ui.rhythm}
+          disabled={!ui.handsAvailable || ui.hands === 'none' || !hasTempo || !ui.pianoConnected}
+          description={ui.pianoConnected ? KEEP_TIME_DESCRIPTION : `${KEEP_TIME_DESCRIPTION} Needs a connected piano.`}
+          onChange={(on) => session.setRhythmMode(on)}
+        />
+        <div
+          class={menuStyles.scorePlaybackSlot}
+          data-open={showScorePlayback}
+          inert={!showScorePlayback}
+          aria-hidden={showScorePlayback ? undefined : true}
+        >
+          <div class={menuStyles.scorePlaybackClip}>
+            <Toggle
+              class={`${toggleRow} ${menuStyles.scorePlayback}`}
+              label="Score playback"
+              description="Hear both hands while you play."
+              checked={scorePlayback}
+              disabled={ui.playing}
+              onChange={onScorePlayback}
+            />
+          </div>
+        </div>
+      </div>
       <Toggle
         class={toggleRow}
         label="Metronome"
@@ -224,6 +258,8 @@ export function FooterMenu({
   labels,
   onLabels,
   hasTempo,
+  scorePlayback,
+  onScorePlayback,
   metronome,
   onMetronome,
 }: FooterMenuProps) {
@@ -245,6 +281,8 @@ export function FooterMenu({
         labels={labels}
         onLabels={onLabels}
         hasTempo={hasTempo}
+        scorePlayback={scorePlayback}
+        onScorePlayback={onScorePlayback}
         metronome={metronome}
         onMetronome={onMetronome}
         rowClass={menuStyles.row}

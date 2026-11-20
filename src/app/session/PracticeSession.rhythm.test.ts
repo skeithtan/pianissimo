@@ -7,7 +7,8 @@ import { buildScore } from '../../core/engine/testkit'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { rat } from '../../core/music/rational'
 import { FakeAudioContext } from '../../core/playback/fakeWebAudio'
-import type { MetronomeModule } from '../../core/playback'
+import type { BrowserAudioModule, MetronomeModule } from '../../core/playback'
+import { RecordingBackend } from '../../core/playback/testkit'
 import { existingAudioContext, resetSharedAudioContext, sharedAudioContext } from '../../core/playback/webaudio/context'
 import type { LadderSettings } from '../../core/storage/records'
 import { FakeStrip, harness, testSettings, type Harness } from './testkit'
@@ -452,13 +453,13 @@ describe('Keep time: playing against the music', () => {
   })
 
   it('passes the tolerance setting to the engine; changing it interrupts an attempt', async () => {
-    const tight = testSettings({ rhythm: { toleranceMs: 80 } })
+    const tight = testSettings({ rhythm: { ...DEFAULT_SETTINGS.rhythm, toleranceMs: 80 } })
     const h = open({}, { settings: tight })
     await begin(h)
     playOnTime(h, [60, 62], [0, -100])
     // -100 ms is beyond ±80: an early wrong attack, then the group is passed.
     expect(h.session.engine.state.wrongAttacks).toBe(1)
-    h.session.updateSettings(testSettings({ rhythm: { toleranceMs: 250 } }))
+    h.session.updateSettings(testSettings({ rhythm: { ...DEFAULT_SETTINGS.rhythm, toleranceMs: 250 } }))
     h.frames.flush()
     const record = h.attempts.at(-1)!
     expect(record).toMatchObject({ completion: 'interrupted', interruptReason: 'setting-change' })
@@ -864,6 +865,111 @@ describe('Keep time: modes', () => {
     await begin(h)
     expect(h.session.engine.transport).toBe('strict')
     expect(ui(h).countIn).toBe(4)
+  })
+})
+
+describe('Keep time: score playback', () => {
+  const duet = buildScore({
+    notes: [
+      { at: 0, midi: 60, hand: 'R' },
+      { at: 0, midi: 48, hand: 'L' },
+      { at: 1, midi: 62, hand: 'R' },
+      { at: 1, midi: 50, hand: 'L' },
+    ],
+  })
+  const settings = testSettings({ rhythm: { ...DEFAULT_SETTINGS.rhythm, scorePlayback: true } })
+
+  it.each(['both', 'right'] as const)(
+    'sounds both parts with %s selected and grades human input only',
+    async (hands) => {
+      const h = harness(
+        duet,
+        { hands, multiplier: 0.5 },
+        {
+          options: { rhythm: true },
+          settings,
+          deps: { loadMetronome: recordingMetronome(rec) },
+        },
+      )
+      await begin(h)
+      const downbeat = T0 + 8000
+      at(h, downbeat - 1)
+      expect(h.backend.ons()).toEqual([])
+      at(h, downbeat)
+      expect(h.backend.ons().map(({ note, time }) => [note, time])).toEqual([
+        [48, downbeat],
+        [60, downbeat],
+      ])
+      // Skip the first group altogether. The next paired attack stays on the clock.
+      at(h, downbeat + 2000)
+      expect(
+        h.backend
+          .ons()
+          .slice(2)
+          .map(({ note, time }) => [note, time]),
+      ).toEqual([
+        [50, downbeat + 2000],
+        [62, downbeat + 2000],
+      ])
+      if (hands === 'both') h.tap(50, 62)
+      else h.tap(62)
+      expect(h.attempts.at(-1)).toMatchObject({ context: { scorePlayback: true }, missedGroups: 1, wrongAttacks: 0 })
+    },
+  )
+
+  it('restores normal accompaniment after the switch is turned off and cancels the old score audio', async () => {
+    const h = harness(duet, { hands: 'right' }, { options: { rhythm: true }, settings })
+    await begin(h)
+    at(h, RUN)
+    h.tap(60)
+    h.session.updateSettings(testSettings())
+    expect(h.attempts.at(-1)).toMatchObject({ context: { scorePlayback: true }, interruptReason: 'setting-change' })
+    expect(h.backend.calls.at(-1)?.op).toBe('cleanup')
+    at(h, RUN + 1500)
+    expect(h.backend.ons().map(({ note }) => note)).toEqual([48, 60])
+    await begin(h)
+    at(h, RUN + 5500)
+    expect(h.backend.ons().map(({ note }) => note)).toEqual([48, 60, 48])
+  })
+
+  it('plays through Browser sound with an unverified piano output', async () => {
+    const backend = new RecordingBackend(() => T0)
+    const sound = { createBrowserAudio: () => backend } as unknown as BrowserAudioModule
+    const h = harness(
+      duet,
+      {},
+      {
+        options: { rhythm: true },
+        settings: {
+          ...settings,
+          route: { ...settings.route, outputVerified: false, echo: 'untested' },
+          sound: { ...settings.sound, destination: 'browser' },
+        },
+        deps: { loadBrowserAudio: async () => sound },
+      },
+    )
+    await begin(h)
+    at(h, RUN)
+    expect(backend.ons().map(({ note }) => note)).toEqual([48, 60])
+    expect(h.backend.ons()).toEqual([])
+  })
+
+  it('refuses to grade against a MIDI route that can echo its own attacks', async () => {
+    const h = harness(
+      duet,
+      {},
+      {
+        options: { rhythm: true },
+        settings: { ...settings, route: { ...settings.route, echo: 'echo-detected' } },
+      },
+    )
+    expect(ui(h)).toMatchObject({ startEnabled: false, startReason: expect.stringContaining('echo-free') })
+    await begin(h)
+    at(h, RUN)
+    expect(h.backend.ons()).toEqual([])
+    h.session.updateSettings(testSettings({ route: { ...settings.route, echo: 'echo-detected' } }))
+    h.frames.flush()
+    expect(ui(h).startEnabled).toBe(true)
   })
 })
 

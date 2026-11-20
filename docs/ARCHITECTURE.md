@@ -426,6 +426,14 @@ an unresolved check could still stop playback, so an automatic stop leaves the p
 and does not add a pass to history. On the next downbeat the session hides the previous pass's
 score marks in both layouts. The same marks return with the previous review after a stop.
 
+Score playback (P27) is an opt-in app setting in `AppSettings.rhythm.scorePlayback`. The session
+builds both parts with the Listen performance builder on the strict transport. The same transport
+runs the optional metronome and reports each learner gate to the engine. It starts on the downbeat
+after the count-in. Output uses the existing graded route check. A setting change interrupts an
+active Keep time pass and releases its scheduled output. The engine adds `scorePlayback: true` to
+the comparison context for passes that use it. Result and per-measure keys append the playback
+mode only when it is present, preserving existing keys.
+
 Keep time is exclusive with play-through and disables Repeat lead-ins. The view adds a
 footer-menu switch with a badge on the Menu button, the `CountIn` overlay on the stage and
 the tolerance choice in Settings →

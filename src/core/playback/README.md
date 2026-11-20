@@ -41,10 +41,14 @@ Test helpers (not exported): `testkit.ts` (`makeModel`, `ManualClock`, `Recordin
   `gates = timeline.groups.map(g => g.position)`. `onGateReached(i)` → `engine.transportArrived(i)`;
   engine input complete for group i → `transport.releaseGate(i)`. Seek/restart → `transport.seek(pos)`
   + engine reset. Engine `transportEta: (group, t) => transport.msUntilGate(group, t)`.
-- **Both-hand practice:** the same learner gates and clock as one-hand practice, with
+- **Both-hand practice with score playback off:** the same learner gates and clock as one-hand practice, with
   `events: []` and `backend: null`. No app-generated notes or sound backend are needed. The
   metronome follows this gated transport; its sink loads only when a click is wanted (the session
   decides: `metronome.enabled`, or `metronome.keepTime` in a Keep time attempt, DECISIONS P20).
+- **Keep time score playback (P27).** The strict transport uses both parts and its existing
+  learner gates. Its clock, score playback and metronome start together after the count-in.
+  Verified echo-free MIDI output follows the practice pedal setting. Browser sound renders
+  the score pedals.
 - **Human input:** forward every human event to `MidiOutputBackend.humanInput`; construct the
   backend with `humanGuard: true` only on a route verified echo-free (an echoing or untested
   piano returns app notes as "held" keys that are never released); call `resetHuman()` on

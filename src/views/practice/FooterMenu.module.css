@@ -47,7 +47,7 @@
   min-height: var(--touch);
   padding-block: var(--space-3);
 }
-.row + .row {
+.popover > :is(.row, .keepTimeGroup) + :is(.row, .keepTimeGroup) {
   border-block-start: 1px solid var(--border);
 }
 .label,
@@ -62,6 +62,31 @@
   font-weight: 400;
   max-inline-size: 32ch;
   white-space: normal;
+}
+
+.scorePlaybackSlot {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard);
+}
+.scorePlaybackSlot[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.scorePlaybackClip {
+  min-height: 0;
+  overflow: hidden;
+  /* Room for the focus outline beside the switch while the slot clips vertically. */
+  margin-inline: calc(-1 * var(--space-2));
+  padding-inline: var(--space-2);
+}
+
+.scorePlayback {
+  margin-block: var(--space-1) var(--space-2);
+  padding-block: var(--space-1);
 }
 
 .menuButton {
@@ -84,6 +109,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .scorePlaybackSlot {
+    transition: none;
+  }
   .popover {
     animation: none;
   }
