@@ -35,7 +35,10 @@ link/editing menus are unchanged.
 ## Controls (`controls.tsx`)
 
 `Button`, `Segmented` (radio group with arrow keys and roving tab index; an option may be `disabled`: dimmed, skipped by the arrows, U92), `Toggle`, `Field`,
-`Slider`, `Sheet` (modal dialog that fades, restores focus; `wide`, `tall`, `flush`), `Notice`. No big shadows (U12): sheets, the tempo popover and the selected segment use a 1 px `--border` edge.
+`Slider`, `Sheet` (modal dialog that fades and restores focus), `Notice`. A sheet supports
+`wide`, `tall`, and `flush` variants. Its `className` can set a custom width cap using
+`--sheet-width`. No big shadows (U12): sheets, the tempo popover and the selected segment use
+a 1 px `--border` edge.
 `icons.tsx` adds `hand`, `handLeft`, `plus`, `minus`, `forward`.
 
 ## Fades (`fade.tsx`) — hints and overlays never vanish abruptly

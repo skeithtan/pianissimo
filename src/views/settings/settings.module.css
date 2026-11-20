@@ -1,4 +1,14 @@
 /* Settings overlay: tabs on the left in landscape, a scrolling strip on top in portrait. */
+.dialog {
+  --sheet-width: 960px;
+}
+@media (orientation: landscape) {
+  .dialog {
+    --sheet-width: min(70vw, 1100px);
+    /* Let the width rule set the gutter instead of the browser's dialog cap. */
+    max-width: none;
+  }
+}
 .panel {
   flex: 1;
   min-height: 0;

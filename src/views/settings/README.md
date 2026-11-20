@@ -3,9 +3,10 @@
 `SettingsOverlay` is a full-height `Sheet` over the current view (the view stays mounted, so the
 selected score and passage are never lost). Mounted once by `app/App.tsx`; open it with
 `openSettings()`. Escape and the close button dismiss it, focus moves in and returns to the
-opener, and it fades in and out. Eight tabs; every panel stays mounted (hidden when inactive) so
-typed text and staged label edits survive switching tabs. Landscape: tab list on the left;
-portrait: a scrolling strip on top.
+opener, and it fades in and out. The landscape sheet uses 70% of the viewport width, up to
+1,100 px. On phones the sheet fills the screen. The tab list sits on the left on wide
+landscape screens and scrolls across the top on narrower or portrait screens. All eight
+panels stay mounted so typed text and staged label edits survive switching tabs.
 
 | Tab | Content | Applies |
 | --- | --- | --- |

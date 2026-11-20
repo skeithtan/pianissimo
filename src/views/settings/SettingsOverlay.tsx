@@ -152,7 +152,7 @@ export function SettingsOverlay({ features = getFeatures() }: { features?: Featu
     if (!open) dropStagedLabelEdits()
   }, [open])
   return (
-    <Sheet title={msg('Settings')} open={open} onClose={requestCloseSettings} wide tall flush>
+    <Sheet title={msg('Settings')} open={open} onClose={requestCloseSettings} className={styles.dialog} tall flush>
       <Panel features={features} />
     </Sheet>
   )

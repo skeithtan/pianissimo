@@ -194,14 +194,14 @@
   color: var(--fg);
   /* No large blurred shadow (U12, A11): the backdrop gives focus, a hairline gives the edge. */
   border: 1px solid var(--border);
-  width: min(640px, calc(100vw - 24px));
+  width: min(var(--sheet-width, 640px), calc(100vw - 24px));
   max-height: calc(100dvh - 32px);
   overflow: hidden;
   opacity: 1;
   transition: opacity var(--dur-base) var(--ease-standard);
 }
 .wide {
-  width: min(960px, calc(100vw - 24px));
+  --sheet-width: 960px;
 }
 .tall {
   height: calc(100dvh - 32px);

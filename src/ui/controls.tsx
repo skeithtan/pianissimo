@@ -226,6 +226,7 @@ export function Sheet({
   flush,
   untitled,
   floating,
+  className,
 }: {
   title: string
   open: boolean
@@ -241,6 +242,8 @@ export function Sheet({
   untitled?: boolean
   /** Stay a window on a phone too (the phone menus); other sheets fill a phone's screen. */
   floating?: boolean
+  /** Style the dialog itself, including its width cap via --sheet-width. */
+  className?: string | undefined
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const opener = useRef<Element | null>(null)
@@ -262,7 +265,7 @@ export function Sheet({
   return (
     <dialog
       ref={ref}
-      class={[styles.sheet, wide && styles.wide, tall && styles.tall, floating && styles.floating]
+      class={[styles.sheet, wide && styles.wide, tall && styles.tall, floating && styles.floating, className]
         .filter(Boolean)
         .join(' ')}
       data-leaving={presence.phase === 'leaving' ? '' : undefined}
