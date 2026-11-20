@@ -81,7 +81,7 @@ export interface OutputBackend {
   stopSound(now: number): void
 }
 
-/** Metronome sound destination (Web Audio click), scheduled by the same transport. */
+/** Metronome click, scheduled by the same transport as the notes. */
 export interface MetronomeSink {
   click(time: number, accent: boolean): void
   /** Drop clicks scheduled after `now`. */

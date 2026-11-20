@@ -8,7 +8,7 @@
  * - `browser`: this device only.
  *
  * Browser sound is loaded lazily after a gesture, so use with a connected piano never fetches
- * the sample bank. The metronome is separate (it always clicks through Web Audio).
+ * the sample bank. The Web Audio metronome has its own output preference.
  */
 import { gradedAccompanimentAllowed } from '../../core/midi/route'
 import type { MidiOutputLike } from '../../core/midi/webmidi'

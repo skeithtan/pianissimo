@@ -54,4 +54,24 @@ describe('WebAudioMetronome', () => {
     expect(pending!.stopAt.length).toBe(2)
     expect(ctx.gains[1]!.disconnected).toBe(true)
   })
+
+  it('moves only upcoming count-in beats when the output changes', () => {
+    const system = new FakeAudioContext()
+    const piano = new FakeAudioContext()
+    let now = 0
+    const m = new WebAudioMetronome({ context: asContext(system), clock: () => now })
+    m.click(0, true)
+    m.click(1000, false)
+    m.click(2000, false)
+
+    now = 500
+    system.currentTime = 0.5
+    piano.currentTime = 0.1
+    m.setContext(asContext(piano))
+
+    expect(system.gains.map((gain) => gain.disconnected)).toEqual([false, true, true])
+    expect(piano.oscillators.map((osc) => osc.startAt)).toEqual([0.6, 1.6])
+    m.cancel(now)
+    expect(piano.gains.every((gain) => gain.disconnected)).toBe(true)
+  })
 })

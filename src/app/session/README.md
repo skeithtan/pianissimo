@@ -260,7 +260,8 @@ Stores (subscribe from the view):
   `deps.loadBrowserAudio` only after a Start / Play gesture, so use with a piano never
   imports the bank (Playwright-checked). Under Auto a piano connecting while the device plays
   stops playback cleanly (the next Start uses the piano); a piano disconnecting interrupts and
-  the next Start continues through the device. The metronome is separate (Web Audio).
+  the next Start continues through the device. The Web Audio metronome and count-in follow system
+  audio or the audio device selected under Metronome in Settings (U114).
 
 ## Speed ladder (Repeat mode)
 

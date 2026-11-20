@@ -1,8 +1,8 @@
 /**
  * Web Audio metronome click (spec "Recommended defaults": metronome off; an optional audible
  * reference without forcing advancement). Scheduled by the musical transport like any other
- * event, and usable alongside MIDI output: the click always sounds in the browser so it never
- * mixes into the piano's channel. Short synthesized blips, no samples. Load this module
+ * event. It plays through the system's audio output or a selected audio device, including a
+ * piano that accepts USB audio. Short synthesized blips, no samples. Load this module
  * (dynamic import) and create the sink only when the metronome is enabled.
  */
 import type { Clock, MetronomeSink } from '../types'
@@ -19,10 +19,12 @@ interface Scheduled {
   readonly src: OscillatorNode
   readonly gain: GainNode
   readonly when: number
+  readonly time: number
+  readonly accent: boolean
 }
 
 export class WebAudioMetronome implements MetronomeSink {
-  private readonly ctx: BaseAudioContext
+  private ctx: BaseAudioContext
   private readonly clock: Clock
   private volume: number
   private scheduled: Scheduled[] = []
@@ -37,7 +39,19 @@ export class WebAudioMetronome implements MetronomeSink {
     this.volume = clamp01(volume)
   }
 
+  /** Move any future beats, including a scheduled count-in, to the new output. */
+  setContext(context: BaseAudioContext): void {
+    if (this.ctx === context) return
+    const now = this.clock()
+    const upcoming = this.scheduled.filter((s) => s.time > now)
+    for (const s of upcoming) this.stop(s)
+    this.scheduled = []
+    this.ctx = context
+    for (const { time, accent } of upcoming) this.click(time, accent)
+  }
+
   click(time: number, accent: boolean): void {
+    if (this.volume === 0 || this.ctx.state === 'closed') return
     const ctx = this.ctx
     const when = contextTimeFor(ctx, this.clock(), time)
     this.scheduled = this.scheduled.filter((s) => s.when > ctx.currentTime - 0.2)
@@ -54,22 +68,24 @@ export class WebAudioMetronome implements MetronomeSink {
     src.start(when)
     src.stop(when + 0.06)
     src.onended = () => gain.disconnect()
-    this.scheduled.push({ src, gain, when })
+    this.scheduled.push({ src, gain, when, time, accent })
   }
 
   cancel(now: number): void {
     const cutoff = contextTimeFor(this.ctx, now, now)
     for (const s of this.scheduled) {
-      if (s.when > cutoff) {
-        s.gain.disconnect()
-        try {
-          s.src.stop()
-        } catch {
-          // already stopped
-        }
-      }
+      if (s.when > cutoff) this.stop(s)
     }
     this.scheduled = this.scheduled.filter((s) => s.when <= cutoff)
+  }
+
+  private stop(s: Scheduled): void {
+    s.gain.disconnect()
+    try {
+      s.src.stop()
+    } catch {
+      // Already stopped.
+    }
   }
 }
 

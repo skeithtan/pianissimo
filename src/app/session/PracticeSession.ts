@@ -71,7 +71,6 @@ import {
   createTransport,
   passageRange,
   type ClickEvent,
-  sharedAudioContext,
   type BrowserAudioModule,
   type ControlEvent,
   type MetronomeModule,
@@ -81,6 +80,7 @@ import {
   type OutputBackend,
   type Transport,
 } from '../../core/playback'
+import { metronomeAudioOutput } from '../../core/playback/webaudio/metronomeOutput'
 import { PersistentLabels, labelSnapshot, mergeOpacity, sameOpacity } from './labels'
 import {
   accompanimentAllowed,
@@ -280,6 +280,7 @@ export class PracticeSession {
   #accomp: Transport | null = null
   #accompKey = ''
   #metronome: InstanceType<MetronomeModule['WebAudioMetronome']> | null = null
+  #metronomeRequest = 0
   /** Counts the sink's cancels, so a settings change can tell whether it silenced a count-in. */
   #sinkCancels = 0
   /** Click schedules exist from the start; sound can be enabled later without rebuilding time. */
@@ -1144,7 +1145,6 @@ export class PracticeSession {
    */
   async #startListening(): Promise<void> {
     if (!hasTempo(this.#tempo)) return
-    const now = this.#deps.clock()
     const key = outputKey(this.#settings, this.#destination())
     const position = this.#listen ? this.#listen.transport.positionNow() : null
     const seek = this.#lastSeek
@@ -1155,9 +1155,15 @@ export class PracticeSession {
       this.#output &&
       this.#outputKey === key
     ) {
-      this.#listen.transport.play()
-      this.#listen.playing = true
-      this.#process(now)
+      const listen = this.#listen
+      if (this.#settings.metronome.enabled && this.#settings.metronome.outputId) {
+        const gen = this.#startGen
+        await this.#ensureMetronome()
+        if (this.#startCanceled(gen) || this.#listen !== listen) return
+      }
+      listen.transport.play()
+      listen.playing = true
+      this.#process(this.#deps.clock())
       return
     }
     // Another destination than last time: release the old transport before its output goes.
@@ -1273,6 +1279,10 @@ export class PracticeSession {
       (silent || (this.#output !== null && this.#outputKey === key))
     ) {
       this.#followBrowsedCursor()
+      if (this.#playMetronome() && this.#settings.metronome.outputId) {
+        await this.#ensureMetronome()
+        if (this.#startCanceled(gen) || this.#play !== p || p.playing) return
+      }
       if (mic && !(await this.#startMic(p.follower.state.position ?? ZERO))) return
       // Canceled once the microphone opened: paused as by an ordinary pause (`#pausePlay`), kept open.
       if (this.#startCanceled(gen)) return this.#mic?.pause()
@@ -2622,10 +2632,12 @@ export class PracticeSession {
     // Volumes apply live to sound already loaded (Settings over Practice).
     if (prev.sound.browserVolume !== next.sound.browserVolume) this.#browser?.setVolume(next.sound.browserVolume)
     if (prev.metronome.volume !== next.metronome.volume) this.#metronome?.setVolume(next.metronome.volume)
+    const outputChanged = prev.metronome.outputId !== next.metronome.outputId
+    if (outputChanged) void this.#ensureMetronome(this.#countIn !== null)
     if (prev.metronome.enabled !== next.metronome.enabled || prev.metronome.keepTime !== next.metronome.keepTime) {
       // Each transport by its own rule (DECISIONS P20). Switching a click off cancels the sink,
       // which also holds the count-in's beats: those still to come are clicked again.
-      void this.#ensureMetronome()
+      if (!outputChanged) void this.#ensureMetronome()
       const cancels = this.#sinkCancels
       this.#accomp?.setMetronomeEnabled(this.#practiceClick())
       this.#listen?.transport.setMetronomeEnabled(next.metronome.enabled)
@@ -3482,18 +3494,25 @@ export class PracticeSession {
    * time's own, DECISIONS P20), or `force` (the Keep time count-in clicks anyway).
    */
   async #ensureMetronome(force = false): Promise<void> {
-    if (this.#metronome || !this.#deps.loadMetronome) return
-    if (!force && !this.#settings.metronome.enabled && !this.#practiceClick()) return
+    if (!this.#deps.loadMetronome || this.#deps.hasWebAudio?.() === false) return
+    if (!this.#metronome && !force && !this.#settings.metronome.enabled && !this.#practiceClick()) return
+    const request = ++this.#metronomeRequest
     try {
-      const m = await this.#deps.loadMetronome()
-      if (this.#disposed || this.#metronome) return
-      this.#metronome = new m.WebAudioMetronome({
-        context: sharedAudioContext(),
-        clock: this.#deps.clock,
-        volume: this.#settings.metronome.volume,
-      })
+      const module = this.#metronome ? null : await this.#deps.loadMetronome()
+      if (this.#disposed || request !== this.#metronomeRequest) return
+      const output = metronomeAudioOutput(this.#settings.metronome.outputId)
+      const { context } = output instanceof Promise ? await output : output
+      if (this.#disposed || request !== this.#metronomeRequest) return
+      if (this.#metronome) this.#metronome.setContext(context)
+      else if (module) {
+        this.#metronome = new module.WebAudioMetronome({
+          context,
+          clock: this.#deps.clock,
+          volume: this.#settings.metronome.volume,
+        })
+      }
     } catch {
-      this.#metronome = null
+      // Practice is available if browser audio cannot start.
     }
   }
 
@@ -3988,9 +4007,8 @@ export class PracticeSession {
   }
 
   /**
-   * Create (resume) the shared AudioContext inside the Start tap when this Start wants a click:
-   * iPadOS starts an AudioContext only during a user gesture, and `#ensureMetronome` creates it
-   * after awaiting the module (DECISIONS P20). Nothing when no click is wanted; never throws.
+   * Create or resume the click's AudioContext inside the Start tap (DECISIONS P20). iPadOS
+   * needs the user gesture, which can be gone by the time `#ensureMetronome` runs.
    */
   #unlockAudio(): void {
     if (!this.#deps.loadMetronome || !(this.#deps.hasWebAudio?.() ?? true)) return
@@ -4004,7 +4022,7 @@ export class PracticeSession {
             ? this.#settings.metronome.enabled
             : // The Keep time count-in always clicks.
               (this.#rhythm && plan.action === 'scored') || this.#practiceClick()
-      if (click) sharedAudioContext()
+      if (click) void Promise.resolve(metronomeAudioOutput(this.#settings.metronome.outputId)).catch(() => undefined)
     } catch {
       // No Web Audio: the Start goes on without a click.
     }

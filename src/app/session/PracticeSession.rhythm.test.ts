@@ -848,7 +848,7 @@ describe('Start unlocks audio inside the tap (DECISIONS P20)', () => {
   beforeEach(() => resetSharedAudioContext())
 
   it('a Keep time Start creates the shared AudioContext synchronously, even with both switches off', () => {
-    const h = open({}, { settings: testSettings({ metronome: { enabled: false, keepTime: false, volume: 0.6 } }) })
+    const h = open({}, { settings: testSettings({ metronome: { ...DEFAULT_SETTINGS.metronome, keepTime: false } }) })
     vi.stubGlobal('AudioContext', FakeAudioContext)
     try {
       const run = h.session.start()

@@ -11,6 +11,7 @@ import type { FeatureReport } from '../../app/features'
 import type { SoundDestination } from '../../core/model/settings'
 import { Notice, Segmented, Slider, Toggle } from '../../ui/controls'
 import { Group, Help, Setting } from './parts'
+import { MetronomeOutputSettings } from './MetronomeOutputSettings'
 
 const percent = (v: number): string => `${Math.round(v * 100)}%`
 
@@ -98,6 +99,7 @@ export function SoundSection({ features }: { features: FeatureReport }) {
           disabled={!metronome.enabled && !metronome.keepTime}
           onChange={(volume) => updateSettings({ metronome: { volume } })}
         />
+        {audio.supported ? <MetronomeOutputSettings /> : null}
         {metronome.enabled && !audio.supported && audio.explanation ? (
           <Notice tone="warning">{audio.explanation}</Notice>
         ) : null}

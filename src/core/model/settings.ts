@@ -103,7 +103,7 @@ export interface MidiRouteSettings {
 /**
  * Where app playback (accompaniment, Listen) goes (DECISIONS S4): 'auto' = the connected piano's
  * MIDI output when there is one, otherwise this device's browser sound; 'midi' = the piano only;
- * 'browser' = this device only. The metronome always clicks through this device.
+ * 'browser' = this device only.
  */
 export type SoundDestination = 'auto' | 'midi' | 'browser'
 
@@ -125,6 +125,8 @@ export interface MetronomeSettings {
   readonly keepTime: boolean
   /** 0..1 click volume. */
   readonly volume: number
+  /** Browser audio output device ID, or null to follow the system audio output. */
+  readonly outputId: string | null
 }
 
 /**
@@ -230,7 +232,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     connection: 'unknown',
   },
   sound: { destination: 'auto', browserVolume: 0.8, monitorInput: false },
-  metronome: { enabled: false, keepTime: true, volume: 0.6 },
+  metronome: { enabled: false, keepTime: true, volume: 0.6, outputId: null },
   rhythm: { toleranceMs: 150 },
   mic: { follow: false },
   view: { zoom: 1, pageZoom: 1, theme: 'system', scorePaper: 'theme' },

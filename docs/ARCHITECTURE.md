@@ -29,7 +29,7 @@ file picker ──► import worker (core/import) ──► ScorePackage {model,
 | `src/core/music/pitch.ts` | `Spelling` (step, alter, octave), MIDI conversion. |
 | `src/core/music/tempo.ts` | `TempoMapData`, seconds ↔ positions, multiplier math, BPM entry. |
 | `src/core/model/score.ts` | `ScoreModel`, `PerformedNote`, ottava/arpeggio/pedal/dynamics, `ScorePackage`. |
-| `src/core/model/settings.ts` | `AppSettings` and spec defaults (`SETTINGS_VERSION` 2: sound destination `'auto'`, S4; `metronome.keepTime` added without a bump, P20). |
+| `src/core/model/settings.ts` | `AppSettings` and spec defaults (`SETTINGS_VERSION` 2: sound destination `'auto'`, S4; `metronome.keepTime` and `metronome.outputId` added without a bump, P20 and U114). |
 | `src/core/model/practice.ts` | Comparison contexts, `AttemptRecord`, `MeasureTraversal`, passages; `TRANSPORT_KINDS` (the runtime list `TransportKind` is derived from). |
 | `src/core/midi/types.ts` | `MidiInputEvent` (decoded, sequenced, consumed once). |
 
@@ -181,7 +181,10 @@ browser-audio backend (one AudioContext, Salamander bank ≤ 32 MiB decoded, syn
 The metronome is clicks scheduled by the same transport (free mode: click-only transport
 started at the first press). `AppSettings.metronome` (P20): `enabled` (default off) is the click in
 Listen, reading, scored practice and play-through; `keepTime` (default on, absent in older stored
-settings = on) is the click in a Keep time attempt after its count-in; the count-in always clicks. Session wiring notes: `src/core/playback/README.md`.
+settings = on) is the click in a Keep time attempt after its count-in; the count-in always clicks.
+`outputId` defaults to system audio. A separately selected browser audio output uses its own
+context so Listen, accompaniment, and monitoring can continue using their own destinations.
+Session wiring notes: `src/core/playback/README.md`.
 
 ### core/history and core/storage
 history (pure, worker-safe): `ingestAttempt` / `ingestAbandon` fold engine records

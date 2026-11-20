@@ -119,7 +119,9 @@ Test helpers (not exported): `testkit.ts` (`makeModel`, `ManualClock`, `Recordin
   re-strike damping; separate voices for optional input monitoring. The shipped bank is
   ≈ 2.0 MB transferred (test-checked ≤ 8 MB and ≤ 32 MiB at 44.1/48/96 kHz).
 - **Metronome**: clicks are transport events (held back at and beyond an unreleased gate like any other); the Web
-  Audio click is its own small lazily loaded module, usable with MIDI output.
+  Audio click is its own small lazily loaded module, usable with MIDI output. It shares the system
+  audio context by default. A chosen audio device has a dedicated context. Switching outputs
+  moves future clicks to the new context at their original times, including any queued count-in beats.
 
 ## Spec coverage
 

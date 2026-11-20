@@ -14,7 +14,7 @@ describe('metronome scope (DECISIONS P20)', () => {
   })
 
   it('reads the scope’s own switch', () => {
-    const m = { enabled: true, keepTime: false, volume: 0.5 }
+    const m = { ...DEFAULT_SETTINGS.metronome, enabled: true, keepTime: false, volume: 0.5 }
     expect(metronomeOn(m, 'general')).toBe(true)
     expect(metronomeOn(m, 'keepTime')).toBe(false)
     expect(metronomeOn(DEFAULT_SETTINGS.metronome, 'general')).toBe(false)
@@ -29,9 +29,9 @@ describe('metronome scope (DECISIONS P20)', () => {
     const next = mergeSettings(DEFAULT_SETTINGS, patch)
     expect(next.metronome).toEqual({ ...DEFAULT_SETTINGS.metronome, keepTime: false })
     expect(mergeSettings(next, metronomePatch('general', true)).metronome).toEqual({
+      ...DEFAULT_SETTINGS.metronome,
       enabled: true,
       keepTime: false,
-      volume: DEFAULT_SETTINGS.metronome.volume,
     })
   })
 })
