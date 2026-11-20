@@ -370,13 +370,15 @@
 }
 
 .pn-score-viewport[data-timing-direction='rushing'] {
-  --pn-timing-fill: linear-gradient(90deg, #154383, #2b69b6);
-  --pn-timing-cursor-color: var(--hand-control-left, #2563c9);
+  --pn-timing-base: #293f56;
+  --pn-timing-highlight: #53749b;
+  --pn-timing-cursor-color: var(--score-timing-rushing, #53749b);
 }
 
 .pn-score-viewport[data-timing-direction='dragging'] {
-  --pn-timing-fill: linear-gradient(270deg, #713d04, #985807);
-  --pn-timing-cursor-color: var(--warning, #9a5b00);
+  --pn-timing-base: #693b24;
+  --pn-timing-highlight: #a3603e;
+  --pn-timing-cursor-color: var(--score-timing-dragging, #a36643);
 }
 
 .pn-score-viewport[data-timing-direction] {
@@ -385,6 +387,7 @@
 
 .pn-timing-cue {
   --pn-timing-chevron-step: 16px;
+  --pn-timing-gradient-period: 160px;
   position: absolute;
   top: 0;
   left: 0;
@@ -392,10 +395,14 @@
   box-sizing: border-box;
   display: none;
   align-items: stretch;
-  border: 1px solid var(--border, rgb(0 0 0 / 0.18));
   border-radius: 8px;
   overflow: hidden;
-  background: var(--pn-timing-fill);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--pn-timing-base) 0 25px,
+    var(--pn-timing-highlight) 72px 88px,
+    var(--pn-timing-base) 135px var(--pn-timing-gradient-period)
+  ) 0 0 / calc(2 * var(--pn-timing-gradient-period)) 100% no-repeat;
   color: #fff;
   font: 700 max(15px, var(--text-s, 14px)) / 1 var(--font-ui, system-ui);
   white-space: nowrap;
@@ -404,6 +411,11 @@
 
 .pn-timing-cue[data-direction] {
   display: flex;
+  animation: pn-timing-gradient 1.6s linear infinite;
+}
+
+.pn-timing-cue[data-direction='rushing'] {
+  animation-direction: reverse;
 }
 
 .pn-timing-label {
@@ -432,7 +444,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   display: flex;
-  animation: pn-timing-flow 600ms linear infinite;
+  animation: pn-timing-flow 400ms linear infinite;
 }
 
 .pn-timing-chevron {
@@ -457,7 +469,16 @@
   to { translate: 0 0; }
 }
 
+@keyframes pn-timing-gradient {
+  from { background-position-x: calc(-1 * var(--pn-timing-gradient-period)); }
+  to { background-position-x: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .pn-timing-cue[data-direction] {
+    animation: none;
+  }
+
   .pn-timing-signal {
     --pn-timing-chevron-mask: none;
   }

@@ -43,7 +43,10 @@ for (const mode of ['strip', 'page'] as const) {
         if (coversNote) overlaps.push(position)
       }
       const size = cue.getBoundingClientRect()
-      const rushingGradient = getComputedStyle(cue).backgroundImage
+      const cueStyle = getComputedStyle(cue)
+      const cornerRadius = cueStyle.borderTopLeftRadius
+      const borderless = cueStyle.borderWidth === '0px' && cueStyle.outlineStyle === 'none'
+      const rushingGradient = cueStyle.backgroundImage
       const rushingCursor = getComputedStyle(playhead).backgroundColor
       const pointsLeft =
         signal.getBoundingClientRect().right <= label.getBoundingClientRect().left &&
@@ -64,12 +67,14 @@ for (const mode of ['strip', 'page'] as const) {
         overlaps,
         scoreStayedPut: scoreTop === score.getBoundingClientRect().top,
         size: { width: size.width, height: size.height },
+        cornerRadius,
+        borderless,
         maxPlayheadGap,
         pointsLeft,
         pointsRight,
         gradientsDiffer:
-          rushingGradient.startsWith('linear-gradient') &&
-          draggingGradient.startsWith('linear-gradient') &&
+          rushingGradient.startsWith('repeating-linear-gradient') &&
+          draggingGradient.startsWith('repeating-linear-gradient') &&
           rushingGradient !== draggingGradient,
         unifiedBackground: [signal, label].every((part) => {
           const style = getComputedStyle(part)
@@ -77,7 +82,7 @@ for (const mode of ['strip', 'page'] as const) {
         }),
         cursorColorsDiffer: new Set([defaultCursor, rushingCursor, draggingCursor]).size === 3,
         cursorResetsWithCue: clearedCursor === defaultCursor,
-        static: getComputedStyle(chevrons).animationName === 'none',
+        static: [cue, chevrons].every((element) => getComputedStyle(element).animationName === 'none'),
         scoreHasNoVignette: ['::before', '::after'].every(
           (pseudo) => getComputedStyle(viewport, pseudo).backgroundImage === 'none',
         ),
@@ -88,6 +93,8 @@ for (const mode of ['strip', 'page'] as const) {
       overlaps: [],
       scoreStayedPut: true,
       size: { width: 158, height: 36 },
+      cornerRadius: '8px',
+      borderless: true,
       pointsLeft: true,
       pointsRight: true,
       gradientsDiffer: true,
@@ -101,43 +108,51 @@ for (const mode of ['strip', 'page'] as const) {
   })
 }
 
-test('timing chevrons repeat in the cue direction while it is visible', async ({ page }) => {
+test('the timing gradient and chevrons repeat in the cue direction while it is visible', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await openHarness(page)
   const motions = await page.evaluate(async () => {
     await window.harness.prepare('basic')
     window.harness.mount()
     const view = window.harness.strip()!
+    const cue = document.querySelector('.pn-timing-cue')!
     const arrows = document.querySelector('.pn-timing-chevrons')!
     const directions = (['rushing', 'dragging'] as const).map((direction) => {
       view.setTimingCue(direction)
       view.flushNow()
-      const style = getComputedStyle(arrows)
-      const animation = arrows.getAnimations()[0]
-      animation?.pause()
-      const [start, first, second, repeatFirst, repeatSecond] = [0, 150, 450, 750, 1050].map((time) => {
-        if (animation) animation.currentTime = time
-        return arrows.getBoundingClientRect().x
+      return [
+        { element: arrows, position: () => arrows.getBoundingClientRect().x },
+        { element: cue, position: () => Number.parseFloat(getComputedStyle(cue).backgroundPositionX) },
+      ].map(({ element, position }) => {
+        const style = getComputedStyle(element)
+        const animation = element.getAnimations()[0]
+        animation?.pause()
+        const [start, first, second, repeatFirst, repeatSecond] = [0, 100, 300, 1700, 1900].map((time) => {
+          if (animation) animation.currentTime = time
+          return position()
+        })
+        return {
+          name: style.animationName,
+          repetitions: style.animationIterationCount,
+          movesInDirection:
+            direction === 'rushing' ? start! > first! && first! > second! : start! < first! && first! < second!,
+          repeats: Math.abs(first! - repeatFirst!) < 0.1 && Math.abs(second! - repeatSecond!) < 0.1,
+        }
       })
-      return {
-        name: style.animationName,
-        repetitions: style.animationIterationCount,
-        movesInDirection:
-          direction === 'rushing' ? start! > first! && first! > second! : start! < first! && first! < second!,
-        repeats: Math.abs(first! - repeatFirst!) < 0.1 && Math.abs(second! - repeatSecond!) < 0.1,
-      }
     })
     view.setTimingCue(null, true)
     view.flushNow()
-    return { directions, stopsWhenHidden: arrows.getAnimations().length === 0 }
+    return { directions, stopsWhenHidden: cue.getAnimations({ subtree: true }).length === 0 }
   })
   expect(motions).toEqual({
-    directions: Array.from({ length: 2 }, () => ({
-      name: 'pn-timing-flow',
-      repetitions: 'infinite',
-      movesInDirection: true,
-      repeats: true,
-    })),
+    directions: Array.from({ length: 2 }, () =>
+      ['pn-timing-flow', 'pn-timing-gradient'].map((name) => ({
+        name,
+        repetitions: 'infinite',
+        movesInDirection: true,
+        repeats: true,
+      })),
+    ),
     stopsWhenHidden: true,
   })
 })
