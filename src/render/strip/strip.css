@@ -836,33 +836,37 @@
   stroke-opacity: var(--pn-staff-opacity);
 }
 
-/* Return to current position (shown while browsing). */
-.pn-return {
-  position: absolute;
-  right: 16px;
-  bottom: 14px;
+/* Floating score actions share the same pill in either score layout. */
+.pn-score-action {
   min-height: 44px;
   padding: 0 18px 0 14px;
-  border: 0;
   border-radius: 999px;
-  background: var(--accent-fill, var(--accent, #2c7a43));
-  color: var(--accent-fg, #ffffff);
   font: 600 15px/1 var(--font-ui, system-ui, sans-serif);
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
+}
+
+.pn-score-action svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Return to current position (shown while browsing). */
+.pn-return {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  border: 0;
+  background: var(--accent-fill, var(--accent, #2c7a43));
+  color: var(--accent-fg, #ffffff);
   opacity: 0;
   transform: translateY(8px);
   pointer-events: none;
   transition:
     opacity var(--pn-medium) var(--pn-ease),
     transform var(--pn-medium) var(--pn-ease);
-}
-
-.pn-return svg {
-  width: 18px;
-  height: 18px;
 }
 
 .pn-browsing .pn-return {

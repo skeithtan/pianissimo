@@ -386,7 +386,7 @@ export class PageView {
     this.root.append(this.scroller)
     if (opts.returnButton !== false) {
       const ret = this.button(
-        'pn-return',
+        'pn-score-action pn-return',
         `${icon.back}<span>${escapeText(opts.returnLabel ?? 'Return to current position')}</span>`,
         '',
       )

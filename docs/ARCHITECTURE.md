@@ -347,6 +347,10 @@ is discarded, U41) and its release (`StripOptions.onBrowseRelease` → `browseRe
 finger up or canceled, 250 ms after the last wheel event, or a handle drag that scrolled) runs
 that same Start path; the page layout's scroll pauses nothing (U95). A loop changed while
 Repeat plays keeps playing from the reached position inside the new loop, else its start (U94).
+`ui.canRestartLoop` exposes a paused Repeat transport. Practice floats Restart loop at the
+score's bottom left. It shares the pill shape of Return to current position and uses a neutral fill.
+`session.restartLoop()` starts a fresh pass at the selection boundary and restores score
+following. In Listen it seeks to the boundary and resumes playback (U118).
 Play-through (P12): `setPlayThrough(on)` closes Repeat mode and pauses reading; Start builds a
 `#play` slot beside the engine, like Listen's: a gated transport over the whole piece (silent
 for both hands, the automatic part for one) and a `PlayFollower`. Human events then go to the

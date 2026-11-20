@@ -338,6 +338,8 @@ export interface SessionUi {
   readonly keyboardVisible: boolean
   readonly canHint: boolean
   readonly repeat: boolean
+  /** A paused Repeat transport can start over at the selected loop's beginning. */
+  readonly canRestartLoop: boolean
   /**
    * The current reading is a lead-in (Repeat mode, a seek anywhere but the loop start): unscored
    * reading until the music next arrives at the loop start (directly from before the loop, after

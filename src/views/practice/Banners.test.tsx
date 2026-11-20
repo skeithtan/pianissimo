@@ -50,6 +50,7 @@ const UI: SessionUi = {
   keyboardVisible: false,
   canHint: false,
   repeat: false,
+  canRestartLoop: false,
   repeatTarget: null,
   ladder: null,
   lastResult: null,

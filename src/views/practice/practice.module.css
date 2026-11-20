@@ -259,6 +259,31 @@
   z-index: 4;
 }
 
+.loopRestart {
+  position: absolute;
+  left: calc(16px + var(--safe-l));
+  bottom: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+  pointer-events: auto;
+  z-index: 3;
+}
+.loopRestart:hover {
+  background: var(--bg-sunken);
+  color: var(--fg);
+}
+.resultDock > .loopRestart {
+  left: 0;
+  bottom: 0;
+}
+/* A narrow landscape score stacks the action above a visible result pill. */
+@media (max-width: 720px) {
+  .resultDock:has(.resultCard) > .loopRestart {
+    bottom: calc(100% + var(--space-2));
+  }
+}
+
 /* Upright (the page): the page scrolls under anything laid over it, so the result takes a row of
    its own under the stage (the stage gives up that height; the page is not engraved again, its
    width is unchanged) and covers nothing. Empty, the row is gone. */

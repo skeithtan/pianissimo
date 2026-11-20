@@ -767,6 +767,18 @@ export class PracticeSession {
     this.#process(now)
   }
 
+  /** Restart a paused loop, including playback when both hands are off. */
+  restartLoop(): void {
+    if (this.#disposed || !this.#computeUi().canRestartLoop) return
+    this.restart()
+    const strip = this.#strip
+    if (strip?.isBrowsing()) {
+      strip.setCursor(this.#cursorPosition(), { smooth: false })
+      strip.returnToCurrent?.()
+    }
+    if (this.#listen) void this.start()
+  }
+
   /** Restart passage / Repeat now: a running attempt is abandoned ('user-restart'). */
   restart(): void {
     const now = this.#deps.clock()
@@ -4116,6 +4128,7 @@ export class PracticeSession {
       keyboardVisible: s.keyboardVisible,
       canHint: false,
       repeat: this.#repeat,
+      canRestartLoop: false,
       leadIn: false,
       repeatTarget: this.#repeatTarget,
       ladder: this.#ladder,
@@ -4161,11 +4174,17 @@ export class PracticeSession {
       }
     }
     const leadIn = this.#leadIn !== null && !this.#leadIn.handedOver && this.#engine.mode === 'reading'
+    // A browse hold reads Pause until the release continues (U95).
+    const playing = this.#isPlaying() || this.#browseHold !== null
+    const pausedTransport = (this.#listen?.transport ?? this.#accomp)?.state === 'paused'
+    const pausedLoop =
+      this.#listen !== null ||
+      (leadIn && this.#readingStarted) ||
+      (s.phase === 'interrupted' && s.interruptReason === 'pause')
     return {
       activity: this.#activity(),
       phase: s.phase,
-      // A browse hold reads Pause until the release continues (U95).
-      playing: this.#isPlaying() || this.#browseHold !== null,
+      playing,
       hands: this.#sel.hands,
       handsAvailable: this.#heldHands === null,
       range: this.#sel.range,
@@ -4183,6 +4202,7 @@ export class PracticeSession {
         s.phase !== 'interrupted' &&
         !this.#listen,
       repeat: this.#repeat,
+      canRestartLoop: this.#repeat && !playing && !this.#inputHeld && plan.enabled && pausedTransport && pausedLoop,
       leadIn,
       repeatTarget: this.#repeatTarget,
       ladder: this.#ladder,

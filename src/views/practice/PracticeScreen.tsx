@@ -698,6 +698,14 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     />
   )
 
+  const restartLoop =
+    ui.canRestartLoop && prep.state === 'ready' && !(ui.lastResult && expandedResult === ui.lastResult.id) ? (
+      <button type="button" class={`pn-score-action ${styles.loopRestart}`} onClick={() => session.restartLoop()}>
+        <Icon name="restart" size={18} />
+        <span>Restart loop</span>
+      </button>
+    ) : null
+
   const resultDockEl = (
     <div
       ref={resultDock}
@@ -705,6 +713,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       data-testid="result-dock"
       data-mode={mode}
     >
+      {mode === 'strip' ? restartLoop : null}
       <AttemptResult
         ui={ui}
         model={model}
@@ -894,8 +903,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             onConnection={() => navigate('connection')}
           />
         </div>
-        {/* The result after a pass, over the bottom of the strip, which keeps it clear (U97). */}
-        {mode === 'strip' ? resultDockEl : null}
+        {/* The strip docks its result above the footer. The page's result sits outside the score. */}
+        {mode === 'strip' ? resultDockEl : restartLoop}
       </div>
       {/* The page scrolls under anything over it: there the result takes a row of its own. */}
       {mode === 'page' ? resultDockEl : null}
