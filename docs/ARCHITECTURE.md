@@ -377,8 +377,10 @@ start, failures, done }`); the pure rules are `app/session/ladder.ts`. After eac
 scored attempt while Repeat is open, meeting the consecutive-pass target (`repeatTarget ?? 3`)
 climbs one step on the 5% grid toward the goal (or ends the climb at the goal); two failures in
 a row drop one step, never below the start speed; manual speed changes reset the failures and
-can lower the floor. The new speed takes effect at the Repeat reset through the ordinary
-speed-change path, and `AttemptSummary.ladder` tells the result card what happened.
+can lower the floor. Automatic steps take effect at the Repeat reset through the ordinary
+speed-change path, and `AttemptSummary.ladder` tells the result card what happened. The options
+default to a 100% goal (U116). Selecting it at or above 100% makes `setLadder` start a fresh
+ladder at 75% through the manual tempo-change path.
 Keep time (rhythm mode, P13, U78): `PracticeSession.setRhythmMode` (saved per piece as
 `PieceRecord.rhythm`) turns every Start into a scored attempt on the engine's strict transport,
 with `rhythm.toleranceMs` from `AppSettings.rhythm`, over the Repeat loop or else the whole

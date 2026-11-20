@@ -102,7 +102,9 @@ import { countInPlan } from './countIn'
 import { metronomeOn, metronomeScope, type MetronomeScope } from './metronome'
 import { TimingDrift } from './timingDrift'
 import {
+  fullSpeedLadderStart,
   LADDER_DEFAULT_TARGET,
+  LADDER_FULL_SPEED_GOAL,
   ladderAfterAttempt,
   ladderAfterManualSpeed,
   retargetLadder,
@@ -2216,20 +2218,24 @@ export class PracticeSession {
   }
 
   /**
-   * The speed ladder (Repeat mode; null = off), persisted like the Repeat target. Switching it on
-   * starts it at the current speed; new settings for a ladder already on keep its start.
+   * The speed ladder (Repeat mode; null = off), persisted like the Repeat target. A goal change
+   * keeps the ladder's start unless the preset also sets a new practice speed.
    */
   setLadder(ladder: LadderSettings | null): void {
     if (sameLadder(ladder, this.#ladderSettings)) return
     const speed = this.#sel.multiplier
+    const startAt = ladder?.goal === LADDER_FULL_SPEED_GOAL ? fullSpeedLadderStart(speed) : speed
+    const restart = startAt !== speed
     this.#ladderSettings = ladder
     this.#ladder = ladder
-      ? this.#ladder
-        ? retargetLadder(this.#ladder, ladder, speed)
-        : startLadder(ladder, speed)
+      ? this.#ladder && !restart
+        ? retargetLadder(this.#ladder, ladder, startAt)
+        : startLadder(ladder, startAt)
       : null
     this.#ladderNext = null
     this.#deps.piece.save({ ladder }, true)
+    // Both piece updates are coalesced by the saver. The new speed takes the manual tempo-change path.
+    if (restart) this.#select({ hands: this.#sel.hands, multiplier: startAt }, this.#loop, this.#repeat)
     this.#publishUi()
   }
 

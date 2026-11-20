@@ -10,12 +10,18 @@ import type { LadderUi } from './types'
 
 /** Consecutive passes per rung when Repeat has no target of its own. */
 export const LADDER_DEFAULT_TARGET = 3
+export const LADDER_FULL_SPEED_GOAL = 1
 /** The ladder's step as the practice screen sets it: one press of the speed stepper (5%). */
 export const LADDER_STEP = 0.05
 /** Consecutive failures that drop the speed one step. */
 export const LADDER_DROP_AFTER = 2
 
 const EPS = 1e-9
+
+/** Give the 100% preset room to climb when practice is already at or above the written tempo. */
+export function fullSpeedLadderStart(speed: number): number {
+  return speed >= LADDER_FULL_SPEED_GOAL - EPS ? 0.75 : speed
+}
 
 /** The ladder switched on (or opened) at `speed`. */
 export function startLadder(settings: LadderSettings, speed: number): LadderUi {

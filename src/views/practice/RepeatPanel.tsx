@@ -11,13 +11,20 @@
  *    practice screen folds that row away while playing.
  *
  * The options (`RepeatOptions`): Repeat until (No limit, 3, 5, 10 clean in a row) and the speed
- * ladder (a goal above the current speed; each met target raises Speed one 5% step until the
- * goal). On a phone they open in a sheet that the practice screen owns. ✕ clears the loop and
- * leaves Repeat mode (U61). The strip's handles (which can set note-level edges) and ✕ edit the
- * same loop; the overview row shows it. Without Repeat mode nothing here exists.
+ * ladder (100% by default, starting at 75% if already at or above 100%). Reaching the target
+ * raises Speed by one step. On a phone the options open in a sheet. ✕ clears the loop and leaves
+ * Repeat mode (U61). The strip's handles (which can set note-level edges) and ✕ edit the same
+ * loop; the overview row shows it. Without Repeat mode nothing here exists.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { LADDER_DEFAULT_TARGET, LADDER_STEP, type LadderUi, type PracticeSession } from '../../app/session'
+import {
+  fullSpeedLadderStart,
+  LADDER_DEFAULT_TARGET,
+  LADDER_FULL_SPEED_GOAL,
+  LADDER_STEP,
+  type LadderUi,
+  type PracticeSession,
+} from '../../app/session'
 import { barLabel } from '../../core/engine'
 import { edgeShortText, edgeText } from '../../core/model/passage'
 import type { PassageRange } from '../../core/model/practice'
@@ -33,18 +40,19 @@ import { useStoreValue } from './useStore'
 import styles from './practice.module.css'
 
 const TARGETS: readonly (number | null)[] = [null, 3, 5, 10]
+const FULL_SPEED_PERCENT = LADDER_FULL_SPEED_GOAL * 100
 /** Space between the goal button and its options, as close as an option menu's (px). */
 const GOAL_MENU_GAP = 4
 
 export type RepeatLayout = 'float' | 'compact' | 'docked'
 
 /**
- * Goals the ladder offers, in percent: the speed presets and 100%, those above the current
- * speed, plus the ladder's own goal while one is set (so the choice can show it).
+ * Always offer 100%. Other presets must be above the current speed, except for the saved goal
+ * so it stays visible while selected.
  */
 export function ladderGoals(multiplier: number, goal: number | null): number[] {
   const current = Math.round(multiplier * 1000) / 10
-  const set = new Set([...SPEED_PRESETS_PERCENT, 100].filter((p) => p > current + 1e-6))
+  const set = new Set(SPEED_PRESETS_PERCENT.filter((p) => p === FULL_SPEED_PERCENT || p > current + 1e-6))
   if (goal !== null) set.add(Math.round(goal * 1000) / 10)
   return [...set].sort((a, b) => a - b)
 }
@@ -68,12 +76,6 @@ export function goalWords(target: number | null, ladder: LadderUi | null, multip
     : `${until}; speed ladder ${formatSpeedPercent(multiplier)} to ${formatSpeedPercent(ladder.goal)}`
 }
 
-/** The goal a ladder switched on starts with: 100% when it is above the current speed, else the next goal. */
-export function defaultLadderGoal(multiplier: number): number | null {
-  const goals = ladderGoals(multiplier, null)
-  return goals.includes(100) ? 100 : (goals[0] ?? null)
-}
-
 export interface RepeatOptionsProps {
   readonly session: PracticeSession
   readonly repeatTarget: number | null
@@ -84,16 +86,10 @@ export interface RepeatOptionsProps {
 /** The goal settings, shared by the popover (tablets) and the phone's sheet. */
 export function RepeatOptions({ session, repeatTarget, multiplier, ladder }: RepeatOptionsProps) {
   const goals = ladderGoals(multiplier, ladder?.goal ?? null)
-  const firstGoal = defaultLadderGoal(multiplier)
+  const defaultStart = fullSpeedLadderStart(multiplier)
   const goalValue = ladder ? String(Math.round(ladder.goal * 1000) / 10) : null
+  const setGoal = (percent: number) => session.setLadder({ goal: percent / 100, step: LADDER_STEP })
   const passes = repeatTarget ?? LADDER_DEFAULT_TARGET
-  const note = ladder
-    ? ladder.done
-      ? `Goal reached: ${formatSpeedPercent(ladder.goal)}.`
-      : `Now ${formatSpeedPercent(multiplier)}. Each time you play it clean ${passes} times in a row, the speed goes up 5% until ${formatSpeedPercent(ladder.goal)}.`
-    : firstGoal === null
-      ? 'Already at the top speed.'
-      : 'Raises the speed 5% each time you reach the target, up to a goal.'
   return (
     <div class={styles.repeatOptions} data-testid="repeat-options">
       <div class={styles.optionBlock}>
@@ -116,27 +112,31 @@ export function RepeatOptions({ session, repeatTarget, multiplier, ladder }: Rep
         <Toggle
           label="Speed ladder"
           checked={ladder !== null}
-          disabled={ladder === null && firstGoal === null}
-          onChange={(on) =>
-            session.setLadder(on && firstGoal !== null ? { goal: firstGoal / 100, step: LADDER_STEP } : null)
-          }
+          description={ladder ? '' : `Build up from ${formatSpeedPercent(defaultStart)} to 100% of the written tempo.`}
+          onChange={(on) => (on ? setGoal(FULL_SPEED_PERCENT) : session.setLadder(null))}
         />
         {ladder ? (
-          <div class={styles.optionRow}>
-            <span class={styles.optionLabel} aria-hidden="true">
-              Up to
-            </span>
-            <Segmented
-              label="Ladder goal"
-              value={goalValue}
-              options={goals.map((p) => ({ value: String(p), label: `${p}%` }))}
-              onChange={(v) => session.setLadder({ goal: Number(v) / 100, step: LADDER_STEP })}
-            />
-          </div>
+          <>
+            <div class={styles.optionRow}>
+              <span class={styles.optionLabel} aria-hidden="true">
+                Up to
+              </span>
+              <Segmented
+                label="Ladder goal"
+                value={goalValue}
+                options={goals.map((p) => ({ value: String(p), label: `${p}%` }))}
+                onChange={(v) => {
+                  if (v !== goalValue) setGoal(Number(v))
+                }}
+              />
+            </div>
+            <p class={styles.optionNote} data-testid="ladder-note">
+              {ladder.done
+                ? `Goal reached: ${formatSpeedPercent(ladder.goal)}.`
+                : `Now ${formatSpeedPercent(multiplier)}. Speed rises toward ${formatSpeedPercent(ladder.goal)} after every ${passes} clean passes in a row.`}
+            </p>
+          </>
         ) : null}
-        <p class={styles.optionNote} data-testid="ladder-note">
-          {note}
-        </p>
       </div>
     </div>
   )

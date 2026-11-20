@@ -216,6 +216,22 @@ describe('PracticeSession: speed ladder', () => {
     expect(h.saves.at(-1)?.patch).toEqual({ ladder: null })
   })
 
+  it('switching from a faster ladder to 100% starts a fresh climb at 75%', async () => {
+    const h = await open(0.6, { goal: 1.5, step: 0.05 }, 1)
+    h.session.setSelection({ multiplier: 1.25 })
+    h.session.setLadder(LADDER)
+    expect(ui(h)).toMatchObject({
+      multiplier: 0.75,
+      ladder: { goal: 1, start: 0.75, failures: 0, done: false },
+    })
+    for (const speed of [0.75, 0.8, 0.85, 0.9, 0.95, 1]) {
+      expect(ui(h).multiplier).toBe(speed)
+      pass(h)
+      expect(h.attempts.at(-1)?.context.multiplier).toBe(speed)
+    }
+    expect(ui(h).lastResult).toMatchObject({ targetReached: true, ladder: { done: true } })
+  })
+
   it('Start during the tail of the climbing pass begins the next pass at the climbed speed', async () => {
     const h = await open(0.6)
     pass(h)

@@ -1313,7 +1313,7 @@ describe('PracticeView', () => {
     expect(screen().dataset['recede']).toBeUndefined()
   })
 
-  it('the repeat options set the target and a speed ladder above the speed, saved on the piece', async () => {
+  it('the repeat options set the target and default to a 75% to 100% ladder at the written tempo', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
     view = mount(<PracticeViewWith env={r.env} />)
@@ -1333,25 +1333,26 @@ describe('PracticeView', () => {
     click(byText(until, '3', 'button'))
     await settle(r)
     expect($(panel, '[data-testid="target-line"]')?.textContent).toBe('Until 3 clean')
-    // The ladder is off: no summary. Switched on at 100%, it aims at the next preset.
+    // The ladder is off and previews the default climb before changing the speed.
     expect($(panel, '[data-testid="ladder-line"]')).toBeNull()
     const ladder = $(options, 'input[role="switch"]') as HTMLInputElement
-    expect(ladder.closest('label')?.textContent).toContain('Speed ladder')
+    expect(ladder.closest('label')?.textContent).toContain('Build up from 75% to 100%')
     act(() => {
       ladder.checked = true
       ladder.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await settle(r)
     const goals = $(options, '[role="radiogroup"][aria-label="Ladder goal"]')!
-    expect($$(goals, '[role="radio"]').map((b) => b.textContent)).toEqual(['125%', '150%', '200%'])
-    expect($(panel, '[data-testid="ladder-line"]')?.textContent).toBe('100% → 125%')
+    expect($$(goals, '[role="radio"]').map((b) => b.textContent)).toEqual(['100%', '125%', '150%', '200%'])
+    expect(byText(goals, '100%', 'button')?.getAttribute('aria-checked')).toBe('true')
+    expect($(panel, '[data-testid="ladder-line"]')?.textContent).toBe('75% → 100%')
     click(byText(goals, '150%', 'button'))
     await settle(r)
-    expect($(panel, '[data-testid="ladder-line"]')?.textContent).toBe('100% → 150%')
+    expect($(panel, '[data-testid="ladder-line"]')?.textContent).toBe('75% → 150%')
     act(() => r.clock.advance(1500))
     await settle(r)
     const saved = await r.storage.getPiece(r.pieceId)
-    expect(saved?.ladder).toEqual({ goal: 1.5, step: 0.05 })
+    expect(saved).toMatchObject({ lastMultiplier: 0.75, ladder: { goal: 1.5, step: 0.05 } })
     act(() => {
       ladder.checked = false
       ladder.dispatchEvent(new Event('change', { bubbles: true }))

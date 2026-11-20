@@ -124,12 +124,15 @@ describe('PracticeSession: Repeat mode is saved (U98)', () => {
     expect(h.saves.at(-1)).toMatchObject({ patch: { lastMultiplier: 0.7 }, immediate: true })
   })
 
-  it('the Repeat target and the speed ladder are written at once', () => {
+  it('the Repeat target, speed ladder, and its starting speed are written at once', () => {
     const h = reopen({ ...FRESH, lastPassage: BAR_2, repeatOpen: true })
     h.session.setRepeatTarget(4)
     expect(h.saves.at(-1)).toEqual({ patch: { repeatTarget: 4 }, immediate: true })
     h.session.setLadder({ goal: 1, step: 0.1 })
-    expect(h.saves.at(-1)).toEqual({ patch: { ladder: { goal: 1, step: 0.1 } }, immediate: true })
+    expect(h.saves.slice(-2)).toMatchObject([
+      { patch: { ladder: { goal: 1, step: 0.1 } }, immediate: true },
+      { patch: { lastMultiplier: 0.75 }, immediate: true },
+    ])
   })
 })
 
