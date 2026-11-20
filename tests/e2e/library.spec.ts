@@ -9,6 +9,7 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { INITIAL_PIECES } from '../../src/app/initialPieces'
 import { expect, test, type Page } from '../browser-test'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { idbAll } from './app-helpers'
@@ -32,7 +33,7 @@ test('the library opens without the notation engine or the piano samples', async
   expect(requested.filter((u) => /opensheetmusicdisplay|osmd|vexflow|salamander|samples\/|\.mp3/i.test(u))).toEqual([])
 })
 
-test('adding a score opens Practice ready to start without a piano, and keeps it after a reload', async ({ page }) => {
+test('adding a score opens Practice ready to listen without a piano, and keeps it after a reload', async ({ page }) => {
   await page.goto('./')
   await importFile(page, fixture('two-hands.musicxml'))
   await expect(sheet(page).getByRole('button', { name: 'Add and open' })).toBeEnabled()
@@ -40,8 +41,7 @@ test('adding a score opens Practice ready to start without a piano, and keeps it
   await sheet(page).getByRole('button', { name: 'Add and open' }).click()
   await expect(sheet(page)).toHaveCount(0)
   await expect(page.getByText('“Two Hands” is in your library.')).toBeVisible()
-  // Nothing starts by itself: Play through follows the microphone, which needs the user's own Start.
-  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Listen', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toHaveCount(0)
   await expect(page.locator('.pn-strip')).toBeVisible()
   await page.getByRole('button', { name: 'Back to Library' }).click()
@@ -49,7 +49,7 @@ test('adding a score opens Practice ready to start without a piano, and keeps it
 
   await page.reload()
   await expect(page.getByRole('heading', { level: 2, name: 'Two Hands' })).toBeVisible()
-  expect(await idbAll(page, 'pieces')).toHaveLength(4)
+  expect(await idbAll(page, 'pieces')).toHaveLength(INITIAL_PIECES.length + 1)
 })
 
 test('adding a score with a connected piano also opens paused', async ({ page }) => {
@@ -62,17 +62,16 @@ test('adding a score with a connected piano also opens paused', async ({ page })
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toHaveCount(0)
 })
 
-test('the initial three pieces use ordinary actions and stay deleted after reload', async ({ page }) => {
+test('the built-in pieces use ordinary actions and stay deleted after reload', async ({ page }) => {
   await page.goto('./')
-  const titles = ['Ode to Joy', 'Für Elise', 'La Candeur, Op. 100 No. 1']
-  for (const title of titles) {
+  for (const { title } of INITIAL_PIECES) {
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: `Practice ${title}`, exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: `Open sheet music for ${title}`, exact: true })).toBeVisible()
   }
-  expect(await idbAll(page, 'pieces')).toHaveLength(3)
+  expect(await idbAll(page, 'pieces')).toHaveLength(INITIAL_PIECES.length)
   await expect(page.locator('main')).not.toContainText(/sample/i)
-  for (const title of titles) {
+  for (const { title } of INITIAL_PIECES) {
     const piece = page.locator('article').filter({ has: page.getByRole('heading', { name: title, exact: true }) })
     await piece.getByRole('button', { name: `Options for ${title}`, exact: true }).click()
     await piece.getByRole('button', { name: 'Delete…' }).click()
@@ -149,7 +148,7 @@ test('a tap outside an open Options menu only closes it; the next tap opens the 
   await expect(page.getByRole('group', { name: 'Manage Für Elise' })).toHaveCount(0)
 
   // The title area of another row: the menu closes and the Library stays.
-  const other = await titleCenter(page, 'La Candeur, Op. 100 No. 1')
+  const other = await titleCenter(page, 'Turkish March (easy arrangement)')
   await page.mouse.click(other.x, other.y)
   await expect(menu).toHaveCount(0)
   await page.waitForTimeout(500) // long enough for a Practice navigation to have happened

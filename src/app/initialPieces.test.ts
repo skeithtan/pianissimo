@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto'
 import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { buildTimeline } from '../core/engine/timeline'
 import type { ImportClient } from '../core/import/client'
 import { buildScorePackage, inspectSource, type ImportFile } from '../core/import/pipeline'
 import { openStorage, type PianissimoStorage } from '../core/storage'
@@ -39,17 +40,15 @@ function dependencies() {
 }
 
 describe('initial pieces', () => {
-  it('imports the exact bundled CC0 sources through the real pipeline with ready hands and tempo', async () => {
+  it('imports exactly twelve bundled files and respects expressive timing marks', async () => {
     const storage = await open()
     const deps = dependencies()
     await ensureInitialPieces(storage, deps)
     const pieces = await storage.listPieces()
-    expect(pieces.map((piece) => piece.title)).toEqual(['Ode to Joy', 'Für Elise', 'La Candeur, Op. 100 No. 1'])
-    expect(pieces.map((piece) => piece.composer)).toEqual([
-      'Ludwig van Beethoven',
-      'Ludwig van Beethoven',
-      'Friedrich Burgmüller',
-    ])
+    expect(pieces).toHaveLength(12)
+    expect(pieces.map(({ title, composer }) => ({ title, composer }))).toEqual(
+      INITIAL_PIECES.map(({ title, composer }) => ({ title, composer })),
+    )
     for (const [index, piece] of pieces.entries()) {
       const source = await storage.getSource(piece.scoreVersionId)
       expect(new Uint8Array(source!.bytes)).toEqual(new Uint8Array(await deps.loadFile(INITIAL_PIECES[index]!.file)))
@@ -57,8 +56,14 @@ describe('initial pieces', () => {
       expect(pkg?.model.meta.title).toBe(piece.title)
       expect(pkg?.model.hands.confirmed).toBe(true)
       expect(pkg?.model.unsupported).toEqual([])
-      expect(pkg?.model.timingIssues).toEqual([])
       expect(pkg?.model.tempo.segments.length).toBeGreaterThan(0)
+      const timeline = buildTimeline(pkg!.model, { hands: 'both', range: null, multiplier: 1 })
+      expect(timeline.blockers, piece.title).toEqual([])
+      if (INITIAL_PIECES[index]!.file === 'clair-de-lune-easy.mxl') {
+        expect(timeline.timingUnscoredReason).toMatch(/morendo/i)
+      } else {
+        expect(timeline.timingUnscoredReason, piece.title).toBeNull()
+      }
       expect(piece).not.toHaveProperty('kind')
     }
     expect(deps.client.dispose).toHaveBeenCalledOnce()
@@ -67,13 +72,40 @@ describe('initial pieces', () => {
     expect(deps.loadFile).not.toHaveBeenCalled()
   })
 
-  it('does not fetch or create a worker for an existing library', async () => {
+  it('appends only the ten new scores to an existing library and honors later deletions', async () => {
     const storage = await open()
-    await importPiece(storage)
+    const { piece } = await importPiece(storage)
     const deps = dependencies()
+    await ensureInitialPieces(storage, deps)
+    const added = INITIAL_PIECES.slice(2)
+    expect(deps.loadFile.mock.calls.map(([file]) => file)).toEqual(added.map(({ file }) => file))
+    const pieces = await storage.listPieces()
+    expect(pieces[0]).toEqual(piece)
+    expect(pieces.slice(1).map(({ title }) => title)).toEqual(added.map(({ title }) => title))
+
+    await storage.deletePiece(pieces[1]!.id)
+    deps.loadFile.mockClear()
+    deps.createClient.mockClear()
     await ensureInitialPieces(storage, deps)
     expect(deps.loadFile).not.toHaveBeenCalled()
     expect(deps.createClient).not.toHaveBeenCalled()
+    expect(await storage.listPieces()).toEqual([piece, ...pieces.slice(2)])
+  })
+
+  it('installs only the expansion if a simultaneous user import claims a fresh library', async () => {
+    const storage = await open()
+    const deps = dependencies()
+    const loadFile = deps.loadFile.getMockImplementation()!
+    deps.loadFile.mockImplementationOnce(async (file) => {
+      await importPiece(storage)
+      return loadFile(file)
+    })
+
+    await ensureInitialPieces(storage, deps)
+
+    const titles = (await storage.listPieces()).slice(1).map(({ title }) => title)
+    expect(titles).toEqual(INITIAL_PIECES.slice(2).map(({ title }) => title))
+    expect(await storage.needsLibraryExpansion()).toBe(false)
   })
 
   it('keeps initialization pending and writes nothing if an asset cannot be fetched', async () => {

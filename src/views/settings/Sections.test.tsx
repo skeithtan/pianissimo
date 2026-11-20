@@ -351,7 +351,7 @@ describe('General', () => {
 })
 
 describe('About', () => {
-  it('shows the version, MusicXML-only import, data locality and the Salamander credit', () => {
+  it('shows the version, MusicXML-only import, data locality and credits', () => {
     const panel = openTab(open(), 'About')
     expect(panel.textContent).toContain(`version ${APP_VERSION}`)
     expect(panel.textContent).toMatch(/MusicXML is the only score format/u)
@@ -361,6 +361,8 @@ describe('About', () => {
     expect(link.textContent).toBe('CC-BY 3.0')
     expect(link.getAttribute('href')).toBe(SALAMANDER_LICENSE_URL)
     expect(link.getAttribute('rel')).toContain('noopener')
+    const scoreCredits = $(panel, 'a[href$="/scores/LICENSES.md"]')
+    expect(scoreCredits?.textContent).toBe('Built-in score credits and licenses')
   })
 
   it('lists what this browser supports with the explanation for anything missing', () => {

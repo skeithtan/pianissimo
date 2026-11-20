@@ -20,7 +20,7 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
   `aria-controls`) and a chevron on the right, on one line at every width (the chevron glyph
   is hidden at ≤480px; its button stays, 4 px wide, never zero: Voice Control, screen-reader
   focus and automated clicks act on its own frame). All entries use the same controls,
-  including the three pieces initially provided by `app/initialPieces`. Options hold Rename,
+  including the pieces initially provided by `app/initialPieces`. Options hold Rename,
   hands/tempo review, suggestion preferences, clear history, and Delete.
 - **The whole row opens Practice** (`model.open`, like Continue practice). Nothing is nested:
   one real button per card, the chevron ("Practice …") or Continue practice, carries a

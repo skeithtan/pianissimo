@@ -3,6 +3,7 @@
  * validation", "Import memory lifecycle"): each extension, an unrelated XML file refused with a
  * readable message, and cancelation of a long import in the real worker.
  */
+import { INITIAL_PIECES } from '../../src/app/initialPieces'
 import { expect, test } from '../browser-test'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { addToLibrary, fixtureFile, idbAll, importFile, mxlFile, sheet } from './app-helpers'
@@ -28,7 +29,7 @@ for (const c of CASES) {
 
     await page.reload()
     await expect(page.getByRole('heading', { level: 2, name: 'Two Hands' })).toBeVisible()
-    expect(await idbAll(page, 'pieces')).toHaveLength(4)
+    expect(await idbAll(page, 'pieces')).toHaveLength(INITIAL_PIECES.length + 1)
   })
 }
 
@@ -40,8 +41,8 @@ test('the same score twice warns that it is already in the library', async ({ pa
   await sheet(page).getByRole('button', { name: 'Open existing piece' }).click()
   await expect(sheet(page)).toHaveCount(0)
   await expect(page.locator('.pn-strip')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
-  expect(await idbAll(page, 'pieces')).toHaveLength(4)
+  await expect(page.getByRole('button', { name: 'Listen', exact: true })).toBeVisible()
+  expect(await idbAll(page, 'pieces')).toHaveLength(INITIAL_PIECES.length + 1)
 })
 
 test('an unrelated XML file is rejected with a clear message and nothing is stored', async ({ page }) => {
@@ -51,7 +52,7 @@ test('an unrelated XML file is rejected with a clear message and nothing is stor
   await expect(sheet(page)).toContainText(/MusicXML/)
   await expect(sheet(page).getByRole('button', { name: 'Add and open' })).toHaveCount(0)
   await expect(sheet(page).getByRole('button', { name: 'Choose another file' })).toBeVisible()
-  expect(await idbAll(page, 'pieces')).toHaveLength(3)
+  expect(await idbAll(page, 'pieces')).toHaveLength(INITIAL_PIECES.length)
 })
 
 test('a damaged .mxl archive is rejected with a clear message', async ({ page }) => {
@@ -88,7 +89,7 @@ test('canceling a long import terminates the real worker and nothing appears aft
   await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
   await expect(sheet(page)).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Ode to Joy', exact: true })).toBeVisible()
-  expect(await idbAll(page, 'pieces')).toHaveLength(3)
+  expect(await idbAll(page, 'pieces')).toHaveLength(INITIAL_PIECES.length)
 
   // The importer is free again: a new import works.
   await importFile(page, fixtureFile('two-hands.musicxml'))

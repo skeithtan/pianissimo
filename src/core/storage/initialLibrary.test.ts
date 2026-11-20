@@ -30,6 +30,7 @@ describe('initial library', () => {
     const inputs = initial()
     expect(await storage.initializeLibrary(inputs)).toBe(true)
     expect(await storage.needsInitialPieces()).toBe(false)
+    expect(await storage.needsLibraryExpansion()).toBe(false)
     expect(await storage.listPieces()).toHaveLength(3)
     for (const { piece, pkg, source } of inputs) {
       expect(await storage.getPiece(piece.id)).toEqual(piece)
@@ -99,6 +100,41 @@ describe('initial library', () => {
     expect(await storage.initializeLibrary(initial())).toBe(true)
   })
 
+  it('expands once across tabs and preserves the record and package of an already imported score', async () => {
+    const name = freshName()
+    const first = await open(name)
+    const second = await open(name)
+    const inputs = initial()
+    const duplicate = inputs[0]!
+    const piece = { ...duplicate.piece, id: 'my-score', title: 'My title', lastMultiplier: 0.85 }
+    const pkg = { ...duplicate.pkg, renderXml: 'reviewed score' }
+    await first.commitImport({ ...duplicate, piece, pkg })
+
+    const results = await Promise.all([
+      first.initializeLibrary(inputs, 'expansion'),
+      second.initializeLibrary(inputs, 'expansion'),
+    ])
+    expect(results.sort()).toEqual([false, true])
+    expect(await first.listPieces()).toHaveLength(3)
+    expect((await first.listPieces())[0]).toEqual(piece)
+    expect(await second.getPackage(piece.scoreVersionId)).toEqual(pkg)
+    expect(await second.getPiece(duplicate.piece.id)).toBeUndefined()
+    expect(await second.needsLibraryExpansion()).toBe(false)
+  })
+
+  it('leaves an existing library eligible if an expansion write fails', async () => {
+    const storage = await open()
+    const { piece } = await importPiece(storage, 'own')
+    const inputs = initial()
+    const invalid = inputs[1]!
+    inputs[1] = { ...invalid, pkg: { ...invalid.pkg, renderXml: () => '' } as unknown as ScorePackage }
+    await expect(storage.initializeLibrary(inputs, 'expansion')).rejects.toThrow()
+    expect(await storage.listPieces()).toEqual([piece])
+    expect(await storage.getPackage('a')).toBeUndefined()
+    expect(await storage.needsLibraryExpansion()).toBe(true)
+    expect(await storage.initializeLibrary(initial(), 'expansion')).toBe(true)
+  })
+
   it('lets an ordinary import win and remembers that choice even after the imported piece is deleted', async () => {
     const storage = await open()
     const { piece } = await importPiece(storage, 'own')
@@ -119,10 +155,9 @@ describe('initial library', () => {
     expect(await destination.listPieces()).toEqual([])
   })
 
-  it('requires between one and three distinct valid pieces without consuming eligibility on failure', async () => {
+  it('requires at least one piece and distinct IDs and scores without consuming eligibility on failure', async () => {
     const storage = await open()
-    await expect(storage.initializeLibrary([])).rejects.toThrow(/one to three/)
-    await expect(storage.initializeLibrary([...initial(), initial()[0]!])).rejects.toThrow(/one to three/)
+    await expect(storage.initializeLibrary([])).rejects.toThrow(/at least one/)
     await expect(storage.initializeLibrary([initial()[0]!, initial()[0]!])).rejects.toThrow(/distinct/)
     expect(await storage.needsInitialPieces()).toBe(true)
     expect(await storage.listPieces()).toEqual([])

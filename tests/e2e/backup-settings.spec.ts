@@ -3,6 +3,7 @@
  * together with its results, and settings survive a reload. Real downloads and real file inputs.
  */
 import { readFileSync } from 'node:fs'
+import { INITIAL_PIECES } from '../../src/app/initialPieces'
 import { expect, test, type Page } from '../browser-test'
 import { idbAll, sheet, storedSettings } from './app-helpers'
 import {
@@ -122,7 +123,7 @@ test('restoring a file that is not a backup changes nothing and says why', async
   info.annotations.push({ type: 'note', description: 'validation errors are shown' })
   await sheet(page).locator('[data-testid="restore"]').getByRole('button', { name: 'Close' }).click()
   await expect(sheet(page).getByText('could not be restored')).toHaveCount(0)
-  expect(await idbAll(page, 'pieces')).toHaveLength(3)
+  expect(await idbAll(page, 'pieces')).toHaveLength(INITIAL_PIECES.length)
 })
 
 test.describe('settings survive a reload', () => {

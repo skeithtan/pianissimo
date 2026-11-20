@@ -13,6 +13,7 @@ export const DB_VERSION = 2
 export const SETTINGS_KEY = 'app'
 /** Installation-local state: deletion and backup contents never reset it. */
 export const INITIAL_LIBRARY_KEY = 'initial-library'
+export const LIBRARY_EXPANSION_KEY = 'library-expansion-2026'
 
 /** Compound key `[pieceId, barKey]` of the per-bar stores (`barKey` from `core/history`). */
 export type BarStoreKey = [pieceId: string, barKey: string]

@@ -10,6 +10,7 @@ Live: <https://skeithtan.github.io/pianissimo/>
 
 ## Features
 
+- Twelve built-in piano scores with public reuse terms. See the [score credits and licenses](public/scores/LICENSES.md).
 - MusicXML import (`.musicxml`, `.xml`, compressed `.mxl`) with repeats, D.C./D.S., ottavas,
   rolled chords, ties and cue notes handled; hands assigned from the score.
 - Practice with a MIDI piano: both hands, or one hand while the app plays the other in time

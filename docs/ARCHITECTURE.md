@@ -284,10 +284,12 @@ vignette, U2/U30), `HandToggles` (U4), `ScoreOverview` + `LoopSteppers` (U6), `T
 `BeatUnitIcon`. Props: `src/ui/README.md`.
 `app/services.ts`: lazily created singletons. `getStorage()` opens IndexedDB once and attaches
 the history lifecycle, then awaits `app/initialPieces.ensureInitialPieces`. That module fetches
-three small bundled MusicXML archives only for a genuinely new library and builds them through
-the existing import worker. `needsInitialPieces` / `initializeLibrary` use the internal v2
-`libraryState` marker; source/package/piece writes and completion are atomic. Upgraded databases
-are already complete, and deletes never reset the marker. Bootstrap failure leaves storage
+twelve bundled MusicXML archives for a new library or the ten new scores for an existing
+library and builds them through the existing import worker. The installation-local
+`libraryState` markers distinguish first use from the one-time expansion. An expansion
+appends only missing score versions and keeps existing records and packages intact.
+Source, package, piece, and marker writes are atomic. Deletion never resets either marker.
+Bootstrap failure leaves storage
 usable with a notice and retries on reload. `getMidiService()` / `getMidi()` own the one `MidiAdapter` and never
 request access by themselves. `startServices()` (from `boot.ts`) loads settings (memory
 fallback with a notice), then reconnects a remembered route only when permission is already

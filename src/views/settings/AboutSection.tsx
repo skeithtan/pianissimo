@@ -32,6 +32,11 @@ export function AboutSection({ features }: { features: FeatureReport }) {
           </a>
           .
         </p>
+        <p class={styles.credit}>
+          <a href={`${import.meta.env.BASE_URL}scores/LICENSES.md`} target="_blank" rel="noopener noreferrer">
+            Built-in score credits and licenses
+          </a>
+        </p>
       </Group>
 
       <Group title="This browser">

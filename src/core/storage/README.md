@@ -23,7 +23,7 @@ default 50 MB / 256 entries), `history` (`HistoryWriterOptions`), `now`.
 | Area | Methods |
 | --- | --- |
 | Library | `listPieces()` (latest opened first), `getPiece(id)`, `putPiece(piece)`, `updatePiece(id, patch)` (atomic read-modify-write; `undefined` removes `userTempo`/`composer`), `deletePiece(id)` |
-| Initial library | `needsInitialPieces()` checks installation-local eligibility; `initializeLibrary(inputs)` atomically installs one to three ordinary imports and seals eligibility, returning whether it installed them |
+| Bundled library | `needsLibraryExpansion()` checks the release marker and `needsInitialPieces()` identifies a fresh library; `initializeLibrary(inputs, mode?)` atomically installs a nonempty batch and seals eligibility |
 | Import | `commitImport({ source, pkg, piece, replaceSharedPackage? })` (one transaction; see Shared versions), `getPackage(scoreVersionId)`, `putPackage(pkg)` (after hands are confirmed or a tempo is supplied), `getSource(scoreVersionId)` |
 | Settings | `loadSettings()` (validated and merged over `DEFAULT_SETTINGS`), `saveSettings(settings)` (returns the normalized value) |
 | Results | `addAttempts(records)`, `listAttempts({ pieceId } \| { contextKey } \| both, scoreVersionId? })`, `getAttempt(id)`, `loadResults(pieceId)` → `ContextResults[]` for the piece's current version |
@@ -90,14 +90,15 @@ without loading scores. Upgrades add branches on `oldVersion` in `schema.ts` and
 user stores. A connection told to upgrade by another tab closes itself.
 
 Only a database created from version zero starts with pending initial-library eligibility.
-Upgrading any existing database marks it complete, even when it has no pieces. Initialization
-commits all pieces, sources, packages, and the complete marker in one transaction. Concurrent
-tabs serialize on that marker; failed writes leave no partial library and can retry. Ordinary
-imports, `putPiece`, and successful restores also complete the marker. Deleting one or every
-piece never resets it, so an empty library stays empty across reloads and future updates.
-The app's initial-piece service fetches bundled sources and normalizes them in the existing
-import worker before calling this storage API. Those pieces use ordinary IDs and records,
-including ordinary deletion, history, and backup behavior.
+Ordinary imports, `putPiece`, and successful restores complete the first-use marker.
+The catalog expansion has a separate release marker. First use installs the whole catalog
+and completes both markers. For existing libraries, the expansion skips score versions
+already in the library and appends the remaining new pieces in catalog order. The pieces,
+sources, packages, and markers commit in one transaction. Concurrent tabs serialize on
+the release marker. Failed writes leave the existing library intact and can retry.
+Deleting any piece never resets either marker. The app's bundled-piece service fetches the
+sources and normalizes them in the existing import worker before calling this storage API.
+These pieces use ordinary IDs and records, including ordinary deletion, history, and backup behavior.
 
 ## Guarantees
 

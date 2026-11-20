@@ -30,7 +30,7 @@ import type { LayoutCacheLimits, PiecePatch, PieceRecord } from './records'
 import { DEFAULT_DB_NAME, SETTINGS_KEY, openPianissimoDb } from './schema'
 import { normalizeSettings } from './settings'
 import type { ClearOptions } from './historyStore'
-import { initializeLibrary, needsInitialPieces } from './initialLibrary'
+import { initializeLibrary, needsInitialPieces, needsLibraryExpansion } from './initialLibrary'
 
 export interface StorageOptions {
   /** Recorded in exported backups. */
@@ -49,7 +49,8 @@ export interface PianissimoStorage {
 
   // Library
   needsInitialPieces(): Promise<boolean>
-  initializeLibrary(inputs: readonly ImportCommit[]): Promise<boolean>
+  needsLibraryExpansion(): Promise<boolean>
+  initializeLibrary(inputs: readonly ImportCommit[], mode?: 'initial' | 'expansion'): Promise<boolean>
   listPieces(): Promise<PieceRecord[]>
   getPiece(id: string): Promise<PieceRecord | undefined>
   putPiece(piece: PieceRecord): Promise<void>
@@ -111,7 +112,8 @@ export async function openStorage(
     },
 
     needsInitialPieces: () => needsInitialPieces(db),
-    initializeLibrary: (inputs) => initializeLibrary(db, inputs),
+    needsLibraryExpansion: () => needsLibraryExpansion(db),
+    initializeLibrary: (inputs, mode) => initializeLibrary(db, inputs, mode),
     listPieces: () => listPieces(db),
     getPiece: (id) => getPiece(db, id),
     putPiece: (piece) => putPiece(db, piece),

@@ -137,8 +137,8 @@ test('after one online visit the app relaunches and works offline', async ({ pag
   }, deployedFiles())
   expect(failed).toEqual([])
 
-  // Practice boots offline (no piano here, so it waits for Start).
-  await page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ }).click()
+  // A built-in score opens in Practice offline.
+  await page.getByRole('button', { name: /^Practice Nocturne in E-flat Major/ }).click()
   await expect(page.locator('.pn-strip')).toBeVisible()
   await page.getByRole('button', { name: 'Back to Library' }).click()
 
@@ -147,7 +147,7 @@ test('after one online visit the app relaunches and works offline', async ({ pag
   await sheet(page).getByRole('button', { name: 'Add and open' }).click()
   await expect(sheet(page)).toHaveCount(0)
   await expect(page.getByText('is in your library')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Listen', exact: true })).toBeVisible()
   await expect(page.locator('.pn-strip')).toBeVisible()
 })
 
