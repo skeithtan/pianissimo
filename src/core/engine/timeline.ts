@@ -29,6 +29,8 @@ export interface TimelineOptions {
   readonly multiplier: number
   /** Practice tempo map. Defaults to the score's; pass `userTempoMap(...)` when it has none. */
   readonly tempo?: TempoMapData
+  /** Require new attacks for held untied notes at the start. Defaults to true for scored loops. */
+  readonly reattackHeldAtStart?: boolean
 }
 
 /**
@@ -230,7 +232,8 @@ interface Bucket {
  * - Tie continuations and grace notes are never required; positions holding only rests or
  *   tie continuations get no group (the cursor moves to the next playable onset).
  * - At a loop start inside a held (untied) note, the sounding note becomes required at the
- *   start and is flagged as a practice-boundary reattack (spec: "Repeating passages"). A tie
+ *   start and is flagged as a practice-boundary reattack (spec: "Repeating passages").
+ *   An unscored lead-in opts out and starts with written attacks. A tie
  *   chain attacked before the start is not required anywhere in the loop: it sounds through and
  *   its pitch is in the first group's `tiedPitches` (user, 31 October 2026; DECISIONS E16).
  * - `tiedPitches` per group feeds the tie-end outcomes (E16).
@@ -260,7 +263,8 @@ export function buildTimeline(model: ScoreModel, options: TimelineOptions): Time
       if (!isLearner(n)) continue
       const c = cmp(n.onset, start)
       if (c < 0 && gt(add(n.onset, n.duration), start)) {
-        ;(isTied(n) ? tiedAtStart : boundary).push(n)
+        if (isTied(n)) tiedAtStart.push(n)
+        else if (options.reattackHeldAtStart !== false) boundary.push(n)
       } else if (c === 0 && n.tieContinuation) {
         const head = model.notes[n.tieHead]
         if (head && lt(head.onset, start)) tiedAtStart.push(n)

@@ -913,7 +913,14 @@ export class PracticeSession {
     const passage = passageFromBounds(this.#model, start, end)
     const span = wrap ? passage : passageFromBounds(this.#model, start, loop.end)
     if (!passage || !span) return false
-    const timeline = selectionTimeline(this.#model, this.#tempo, { ...this.#sel, range: passage })
+    const timeline = selectionTimeline(
+      this.#model,
+      this.#tempo,
+      { ...this.#sel, range: passage },
+      {
+        reattackHeldAtStart: false,
+      },
+    )
     const keepPlaying = opts.play ?? (this.#isPlaying() || this.#pendingRepeat)
     this.#pauseTransports()
     this.#awaitPrepared = false
@@ -2317,7 +2324,14 @@ export class PracticeSession {
       // A lead-in keeps going at the new speed (its gates do not move).
       this.#sel = next
       this.#timeline = selectionTimeline(this.#model, this.#tempo, next)
-      lead.timeline = selectionTimeline(this.#model, this.#tempo, { ...next, range: lead.passage })
+      lead.timeline = selectionTimeline(
+        this.#model,
+        this.#tempo,
+        { ...next, range: lead.passage },
+        {
+          reattackHeldAtStart: false,
+        },
+      )
       this.#bothTimeline = null
       this.#engine.reconfigure({ reason, timeline: lead.timeline, transport: 'accompaniment' }, now)
       this.#accomp?.setMultiplier(next.multiplier)
@@ -3366,6 +3380,7 @@ export class PracticeSession {
           range,
           accompanimentLevel: level(route.accompanimentLevel),
           sendPedals,
+          reattackHeldAtStart: lead === null,
         })
     const transport = createTransport({
       clock: this.#deps.clock,
@@ -4047,11 +4062,13 @@ export class PracticeSession {
 
   /** Notes of both hands in the first onset group at or after the cursor (U20). */
   #bothHandsAtCursor(): readonly number[] {
-    this.#bothTimeline ??= selectionTimeline(this.#model, this.#tempo, {
-      ...this.#sel,
-      hands: 'both',
-      range: this.#leadIn ? this.#leadIn.span : this.#sel.range,
-    })
+    const lead = this.#leadIn
+    this.#bothTimeline ??= selectionTimeline(
+      this.#model,
+      this.#tempo,
+      { ...this.#sel, hands: 'both', range: lead ? lead.span : this.#sel.range },
+      { reattackHeldAtStart: lead === null },
+    )
     const groups = this.#bothTimeline.groups
     // Numeric search: the Listen transport reports float positions.
     const at =

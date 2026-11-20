@@ -11,7 +11,7 @@
  *    counterpart of the engine's loop-boundary reattack); releases are clipped to the range end.
  *  - If a pitch starts simultaneously in the learner and automatic parts, the learner's attack
  *    is required and the redundant automatic attack is suppressed. A learner tie chain begun
- *    before the range start is not attacked at the start (E16), so it suppresses nothing there.
+ *    before the range start (E16), or a held note at a lead-in's start, suppresses nothing there.
  *  - Simultaneous unisons inside the automatic part (Preview: across both hands) merge into one
  *    attack with the loudest velocity and the latest release.
  *  - Overlapping same-pitch notes keep their own on/off pair; backends count ownership so an
@@ -43,6 +43,8 @@ export interface PerformanceOptions {
   readonly hands: HandSelection
   /** Performance range; omitted or null = the whole piece. */
   readonly range?: PerformanceRange | null
+  /** Whether the learner reattacks held untied notes at the start. Defaults to true. */
+  readonly reattackHeldAtStart?: boolean
   /** 0..1 velocity scale for app playback. 0 mutes notes (pedals still follow). Default 1. */
   readonly accompanimentLevel?: number
   /**
@@ -101,7 +103,7 @@ export function buildPerformance(model: ScoreModel, options: PerformanceOptions)
   if (!Number.isFinite(level) || level < 0) throw new RangeError(`Invalid accompaniment level ${level}`)
 
   const events: PerformanceEvent[] = []
-  if (level > 0) buildNotes(model, options.hands, auto, range, level, events)
+  if (level > 0) buildNotes(model, options, auto, range, level, events)
   if (options.sendPedals) buildPedals(model.pedals, range, events)
   return events.sort(compareEvents)
 }
@@ -116,20 +118,21 @@ function clip(onset: Rational, length: Rational, range: PerformanceRange): { at:
 
 function buildNotes(
   model: ScoreModel,
-  hands: HandSelection,
+  options: PerformanceOptions,
   auto: readonly Hand[],
   range: PerformanceRange,
   level: number,
   out: PerformanceEvent[],
 ): void {
-  const learner = learnerHands(hands)
+  const learner = learnerHands(options.hands)
   const learnerAttacks = new Set<string>()
   for (const n of model.notes) {
     if (n.grace || n.cue || n.tieHead !== n.index || !learner.includes(n.hand)) continue
     const c = clip(n.onset, n.soundingDuration, range)
-    // A learner tie chain begun before the range start is not attacked there (E16): no suppression.
-    if (c && lt(n.onset, range.start) && gt(n.soundingDuration, n.duration)) continue
-    if (c) learnerAttacks.add(`${key(c.at)}|${n.midi}`)
+    if (!c) continue
+    if (lt(n.onset, range.start) && (options.reattackHeldAtStart === false || gt(n.soundingDuration, n.duration)))
+      continue
+    learnerAttacks.add(`${key(c.at)}|${n.midi}`)
   }
 
   const drafts = new Map<string, Draft>()

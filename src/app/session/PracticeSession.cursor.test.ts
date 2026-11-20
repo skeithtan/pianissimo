@@ -93,6 +93,51 @@ describe('Start at the visible cursor after browsing', () => {
     expect(h.attempts).toHaveLength(0)
   })
 
+  it('a Repeat lead-in only requires notes that start at or after the visible onset', async () => {
+    const score = buildScore({
+      notes: [
+        { at: 1.5, dur: 0.5, midi: 44, hand: 'L' },
+        { at: 1.75, dur: 0.25, midi: 80 },
+        { at: 2, midi: 75 },
+        { at: 2, midi: 51, hand: 'L' },
+      ],
+    })
+    const loop = { fromOcc: 0, toOcc: 0, start: rat(1, 2) }
+    const h = harness(score, { range: loop })
+    browse(h, rat(7, 16))
+    await h.session.start()
+    h.session.setKeyboardVisible(true)
+    h.frames.flush()
+    expect(h.strip.cursor).toBe(7 / 16)
+    expect(h.strip.targets.map((i) => score.notes[i]!.midi)).toEqual([80])
+    expect(h.session.guide.get().keys.map((key) => key.midi)).toEqual([80])
+
+    h.session.setSelection({ multiplier: 0.5 })
+    h.frames.flush()
+    expect(h.session.engine.state.missingPitches).toEqual([80])
+    h.tap(80)
+    expect(h.session.engine.mode).toBe('scored')
+    expect(h.session.engine.state.missingPitches).toEqual([51, 75])
+  })
+
+  it('plays an automatic note when the learner only has a previously sounding unison in the lead-in', async () => {
+    const score = buildScore({
+      notes: [
+        { at: 0, dur: 2, midi: 60 },
+        { at: 1, midi: 60, hand: 'L' },
+        { at: 1, midi: 64 },
+        { at: 2, midi: 67 },
+      ],
+    })
+    const loop = { fromOcc: 0, toOcc: 0, start: rat(1, 2) }
+    const h = harness(score, { range: loop, hands: 'right' })
+    browse(h, rat(1, 4))
+    await h.session.start()
+    h.tap(64)
+    h.step(20)
+    expect(h.backend.ons().map((c) => c.note)).toEqual([60])
+  })
+
   it('resumes following in page view without replacing its moving cursor position', async () => {
     const h = harness(melody, { hands: 'none' })
     h.session.seekPosition(rat(1, 2))

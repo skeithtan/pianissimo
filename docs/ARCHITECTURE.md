@@ -71,9 +71,11 @@ entities or network references. Fixtures: `tests/fixtures/scores/` (24) and
 Framework-free state machine; never reads clocks, timers or MIDI. The session passes human
 MIDI events and `now` (performance.now() timebase). Details and state diagram:
 `src/core/engine/README.md`.
-- `buildTimeline(model, {hands, range, multiplier, tempo?})` → learner onset groups (distinct
+- `buildTimeline(model, {hands, range, multiplier, tempo?, reattackHeldAtStart?})` → learner onset groups (distinct
   pitches, ties excluded, loop-start boundary reattacks), measures, automatic positions,
   expected attack span / notated duration, blockers, comparison context. Once per selection.
+  An unscored Repeat lead-in sets `reattackHeldAtStart: false` in the learner and guide timelines
+  and in the automatic playback builder's learner-unison check (U38).
 - `PracticeEngine`: `input(ev)` (consumed once by seq; positive Note On is the only attack),
   `tick(now)` / `nextDeadline()`, hints (`requestHint`, `dismissHint`), `setKeyboardVisible`,
   `recordPersistentLabelExposure`, lifecycle (`markPrepared`, `pause`, `resume`, `interrupt`,

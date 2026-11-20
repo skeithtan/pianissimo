@@ -5,7 +5,7 @@
  * practice tempo before starting. If the selected hand has no required onsets in the passage,
  * disable scored practice and explain why; retain Listen and selection controls.").
  */
-import { buildTimeline, type LearnerHands, type Timeline } from '../../core/engine'
+import { buildTimeline, type LearnerHands, type Timeline, type TimelineOptions } from '../../core/engine'
 import { describePassage, normalizePassage, passageBounds, samePassage } from '../../core/model/passage'
 import type { PassageRange } from '../../core/model/practice'
 import type { HandSelection, ScoreModel } from '../../core/model/score'
@@ -37,9 +37,14 @@ export function clampPassage(model: ScoreModel, range: PassageRange | null): Pas
 }
 
 /** The learner timeline for a selection. Preview ('none') keeps a both-hands timeline for the cursor. */
-export function selectionTimeline(model: ScoreModel, tempo: TempoMapData, sel: Selection): Timeline {
+export function selectionTimeline(
+  model: ScoreModel,
+  tempo: TempoMapData,
+  sel: Selection,
+  options: Pick<TimelineOptions, 'reattackHeldAtStart'> = {},
+): Timeline {
   const hands: LearnerHands = sel.hands === 'none' ? 'both' : sel.hands
-  return buildTimeline(model, { hands, range: sel.range, multiplier: sel.multiplier, tempo })
+  return buildTimeline(model, { hands, range: sel.range, multiplier: sel.multiplier, tempo, ...options })
 }
 
 export const HAND_TEXT: Readonly<Record<HandSelection, string>> = {
