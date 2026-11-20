@@ -1,4 +1,4 @@
-import { msg, percentage, formatTenths } from '../../i18n/messages'
+import { msg, plural, percentage, formatTenths } from '../../i18n/messages'
 import type { AttemptRecord, Completion, InterruptReason } from '../model/practice'
 import { isAssistedAttempt, timeDifferenceSec, timingAccuracy } from './results'
 import type { PracticeStreak } from './results'
@@ -124,10 +124,6 @@ function offsetText(meanMs: number, toleranceMs: number): string {
   const text = rounded === 0 ? '0 ms' : `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)} ms`
   if (Math.abs(meanMs) <= toleranceMs / 3) return text
   return `${text}, ${meanMs > 0 ? msg('dragging') : msg('rushing')}`
-}
-
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${msg(n === 1 ? one : many)}`
 }
 
 function timingKind(a: AttemptRecord): TimingKind {

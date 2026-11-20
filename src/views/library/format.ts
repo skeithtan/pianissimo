@@ -54,6 +54,4 @@ export function formatBytes(bytes: number): string {
 }
 
 /** "1 piece" / "3 pieces". */
-export function plural(count: number, one: string, many = `${one}s`): string {
-  return `${count} ${msg(count === 1 ? one : many)}`
-}
+export { plural } from '../../i18n/messages'

@@ -40,6 +40,15 @@ const cases = [
     add: 'Idagdag at buksan',
   },
   {
+    device: 'ja',
+    lang: 'ja-JP',
+    library: 'ライブラリ',
+    settings: '設定',
+    general: '一般',
+    language: '言語',
+    add: '追加して開く',
+  },
+  {
     device: 'de-AT',
     lang: 'en-US',
     library: 'Library',
@@ -68,7 +77,8 @@ for (const c of cases) {
       await sheet.getByRole('button', { name: c.add, exact: true }).click()
       await expect(page.locator('.pn-strip').first()).toBeVisible({ timeout: 60000 })
       const url = page.url()
-      const menu = c.lang === 'fil-PH' ? 'Pagpipilian' : c.lang === 'es-ES' ? 'Menú' : 'Menu'
+      const menu =
+        ({ 'fil-PH': 'Pagpipilian', 'es-ES': 'Menú', 'ja-JP': 'メニュー' } as Record<string, string>)[c.lang] ?? 'Menu'
       await page.getByRole('button', { name: menu, exact: true }).click()
       await page.getByRole('button', { name: c.settings, exact: true }).click()
       await sheet.getByRole('tab', { name: c.general, exact: true }).click()
@@ -125,27 +135,39 @@ test('follows changes to ordered device languages while offline', async ({ page,
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null)
   await context.setOffline(true)
   await page.evaluate(() => {
-    Object.defineProperty(navigator, 'languages', { configurable: true, value: ['ja', 'fr-CA', 'en'] })
+    Object.defineProperty(navigator, 'languages', { configurable: true, value: ['ko', 'ja', 'fr-CA', 'en'] })
     window.dispatchEvent(new Event('languagechange'))
   })
-  await expect(page.getByRole('heading', { name: 'Bibliothèque' })).toBeVisible()
-  await expect(page.locator('html')).toHaveAttribute('lang', 'fr-CA')
+  await expect(page.getByRole('heading', { name: 'ライブラリ' })).toBeVisible()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja-JP')
 })
 
-test('scores a MIDI performance in Filipino after changing the language with a loop open', async ({ page }) => {
-  await installFakeMidi(page)
-  await seedPiece(page)
-  await openSeededPractice(page)
-  await loopWholePiece(page)
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  const sheet = page.getByRole('dialog')
-  await sheet.getByRole('tab', { name: 'General', exact: true }).click()
-  await sheet.getByRole('combobox', { name: 'Language' }).selectOption('fil-PH')
-  await sheet.getByRole('button', { name: 'Isara', exact: true }).click()
-  await page.getByRole('button', { name: 'Magsimula', exact: true }).click()
-  for (const keys of [[60, 48], [62], [64], [65], [67, 71, 74, 43], [48]]) await playWhenDue(page, ...keys)
-  await page.getByRole('button', { name: 'Ipakita ang mga detalye ng ulit na ito' }).click()
-  const details = page.getByTestId('result-details')
-  await expect(details).toContainText('Ulit na ito')
-  await expect(details).toContainText('Walang sablay: walang maling nota at walang tulong.')
-})
+for (const [lang, close, start, show, title, clean] of [
+  [
+    'fil-PH',
+    'Isara',
+    'Magsimula',
+    'Ipakita ang mga detalye ng ulit na ito',
+    'Ulit na ito',
+    'Walang sablay: walang maling nota at walang tulong.',
+  ],
+  ['ja-JP', '閉じる', '開始', '今回の演奏の詳細を表示', '今回の演奏', 'ミスも補助もなく弾けました。'],
+] as const) {
+  test(`scores a MIDI performance in ${lang} after changing the language with a loop open`, async ({ page }) => {
+    await installFakeMidi(page)
+    await seedPiece(page)
+    await openSeededPractice(page)
+    await loopWholePiece(page)
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const sheet = page.getByRole('dialog')
+    await sheet.getByRole('tab', { name: 'General', exact: true }).click()
+    await sheet.getByRole('combobox', { name: 'Language' }).selectOption(lang)
+    await sheet.getByRole('button', { name: close, exact: true }).click()
+    await page.getByRole('button', { name: start, exact: true }).click()
+    for (const keys of [[60, 48], [62], [64], [65], [67, 71, 74, 43], [48]]) await playWhenDue(page, ...keys)
+    await page.getByRole('button', { name: show }).click()
+    const details = page.getByTestId('result-details')
+    await expect(details).toContainText(title)
+    await expect(details).toContainText(clean)
+  })
+}

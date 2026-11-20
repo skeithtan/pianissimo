@@ -4,6 +4,7 @@ export const LANGUAGES = {
   'fr-CA': 'Français (Canada)',
   'fr-FR': 'Français (France)',
   'fil-PH': 'Filipino',
+  'ja-JP': '日本語',
 } as const
 
 export type Language = keyof typeof LANGUAGES
@@ -15,6 +16,7 @@ export function closestLanguage(preferences: readonly string[]): Language {
     try {
       const { language, region } = new Intl.Locale(tag)
       if (language === 'en') return 'en-US'
+      if (language === 'ja') return 'ja-JP'
       if (language === 'es') return 'es-ES'
       if (language === 'fr') return region === 'CA' ? 'fr-CA' : 'fr-FR'
       if (language === 'fil' || language === 'tl') return 'fil-PH'

@@ -74,8 +74,7 @@ describe('getStorage', () => {
       return value
     })
     const second = getStorage()
-    await Promise.resolve()
-    expect(initializeLibrary).toHaveBeenCalledWith(storage)
+    await vi.waitFor(() => expect(initializeLibrary).toHaveBeenCalledWith(storage))
     expect(ready).toBe(false)
     finish()
     expect(await first).toBe(storage)
@@ -109,6 +108,25 @@ describe('getStorage', () => {
 })
 
 describe('connectSettingsStorage', () => {
+  it('saves the language while the initial scores are still loading', async () => {
+    const storage = await freshStorage()
+    let finish!: () => void
+    const installing = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    resetServicesForTests({ openStorage: async () => storage, initializeLibrary: () => installing })
+    const library = getStorage()
+    try {
+      expect(await connectSettingsStorage()).toBe(true)
+      updateSettings({ view: { language: 'ja-JP' } })
+      await flushSettings()
+      expect((await storage.loadSettings()).view.language).toBe('ja-JP')
+    } finally {
+      finish()
+      await library
+    }
+  })
+
   it('loads stored settings and saves later changes to IndexedDB', async () => {
     const storage = await freshStorage()
     await storage.saveSettings({ ...DEFAULT_SETTINGS, naming: { ...DEFAULT_SETTINGS.naming, system: 'fixed-do' } })

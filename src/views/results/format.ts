@@ -44,9 +44,7 @@ export const LABEL_MODE_TEXT: Readonly<Record<PersistentLabelMode, string>> = {
   conditional: 'Conditional',
 }
 
-export function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${msg(n === 1 ? one : many)}`
-}
+export { plural } from '../../i18n/messages'
 
 /** "+1.2 s" / "-0.4 s" for an attempt with scored timing, otherwise null. */
 export function signedTime(a: AttemptRecord): string | null {

@@ -64,3 +64,9 @@ export function msg(source: string, ...args: (string | number | null | undefined
       })
     : pattern
 }
+
+/** Counted units use a space in the Western locales and attach to the number in Japanese. */
+export function plural(count: number, one: string, many = `${one}s`): string {
+  const unit = msg(count === 1 ? one : many)
+  return `${decimal(count)}${messageLanguage() === 'ja-JP' ? '' : ' '}${unit}`
+}

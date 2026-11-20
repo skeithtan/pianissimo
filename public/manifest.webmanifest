@@ -4,6 +4,7 @@
   "description": "Learn to read piano notation by playing a connected MIDI piano.",
   "lang": "en-US",
   "description_localized": {
+    "ja-JP": "MIDIピアノをつないで弾きながら、楽譜の読み方を学べます。",
     "es-ES": "Aprende a leer partituras de piano tocando con un piano MIDI conectado.",
     "fr-FR": "Apprenez à lire des partitions en jouant sur un piano MIDI connecté.",
     "fr-CA": "Apprenez à lire des partitions en jouant sur un piano MIDI connecté.",

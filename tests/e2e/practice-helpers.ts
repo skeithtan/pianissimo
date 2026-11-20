@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/core/model/settings'
 import { newPieceRecord } from '../../src/core/storage/records'
+import { INITIAL_LIBRARY_KEY, LIBRARY_EXPANSION_KEY } from '../../src/core/storage/schema'
 import { importFixture } from '../unit/import/fixtures'
 
 /** Screenshots go outside the repository. */
@@ -112,14 +113,16 @@ export async function seedPiece(page: Page, settingsPatch: Partial<AppSettings> 
     })
     .toBe(true)
   await page.evaluate(
-    async ({ piece, pkg, settings }) => {
+    async ({ piece, pkg, settings, libraryMarkers }) => {
       const db: IDBDatabase = await new Promise((resolve, reject) => {
         const req = indexedDB.open('pianissimo')
         req.onsuccess = () => resolve(req.result)
         req.onerror = () => reject(req.error)
       })
       await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(['pieces', 'packages', 'settings'], 'readwrite')
+        const tx = db.transaction(['pieces', 'packages', 'settings', 'libraryState'], 'readwrite')
+        // The fixture replaces the library, including its installed status, in one transaction.
+        for (const key of libraryMarkers) tx.objectStore('libraryState').put('complete', key)
         tx.objectStore('pieces').clear()
         tx.objectStore('pieces').put(piece)
         tx.objectStore('packages').put(pkg, (pkg as { model: { scoreVersionId: string } }).model.scoreVersionId)
@@ -130,6 +133,7 @@ export async function seedPiece(page: Page, settingsPatch: Partial<AppSettings> 
       db.close()
     },
     {
+      libraryMarkers: [INITIAL_LIBRARY_KEY, LIBRARY_EXPANSION_KEY],
       piece: JSON.parse(JSON.stringify(piece)),
       pkg: JSON.parse(JSON.stringify(built.package)),
       settings: JSON.parse(JSON.stringify(settings)),

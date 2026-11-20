@@ -252,6 +252,7 @@ export function edgeText(model: PassageWords, p: PassageRange, edge: 'start' | '
 /** "2nd", "3rd", "4th", … for a repeat pass. */
 function ordinal(n: number): string {
   const language = messageLanguage()
+  if (language === 'ja-JP') return `${n}回目`
   if (language === 'fil-PH') return `ika-${n}`
   if (language === 'es-ES') return `${n}.ª`
   if (language.startsWith('fr')) return `${n}e`

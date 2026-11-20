@@ -22,7 +22,7 @@ If MIDIWeb cannot pass these checks and no acceptable existing browser does, liv
 
 ## Interface language
 
-Pianissimo supports US English, Spanish from Spain, French from Canada, French from France, and Filipino. By default it uses the first supported language in the device’s ordered preferences. Spanish variants use Spanish from Spain. Canadian French uses Canadian French, and other French variants use French from France. Filipino and Tagalog preferences select Filipino. US English is the fallback.
+Pianissimo supports US English, Spanish from Spain, French from Canada, French from France, Filipino, and Japanese. By default it uses the first supported language in the device’s ordered preferences. Spanish variants use Spanish from Spain. Canadian French uses Canadian French, and other French variants use French from France. Filipino and Tagalog preferences select Filipino. US English is the fallback.
 
 Settings → General → Language lets the player choose any supported language or return to the device preference. The choice applies immediately, persists across visits, and travels with settings backups. Score titles, composer names, instrument names, and notation supplied by the score retain their original text. The separate note-naming preference controls musical pitch names. Dates and times follow the device locale.
 

@@ -4,6 +4,7 @@ import en from './locales/en-US.json'
 import es from './locales/es-ES.json'
 import fr from './locales/fr-FR.json'
 import ca from './locales/fr-CA.json'
+import ja from './locales/ja-JP.json'
 import fil from './locales/fil-PH.json'
 import { importMessage } from './importMessage'
 import { msg, percentage, readMessagesWith } from './messages'
@@ -15,7 +16,10 @@ describe('interface languages', () => {
     [['it-IT', 'fr-CA', 'en'], 'fr-CA'],
     [['fr-CH', 'fr-CA'], 'fr-FR'],
     [['invalid_tag', 'es-AR'], 'es-ES'],
-    [['ja-JP', 'tl'], 'fil-PH'],
+    [['ko-KR', 'tl'], 'fil-PH'],
+    [['ja-JP', 'tl'], 'ja-JP'],
+    [['ko', 'ja'], 'ja-JP'],
+    [['ja-US', 'en-US'], 'ja-JP'],
     [['fil-PH'], 'fil-PH'],
     [['en-AU', 'es-ES'], 'en-US'],
     [['it-IT'], 'en-US'],
@@ -25,7 +29,7 @@ describe('interface languages', () => {
   })
 
   it('covers every message ID in each effective catalog', () => {
-    for (const catalog of [es, fr, { ...fr, ...ca }, fil]) {
+    for (const catalog of [es, fr, { ...fr, ...ca }, fil, ja]) {
       expect(Object.keys(catalog)).toEqual(Object.keys(en))
       expect(Object.values(catalog).every((value) => value.trim().length > 0)).toBe(true)
       for (const [id, text] of Object.entries(catalog)) {

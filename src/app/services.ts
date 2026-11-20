@@ -50,6 +50,7 @@ export interface ServicesEnv {
 }
 
 let env: ServicesEnv = {}
+let databasePromise: Promise<PianissimoStorage> | null = null
 let storagePromise: Promise<PianissimoStorage> | null = null
 let midiService: MidiService | null = null
 
@@ -89,17 +90,28 @@ export function historyFailureNotices(
   }
 }
 
-/**
- * The app's storage, opened once. The practice-history writer flushes on `pagehide` and when
- * the page is hidden, and lost practice records raise a warning notice. A failed open is not
- * cached, so a later call retries.
- */
-export function getStorage(): Promise<PianissimoStorage> {
-  if (!storagePromise) {
+/** Settings can be read and written as soon as IndexedDB opens, even on a first visit
+ * while the bundled scores are still downloading and importing. */
+function getDatabase(): Promise<PianissimoStorage> {
+  if (!databasePromise) {
     const options: StorageOptions = { appVersion: APP_VERSION, history: historyFailureNotices() }
     const open = env.openStorage ?? ((o: StorageOptions) => openStorage(undefined, o))
-    const pending = open(options).then(async (storage) => {
+    const pending = open(options).then((storage) => {
       storage.history.attachLifecycle()
+      return storage
+    })
+    databasePromise = pending
+    pending.catch(() => {
+      if (databasePromise === pending) databasePromise = null
+    })
+  }
+  return databasePromise
+}
+
+/** Score and history callers see the library after the bundled scores have been installed. */
+export function getStorage(): Promise<PianissimoStorage> {
+  if (!storagePromise) {
+    const pending = getDatabase().then(async (storage) => {
       try {
         await (env.initializeLibrary ?? ensureInitialPieces)(storage)
       } catch (error) {
@@ -152,7 +164,7 @@ export function getMidi(): MidiAdapter {
 export async function connectSettingsStorage(): Promise<boolean> {
   let storage: PianissimoStorage
   try {
-    storage = await getStorage()
+    storage = await getDatabase()
   } catch {
     await setSettingsPersistence(null)
     pushNotice({ kind: 'warning', text: STORAGE_UNAVAILABLE_NOTICE, timeoutMs: null })
@@ -185,6 +197,7 @@ export async function startServices(): Promise<void> {
 export function resetServicesForTests(next: ServicesEnv = {}): void {
   midiService?.dispose()
   midiService = null
+  databasePromise = null
   storagePromise = null
   env = { initializeLibrary: async () => {}, ...next }
 }

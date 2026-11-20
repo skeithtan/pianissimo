@@ -11,6 +11,7 @@ const catalogs = {
     const [base, regional] = await Promise.all([catalogs['fr-FR'](), import('../i18n/locales/fr-CA.json')])
     return { ...base, ...regional.default }
   },
+  'ja-JP': () => import('../i18n/locales/ja-JP.json').then((m) => m.default),
   'fil-PH': () => import('../i18n/locales/fil-PH.json').then((m) => m.default),
 }
 
