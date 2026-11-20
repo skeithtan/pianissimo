@@ -315,7 +315,9 @@ test.describe('the review after a completed pass (U97)', () => {
     expect(saved).toBe(2.2)
   })
 
-  test('Keep time returns to playing zoom during the next count-in without any key presses', async ({ page }) => {
+  test('Keep time clears score marks when the repeat starts and restores review after a silent bar', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 900, height: 700 })
     await installFakeMidi(page)
     await seedPiece(page, { view: { ...DEFAULT_SETTINGS.view, zoom: 2.2 } })
@@ -327,12 +329,14 @@ test.describe('the review after a completed pass (U97)', () => {
     await expect(menu).toHaveCount(0)
 
     const strip = page.locator('.pn-strip')
+    const corrections = strip.locator('.pn-corr')
     const countIn = page.getByTestId('count-in')
     const before = await stripScale(page)
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await expect(page.getByTestId('attempt-result')).toContainText('6 missed', { timeout: 20_000 })
     await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 3')
     await expect(strip).toHaveClass(/pn-review/)
+    await expect(corrections).not.toHaveCount(0)
     expect(await stripScale(page)).toBeLessThan(before)
 
     await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 2')
@@ -341,7 +345,14 @@ test.describe('the review after a completed pass (U97)', () => {
     expect(await stripScale(page)).toBeCloseTo(before, 4)
     await expect(countIn).toHaveCount(0)
     await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'running')
+    await expect(corrections).toHaveCount(0, { timeout: 750 })
     expect(await stripScale(page)).toBeCloseTo(before, 4)
+
+    await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
+    await expect(page.getByTestId('attempt-result')).toContainText('6 missed')
+    await expect(strip).toHaveClass(/pn-review/)
+    await expect(corrections).not.toHaveCount(0)
+    await expect(countIn).toHaveCount(0)
   })
 
   test('the same wrong key three passes running is named on the pill (P24)', async ({ page }) => {

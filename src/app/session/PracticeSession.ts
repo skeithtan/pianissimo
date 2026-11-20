@@ -63,8 +63,8 @@ import { onsetPositions, passageFromBounds, passageKey, samePassage } from '../.
 import { contextKey, type AttemptRecord, type InterruptReason, type PassageRange } from '../../core/model/practice'
 import type { HandSelection, ScoreModel } from '../../core/model/score'
 import type { LadderSettings } from '../../core/storage/records'
-import { type Rational, ZERO, eq, key as ratKey, lt, toNumber } from '../../core/music/rational'
-import { hasTempo, type TempoMapData } from '../../core/music/tempo'
+import { type Rational, ZERO, add, eq, key as ratKey, lt, toNumber } from '../../core/music/rational'
+import { hasTempo, secondsBetween, type TempoMapData } from '../../core/music/tempo'
 import {
   buildClickTrack,
   buildPerformance,
@@ -165,6 +165,18 @@ interface CountIn {
   /** Beats left to count, the number shown (`ui.countIn`). */
   remaining: number
   timer: unknown
+}
+
+/** The opening of an automatic Keep time repeat, still waiting to hear the learner. */
+interface RepeatOpening {
+  readonly start: number
+  readonly pitches: ReadonlySet<number>
+  deadline: number
+  firstBar: boolean
+  readonly secondBarEnd: number | null
+  played: boolean
+  /** In a short loop the last scoring window may close before this check is due. */
+  completed: AttemptRecord | null
 }
 
 /**
@@ -327,6 +339,8 @@ export class PracticeSession {
   #readingStarted = false
   #awaitPrepared = false
   #pendingRepeat = false
+  #nextRepeatOpening: 'first' | 'second' | null = null
+  #repeatOpening: RepeatOpening | null = null
   /** Repeat mode (U10): loop controls shown, Start = scored attempts over `#loop`, repeated. */
   #repeat = false
   /** The loop, remembered while Repeat mode is closed (saved as `lastPassage`). */
@@ -369,8 +383,10 @@ export class PracticeSession {
   #snippet: { readonly player: SnippetPlayer; readonly echo: boolean } | null = null
   /** Which mistake snippet plays (the expanded result card shows it), or null. */
   readonly snippet = new Store<SnippetState | null>(null, (a, b) => a?.occ === b?.occ && a?.kind === b?.kind)
-  /** Teacher's marks of the last completed scored attempt, shown on the strip (`#clearCorrections`). */
+  /** Teacher's marks of the last completed scored attempt. */
   #corrections: readonly CorrectionMark[] = []
+  /** Keep time hides the marks at the downbeat and restores them if the automatic repeat stops. */
+  #correctionsVisible = true
   #inputDisconnected = false
   /** The learner's hands, held while no piano input is connected (the session is in Listen, U27). */
   #heldHands: HandSelection | null = null
@@ -546,7 +562,7 @@ export class PracticeSession {
     this.#lastPersistent = null
     this.#labelsDirty = true
     strip.setLabels(this.#labels.texts)
-    if (this.#corrections.length) strip.setCorrections?.(this.#corrections)
+    if (this.#correctionsVisible && this.#corrections.length) strip.setCorrections?.(this.#corrections)
     this.#applySelectionVisuals()
     this.#syncLock()
     this.#frame(this.#deps.clock(), true)
@@ -671,6 +687,7 @@ export class PracticeSession {
       // A new run: the Repeat reset or ladder step that waited for the last pass's music is
       // taken over here, so nothing stale fires at the loop end.
       this.#pendingRepeat = false
+      this.#nextRepeatOpening = null
       if (!this.#newRunAtLadderSpeed()) {
         const kind = this.#scoredKind()
         if (this.#engine.mode !== 'scored' || this.#engine.transport !== kind.transport) {
@@ -1857,11 +1874,79 @@ export class PracticeSession {
       this.#publishUi()
       return
     }
+    this.#setCorrectionsVisible(false)
+    this.#watchRepeatOpening(at)
     this.#capture.begin(at)
     this.#engine.startRunning(at)
     for (let g = 0; g < this.#engine.timeline.groups.length; g++) t.releaseGate(g + this.#gateOffset)
     t.play(at)
     this.#process(this.#deps.clock())
+  }
+
+  #watchRepeatOpening(start: number): void {
+    const opening = this.#nextRepeatOpening
+    this.#nextRepeatOpening = null
+    if (!opening) return
+    const timeline = this.#engine.timeline
+    const first = timeline.groups[0]?.occ
+    if (first === undefined) return
+    // An accompaniment-only intro gives the learner nothing to play. Start checking with
+    // the bar containing their first required attack, including a partial bar at a loop edge.
+    const deadlineFor = (occ: number): number => {
+      const bar = this.#model.occurrences[occ]!
+      const barEnd = add(bar.start, bar.duration)
+      const end = lt(barEnd, timeline.end) ? barEnd : timeline.end
+      return start + secondsBetween(timeline.tempo, timeline.start, end, timeline.multiplier) * 1000
+    }
+    const second = opening === 'first' && first < timeline.range.toOcc ? first + 1 : null
+    const pitches = new Set<number>()
+    for (const group of timeline.groups) {
+      if (group.occ > (second ?? first)) break
+      for (const pitch of group.pitches) pitches.add(pitch)
+    }
+    this.#repeatOpening = {
+      start,
+      pitches,
+      deadline: deadlineFor(first),
+      firstBar: opening === 'first',
+      secondBarEnd: second === null ? null : deadlineFor(second),
+      played: false,
+      completed: null,
+    }
+  }
+
+  #checkRepeatOpening(now: number): void {
+    const opening = this.#repeatOpening
+    if (!opening || now < opening.deadline) return
+    if (opening.firstBar && opening.played) {
+      if (opening.secondBarEnd !== null) {
+        opening.firstBar = false
+        opening.deadline = opening.secondBarEnd
+        if (now < opening.deadline) return
+      } else {
+        // For a one-bar loop, the next traversal provides the second bar of playing.
+        this.#nextRepeatOpening = 'second'
+        this.#releaseRepeatOpening()
+        return
+      }
+    }
+    this.#reviewReturnBy = null
+    this.#setCorrectionsVisible(true)
+    this.#discarding = true
+    try {
+      this.pause()
+    } finally {
+      this.#discarding = false
+    }
+  }
+
+  #releaseRepeatOpening(): void {
+    const record = this.#repeatOpening?.completed
+    this.#repeatOpening = null
+    if (record) {
+      this.#onRecord(record)
+      this.#completedPending = true
+    }
   }
 
   /**
@@ -2665,6 +2750,13 @@ export class PracticeSession {
     // Judged before the input: a press never changes the group or phase while nothing plays.
     const group = this.#previewGroupNow()
     this.#captureKey(ev)
+    if (this.#engine.transport === 'strict' && ev.kind === 'noteon' && ev.velocity > 0) {
+      const opening = this.#repeatOpening
+      if (opening && ev.time >= opening.start && ev.time < (opening.secondBarEnd ?? opening.deadline)) {
+        if (ev.time < opening.deadline) opening.played = true
+        if (opening.played && opening.pitches.has(ev.note)) this.#releaseRepeatOpening()
+      }
+    }
     this.#engine.input(ev)
     if (group !== null) this.#previewInput(ev, group)
     else this.#clearPreview()
@@ -2869,7 +2961,7 @@ export class PracticeSession {
       this.#pendingRepeat = false
       this.#engine.interrupt('disconnect', now)
     }
-    this.#clearHighlights()
+    this.#pauseTransports()
     this.#process(now)
   }
 
@@ -2964,7 +3056,8 @@ export class PracticeSession {
       case 'attempt-ended':
         // Play-through records nothing: the reading before it was recorded when it went on;
         // what the engine ends during play-through (and when it goes off) stays unrecorded.
-        if (!this.#discarding && !this.#playThrough) this.#onRecord(ev.record)
+        if (this.#repeatOpening && ev.record.completion === 'completed') this.#repeatOpening.completed = ev.record
+        else if (!this.#discarding && !this.#playThrough) this.#onRecord(ev.record)
         break
       case 'abandon':
         if (this.#playThrough) break
@@ -3083,7 +3176,7 @@ export class PracticeSession {
       // Keep time: count in, then the clock and the music start together.
       else if (this.#engine.transport === 'strict' && this.#engine.mode === 'scored') this.#beginCountIn(t)
     } else if (phase === 'completed') {
-      if (this.#engine.mode === 'scored') this.#completedPending = true
+      if (this.#engine.mode === 'scored') this.#completedPending = this.#repeatOpening === null
       else if (this.#leadIn && !this.#leadIn.handedOver) {
         // From inside or after the loop the music plays on to the wrap (`#onAccompanimentEnd`).
         if (!this.#leadIn.wrap) this.#handOver(t)
@@ -3139,6 +3232,7 @@ export class PracticeSession {
       ...timingSummary(record),
     }
     this.#corrections = correctionMarks(record, this.#timeline, this.#model, this.#settings.naming)
+    this.#correctionsVisible = true
     this.#strip?.setCorrections?.(this.#corrections)
     // Worked out in the next UI publish (the frame), not here in the input path.
     const timeline = [this.#engine.timeline, this.#timeline].find(
@@ -3170,15 +3264,18 @@ export class PracticeSession {
     return this.#lastResult
   }
 
-  /**
-   * The teacher's marks go: a new attempt (Start, Restart), a dismissed result, another
-   * selection, a seek, leaving Practice, or the first press of the next Repeat pass.
-   */
+  #setCorrectionsVisible(visible: boolean): void {
+    if (this.#corrections.length === 0 || this.#correctionsVisible === visible) return
+    this.#correctionsVisible = visible
+    this.#strip?.setCorrections?.(visible ? this.#corrections : [])
+  }
+
+  /** Discard marks when their result is dismissed or the first correct note ends its review. */
   #clearCorrections(): void {
     this.#stopSnippet()
     if (this.#corrections.length === 0) return
+    this.#setCorrectionsVisible(false)
     this.#corrections = []
-    this.#strip?.setCorrections?.([])
     // `ui.corrections` follows in the next frame (never a UI publish in the input path).
     this.#scheduleFrame()
   }
@@ -3201,14 +3298,17 @@ export class PracticeSession {
 
   #repeatReset(now: number): void {
     const speed = this.#ladderNext
+    const opening = this.#nextRepeatOpening === 'second' ? 'second' : 'first'
     if (speed !== null && this.#repeat) {
       this.#ladderStep(speed)
+      if (this.#engine.transport === 'strict') this.#nextRepeatOpening = opening
       return
     }
     this.#pendingRepeat = false
     this.#accomp?.stop()
     this.#clearHighlights()
     this.#engine.restart(now, { continueRepeat: true })
+    if (this.#engine.transport === 'strict') this.#nextRepeatOpening = opening
     this.#prepareAttempt(now)
     // Back to the loop start: the strip pans there quickly instead of scrolling backward.
     this.#strip?.wrapTo?.(this.#cursorPosition())
@@ -3494,6 +3594,8 @@ export class PracticeSession {
   }
 
   #pauseTransports(): void {
+    this.#repeatOpening = null
+    this.#nextRepeatOpening = null
     if (this.#accomp && this.#accomp.state === 'playing') this.#accomp.pause()
     this.#clearHighlights()
   }
@@ -3770,6 +3872,7 @@ export class PracticeSession {
     if (this.#disposed) return
     const now = this.#deps.clock()
     let at = this.#engine.nextDeadline() ?? Infinity
+    if (this.#repeatOpening) at = Math.min(at, this.#repeatOpening.deadline)
     const patience = this.#play?.follower.nextDeadline() ?? null
     if (patience !== null) at = Math.min(at, patience)
     const hint = this.#engine.state.hint
@@ -3797,6 +3900,7 @@ export class PracticeSession {
         this.#tickHandle = null
         this.#tickAt = Infinity
         const t = Math.max(this.#deps.clock(), at)
+        this.#checkRepeatOpening(t)
         this.#engine.tick(t)
         if (this.#play) {
           this.#play.follower.tick(t)
@@ -3910,7 +4014,7 @@ export class PracticeSession {
     if (this.#playThrough) return this.#play?.playing ?? false
     if (this.#listen) return this.#listen.playing
     const phase = this.#engine.state.phase
-    if (this.#engine.mode === 'scored') return ACTIVE.includes(phase)
+    if (this.#engine.mode === 'scored') return ACTIVE.includes(phase) || this.#repeatOpening !== null
     return phase === 'running' || this.#leadInTail()
   }
 
@@ -4033,7 +4137,7 @@ export class PracticeSession {
       resultDimmed: this.#lastResult !== null && this.#resultPlayedIn !== null,
       resultExit: this.#resultExit,
       reviewing: this.#reviewing(),
-      corrections: this.#corrections.length,
+      corrections: this.#correctionsVisible ? this.#corrections.length : 0,
       interruption: this.#interruption(),
       soundStatus: this.#soundStatus,
       inputDisconnected: this.#inputDisconnected,

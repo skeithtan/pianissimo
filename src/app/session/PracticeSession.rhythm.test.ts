@@ -9,7 +9,7 @@ import { FakeAudioContext } from '../../core/playback/fakeWebAudio'
 import type { MetronomeModule } from '../../core/playback'
 import { existingAudioContext, resetSharedAudioContext, sharedAudioContext } from '../../core/playback/webaudio/context'
 import type { LadderSettings } from '../../core/storage/records'
-import { harness, testSettings, type Harness } from './testkit'
+import { FakeStrip, harness, testSettings, type Harness } from './testkit'
 import type { SessionOptions } from './PracticeSession'
 import type { Selection } from './selection'
 import type { SessionSettings } from './types'
@@ -469,10 +469,35 @@ describe('Keep time: modes', () => {
     expect(ui(h).lastResult?.streak).toBe(2)
   })
 
-  it('leaves the loop review at count 2 and plays the next pass without a key press', async () => {
+  it('clears the previous corrections at the downbeat of an automatic repeat', async () => {
     const h = open({ range: LOOP })
     await begin(h)
-    playOnTime(h, [60, 62, 64, 65])
+    const nextRun = RUN + 8000
+    at(h, nextRun - 1)
+    const previous = ui(h).lastResult
+    expect(ui(h)).toMatchObject({ countIn: 1, corrections: 4 })
+    expect(h.strip.corrections).toHaveLength(4)
+
+    at(h, nextRun)
+    h.tap(61)
+    expect(ui(h)).toMatchObject({ phase: 'running', countIn: null, corrections: 0, lastResult: previous })
+    expect(h.strip.corrections).toEqual([])
+    const remounted = new FakeStrip()
+    h.session.attachStrip(remounted)
+    expect(remounted.corrections).toEqual([])
+
+    playOnTime(h, [62, 64, 65], [], nextRun + 1000)
+    expect(ui(h).lastResult?.id).not.toBe(previous?.id)
+    expect(remounted.corrections).toEqual([expect.objectContaining({ notes: [0] })])
+  })
+
+  it('zooms in at count 2 and stops after the first silent bar, keeping the previous result', async () => {
+    const h = open({ range: LOOP })
+    await begin(h)
+    playOnTime(h, [62, 64, 65], [], RUN + 1000)
+    const result = ui(h).lastResult
+    const marks = h.strip.corrections
+    expect(marks).toHaveLength(1)
     expect(h.strip.reviewing).toBe(true)
 
     const nextCountIn = RUN + 4000
@@ -482,20 +507,91 @@ describe('Keep time: modes', () => {
     expect(ui(h)).toMatchObject({ countIn: 3, reviewing: true })
     expect(h.strip.reviewing).toBe(true)
     at(h, nextCountIn + 2000)
-    expect(ui(h)).toMatchObject({ countIn: 2, reviewing: false, lastResult: { streak: 1 } })
+    expect(ui(h)).toMatchObject({ countIn: 2, reviewing: false, lastResult: result })
     expect(h.strip.reviewing).toBe(false)
     at(h, nextCountIn + 3000)
     expect(ui(h)).toMatchObject({ countIn: 1, reviewing: false })
+    h.tap(60)
 
     const nextRun = nextCountIn + 4000
     at(h, nextRun + 151)
     expect(h.session.engine.state).toMatchObject({ phase: 'running', clockStartedAt: nextRun, groupIndex: 1 })
     expect(h.strip.reviewing).toBe(false)
     expect(ui(h).countIn).toBeNull()
+    h.midi.cc(64, 127, nextRun + 151)
 
-    at(h, nextRun + 3200)
+    at(h, nextRun + 3999)
+    expect(ui(h).playing).toBe(true)
+    expect(ui(h).lastResult?.id).toBe(result?.id)
+    at(h, nextRun + 4000)
     expect(h.strip.reviewing).toBe(true)
-    expect(ui(h).lastResult?.timing?.missed).toBe(4)
+    expect(h.strip.corrections).toEqual(marks)
+    expect(ui(h)).toMatchObject({ playing: false, countIn: null, lastResult: result, corrections: 1 })
+    at(h, nextRun + 9000)
+    expect(h.attempts).toHaveLength(1)
+    expect(ui(h)).toMatchObject({ playing: false, countIn: null })
+
+    await begin(h)
+    expect(ui(h)).toMatchObject({ playing: true, countIn: 4 })
+  })
+
+  it('gives wrong pitches a second bar before stopping an automatic repeat', async () => {
+    const h = open({ range: { fromOcc: 0, toOcc: 1 } })
+    await begin(h)
+    playOnTime(h, [60, 62, 64, 65, 67, 69, 71, 72])
+    const result = ui(h).lastResult
+    const nextRun = RUN + 12000
+
+    playOnTime(h, [61, 63, 66, 68, 70, 73, 75, 76], [], nextRun)
+    at(h, nextRun + 7999)
+    expect(ui(h).playing).toBe(true)
+    at(h, nextRun + 8000)
+    expect(ui(h)).toMatchObject({ playing: false, countIn: null, lastResult: result, reviewing: true })
+    expect(h.attempts).toHaveLength(1)
+  })
+
+  it('keeps running when a written pitch is played off beat in the second bar', async () => {
+    const h = open({ range: { fromOcc: 0, toOcc: 1 } })
+    await begin(h)
+    playOnTime(h, [60, 62, 64, 65, 67, 69, 71, 72])
+    const nextRun = RUN + 12000
+
+    playOnTime(h, [61, 63], [], nextRun)
+    playOnTime(h, [67], [400], nextRun + 4000)
+    at(h, nextRun + 8000)
+    // The late G shows that the player is active, but it is still a scoring miss.
+    expect(h.attempts.at(-1)).toMatchObject({ completion: 'completed', missedGroups: 8 })
+    expect(ui(h)).toMatchObject({ playing: true, countIn: 4 })
+  })
+
+  it('gives a one-bar loop its second bar on the next traversal', async () => {
+    const h = open({ range: LOOP })
+    await begin(h)
+    playOnTime(h, [60, 62, 64, 65])
+    const nextRun = RUN + 8000
+    playOnTime(h, [61, 63], [], nextRun)
+    at(h, nextRun + 4000)
+    expect(ui(h)).toMatchObject({ playing: true, countIn: 4 })
+    playOnTime(h, [66], [], nextRun + 8000)
+    at(h, nextRun + 12000)
+    expect(ui(h)).toMatchObject({ playing: false, countIn: null })
+    expect(h.attempts).toHaveLength(2)
+  })
+
+  it('stops immediately if the accompaniment output disconnects while the opening check is pending', async () => {
+    const h = open({ range: LOOP, hands: 'right' })
+    await begin(h)
+    playOnTime(h, [60, 62, 64, 65])
+    const result = ui(h).lastResult
+    at(h, RUN + 11600)
+    expect(h.session.engine.state.phase).toBe('completed')
+    expect(ui(h).playing).toBe(true)
+
+    h.midi.out = null
+    h.midi.route({ kind: 'output-disconnected', port: { id: 'out-1' } as never })
+    h.frames.flush()
+    expect(ui(h)).toMatchObject({ playing: false, countIn: null, lastResult: result })
+    expect(h.attempts).toHaveLength(1)
   })
 
   it.each([1, 2])('leaves review on the first beat of a %i-beat count-in', async (beats) => {

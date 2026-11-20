@@ -399,6 +399,14 @@ occurrence, putting timing-only bars afterward. `TimingBarPlot` uses the excerpt
 anchors for the onset plot under the score. A miss breaks the plot line and appears as a cross.
 All affected bars are listed, and later excerpts wait until visible to build their notation.
 A pass within the near-beat window has a folded timing summary beneath the pass facts.
+
+For automatic repeats (U112), the session checks for key presses by the first playable bar's
+end and for any written learner pitch by the second bar's end. The pitch check ignores scoring
+tolerance. One-bar loops get the second bar on the next traversal. The session holds any
+early completion while the check is pending so an automatic stop leaves the previous result
+and does not add a pass to history. On the next downbeat the session hides the previous pass's
+score marks in both layouts. The same marks return with the review if the automatic repeat stops.
+
 Keep time is exclusive with play-through and disables Repeat lead-ins. The view adds a
 footer-menu switch with a badge on the Menu button, the `CountIn` overlay on the stage and
 the tolerance choice in Settings →
