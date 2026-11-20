@@ -1,8 +1,7 @@
 /**
  * The Practice footer menu (DECISIONS U76): one Menu button at the footer's end edge (U88), across
  * from the always-visible Speed control, that opens an anchored popover (never a modal sheet) holding Note
- * names, Play through, Keep time (rhythm mode, P13; exclusive with Play through, the session
- * switches the other off), Metronome (U87, P20) and Show keys. While Keep time is on the Menu button carries a small
+ * names, Keep time (rhythm mode, P13), Metronome (U87, P20) and Show keys. While Keep time is on the Menu button carries a small
  * metronome badge, so the mode shows with the menu closed. The popover opens upward, stays on screen (`placePopover`)
  * and fades. It
  * closes on Escape, a press outside it, the Menu button again, when playback starts and when the
@@ -15,7 +14,6 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { PracticeSession, SessionUi } from '../../app/session'
-import { updateSettings } from '../../app/state'
 import type { PersistentLabelMode } from '../../core/model/settings'
 import { Segmented, Toggle } from '../../ui/controls'
 import { useFadePresence } from '../../ui/fade'
@@ -31,35 +29,7 @@ export const LABEL_OPTIONS = [
   { value: 'all', label: 'All', title: 'Name every note' },
 ] as const
 
-type Follow = SessionUi['follow']
-
-/** The Follow choice (DECISIONS P22, U92): what a play-through follows. */
-export function followOptions(ui: Pick<SessionUi, 'pianoConnected'>) {
-  return [
-    {
-      value: 'piano',
-      label: 'Piano',
-      title: ui.pianoConnected ? 'Follow the keys of the connected piano' : 'Piano not connected',
-      disabled: !ui.pianoConnected,
-    },
-    { value: 'mic', label: 'Microphone', title: 'Follow what this device’s microphone hears' },
-  ] as const
-}
-
-/** No piano: play-through is on and locked (P22). */
-export const NO_PIANO_NOTE = 'No piano connected: following the microphone.'
-/** One hand through the microphone: the app plays nothing (P22). */
-export const ONE_HAND_MIC_NOTE = 'The microphone follows your hand; the other hand stays silent.'
-
-/** The line under Play through, or null (DECISIONS U92). */
-export function playThroughNote(
-  ui: Pick<SessionUi, 'playThrough' | 'playThroughLocked' | 'follow' | 'hands'>,
-): string | null {
-  if (!ui.playThrough || ui.follow !== 'mic') return null
-  const oneHand = ui.hands === 'left' || ui.hands === 'right'
-  if (ui.playThroughLocked) return oneHand ? `${NO_PIANO_NOTE} The other hand stays silent.` : NO_PIANO_NOTE
-  return oneHand ? ONE_HAND_MIC_NOTE : null
-}
+const KEEP_TIME_DESCRIPTION = 'After a count-in, the score keeps moving at the set tempo, even if you miss notes.'
 
 /** The Metronome row's state, computed once by the screen (DECISIONS U87, P20). */
 export interface MetronomeRow {
@@ -89,9 +59,7 @@ export interface FooterMenuProps {
 export const KEEPS_AHEAD = 'data-keeps-ahead'
 
 /**
- * The menu's rows: Note names, Play through, Follow (Piano / Microphone, DECISIONS U92: what a
- * play-through follows, `settings.mic.follow`; shown when this browser can use a microphone),
- * Keep time, Metronome and (unless `showKeys` is false: a phone
+ * The menu's rows: Note names, Keep time, Metronome and (unless `showKeys` is false: a phone
  * on its side has no keyboard guide, U80) Show keys. The footer popover and the phone's menu
  * sheet (`PracticeScreen`, U80) share them; the classes come from the host.
  */
@@ -114,7 +82,6 @@ export function PracticeMenuItems({
   readonly toggleClass: string | undefined
 }) {
   const toggleRow = [rowClass, toggleClass].filter(Boolean).join(' ')
-  const note = playThroughNote(ui)
   return (
     <>
       <div class={rowClass} data-keeps-ahead>
@@ -131,33 +98,10 @@ export function PracticeMenuItems({
       </div>
       <Toggle
         class={toggleRow}
-        label="Play through"
-        checked={ui.playThrough}
-        // Without a piano a hand plays through the microphone: on, and it cannot go off (P22).
-        disabled={!ui.handsAvailable || ui.hands === 'none' || ui.playThroughLocked}
-        {...(note ? { description: note } : {})}
-        onChange={(on) => session.setPlayThrough(on)}
-      />
-      {ui.micSupported ? (
-        <div class={rowClass}>
-          <span class={labelClass} aria-hidden="true">
-            Follow
-          </span>
-          <Segmented<Follow>
-            label="Play through follows"
-            value={ui.follow}
-            options={followOptions(ui)}
-            onChange={(follow) => updateSettings({ mic: { follow: follow === 'mic' } })}
-            compact
-          />
-        </div>
-      ) : null}
-      <Toggle
-        class={toggleRow}
         label="Keep time"
         checked={ui.rhythm}
         disabled={!ui.handsAvailable || ui.hands === 'none' || !hasTempo || !ui.pianoConnected}
-        {...(ui.pianoConnected ? {} : { description: 'Needs a connected piano.' })}
+        description={ui.pianoConnected ? KEEP_TIME_DESCRIPTION : `${KEEP_TIME_DESCRIPTION} Needs a connected piano.`}
         onChange={(on) => session.setRhythmMode(on)}
       />
       <Toggle

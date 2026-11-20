@@ -254,7 +254,7 @@ test.describe('phone top bar', () => {
       const menu = page.getByRole('dialog', { name: 'Menu' })
       await expect(menu).toBeVisible()
       await expect(menu.getByText('Speed')).toBeVisible()
-      for (const name of ['Play through', 'Keep time']) await expect(menu.getByRole('switch', { name })).toBeVisible()
+      await expect(menu.getByRole('switch', { name: 'Keep time' })).toBeVisible()
       await expect(menu.getByRole('switch', { name: 'Show keys' })).toHaveCount(size.sideways ? 0 : 1)
       await expect(menu.getByRole('radiogroup', { name: 'Note names on the score' })).toBeVisible()
       await menu.getByRole('button', { name: /Open speed options/ }).click()

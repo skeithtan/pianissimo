@@ -68,7 +68,7 @@ test('the initial three pieces use ordinary actions and stay deleted after reloa
   for (const title of titles) {
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: `Practice ${title}`, exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: `Study ${title}`, exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: `Open sheet music for ${title}`, exact: true })).toBeVisible()
   }
   expect(await idbAll(page, 'pieces')).toHaveLength(3)
   await expect(page.locator('main')).not.toContainText(/sample/i)
@@ -113,7 +113,7 @@ test('a tap anywhere on a row opens Practice, but not on Study, Options or insid
   await expect(menu).toHaveCount(0)
 
   // Study opens Study, not Practice.
-  await row.getByRole('button', { name: `Study ${title}`, exact: true }).click()
+  await row.getByRole('button', { name: `Open sheet music for ${title}`, exact: true }).click()
   await expect(view).toHaveAttribute('data-view', 'study')
   expect(await hash()).toMatch(/^#\/study\//)
   await page.goBack()
@@ -173,7 +173,7 @@ test.describe('on a touch screen', () => {
     await options.tap()
     await expect(menu).toBeVisible()
     // On another row's Study button: only the menu closes.
-    await page.getByRole('button', { name: 'Study Ode to Joy', exact: true }).tap()
+    await page.getByRole('button', { name: 'Open sheet music for Ode to Joy', exact: true }).tap()
     await expect(menu).toHaveCount(0)
     await page.waitForTimeout(700) // longer than any delayed touch click
     await expect(view).toHaveAttribute('data-view', 'library')

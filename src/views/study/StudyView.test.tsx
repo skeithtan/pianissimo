@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
 import { connectionOpen, studyRequest, currentView, practiceRequest, settingsOpen } from '../../app/navigation'
-import { connectionStatus, notices, resetAppStateForTests, settings } from '../../app/state'
+import { connectionStatus, resetAppStateForTests, settings } from '../../app/state'
 import { FakeMidi, FakeStrip, ManualFrames } from '../../app/session/testkit'
 import { newPieceRecord } from '../../core/storage/records'
 import { openFresh } from '../../core/storage/testkit'
@@ -83,6 +83,7 @@ async function rig(): Promise<Rig> {
     timers: clock,
     frames,
     timeOrigin: 0,
+    micSupported: () => false,
     prepare: async (_s, _i, options) => {
       rooms.push(options.labels.room)
       modes.push(options.mode)
@@ -156,10 +157,10 @@ async function openPiece(r: Rig): Promise<void> {
 }
 
 /** The tablet footer's popover (U90), when open. */
-const studyMenu = () => document.querySelector<HTMLElement>('[role="dialog"][aria-label="Study menu"]')
+const studyMenu = () => document.querySelector<HTMLElement>('[role="dialog"][aria-label="Sheet music menu"]')
 const footerMenuButton = () => byLabel($(view!.container, 'footer')!, 'Menu') as HTMLButtonElement
 
-/** Opens the footer's Study menu and returns its popover. */
+/** Opens the footer's Sheet music menu and returns its popover. */
 function openStudyMenu(): HTMLElement {
   if (footerMenuButton().getAttribute('aria-expanded') !== 'true') click(footerMenuButton())
   return studyMenu()!
@@ -177,7 +178,7 @@ describe('StudyView (U72)', () => {
     const r = await rig()
     view = mount(<StudyViewWith env={r.env} />)
     await settle(r)
-    expect(view.container.textContent).toContain('Choose a piece to study')
+    expect(view.container.textContent).toContain('Choose a piece')
     click(byText(view.container, 'Back to Library'))
     expect(currentView.value).toBe('library')
     click(byText(view.container, 'Two Hands'))
@@ -199,11 +200,11 @@ describe('StudyView (U72)', () => {
     expect($(view!.container, 'h1')?.textContent).toBe('Two Hands')
     expect(r.strips).toHaveLength(1)
     expect(r.rooms).toEqual(['hints'])
-    // Playback: Play, Go to the start, Speed; names and keys as reading aids (in the menu, U90).
-    expect(byLabel(view!.container, 'Play')).not.toBeNull()
-    expect((byLabel(view!.container, 'Play') as HTMLButtonElement).disabled).toBe(false)
-    expect(byLabel(view!.container, 'Go to the start')).not.toBeNull()
-    expect(byLabel(view!.container, 'Name the notes at the cursor')).not.toBeNull()
+    // Listen and Follow live in the footer alongside Speed.
+    expect(byLabel(view!.container, 'Listen')).not.toBeNull()
+    expect((byLabel(view!.container, 'Listen') as HTMLButtonElement).disabled).toBe(false)
+    expect(byLabel(view!.container, 'Go to the start')).toBeNull()
+    expect(byLabel(view!.container, 'Name the notes at the cursor')).toBeNull()
     const menu = openStudyMenu()
     expect(menuSwitch(menu, 'Show keys')).toBeTruthy()
     expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
@@ -211,7 +212,7 @@ describe('StudyView (U72)', () => {
     expect(byLabel(view!.container, 'Left hand')).toBeNull()
     expect(byLabel(view!.container, 'Right hand')).toBeNull()
     expect(byLabel(view!.container, 'Start')).toBeNull()
-    expect(byLabel(view!.container, 'Listen')).toBeNull()
+    expect(byLabel(view!.container, 'Follow my playing')).not.toBeNull()
     expect(r.strips[0]!.cursorAction).toBe(false)
     expect(r.strips[0]!.loopEditable).toBe(false)
     expect(r.strips[0]!.options.onLoopChange).toBeUndefined()
@@ -224,23 +225,27 @@ describe('StudyView (U72)', () => {
     const r = await rig()
     await openPiece(r)
     const strip = r.strips[0]!
-    click(byLabel(view!.container, 'Play'))
+    click(byLabel(view!.container, 'Listen'))
     await settle(r, 3)
     expect($(view!.container, '[data-testid="study-screen"]')?.dataset['playing']).toBe('true')
-    expect(byLabel(view!.container, 'Pause')).not.toBeNull()
+    expect(byLabel(view!.container, 'Listen')?.getAttribute('aria-pressed')).toBe('true')
     act(() => {
       r.clock.advance(1500)
       r.frames.flush()
     })
     expect(strip.cursor).toBeGreaterThan(0)
-    click(byLabel(view!.container, 'Pause'))
+    click(byLabel(view!.container, 'Listen'))
     await settle(r, 1)
-    expect(byLabel(view!.container, 'Play')).not.toBeNull()
-    // Back to the start: the cursor returns to the first bar and the view follows it.
-    click(byLabel(view!.container, 'Go to the start'))
+    expect(byLabel(view!.container, 'Listen')).not.toBeNull()
+    // The overview moves between the last and first bars.
+    const overview = byLabel(view!.container, 'Piece overview')
+    press(overview, 'End')
+    act(() => r.frames.flush())
+    expect(overview?.getAttribute('aria-valuenow')).toBe('2')
+    press(overview, 'Home')
     act(() => r.frames.flush())
     expect(strip.cursor).toBe(0)
-    expect(strip.returned).toBe(1)
+    expect(strip.returned).toBe(2)
     view!.unmount()
     view = null
     const piece = (await r.storage.getPiece(r.pieceId))!
@@ -250,24 +255,37 @@ describe('StudyView (U72)', () => {
     expect(piece.lastPassage).toBeFalsy()
   })
 
-  it('the Hint tool names the notes at the cursor for the hint lifetime', async () => {
+  it('follows a selected hand through the microphone and releases it when switching to Listen', async () => {
     const r = await rig()
+    const dispose = vi.fn()
+    const openFollower = vi.fn<NonNullable<PracticeEnv['createMicFollower']>>(() => ({
+      start: async () => undefined,
+      reset: () => undefined,
+      pause: () => undefined,
+      resume: () => undefined,
+      dispose,
+    }))
+    r.env = { ...r.env, micSupported: () => true, createMicFollower: openFollower }
     await openPiece(r)
-    const strip = r.strips[0]!
-    expect(strip.opacity.size).toBe(0)
-    click(byLabel(view!.container, 'Name the notes at the cursor'))
-    expect(strip.opacity.size).toBeGreaterThan(0)
-    for (const v of strip.opacity.values()) expect(v).toBe(1)
-    expect(notices.value).toHaveLength(0)
-    // The names go after the hint lifetime (30 s by default) plus the fade.
-    act(() => {
-      r.clock.advance(settings.value.hints.lifetime === 'until-correct' ? 5000 : 31_000)
-      r.frames.flush()
-    })
-    expect(strip.opacity.size).toBe(0)
+    const menu = openStudyMenu()
+    const source = $(menu, '[aria-label="Follow input"]')!
+    expect(byText(source, 'Microphone', 'button')?.getAttribute('aria-checked')).toBe('true')
+    expect((byText(source, 'Piano', 'button') as HTMLButtonElement).disabled).toBe(true)
+    click(byText($(menu, '[aria-label="Hands to follow"]')!, 'Left', 'button'))
+    const follow = byLabel(view!.container, 'Follow my playing')
+    click(follow)
+    await settle(r)
+    expect(openFollower.mock.calls[0]?.[3]).toBe('left')
+    expect(follow?.getAttribute('aria-pressed')).toBe('true')
+    const listen = byLabel(view!.container, 'Listen')
+    click(listen)
+    await settle(r)
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(follow?.getAttribute('aria-pressed')).toBe('false')
+    expect(listen?.getAttribute('aria-pressed')).toBe('true')
   })
 
-  it("has Practice's footer: Speed, then Go to the start, Play and the hint, then Menu (U90)", async () => {
+  it("has Practice's footer with Listen and Follow my playing at its center", async () => {
     const r = await rig()
     await openPiece(r)
     const footers = $$(view!.container, 'footer')
@@ -275,15 +293,8 @@ describe('StudyView (U72)', () => {
     const footer = footers[0]!
     expect($(footer, '[data-testid="footer-tools-slot"]')).not.toBeNull()
     expect(byLabel(footer, 'Faster by 5 percent')).not.toBeNull()
-    const center = byLabel(footer, 'Play')!.parentElement!
-    expect([...center.children].map((el) => el.getAttribute('aria-label'))).toEqual([
-      'Go to the start',
-      'Play',
-      'Name the notes at the cursor',
-    ])
-    // Plain actions, not toggles: no pressed state.
-    expect(byLabel(footer, 'Go to the start')!.hasAttribute('aria-pressed')).toBe(false)
-    expect(byLabel(footer, 'Name the notes at the cursor')!.hasAttribute('aria-pressed')).toBe(false)
+    const center = byLabel(footer, 'Listen')!.parentElement!
+    expect($$(center, 'button').map((el) => el.textContent)).toEqual(['Listen', 'Follow my playing'])
     const menu = footerMenuButton()
     expect(menu.getAttribute('aria-haspopup')).toBe('dialog')
     expect(menu.getAttribute('aria-expanded')).toBe('false')
@@ -293,7 +304,7 @@ describe('StudyView (U72)', () => {
     expect(byLabel(footer, 'Note names on the score')).toBeNull()
   })
 
-  it('the Study menu holds Note names, Metronome and Show keys, stays open while playing, and Escape closes it (U90)', async () => {
+  it('the Sheet music menu holds Note names, Metronome and Show keys, stays open while playing, and Escape closes it (U90)', async () => {
     const r = await rig()
     await openPiece(r)
     expect(studyMenu()).toBeNull()
@@ -307,9 +318,9 @@ describe('StudyView (U72)', () => {
     expect(menu.querySelectorAll('input[role="switch"]')).toHaveLength(2)
     expect(menu.contains(document.activeElement)).toBe(true)
     // Playback does not close it: Study never recedes.
-    click(byLabel(view!.container, 'Play'))
+    click(byLabel(view!.container, 'Listen'))
     await settle(r, 3)
-    expect(byLabel(view!.container, 'Pause')).not.toBeNull()
+    expect(byLabel(view!.container, 'Listen')?.getAttribute('aria-pressed')).toBe('true')
     expect(footerMenuButton().getAttribute('aria-expanded')).toBe('true')
     expect(studyMenu()).not.toBeNull()
     press(studyMenu(), 'Escape')
@@ -386,7 +397,7 @@ describe('StudyView (U72)', () => {
   })
 
   describe('on a phone-size screen (U74)', () => {
-    it('has no footer: Play and the menu are in the header, the rest is in the menu', async () => {
+    it('puts Listen, Follow my playing, and Menu in the phone header', async () => {
       onPhone()
       const r = await rig()
       await openPiece(r)
@@ -394,7 +405,8 @@ describe('StudyView (U72)', () => {
       expect($(root, '[data-testid="study-screen"]')?.dataset['compact']).toBe('true')
       expect($(root, 'footer')).toBeNull()
       const header = $(root, 'header')!
-      for (const name of ['Back to Library', 'Play', 'Menu']) expect(byLabel(header, name), name).not.toBeNull()
+      for (const name of ['Back to Library', 'Listen', 'Follow my playing', 'Menu'])
+        expect(byLabel(header, name), name).not.toBeNull()
       expect(byLabel(header, 'Show keys')).toBeNull()
       // Not on screen until the menu opens.
       expect(byLabel(root, 'Go to the start')).toBeNull()
@@ -412,8 +424,9 @@ describe('StudyView (U72)', () => {
       expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
       expect(menu.textContent).toContain('Speed')
       expect(menu.textContent).toContain('Show keys')
-      for (const text of ['Name the notes at the cursor', 'Go to the start', 'Settings'])
-        expect(byLabel(menu, text), text).not.toBeNull()
+      expect(byLabel(menu, 'Settings')).not.toBeNull()
+      expect(byLabel(menu, 'Name the notes at the cursor')).toBeNull()
+      expect(byLabel(menu, 'Go to the start')).toBeNull()
     })
 
     it('the menu has the Metronome switch right after Speed (U87)', async () => {
@@ -436,7 +449,7 @@ describe('StudyView (U72)', () => {
       expect(primed).toBe(1)
     })
 
-    it('the menu shows the keys; its hint names the notes and closes the menu; the header plays', async () => {
+    it('shows keys from the menu and seeks through the overview while listening', async () => {
       onPhone()
       const r = await rig()
       await openPiece(r)
@@ -456,22 +469,18 @@ describe('StudyView (U72)', () => {
       expect($$(root, '[data-part="label"]')).toHaveLength(0)
       expect($(root, '[data-part="keyboard-guide"]')?.dataset['labels']).toBe('false')
 
-      click(byLabel(dialog()!, 'Name the notes at the cursor'))
-      expect(strip.opacity.size).toBeGreaterThan(0)
+      click(byLabel(dialog()!, 'Close'))
       expect(byLabel(root, 'Menu')?.getAttribute('aria-expanded')).toBe('false')
 
-      click(byLabel(root, 'Play'))
+      click(byLabel(root, 'Listen'))
       await settle(r, 3)
-      expect(byLabel(root, 'Pause')).not.toBeNull()
+      expect(byLabel(root, 'Listen')?.getAttribute('aria-pressed')).toBe('true')
       act(() => {
         r.clock.advance(1500)
         r.frames.flush()
       })
       expect(strip.cursor).toBeGreaterThan(0)
-      // Go to the start, from the menu.
-      click(byLabel(root, 'Menu'))
-      await settle(r, 1)
-      click(byLabel(dialog()!, 'Go to the start'))
+      press(byLabel(root, 'Piece overview'), 'End')
       act(() => r.frames.flush())
       expect(strip.returned).toBe(1)
     })
@@ -498,7 +507,7 @@ describe('StudyView (U72)', () => {
       expect($(header, 'h1')?.textContent).toBe('Two Hands')
       expect(byLabel(header, 'Piece overview'), 'overview in the header').not.toBeNull()
       expect($$(root, '[aria-label="Piece overview"]')).toHaveLength(1)
-      for (const name of ['Back to Library', 'Play', 'Menu']) expect(byLabel(header, name), name).not.toBeNull()
+      for (const name of ['Back to Library', 'Listen', 'Menu']) expect(byLabel(header, name), name).not.toBeNull()
       expect(byLabel(root, 'Show keys')).toBeNull()
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('false')
       click(byLabel(header, 'Menu'))

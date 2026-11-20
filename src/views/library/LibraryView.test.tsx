@@ -238,7 +238,7 @@ describe('Library list', () => {
       expect(expanded(root, 'Nocturne')).toBe('true')
 
       // On another row's Study button.
-      tap(byLabel(root, 'Study Etude'))
+      tap(byLabel(root, 'Open sheet music for Etude'))
       await settle()
       expect(expanded(root, 'Nocturne')).toBe('false')
       expect(currentView.value).toBe('library')
@@ -292,9 +292,9 @@ describe('Library list', () => {
   it('Study opens the piece in the Study view and counts as opening it (U72)', async () => {
     await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })
     const root = await open()
-    expect(byLabel(root, 'Study Etude')?.textContent?.trim()).toBe('Study')
+    expect(byLabel(root, 'Open sheet music for Etude')?.textContent?.trim()).toBe('Sheet music')
     deps.clock += 5000
-    click(byLabel(root, 'Study Etude'))
+    click(byLabel(root, 'Open sheet music for Etude'))
     await until(() => currentView.value === 'study', 'navigation')
     expect(studyRequest.value).toEqual({ pieceId: 'piece-v1' })
     expect(practiceRequest.value).toBeNull()
@@ -431,7 +431,7 @@ describe('Rename a piece', () => {
     await until(() => dialog(root) === null, 'sheet closed')
     expect(titles(root)).toEqual(['Nocturne', 'Study in C'])
     expect(byLabel(root, 'Practice Study in C')).not.toBeNull()
-    expect(byLabel(root, 'Study Study in C')).not.toBeNull()
+    expect(byLabel(root, 'Open sheet music for Study in C')).not.toBeNull()
     expect(byLabel(root, 'Options for Study in C')).not.toBeNull()
     expect(byLabel(root, 'Practice Etude')).toBeNull()
     expect(root.textContent).toContain('Carl Czerny')

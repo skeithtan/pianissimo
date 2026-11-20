@@ -4,13 +4,13 @@
  * note names come on request, and nothing of practice is offered or recorded. On a phone-size
  * screen there is no footer (U74): Play and Menu are in the header and the other controls,
  * Show keys too, are in the untitled menu sheet. A tablet has Practice's footer (U90): Speed, Go to
- * the start, Play, Name the notes at the cursor and a Menu button whose popover ("Study menu")
+ * the start, Play, Name the notes at the cursor and a Menu button whose popover ("Sheet music menu")
  * holds Note names, Metronome and Show keys.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { idbAll } from './app-helpers'
-import { PIECE_ID, seedPiece } from './practice-helpers'
+import { PIECE_ID, installFakeMidi, play, seedPiece } from './practice-helpers'
 
 const PHONE_PORTRAIT = { width: 390, height: 844 }
 const PHONE_LANDSCAPE = { width: 844, height: 390 }
@@ -27,8 +27,9 @@ async function openMenu(page: Page): Promise<void> {
 }
 
 async function openStudy(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Study Two Hands' }).click()
+  await page.getByRole('button', { name: 'Open sheet music for Two Hands' }).click()
   await expect(page.locator('main')).toHaveAttribute('data-view', 'study')
+  await expect(page.locator('main')).toHaveAttribute('aria-label', 'Sheet music')
   await expect(page.locator('h1', { hasText: 'Two Hands' })).toBeVisible()
   await expect(page.getByTestId('score-skeleton')).toHaveCount(0, COLD)
 }
@@ -51,7 +52,6 @@ test.describe('Study on a phone', () => {
     // Playback only: no hands, no Start, no Listen, no Repeat button on the cursor.
     await expect(page.getByRole('button', { name: 'Left hand' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Start', exact: true })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Listen', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Repeat from here' })).toHaveCount(0)
 
     // No footer on a phone (U74): the header holds the only controls on screen, and the score
@@ -61,7 +61,7 @@ test.describe('Study on a phone', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)
     await expect(page.getByRole('button', { name: 'Show keys' })).toHaveCount(0)
-    for (const name of ['Back to Library', 'Play', 'Menu']) {
+    for (const name of ['Back to Library', 'Listen', 'Menu']) {
       const box = (await page.locator('header').getByRole('button', { name, exact: true }).boundingBox())!
       expect(box, name).not.toBeNull()
       expect(box.x, name).toBeGreaterThanOrEqual(0)
@@ -76,17 +76,19 @@ test.describe('Study on a phone', () => {
     page.on('request', (r) => {
       if (r.url().includes('/samples/')) samples.push(r.url())
     })
-    const play = page.getByRole('button', { name: 'Play', exact: true })
+    const play = page.getByRole('button', { name: 'Listen', exact: true })
     await expect(play).toBeEnabled()
     await play.click()
-    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible({ timeout: 20_000 })
+    await expect(play).toHaveAttribute('aria-pressed', 'true', { timeout: 20_000 })
     await expect(screen(page)).toHaveAttribute('data-playing', 'true')
     expect(samples.length).toBeGreaterThan(0)
-    await page.getByRole('button', { name: 'Pause', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
-    await openMenu(page)
-    await menu(page).getByRole('button', { name: 'Go to the start' }).click()
-    await expect(menu(page)).toHaveCount(0)
+    await play.click()
+    await expect(page.getByRole('button', { name: 'Listen', exact: true })).toBeVisible()
+    const overview = page.getByRole('slider', { name: 'Piece overview' })
+    await overview.press('End')
+    await expect(overview).toHaveAttribute('aria-valuenow', '2')
+    await overview.press('Home')
+    await expect(overview).toHaveAttribute('aria-valuenow', '1')
 
     // Nothing was practiced: no attempts, and the piece keeps its practice state untouched.
     await page.waitForTimeout(500)
@@ -95,25 +97,21 @@ test.describe('Study on a phone', () => {
     expect(pieces.find((p) => p.id === PIECE_ID)?.resume ?? null).toBeNull()
   })
 
-  test('the menu names the notes at the cursor on request, and all of them with Note names', async ({ page }) => {
+  test('Note names are set from Off, Conditional and All in the menu', async ({ page }) => {
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
     await openStudy(page)
     await expect(page.locator('.pn-strip')).toBeVisible(COLD)
     await expect(labels(page)).toHaveCount(0)
     await openMenu(page)
-    await expect(menu(page).getByText('Speed')).toBeVisible()
-    await menu(page).getByRole('button', { name: 'Name the notes at the cursor' }).click()
-    await expect(menu(page)).toHaveCount(0)
-    await expect(labels(page).first()).toBeVisible()
-    const revealed = await labels(page).count()
-    expect(revealed).toBeGreaterThan(0)
-    await openMenu(page)
-    await menu(page).getByRole('radio', { name: 'All' }).click()
-    await expect.poll(() => labels(page).count(), { timeout: 30_000 }).toBeGreaterThan(revealed)
-    await menu(page).getByRole('radio', { name: 'Off' }).click()
-    await expect.poll(() => labels(page).count(), { timeout: 30_000 }).toBeLessThanOrEqual(revealed)
-    await menu(page).getByRole('button', { name: 'Close' }).click()
-    await expect(menu(page)).toHaveCount(0)
+    await expect(menu(page).getByRole('button', { name: 'Name the notes at the cursor' })).toHaveCount(0)
+    await expect(menu(page).getByRole('button', { name: 'Go to the start' })).toHaveCount(0)
+    const names = menu(page).getByRole('radiogroup', { name: 'Note names on the score' })
+    await names.getByRole('radio', { name: 'Conditional' }).click()
+    await expect(names.getByRole('radio', { name: 'Conditional' })).toHaveAttribute('aria-checked', 'true')
+    await names.getByRole('radio', { name: 'All' }).click()
+    await expect(labels(page).first()).toBeVisible({ timeout: 30_000 })
+    await names.getByRole('radio', { name: 'Off' }).click()
+    await expect(labels(page)).toHaveCount(0, { timeout: 30_000 })
   })
 
   test('Show keys in the menu opens the keyboard guide; Settings is in the menu', async ({ page }) => {
@@ -143,9 +141,10 @@ test.describe('Study on a phone', () => {
     await page.reload()
     await expect(page.locator('h1', { hasText: 'Two Hands' })).toBeVisible(COLD)
     await expect(page.locator('main')).toHaveAttribute('data-view', 'study')
+    await expect(page.locator('main')).toHaveAttribute('aria-label', 'Sheet music')
     await page.getByRole('button', { name: 'Back to Library' }).click()
     await expect(page.locator('main')).toHaveAttribute('data-view', 'library')
-    await expect(page.getByRole('button', { name: 'Study Two Hands' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Open sheet music for Two Hands' })).toBeVisible()
   })
 })
 
@@ -162,7 +161,7 @@ test.describe('Study on a phone on its side', () => {
     expect(stage.height).toBeGreaterThanOrEqual(PHONE_LANDSCAPE.height - 130)
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)
-    const play = (await page.getByRole('button', { name: 'Play', exact: true }).boundingBox())!
+    const play = (await page.getByRole('button', { name: 'Listen', exact: true }).boundingBox())!
     const back = (await page.getByRole('button', { name: 'Back to Library' }).boundingBox())!
     // One row: Play sits in the header beside Back, and so does the overview (U80), in the
     // title's place; there is no keyboard guide and no Show keys.
@@ -182,27 +181,27 @@ test.describe('Study on a phone on its side', () => {
 test.describe('Study on a tablet', () => {
   test.use({ viewport: { width: 820, height: 1180 }, hasTouch: true })
 
-  test("has Practice's footer with the Study menu, and Settings in the header (U90)", async ({ page }) => {
+  test("has Practice's footer with the Sheet music menu, and Settings in the header (U90)", async ({ page }) => {
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
     await openStudy(page)
     await expect(page.locator('.pn-strip')).toBeVisible(COLD)
     await expect(screen(page)).not.toHaveAttribute('data-compact', 'true')
     await expect(page.locator('header').getByRole('button', { name: 'Menu', exact: true })).toHaveCount(0)
     const footer = screen(page).locator('footer')
-    for (const name of ['Play', 'Go to the start', 'Name the notes at the cursor', 'Menu'])
+    for (const name of ['Listen', 'Follow my playing', 'Menu'])
       await expect(footer.getByRole('button', { name, exact: true })).toBeVisible()
     await expect(footer.getByRole('button', { name: 'Faster by 5 percent' })).toBeVisible()
-    // One row: Speed, the three center buttons and Menu share a line.
+    // One row: Speed, both transport buttons and Menu share a line.
     const top = async (name: string) => (await footer.getByRole('button', { name, exact: true }).boundingBox())!
-    const play = await top('Play')
-    for (const name of ['Go to the start', 'Name the notes at the cursor', 'Menu']) {
+    const play = await top('Listen')
+    for (const name of ['Follow my playing', 'Menu']) {
       const box = await top(name)
       expect(Math.abs(box.y + box.height / 2 - (play.y + play.height / 2))).toBeLessThan(8)
     }
     await expect(footer.getByRole('radiogroup', { name: 'Note names on the score' })).toHaveCount(0)
 
     await footer.getByRole('button', { name: 'Menu', exact: true }).click()
-    const studyMenu = page.getByRole('dialog', { name: 'Study menu' })
+    const studyMenu = page.getByRole('dialog', { name: 'Sheet music menu' })
     await expect(studyMenu).toBeVisible()
     await expect(studyMenu.getByRole('radiogroup', { name: 'Note names on the score' })).toBeVisible()
     await expect(studyMenu.getByRole('switch', { name: 'Metronome' })).toBeVisible()
@@ -217,4 +216,31 @@ test.describe('Study on a tablet', () => {
     await expect(studyMenu).toHaveCount(0)
     await expect(page.locator('header').getByRole('button', { name: 'Settings' })).toBeVisible()
   })
+})
+
+test('Study follows the MIDI piano and switches to Listen without recording practice', async ({ page }) => {
+  await page.setViewportSize({ width: 1194, height: 834 })
+  await installFakeMidi(page)
+  await seedPiece(page)
+  await openStudy(page)
+  const follow = page.getByRole('button', { name: 'Follow my playing', exact: true })
+  const listen = page.getByRole('button', { name: 'Listen', exact: true })
+  await follow.click()
+  await expect(follow).toHaveAttribute('aria-pressed', 'true')
+  const targets = page.locator('.pn-music .pn-target:not(.pn-acc)')
+  const targetIds = () => targets.evaluateAll((els) => els.map((el) => el.getAttribute('data-n')))
+  await expect.poll(targetIds).not.toEqual([])
+  const first = await targetIds()
+  await play(page, 60, 48)
+  await expect
+    .poll(async () => {
+      const next = await targetIds()
+      return next.length > 0 && next.join(' ') !== first.join(' ')
+    })
+    .toBe(true)
+  await listen.click()
+  await expect(listen).toHaveAttribute('aria-pressed', 'true')
+  await expect(follow).toHaveAttribute('aria-pressed', 'false')
+  await expect(targets).toHaveCount(0)
+  expect(await idbAll(page, 'attempts')).toEqual([])
 })

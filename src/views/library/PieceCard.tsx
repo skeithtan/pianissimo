@@ -1,5 +1,5 @@
 /**
- * An ordinary library entry: the whole row opens Practice, with Study, an Options menu and
+ * An ordinary library entry: the whole row opens Practice, with Sheet music, an Options menu and
  * useful suggestions as separate controls. Saved practice context can be featured for
  * continuing; every piece keeps the same management actions.
  */
@@ -163,12 +163,12 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
             ) : null}
             <Button
               variant="ghost"
-              icon="listen"
+              icon="music"
               class={cardStyles.above}
               onClick={() => void model.study(piece.id)}
-              aria-label={`Study ${piece.title}`}
+              aria-label={`Open sheet music for ${piece.title}`}
             >
-              Study
+              Sheet music
             </Button>
             <div
               class={cardStyles.options}

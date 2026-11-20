@@ -118,18 +118,21 @@ export function Toggle({
   disabled?: boolean
   class?: string
 }) {
+  const id = useId()
   return (
     <label
       class={[styles.toggleRow, className].filter(Boolean).join(' ')}
       data-disabled={disabled ? 'true' : undefined}
     >
       <span class={styles.toggleText}>
-        <span>{label}</span>
-        {description ? <small>{description}</small> : null}
+        <span id={id}>{label}</span>
+        {description ? <small id={`${id}-description`}>{description}</small> : null}
       </span>
       <input
         type="checkbox"
         role="switch"
+        aria-labelledby={id}
+        aria-describedby={description ? `${id}-description` : undefined}
         class={styles.toggle}
         checked={checked}
         disabled={disabled}

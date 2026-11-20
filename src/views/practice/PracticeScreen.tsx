@@ -8,7 +8,7 @@
  *
  * On a phone-size screen (`usePhone`, U80) there is no header and no footer: one top bar holds
  * Back, the title (or, with the phone on its side, the piece overview), the hand toggles around
- * Start and a Menu button whose sheet holds Speed, Note names, Play through, Keep time, Show keys
+ * Start and a Menu button whose sheet holds Speed, Note names, Keep time, Show keys
  * (not on its side: no keyboard guide there), the connection status and Settings. The score takes the rest, and in portrait the page is engraved
  * to the stage's width and fitted to it (R17). In focus mode the bar slides up and fades like the
  * tablet header, its row giving the score its height; any press on the score brings it back, and
@@ -18,7 +18,6 @@
  * re-renders on its coarse `ui` store. Per-frame state (cursor, correction cue, keyboard guide) goes to
  * small subscribed children.
  */
-import { createMicFollowerDep, microphoneSupported } from '../../app/audio/micFollower'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { effect } from '@preact/signals'
 import { connectionOpen, navigate, openSettings, settingsOpen, type PracticePreset } from '../../app/navigation'
@@ -238,8 +237,6 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         },
         piece: saver,
         timeOrigin: env.timeOrigin,
-        createMicFollower: env.createMicFollower ?? createMicFollowerDep,
-        micSupported: env.micSupported ?? (() => microphoneSupported()),
         ...(env.loadBrowserAudio ? { loadBrowserAudio: env.loadBrowserAudio } : {}),
         ...(env.hasWebAudio ? { hasWebAudio: env.hasWebAudio } : {}),
         ...(env.loadMetronome ? { loadMetronome: env.loadMetronome } : {}),
@@ -340,8 +337,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   useEffect(() => {
     if (ui.playing || !phone) setMenuOpen(false)
   }, [ui.playing, phone])
-  // Not while the loop is reviewed after a pass (U102): Repeat waits at Ready (playing), but the
-  // learner has not started the next pass; its first correct note ends the review and focus follows.
+  // Focus mode waits for the review to end (U102), even when Repeat at Ready counts as playing.
   const recede = useRecede(ui.playing && !ui.reviewing, env.timers)
   // An upright phone gives the Repeat controls a row of their own that folds away while playing;
   // elsewhere they float over the score (U14, U80, revised 15 November 2026). Their options open
@@ -730,7 +726,10 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         )}
         onDismiss={() => session.dismissResult()}
         expandedId={expandedResult}
-        onExpandedChange={setExpandedResult}
+        onExpandedChange={(id) => {
+          if (id !== null) session.openResultDetails(id)
+          setExpandedResult(id)
+        }}
       />
     </div>
   )

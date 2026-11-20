@@ -5,7 +5,6 @@ import { act } from 'preact/test-utils'
 import { connectionOpen, currentView, practiceRequest, resultsRequest, settingsOpen } from '../../app/navigation'
 import { connectionStatus, notices, resetAppStateForTests, settings, updateSettings } from '../../app/state'
 import { FakeMidi, FakeStrip, ManualFrames } from '../../app/session/testkit'
-import type { MicFollowerLike } from '../../app/session/types'
 import { newPieceRecord } from '../../core/storage/records'
 import { openFresh } from '../../core/storage/testkit'
 import type { PianissimoStorage } from '../../core/storage'
@@ -141,15 +140,14 @@ function pickLabels(root: HTMLElement, label: string): void {
   click($$(openMenu(root), '[role="radio"]').find((el) => el.textContent === label))
 }
 
-/** A switch in the footer menu, by its label (Play through, Show keys). */
-function menuSwitch(root: HTMLElement, name: string): HTMLInputElement {
-  const row = $$(openMenu(root), 'label').find((el) => el.textContent?.trim() === name)!
-  return row.querySelector<HTMLInputElement>('input[role="switch"]')!
+function switchName(el: HTMLElement): string | undefined {
+  const id = el.getAttribute('aria-labelledby')
+  return id ? el.ownerDocument.getElementById(id)?.textContent?.trim() : undefined
 }
 
-/** The Play through switch in the footer menu. */
-function playThroughSwitch(root: HTMLElement): HTMLInputElement {
-  return menuSwitch(root, 'Play through')
+/** A switch in the footer menu, by its label (Play through, Show keys). */
+function menuSwitch(root: HTMLElement, name: string): HTMLInputElement {
+  return $$(openMenu(root), 'input[role="switch"]').find((el) => switchName(el) === name) as HTMLInputElement
 }
 
 let view: Mounted | null = null
@@ -1024,7 +1022,7 @@ describe('PracticeView', () => {
     expect(strip.cursorAction).toBe(false)
   })
 
-  it('without a piano and without a microphone the hands are off and unavailable, a tap explains, and they return with the piano (U27, P22)', async () => {
+  it('without a piano Practice offers Listen, directs following to Study, and restores the hands on connection', async () => {
     connectionStatus.value = { state: 'disconnected' }
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
@@ -1038,7 +1036,7 @@ describe('PracticeView', () => {
     expect(byLabel(view.container, 'Listen')).not.toBeNull()
     click(left)
     await settle(r, 1)
-    expect(notices.value.some((n) => n.text.startsWith('Piano not connected'))).toBe(true)
+    expect(notices.value.some((n) => n.text.includes('Open Sheet music'))).toBe(true)
     expect(byLabel(view.container, 'Left hand')?.getAttribute('aria-pressed')).toBe('false')
     // The piano arrives: the piece's remembered hands (both) come back without a save.
     act(() => {
@@ -1050,45 +1048,7 @@ describe('PracticeView', () => {
     expect(byLabel(view.container, 'Start')).not.toBeNull()
   })
 
-  it('the Play through switch toggles play-through with Start, Pause and Resume; no wrong-key cue (P12)', async () => {
-    const r = await rig()
-    practiceRequest.value = { pieceId: r.pieceId }
-    view = mount(<PracticeViewWith env={r.env} />)
-    await settle(r)
-    const tool = () => playThroughSwitch(view!.container)
-    expect(tool()).not.toBeNull()
-    expect(tool().checked).toBe(false)
-    expect(tool().disabled).toBe(false)
-    click(tool())
-    await settle(r, 1)
-    expect($(view.container, '[data-activity]')?.dataset['activity']).toBe('playing')
-    expect(tool().checked).toBe(true)
-    click(byLabel(view.container, 'Start'))
-    await settle(r)
-    expect(byLabel(view.container, 'Pause')).not.toBeNull()
-    act(() => {
-      r.midi.on(70, r.clock.now)
-      r.frames.flush()
-    })
-    await settle(r, 2)
-    expect($(view.container, '[data-testid="stage-cue"]')).toBeNull()
-    expect($(view.container, '[data-testid="interruption"]')).toBeNull()
-    click(byLabel(view.container, 'Pause'))
-    await settle(r, 1)
-    expect(byLabel(view.container, 'Resume')).not.toBeNull()
-    click(tool())
-    await settle(r, 1)
-    expect($(view.container, '[data-activity]')?.dataset['activity']).not.toBe('playing')
-    expect(tool().checked).toBe(false)
-    // Both hands off is Listen: play-through is not available there.
-    click(byLabel(view.container, 'Left hand'))
-    await settle(r, 1)
-    click(byLabel(view.container, 'Right hand'))
-    await settle(r, 1)
-    expect(tool().disabled).toBe(true)
-  })
-
-  it('the Keep time switch: exclusive with Play through, a badge on Menu, Start counts in over the stage (P13)', async () => {
+  it('the Keep time switch: a badge on Menu, Start counts in over the stage (P13)', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
     view = mount(<PracticeViewWith env={r.env} />)
@@ -1098,12 +1058,9 @@ describe('PracticeView', () => {
     expect(keep().checked).toBe(false)
     expect(keep().disabled).toBe(false)
     expect(badge()).toBeNull()
-    click(playThroughSwitch(view.container))
-    await settle(r, 1)
     click(keep())
     await settle(r, 1)
     expect(keep().checked).toBe(true)
-    expect(playThroughSwitch(view.container).checked).toBe(false)
     expect(badge()).not.toBeNull()
     // Saved on the piece through the debounced piece saver.
     act(() => r.clock.advance(1100))
@@ -1123,8 +1080,7 @@ describe('PracticeView', () => {
     await settle(r, 1)
     expect($(view.container, '[data-testid="count-in"]')).toBeNull()
     expect(byLabel(view.container, 'Start')).not.toBeNull()
-    // Play through switches Keep time off again.
-    click(playThroughSwitch(view.container))
+    click(keep())
     await settle(r, 1)
     expect(keep().checked).toBe(false)
     expect(badge()).toBeNull()
@@ -1209,76 +1165,6 @@ describe('PracticeView', () => {
     })
   })
 
-  it('the Play through switch is disabled without a piano and without a microphone (P12, U27, P22)', async () => {
-    connectionStatus.value = { state: 'disconnected' }
-    const r = await rig()
-    practiceRequest.value = { pieceId: r.pieceId }
-    view = mount(<PracticeViewWith env={{ ...r.env, micSupported: () => false }} />)
-    await settle(r)
-    expect(playThroughSwitch(view.container).disabled).toBe(true)
-  })
-
-  it('without a piano, Start plays through the microphone at once: no Settings visit (P22, U92)', async () => {
-    connectionStatus.value = { state: 'disconnected' }
-    const r = await rig()
-    const opened: { hands: string | undefined }[] = []
-    const mic: MicFollowerLike = {
-      start: async () => undefined,
-      reset: () => undefined,
-      pause: () => undefined,
-      resume: () => undefined,
-      dispose: () => undefined,
-    }
-    practiceRequest.value = { pieceId: r.pieceId }
-    view = mount(
-      <PracticeViewWith
-        env={{
-          ...r.env,
-          micSupported: () => true,
-          createMicFollower: (_model, _onEstimate, _onLost, hands) => {
-            opened.push({ hands })
-            return mic
-          },
-        }}
-      />,
-    )
-    await settle(r)
-    // The hands are available and the main button starts a play-through.
-    const left = byLabel(view.container, 'Left hand')!
-    expect(left.getAttribute('aria-pressed')).toBe('true')
-    expect(left.hasAttribute('aria-disabled')).toBe(false)
-    expect($(view.container, '[data-activity]')?.dataset['activity']).toBe('playing')
-    const start = byLabel(view.container, 'Start') as HTMLButtonElement
-    expect(start.disabled).toBe(false)
-    // In the menu: Play through on and locked with its note; Follow shows Microphone, Piano unavailable.
-    const menu = openMenu(view.container)
-    const playRow = $$(menu, 'label').find((el) => el.textContent?.trim().startsWith('Play through'))!
-    const play = playRow.querySelector<HTMLInputElement>('input[role="switch"]')!
-    expect(play.checked).toBe(true)
-    expect(play.disabled).toBe(true)
-    expect(playRow.querySelector('small')?.textContent).toBe('No piano connected: following the microphone.')
-    const segments = $$(menu, '[role="radio"]')
-    const piano = segments.find((el) => el.textContent === 'Piano') as HTMLButtonElement
-    const microphone = segments.find((el) => el.textContent === 'Microphone')!
-    expect(piano.disabled).toBe(true)
-    expect(microphone.getAttribute('aria-checked')).toBe('true')
-    click(byLabel($(view.container, 'footer')!, 'Menu'))
-    click(start)
-    await settle(r)
-    expect(opened).toEqual([{ hands: 'both' }])
-    expect(byLabel(view.container, 'Pause')).not.toBeNull()
-    // One hand: the microphone follows that hand (rebuilt on the hand change).
-    click(byLabel(view.container, 'Pause'))
-    await settle(r, 1)
-    click(byLabel(view.container, 'Right hand'))
-    await settle(r, 1)
-    // Paused mid-piece, the main button reads Resume.
-    click(byLabel(view.container, 'Resume'))
-    await settle(r)
-    expect(opened.at(-1)).toEqual({ hands: 'left' })
-    expect(byLabel(view.container, 'Pause')).not.toBeNull()
-  })
-
   describe('footer menu (U76)', () => {
     const menuButton = () => byLabel($(view!.container, 'footer')!, 'Menu')!
     const panel = () => byLabel(view!.container, 'Practice menu')
@@ -1296,7 +1182,7 @@ describe('PracticeView', () => {
       return r
     }
 
-    it('opens a popover dialog with Note names, Play through, Keep time, Metronome and Show keys; aria-expanded follows', async () => {
+    it('opens a popover dialog with Note names, Keep time, Metronome and Show keys; aria-expanded follows', async () => {
       await opened()
       const button = menuButton()
       expect(button.getAttribute('aria-haspopup')).toBe('dialog')
@@ -1309,12 +1195,12 @@ describe('PracticeView', () => {
       expect(dialog.getAttribute('aria-modal')).toBeNull()
       expect(
         [...dialog.children].map(
-          (row) => row.textContent?.trim().match(/^(Note names|Play through|Keep time|Metronome|Show keys)/)?.[0],
+          (row) => row.textContent?.trim().match(/^(Note names|Keep time|Metronome|Show keys)/)?.[0],
         ),
-      ).toEqual(['Note names', 'Play through', 'Keep time', 'Metronome', 'Show keys'])
+      ).toEqual(['Note names', 'Keep time', 'Metronome', 'Show keys'])
       expect(byLabel(dialog, 'Faster by 5 percent')).toBeNull()
       expect(byLabel(dialog, 'Note names on the score')).not.toBeNull()
-      expect(dialog.querySelectorAll('input[role="switch"]')).toHaveLength(4)
+      expect(dialog.querySelectorAll('input[role="switch"]')).toHaveLength(3)
       expect(dialog.contains(document.activeElement)).toBe(true)
       // The Menu button again closes it.
       click(button)
@@ -1659,12 +1545,12 @@ describe('PracticeView', () => {
       expect(menu.getAttribute('aria-label')).toBe('Menu')
       expect(menu.textContent).toContain('Speed')
       expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
-      const switches = $$(menu, 'input[role="switch"]').map((el) => el.closest('label')?.textContent?.trim())
-      expect(switches).toEqual(['Play through', 'Keep time', 'Metronome', 'Show keys'])
+      const switches = $$(menu, 'input[role="switch"]').map(switchName)
+      expect(switches).toEqual(['Keep time', 'Metronome', 'Show keys'])
       expect(menu.textContent).toContain('Connected · Test piano')
       expect(byLabel(menu, 'Settings')).not.toBeNull()
       // Show keys opens the guide slot from the sheet.
-      const keys = $$(menu, 'input[role="switch"]')[3]!
+      const keys = $$(menu, 'input[role="switch"]')[2]!
       click(keys)
       await settle(r, 1)
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('true')
@@ -1688,8 +1574,8 @@ describe('PracticeView', () => {
       click(byLabel(bar(root), 'Menu'))
       await settle(r, 1)
       const menu = dialog()!
-      const switches = $$(menu, 'input[role="switch"]').map((el) => el.closest('label')?.textContent?.trim())
-      expect(switches).toEqual(['Play through', 'Keep time', 'Metronome'])
+      const switches = $$(menu, 'input[role="switch"]').map(switchName)
+      expect(switches).toEqual(['Keep time', 'Metronome'])
       expect(menu.textContent).toContain('Connected · Test piano')
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('false')
     })

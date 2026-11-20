@@ -7,14 +7,7 @@
  * check waits through Playwright's auto-waiting assertions.
  */
 import { expect, test, type Page } from '@playwright/test'
-import {
-  installFakeMidi,
-  openFooterMenu,
-  openSeededPractice,
-  PIECE_ID,
-  playWhenDue,
-  seedPiece,
-} from './practice-helpers'
+import { installFakeMidi, openSeededPractice, PIECE_ID, playWhenDue, seedPiece } from './practice-helpers'
 
 const TABLET = { width: 1180, height: 820 }
 const TABLET_PORTRAIT = { width: 820, height: 1180 }
@@ -212,23 +205,15 @@ test('a note-level loop edge survives a reload', async ({ page }) => {
   await expect(loopEnd(page)).toHaveText(edge ?? '')
 })
 
-test('closing Repeat but keeping its loop (Play through) stays closed and keeps the loop; the X clears it', async ({
-  page,
-}) => {
+test('visiting Study preserves the Practice loop and the X clears it', async ({ page }) => {
   await openPractice(page, TABLET)
   await openRepeat(page)
   await loopBarTwo(page)
-  // Play through closes Repeat and keeps the loop for later (the panel's X would clear it).
-  const menu = await openFooterMenu(page)
-  await menu.getByRole('switch', { name: 'Play through' }).click()
-  await page.keyboard.press('Escape')
-  await expect(panelOf(page)).toHaveCount(0)
-
-  await reloadPractice(page)
-  // Give a late-connecting piano time to (wrongly) bring Repeat back.
-  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
-  await expect(panelOf(page)).toHaveCount(0)
-  await page.getByRole('button', { name: 'Repeat from here' }).click()
+  await page.getByRole('button', { name: 'Back to Library' }).click()
+  await page.getByRole('button', { name: 'Open sheet music for Two Hands' }).click()
+  await expect(page.getByRole('button', { name: 'Follow my playing', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Back to Library' }).click()
+  await openSeededPractice(page)
   await expect(loopStart(page)).toContainText('Bar 2')
   await expect(loopEnd(page)).toContainText('Bar 2')
 

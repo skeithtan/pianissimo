@@ -403,6 +403,80 @@ describe('Keep time: modes', () => {
     expect(ui(h).lastResult?.streak).toBe(2)
   })
 
+  it('leaves the loop review at count 2 and plays the next pass without a key press', async () => {
+    const h = open({ range: LOOP })
+    await begin(h)
+    playOnTime(h, [60, 62, 64, 65])
+    expect(h.strip.reviewing).toBe(true)
+
+    const nextCountIn = RUN + 4000
+    at(h, nextCountIn)
+    expect(ui(h)).toMatchObject({ countIn: 4, reviewing: true })
+    at(h, nextCountIn + 1000)
+    expect(ui(h)).toMatchObject({ countIn: 3, reviewing: true })
+    expect(h.strip.reviewing).toBe(true)
+    at(h, nextCountIn + 2000)
+    expect(ui(h)).toMatchObject({ countIn: 2, reviewing: false, lastResult: { streak: 1 } })
+    expect(h.strip.reviewing).toBe(false)
+    at(h, nextCountIn + 3000)
+    expect(ui(h)).toMatchObject({ countIn: 1, reviewing: false })
+
+    const nextRun = nextCountIn + 4000
+    at(h, nextRun + 151)
+    expect(h.session.engine.state).toMatchObject({ phase: 'running', clockStartedAt: nextRun, groupIndex: 1 })
+    expect(h.strip.reviewing).toBe(false)
+    expect(ui(h).countIn).toBeNull()
+
+    at(h, nextRun + 3200)
+    expect(h.strip.reviewing).toBe(true)
+    expect(ui(h).lastResult?.timing?.missed).toBe(4)
+  })
+
+  it.each([1, 2])('leaves review on the first beat of a %i-beat count-in', async (beats) => {
+    const model = buildScore({ notes: [{ at: 0, midi: 60 }], bars: 1, meter: [beats, 4] })
+    const h = harness(model, { range: LOOP }, { options: { rhythm: true } })
+    await begin(h)
+    const run = T0 + beats * 1000
+    at(h, run)
+    h.tap(60)
+    expect(h.strip.reviewing).toBe(true)
+
+    at(h, run + beats * 1000)
+    expect(ui(h)).toMatchObject({ countIn: beats, reviewing: false })
+    expect(h.strip.reviewing).toBe(false)
+  })
+
+  it.each([0, 1000])('opening result details %i ms after the last note stops the next Repeat pass', async (delay) => {
+    const h = open({ range: LOOP })
+    await begin(h)
+    playOnTime(h, [60, 62, 64, 65])
+    const result = ui(h).lastResult!
+    at(h, RUN + 3000 + delay)
+    expect(ui(h).countIn).toBe(delay === 0 ? null : 4)
+
+    h.session.openResultDetails(result.id)
+    at(h, RUN + 9000)
+    expect(ui(h)).toMatchObject({ countIn: null, playing: false, reviewing: true, lastResult: { id: result.id } })
+    expect(h.attempts).toHaveLength(1)
+
+    await begin(h)
+    expect(ui(h)).toMatchObject({ countIn: 4, playing: true, reviewing: false, lastResult: null })
+  })
+
+  it('restores review when opening result details during the zoom back in', async () => {
+    const h = open({ range: LOOP })
+    await begin(h)
+    playOnTime(h, [60, 62, 64, 65])
+    at(h, RUN + 6000)
+    expect(ui(h)).toMatchObject({ countIn: 2, reviewing: false })
+
+    h.session.openResultDetails(ui(h).lastResult!.id)
+    h.frames.flush()
+    expect(ui(h)).toMatchObject({ countIn: null, playing: false, reviewing: true })
+    expect(h.strip.reviewing).toBe(true)
+    expect(rec.cancels).toContain(RUN + 6000)
+  })
+
   it('Repeat mode: a seek only interrupts or moves the cursor, no lead-in; Start counts in at the loop start', async () => {
     const h = open({ range: { fromOcc: 1, toOcc: 1 } })
     expect(h.session.seekPosition(melody.occurrences[0]!.start)).toBe(true)

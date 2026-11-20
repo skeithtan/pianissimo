@@ -15,7 +15,7 @@ const COLD = { timeout: 60_000 }
 const scroller = (page: Page) => page.locator('.pn-page-scroll')
 
 async function openStudy(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Study Two Hands' }).click()
+  await page.getByRole('button', { name: 'Open sheet music for Two Hands' }).click()
   await expect(page.locator('main')).toHaveAttribute('data-view', 'study')
   await waitForPage(page)
 }

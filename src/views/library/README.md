@@ -15,7 +15,7 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 - **Header**: Library, with a secondary Add score action when pieces exist (no piece count,
   no caption). The empty state gives Add score the primary emphasis and points to Settings →
   Backup.
-- **Ordinary rows**: title, composer and a status line on the left; Study (headphones and the
+- **Ordinary rows**: title, composer and a status line on the left; Sheet music (music note and the
   word), an icon-only Options button (`more`; name "Options for …", `aria-expanded` /
   `aria-controls`) and a chevron on the right, on one line at every width (the chevron glyph
   is hidden at ≤480px; its button stays, 4 px wide, never zero: Voice Control, screen-reader
@@ -24,7 +24,7 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
   hands/tempo review, suggestion preferences, clear history, and Delete.
 - **The whole row opens Practice** (`model.open`, like Continue practice). Nothing is nested:
   one real button per card, the chevron ("Practice …") or Continue practice, carries a
-  `::after` that covers the card (stretched target). Study, the Options wrapper (and its menu)
+  `::after` that covers the card (stretched target). Sheet music, the Options wrapper (and its menu)
   and the suggestions block are `position: relative; z-index: 1`, so their own dead space
   never opens Practice; an open menu's wrapper rises to z-index 20 so it paints over the next
   rows. Hover (`hover: hover`) and press tint the card with `--hover`; keyboard focus on the
@@ -35,7 +35,7 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
   the rows' targets cover nearly the whole list. The outside `pointerdown` that closes the menu
   arms `swallowNextClick` (`PieceCard.tsx`): a capture-phase `click` listener on `document`
   stops and cancels the click that ends that press, before any handler or default action, so
-  the tap opens no row, Study, Add score or Settings. Exception: another row's Options button
+  the tap opens no row, Sheet music, Add score or Settings. Exception: another row's Options button
   (`data-piece-options`) is not swallowed, so it closes this menu and opens its own in one tap;
   the same row's button still toggles its menu closed, and Escape is unchanged. The mark ends
   with that click, the next `pointerdown`, a `pointercancel` (the press became a scroll), 500 ms
@@ -45,10 +45,10 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
   `openedStatus` in `continuation.ts`. "Not opened yet" while `lastOpenedAt <= createdAt`
   (`neverOpened`): an import or a copy stores both times equal and the initial pieces store
   `lastOpenedAt` a little earlier; every open stores a later time (`markOpened` from Practice,
-  Study, a suggestion, Open existing piece; the Practice and Study views also bump it when they
+  Sheet music, a suggestion, Open existing piece; the Practice and Sheet music views also bump it when they
   load). Add and open calls `markOpened(id, createdAt + 1)` before opening Practice, so it
   counts even when the clock has not moved since the commit. Otherwise "Opened yesterday",
-  "Opened 3 days ago" (`formatRelativeTime`); never "practiced", since Study opens too (L9).
+  "Opened 3 days ago" (`formatRelativeTime`); never "practiced", since Sheet music opens too (L9).
 - **Rename**: "Rename piece" edits the library entry's title (required) and composer (optional;
   empty removes it). Both are trimmed, inner whitespace collapsed and capped at 120 characters
   (`normalizePieceName`); Save needs a non-empty title and a real change. Only the piece record
@@ -64,7 +64,7 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
   at position 0, "From bar 9", "From bar 9, beat 3" off the first beat, "Repeat bars 5–8"),
   the hands in lower case ("both hands", "right hand", "left hand", "listening"), and the speed
   unless it reads 100% ("80% speed"). Only that piece's package is loaded to resolve printed
-  bar/pass labels; no engraving runs here. Study also updates lastOpenedAt, so the Library
+  bar/pass labels; no engraving runs here. Sheet music also updates lastOpenedAt, so the Library
   never describes it as "last practiced."
 - **Suggestions**: useful active/Improved suggestions appear outside management Options.
   Empty explanations are omitted; Options retain per-piece enable/disable controls.
@@ -91,7 +91,7 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 | `ImportSummary.tsx` | The summary: facts (bars, notes, chords, voices, ties, tuplets), **Hands** ("Right hand: voices …" lines from the score with cross-staff notes; Change hands opens per-voice L/R; a split voice is tagged and needs Confirm hands; `editHands` shows the controls from the start for the stored-piece review), **Tempo** (from the score with beat unit, changes and conflicts; or a required practice tempo entry), **Score check** (compact import keeps successful checks under Import details; errors, unsupported passages, timing issues, ottavas, rolls, repeats, key/meter/clef changes, warnings, importer notes). |
 | `ImportSheet.tsx` | Phase rendering; `StorageStatusLine`. |
 | `ReviewSheet.tsx` | "Hands and tempo of “title”" for a stored piece (L5): loads the package, shows `ImportSummaryView` with every voice's hand editable and, when the user entered the tempo at import, that practice tempo; Save changes only when something changed and the L1 gate passes. |
-| `PieceCard.tsx` | Card (stretched Practice target, status line, Study, icon-only Options) + delete and clear-history confirmation sheets. |
+| `PieceCard.tsx` | Card (stretched Practice target, status line, Sheet music, icon-only Options) + delete and clear-history confirmation sheets. |
 | `continuation.ts` | Pure: which piece is featured (`continuingPiece`), its context line (`continuationContext`), and an ordinary row's status (`neverOpened`, `openedStatus`). |
 | `RenameSheet.tsx` | "Rename piece": a form with Title and Composer fields, prefilled from the piece on every open, the title focused and selected; Enter or Save calls `model.rename`, a failure shows in the sheet. |
 | `PieceSuggestions.tsx` | Shared `SuggestionList` bound to the per-piece model, with useful content outside Options and preference controls in Options. |
@@ -163,7 +163,7 @@ and point `sessionDismissals` at the shared singleton (one line, see `suggestion
 - `LibraryView.test.tsx` (happy-dom): empty state, iPad accept, list + open → Practice (no
   piece count or Study caption; status lines; chevron with no visible word and the "Practice …"
   name), "Not opened yet", featured context line without "Opened …", icon-only Options keeps
-  its name and menu link, a tap outside an open menu only closes it (on another row's Study or
+  its name and menu link, a tap outside an open menu only closes it (on another row's Sheet music or
   Practice target; the next tap opens Practice; another row's Options button switches menus in
   one tap; a press that turns into a scroll swallows nothing), storage unavailable, rename
   (first option, prefilled each open, title focused and selected,
@@ -177,7 +177,7 @@ and point `sessionDismissals` at the shared singleton (one line, see `suggestion
 - `tests/e2e/library.spec.ts` (Chromium + WebKit, production build): no OSMD / sample
   requests, real-worker import persisted across reload, tempo entry, unrelated XML, canceling
   a 3000-bar import, rename (title selected on open, Enter saves, kept across reload), a tap on
-  a row's title opens Practice while Study, Options and empty space in the open menu do not,
+  a row's title opens Practice while Sheet music, Options and empty space in the open menu do not,
   a click or touch tap outside an open menu only closes it (no late touch click) and the next
   one opens the row, another row's Options button switches menus. `LIBRARY_SHOTS=<dir>` also saves light/dark screenshots at 1180×820, 820×1180 and 360×740.
 

@@ -105,9 +105,9 @@ function EmptyState({ env }: { env: PracticeEnv }) {
   }, [env])
   return (
     <section class={styles.center}>
-      <span class={styles.eyebrow}>Study</span>
-      <h1 class={styles.emptyTitle}>Choose a piece to study</h1>
-      <p class={styles.muted}>Pick a score in the Library to listen to it and read it here.</p>
+      <span class={styles.eyebrow}>Sheet music</span>
+      <h1 class={styles.emptyTitle}>Choose a piece</h1>
+      <p class={styles.muted}>Open a piece from the Library to read its score, listen, or follow your playing.</p>
       <Button variant="primary" icon="back" onClick={() => navigate('library')}>
         Back to Library
       </Button>

@@ -347,10 +347,12 @@ export class PracticeSession {
   #lastResult: AttemptSummary | null = null
   /**
    * The next pass played its first correct note while the last result shows (U101): the bar of
-   * that note (the result goes once the cursor leaves it). Null: the result is still reviewed
-   * (full strength, the strip zoomed out), whatever keys were pressed. Reset by each new result.
+   * that note (the result goes once the cursor leaves it). Null: the result is still at full
+   * strength, whatever keys were pressed. Reset by each new result.
    */
   #resultPlayedIn: number | null = null
+  /** The next Keep time pass's downbeat once its count-in ends review. Reset by each new result. */
+  #reviewReturnBy: number | null = null
   /** How the last result went: played past by the next pass (U101), or dismissed any other way. */
   #resultExit: 'played' | 'dismissed' = 'dismissed'
   /** Recent scored records of one comparison context, oldest first (repeated mistakes, P24). */
@@ -581,6 +583,23 @@ export class PracticeSession {
     // A browse hold reads Pause (U95): pressing it cancels the continuation.
     if (this.#isPlaying() || this.#browseHold) this.pause()
     else void this.start()
+  }
+
+  /** Study's two transport actions share the cursor and replace each other's sound or input. */
+  toggleStudyPlayback(action: 'listen' | 'follow', hands: Exclude<HandSelection, 'none'> = 'both'): void {
+    if (this.#disposed || this.#inputHeld) return
+    const follow = action === 'follow'
+    if (follow && !this.#inputAvailable && !this.#micPossible()) return
+    if (follow === this.#playThrough) {
+      this.togglePlay()
+      return
+    }
+    const position = this.#onsetAtOrAfter(this.#cursorPosition()) ?? ZERO
+    this.pause()
+    this.setSelection({ hands: follow ? hands : 'none' })
+    if (follow) this.setPlayThrough(true)
+    this.seekPosition(position)
+    void this.start()
   }
 
   /**
@@ -1800,6 +1819,10 @@ export class PracticeSession {
   #nextCountInBeat(): void {
     const c = this.#countIn
     if (!c) return
+    if (c.remaining <= 2 && this.#reviewing()) {
+      this.#reviewReturnBy = c.start + c.beats * c.beatMs
+      this.#scheduleFrame()
+    }
     const k = c.beats - c.remaining + 1
     const at = c.start + k * c.beatMs
     c.timer = this.#deps.timers.setTimeout(
@@ -1811,8 +1834,8 @@ export class PracticeSession {
           return
         }
         c.remaining = c.beats - k
-        this.#publishUi()
         this.#nextCountInBeat()
+        this.#publishUi()
       },
       Math.max(0, at - this.#deps.clock()),
     )
@@ -2092,6 +2115,14 @@ export class PracticeSession {
     if (!result || !latest || latest.id !== result.id || !timeline) return null
     const marks = correctionMarksByGroup(latest, timeline, this.#model, this.#settings.naming)
     return { attemptId: result.id, records: [...this.#recentScored], timeline, marks }
+  }
+
+  /** Opening details stops the next Keep time pass while it is preparing or counting in. */
+  openResultDetails(attemptId: string): void {
+    if (this.#lastResult?.id !== attemptId || this.#engine.transport !== 'strict') return
+    if (!this.#pendingRepeat && !this.#countIn && this.#engine.state.phase !== 'preparing') return
+    this.#reviewReturnBy = null
+    this.pause()
   }
 
   /**
@@ -3076,6 +3107,7 @@ export class PracticeSession {
     const climbing = ladder?.climbedTo !== undefined
     const targetReached = !climbing && this.#repeatTarget !== null && this.#streak >= this.#repeatTarget
     this.#resultPlayedIn = null
+    this.#reviewReturnBy = null
     this.#resultExit = 'dismissed'
     this.#lastResult = {
       id: record.id,
@@ -4116,10 +4148,9 @@ export class PracticeSession {
 
   /**
    * The strip reviews the passage while a completed pass's result shows (U97): it zooms out to the
-   * whole loop when the result appears and back in when the next pass plays its first correct
-   * note (U101; wrong keys keep the review) or the result goes (Start, Restart, Hide, a selection
-   * change, a seek). Called from the frame, never from the input path; the strip only records the
-   * change there and animates in its own frames.
+   * whole loop when the result appears. It zooms back in at count 2 in Keep time (U103), on the
+   * first correct note in waiting practice (U101), or when the result is dismissed. Called from
+   * the frame, never from the input path; the strip animates in its own frames.
    */
   #syncReview(): void {
     const strip = this.#strip
@@ -4127,12 +4158,18 @@ export class PracticeSession {
     const on = this.#reviewing()
     if (on === this.#reviewShown) return
     this.#reviewShown = on
-    strip.setReview(on)
+    strip.setReview(on, this.#reviewReturnBy ?? undefined)
   }
 
-  /** The review is on (`#syncReview`, `ui.reviewing`): a completed pass's result, not yet played past. */
+  /** Whether the completed pass is still shown in the review frame (`#syncReview`, `ui.reviewing`). */
   #reviewing(): boolean {
-    return this.#lastResult !== null && this.#resultPlayedIn === null && this.#loop !== null && !this.#playThrough
+    return (
+      this.#lastResult !== null &&
+      this.#resultPlayedIn === null &&
+      this.#reviewReturnBy === null &&
+      this.#loop !== null &&
+      !this.#playThrough
+    )
   }
 
   /** Loop handles, drag inspection and the cursor's repeat button by state. */

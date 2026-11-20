@@ -31,20 +31,14 @@ test.describe('Keep time', () => {
     await openSeededPractice(page)
   })
 
-  test('Keep time and Play through exclude each other', async ({ page }) => {
+  test('Keep time stays in Practice and explains its count-in and tempo', async ({ page }) => {
     const menu = await openFooterMenu(page)
-    const keep = menu.getByRole('switch', { name: 'Keep time' })
-    const through = menu.getByRole('switch', { name: 'Play through' })
+    const keep = menu.getByRole('switch', { name: 'Keep time', exact: true })
+    await expect(keep).toHaveAccessibleDescription(/count-in.*set tempo/)
+    await expect(menu.getByRole('switch', { name: 'Play through' })).toHaveCount(0)
     await expect(keep).not.toBeChecked()
     await keep.click()
     await expect(keep).toBeChecked()
-    await expect(through).not.toBeChecked()
-    await through.click()
-    await expect(through).toBeChecked()
-    await expect(keep).not.toBeChecked()
-    await keep.click()
-    await expect(keep).toBeChecked()
-    await expect(through).not.toBeChecked()
   })
 
   test('Pause during the count-in cancels it', async ({ page }) => {
@@ -91,7 +85,12 @@ test.describe('Keep time', () => {
     await expect(card).toContainText('On time 3 of 4')
     await expect(card).not.toContainText('Clean pass')
 
+    // Let the next count-in start its zoom back in before opening the previous pass's mistakes.
+    const countIn = page.getByTestId('count-in')
+    await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 2')
     await card.getByRole('button', { name: 'Show details of this pass' }).click()
+    await expect(countIn).toHaveCount(0)
+    await expect(page.locator('.pn-strip')).toHaveClass(/pn-review/)
     // The details open in place over Practice (U99), never another screen.
     const details = page.getByTestId('result-details')
     await expect(details).toBeVisible()
@@ -104,5 +103,11 @@ test.describe('Keep time', () => {
     await expect(details.locator('[data-row="tolerance"]')).toContainText('150')
     // The late press of D4 came after its group was missed, so the attempt is not a pass.
     await expect(details.locator('[data-reason]')).not.toHaveAttribute('data-reason', 'passed')
+
+    await page.keyboard.press('Escape')
+    await expect(details).toHaveCount(0)
+    await expect(countIn).toHaveCount(0)
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 4')
   })
 })

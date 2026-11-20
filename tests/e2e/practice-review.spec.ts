@@ -19,7 +19,15 @@ import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/core/model/settings'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { importBytes } from '../unit/import/fixtures'
-import { installFakeMidi, loopWholePiece, openSeededPractice, play, playWhenDue, seedPiece } from './practice-helpers'
+import {
+  installFakeMidi,
+  loopWholePiece,
+  openFooterMenu,
+  openSeededPractice,
+  play,
+  playWhenDue,
+  seedPiece,
+} from './practice-helpers'
 
 const SHOTS = process.env['LOOP_REVIEW_SHOTS']
 const LONG = generateLongScore(12)
@@ -288,6 +296,35 @@ test.describe('the review after a completed pass (U97)', () => {
         }),
     )
     expect(saved).toBe(2.2)
+  })
+
+  test('Keep time returns to playing zoom during the next count-in without any key presses', async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 700 })
+    await installFakeMidi(page)
+    await seedPiece(page, { view: { ...DEFAULT_SETTINGS.view, zoom: 2.2 } })
+    await openSeededPractice(page)
+    await loopWholePiece(page)
+    const menu = await openFooterMenu(page)
+    await menu.getByRole('switch', { name: 'Keep time' }).click()
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+
+    const strip = page.locator('.pn-strip')
+    const countIn = page.getByTestId('count-in')
+    const before = await stripScale(page)
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    await expect(page.getByTestId('attempt-result')).toContainText('6 missed', { timeout: 20_000 })
+    await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 3')
+    await expect(strip).toHaveClass(/pn-review/)
+    expect(await stripScale(page)).toBeLessThan(before)
+
+    await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 2')
+    await expect(strip).not.toHaveClass(/pn-review/)
+    await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 1')
+    expect(await stripScale(page)).toBeCloseTo(before, 4)
+    await expect(countIn).toHaveCount(0)
+    await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'running')
+    expect(await stripScale(page)).toBeCloseTo(before, 4)
   })
 
   test('the same wrong key three passes running is named on the pill (P24)', async ({ page }) => {

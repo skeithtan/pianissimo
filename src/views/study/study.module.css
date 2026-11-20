@@ -1,6 +1,6 @@
 /* Study view (DECISIONS U72). Theme tokens only (U8); touch targets ≥ 44 px; motion tokens.
    Header / overview / stage (flex, full width) / keyboard guide / footer. The footer is
-   Practice's (U90): Speed | Go to the start, Play, Name the notes at the cursor | Menu.
+   Practice's (U90): Speed | Listen, Follow my playing | Menu.
    A phone-size screen has no footer: see `data-compact` below. Nothing recedes: a phone on a
    music stand needs its controls where they are. */
 
@@ -100,40 +100,16 @@
 }
 
 /* ── Footer ─────────────────────────────────────────────────────────────── */
-/* The footer is Practice's (`FooterBar` and its rules in practice.module.css, U90). Study's center
-   cluster: its two actions where Practice has its hands, around the same Play button. */
-.cluster {
+/* The two labeled transport actions in the shared footer. */
+.transport {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-}
-/* Shaped like an unpressed hand toggle (58 px circle, gray outline), but in the text color: an
-   action, never "off". */
-.round {
-  display: grid;
-  place-items: center;
-  width: 58px;
-  height: 58px;
-  padding: 0;
-  border-radius: 50%;
-  border: 2px solid var(--border);
-  background: transparent;
-  color: var(--fg);
-  cursor: pointer;
-  touch-action: manipulation;
-  transition:
-    background var(--dur-base) var(--ease-standard),
-    transform var(--dur-fast) var(--ease-out);
-}
-.round:hover {
-  background: var(--hover);
-}
-.round:active {
-  transform: scale(0.93);
+  gap: var(--space-2);
+  white-space: nowrap;
 }
 
 /* ── Phone-size screens (`data-compact`, usePhone, U74) ──────────────────── */
-/* No footer: Play and the menu button sit in the header, everything else (Show keys too) is in the
+/* No footer: Listen, Follow and the menu sit in the header, everything else (Show keys too) is in the
    menu sheet, and the score and keyboard guide take the height. The header is as short as its
    touch targets allow. */
 .screen[data-compact='true'] .header {
@@ -152,6 +128,10 @@
 .iconButton[aria-pressed='true'] {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
+}
+.iconButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .headerPlay {
   flex: none;

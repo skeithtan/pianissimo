@@ -1,7 +1,6 @@
 /**
- * Play-through through the microphone (DECISIONS P15, P16, P22), end to end in the browser: the
- * real AudioWorklet, follower worker and session, with no MIDI at all and no Settings visit (no
- * piano: play-through is on and follows the microphone, P22). Only the microphone is
+ * Follow my playing through the microphone in Study (P15, P16, P22). The real AudioWorklet,
+ * follower worker and session run without MIDI or a Settings visit. Only the microphone is
  * replaced: `getUserMedia` returns a stream that plays a synthesized performance of the seeded
  * piece, with a stop in the middle, so the cursor has both something to follow and something to
  * wait for.
@@ -12,7 +11,7 @@ import { attackGroups } from '../../src/core/audio/templates'
 import { renderNotes } from '../../src/core/audio/testkit'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { importFixture } from '../unit/import/fixtures'
-import { openFooterMenu, openSeededPractice, seedPiece } from './practice-helpers'
+import { seedPiece } from './practice-helpers'
 
 const SAMPLE_RATE = 48000
 /** Seconds of silence before the first note, and of the stop before the fourth group. */
@@ -128,21 +127,18 @@ test('the cursor follows an acoustic piano through the microphone and waits whil
   // No MIDI anywhere and the default settings (the metronome on, to check it stays silent): the
   // microphone stands in for the piano without a visit to Settings.
   await seedPiece(page, { metronome: { ...DEFAULT_SETTINGS.metronome, enabled: true } })
-  await openSeededPractice(page)
-  // Play through is already on and cannot be switched off; Follow shows the microphone.
-  const menu = await openFooterMenu(page)
-  const play = menu.getByRole('switch', { name: 'Play through' })
-  await expect(play).toBeChecked()
-  await expect(play).toBeDisabled()
-  await expect(menu.getByText('No piano connected: following the microphone.')).toBeVisible()
+  await page.getByRole('button', { name: 'Open sheet music for Two Hands' }).click()
+  await expect(page.getByTestId('study-screen')).toBeVisible()
+  await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
+  await page.getByRole('button', { name: 'Menu', exact: true }).click()
+  const menu = page.getByRole('dialog', { name: 'Sheet music menu' })
   await expect(menu.getByRole('radio', { name: 'Microphone' })).toHaveAttribute('aria-checked', 'true')
   await expect(menu.getByRole('radio', { name: 'Piano' })).toBeDisabled()
   await page.keyboard.press('Escape')
-  // The main button starts it at once (the browser's permission prompt aside).
-  const start = page.getByRole('button', { name: 'Start', exact: true })
-  await expect(start).toBeEnabled()
-  await start.click()
-  await expect(page.getByTestId('mic-status')).toContainText('Following through the microphone.')
+  const follow = page.getByRole('button', { name: 'Follow my playing', exact: true })
+  await expect(follow).toBeEnabled()
+  await follow.click()
+  await expect(page.getByRole('status').filter({ hasText: 'Following through the microphone.' })).toBeVisible()
 
   // Each poll keeps the snapshot it took, so the checks after it look at the sample that ended it
   // (time and cursor read together) rather than at a later read.
@@ -168,6 +164,6 @@ test('the cursor follows an acoustic piano through the microphone and waits whil
 
   // And goes on with the player to the end of the piece.
   await expect.poll(async () => (await take()).targets, { timeout: 20_000 }).toEqual(groups[5])
-  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible({ timeout: 20_000 })
+  await expect(follow).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
   expect((await take()).heard).toBeGreaterThan(times[5]!)
 })

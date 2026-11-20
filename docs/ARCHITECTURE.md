@@ -261,7 +261,7 @@ Fixed height, width from its container. Hide with `visible=false` and keep it mo
 `app/App.tsx` is the shell: current view from `app/views.ts`, compact app bar (non-practice
 views), toasts, Settings overlay. `views.ts` is the only place mapping a `ViewName` (`library`,
 `practice`, `results`, `study`) to a component: `component` (static) or `load: () =>
-import(...)` (lazy), and `chrome: 'bar' | 'none'` ('none' gives Practice and Study the whole
+import(...)` (lazy), and `chrome: 'bar' | 'none'` ('none' gives Practice and Sheet music the whole
 viewport). Navigation is `app/navigation.ts`;
 Settings is an overlay over the mounted view, so the score and passage are never lost.
 `app/state.ts` holds coarse signals only: `settings` (`updateSettings(patch)`, immutable deep
@@ -394,9 +394,7 @@ Hints (`KeepTimeGroup`).
 `views/practice/`: `PracticeView` reads `practiceRequest`, loads piece and package, builds the
 session and `StripView` (`prepareLayout` + IndexedDB layout cache; re-prepared when
 `maxLabelWidthChars` changes). The `PracticeEnv` seam is injectable for tests.
-The footer's **Play through** tool (icon `flow`, `aria-pressed`, disabled while the hands are
-off) toggles play-through; the main button reads Start / Pause / Resume there, and no result card,
-interruption or Repeat panel shows while `activity === 'playing'`.
+The Practice menu offers Keep time. The ungraded follower is started from Sheet music (U105, U106).
 Focus mode collapses the header, and on windows of 640 px or less the wrapped footer-tools row, using CSS grid tracks (U60); a tablet's footer is one row in both orientations and its tools dim in place (U88).
 Only the stage height changes, so the existing score view remeasures without re-engraving.
 `useRecede` restores chrome on pause, pointer/touch interaction, or keyboard navigation; it is
@@ -404,13 +402,13 @@ held off while `SessionUi.reviewing` (the review after a completed pass, U102).
 `views/study` (U72): `StudyView` reads `studyRequest` (`openStudy({pieceId})`, route
 `#/study/<pieceId>`) and runs a `PracticeSession` in Listen (`hands: 'none'`,
 `cursorAction: false`, no-op history and piece sinks) over the same score views, layouts and
-`PracticeEnv` as Practice: playback, Note names, `session.revealAtCursor()` (names of both
-hands' notes at the cursor for the hint lifetime, a third label-opacity source merged with the
-persistent and temporary ones) and the keyboard guide, on any device including a phone; nothing
-of practice is offered or recorded. On phone-size screens (`views/shared/usePhone`) both Practice
-and Study trade their header and footer for one top bar and a menu sheet (U74, U80); on tablets
-and desktops Study uses Practice's footer shell (`FooterBar`, `FooterMenuPopover`, `PlayButton`)
-with Go to the start and the hint around Play and a "Study menu" (U90), and the
+`PracticeEnv` as Practice: playback, Note names and the keyboard guide, on any device including a phone. Listen is the default transport.
+Follow my playing enables the existing ungraded follower, with source and hand choices in the
+Sheet music menu (U105, U106). The two actions switch at the score cursor using the same session, without
+writing practice history or piece state. On phone-size screens (`views/shared/usePhone`) both Practice
+and Sheet music trade their header and footer for one top bar and a menu sheet (U74, U80); on tablets
+and desktops Sheet music uses Practice's footer shell (`FooterBar`, `FooterMenuPopover`)
+with Listen, Follow my playing and the menu (U90, U106), and the
 portrait page is capped at the stage's width and fitted to it (`pageMaxWidth`, `fitWidth`, R17);
 there a pinch magnifies the page as engraved (`imageZoom`, 1× to 4×, never saved, U83) and the
 app itself never zooms (`gesture*` events canceled in `app/boot.ts`, `touch-action` on the root).
@@ -464,8 +462,8 @@ plays), and any other key stops it before being handled as usual.
   action button live in a screen-space layer (R13). Label font is loaded before metrics (R14).
 - Practice: no PassageBar; `views/practice` footer holds Speed on the start side, the hand
   toggles + play in the middle, and a Menu button on the end side (an anchored popover,
-  `FooterMenu.tsx`, with Note names, Play through and Show keys, U76; the shell is `FooterBar` and
-  `FooterMenuPopover`, which Study's footer shares, U90); a Repeat panel (`RepeatPanel.tsx`:
+  `FooterMenu.tsx`, with Note names, Keep time, Metronome and Show keys, U76 and U105; the shell is `FooterBar` and
+  `FooterMenuPopover`, which Sheet music shares, U90); a Repeat panel (`RepeatPanel.tsx`:
   passage selector `LoopSteppers`, goal popover or phone sheet `RepeatOptions`, Exit repeat) floats over
   the Stage in Repeat mode, or has its own folding row under the overview on an upright phone (U12–U14, U89).
   `render/keyboard` draws all 88 keys (U15). `app/session/output.ts` resolves Auto (S4).
@@ -495,16 +493,18 @@ plays), and any other key stops it before being handled as usual.
   `repeatedMistakeLine` on its note line, U97). While nothing
   plays the session previews held keys against the current group (U37). Strip extras:
   `wrapTo` (loop wrap pan), `setEarlyMarker` (amber tint), the cursor bar bounded to the staves.
-  The review after a completed pass (U97): while `lastResult` shows and the next pass has not
-  played a correct note (U101), the session (from its frame, never the input path) calls the
-  optional `StripSink.setReview(true)`; `StripView` blends its
+  After a completed pass the session starts the review (U97) by calling the optional
+  `StripSink.setReview(true)` from its frame. `StripView` blends its
   playing frame into a review frame (`render/strip/review.ts`: the whole loop beside the fixed
   signatures, never above the playing zoom nor below 0.6, above the result card's height from
   `setReviewInset`) frame by frame on transforms only, holds the music still and moves the cursor
-  over it; `setReview(false)` blends back to the exact playing frame. The result card
-  (`AttemptResult` in `views/practice/Banners.tsx`) docks at the bottom of the stage and
+  over it. `setReview(false)` blends back to the exact playing frame on the first correct note
+  (U101) or during Keep time's last two count-in beats (U103). Keep time passes the downbeat as
+  the animation deadline on the performance clock. Opening Details cancels the upcoming Keep
+  time pass and restores its review frame while the score is resetting or counting in. The result
+  card (`AttemptResult` in `views/practice/Banners.tsx`) docks at the bottom of the stage and
   `views/practice/reviewInset.ts` hands its height to the strip. The next pass's first correct
-  note (U101) ends the review and sets `SessionUi.resultDimmed` (the pill dims until the cursor
+  note sets `SessionUi.resultDimmed` (the pill dims until the cursor
   leaves that bar; a one-bar loop ends the result at once); played past, `resultExit` is
   `'played'` and the pill slides away instead of fading.
   Theme tokens in `src/ui/global.css`: a four-step surface ramp (`--bg` / `--bg-elevated` /
@@ -570,5 +570,5 @@ plays), and any other key stops it before being handled as usual.
 - `src/app/pwa.ts` (`startPwa()` from `main.tsx`, production only): registers `sw.js` with
   `updateViaCache: 'none'` after `load`, calls `registration.update()` at launch, on `online`
   and when shown again; on `controllerchange` asks the new worker whether this page's build is
-  its own and, if not, reloads through `createReloader` only when not on Practice or Study and
+  its own and, if not, reloads through `createReloader` only when not on Practice or Sheet music and
   no `dialog` is open, after flushing settings and the history writer.

@@ -756,11 +756,12 @@ export class StripView {
    * signatures and above `setReviewInset`, never below `reviewMinZoom` (then from the loop start),
    * and holds the music still while the cursor moves over it. Off, it zooms back in
    * (`REVIEW_IN_MS`) to the playing frame: the same zoom, the cursor note under the fixed line.
+   * `returnBy` caps the zoom-in duration at the time left before the Keep time downbeat.
    * Reduced motion, or a strip not yet shown, switches at once. While on, a drag pans and a pinch
    * or ctrl-wheel zooms the review itself (never saved, nothing browsed), the loop controls hide
    * and the playhead cannot be dragged. Never re-engraves: the transform and the cursor's x only.
    */
-  setReview(on: boolean): void {
+  setReview(on: boolean, returnBy?: number): void {
     if (on === this.reviewOn) return
     if (!on) this.reviewFrozen = this.reviewTarget()
     this.reviewOn = on
@@ -773,11 +774,15 @@ export class StripView {
     }
     this.root.classList.toggle('pn-review', on)
     const to = on ? 1 : 0
-    if (this.reducedMotion || !(this.hostW > 0) || Number.isNaN(this.applied.tx)) {
+    if (this.reducedMotion || !(this.hostW > 0) || Number.isNaN(this.applied.tx) || this.reviewP === to) {
       this.reviewP = to
       this.reviewAnim = null
-    } else if (this.reviewP !== to) {
-      this.reviewAnim = { from: this.reviewP, to, t0: NaN, dur: on ? REVIEW_OUT_MS : REVIEW_IN_MS }
+      if (!on) this.reviewFrozen = null
+    } else {
+      const timed = !on && returnBy !== undefined
+      const t0 = timed ? performance.now() : NaN
+      const dur = on ? REVIEW_OUT_MS : REVIEW_IN_MS
+      this.reviewAnim = { from: this.reviewP, to, t0, dur: timed ? Math.max(0, Math.min(dur, returnBy - t0)) : dur }
     }
     this.instant = true
     this.schedule()

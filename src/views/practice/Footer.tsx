@@ -1,8 +1,7 @@
 /**
  * The practice footer (DECISIONS U4, U9, U12, U17, U76): the always-visible Speed control on the
  * start side; the hand toggles around the large Start / Pause / Listen button in the middle; the
- * Menu button on the end side (an anchored popover holding Note names, Play through (P12),
- * Keep time (P13), Metronome (U87) and Show keys). Large touch targets within thumb reach of a
+ * Menu button on the end side (an anchored popover holding Note names, Keep time (P13), Metronome (U87) and Show keys). Large touch targets within thumb reach of a
  * piano bench. One row on every tablet, upright or on its side (U88): while playing, the tools dim
  * in place (the menu closes). Only a window too narrow for one row (640 px or less) wraps the
  * tools into their own row, which collapses in portrait focus mode (U60). The hand/play row stays
@@ -24,13 +23,11 @@ import type { RecedeZone } from './recede'
 import styles from './practice.module.css'
 
 /**
- * The hand toggles without a connected piano when this browser cannot use the microphone either
- * (U27, DECISIONS P22; with a microphone the hands stay available): the tooltip, and the toast a
- * tap shows.
+ * The hand toggles without a connected piano: the tooltip and the toast a tap shows.
  */
 export const HANDS_UNAVAILABLE = 'Piano not connected'
 export const HANDS_UNAVAILABLE_NOTICE =
-  'Piano not connected, and this browser cannot use the microphone. Connect a piano to play a hand yourself. Until then Pianissimo plays the piece for you.'
+  'Connect a piano to practice a hand. Open Sheet music to follow your playing with a microphone.'
 
 const QUARTER = rat(1, 4)
 

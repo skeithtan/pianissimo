@@ -141,21 +141,22 @@ Interrupted or abandoned attempts draw none. They stay while the result card sho
 keys until the new pass's first correct note (U101: the engine's first `accepted` event while the
 result shows, `#resultPlayed`). A re-attached strip gets them again.
 
-The result while the next pass begins (U101): wrong keys change nothing. The first correct note
-ends the review and the marks; on a one-bar loop it ends the result too (`#endResultByPlay`),
+The result while the next pass begins (U101): wrong keys leave the result and marks in place.
+The first correct note clears the marks. On a one-bar loop it ends the result (`#endResultByPlay`),
 otherwise `#resultPlayedIn` keeps that note's bar and `ui.resultDimmed` is true until an
 `advanced` event takes the cursor out of it, which ends the result. Ended that way,
 `ui.resultExit` is `'played'` (the view slides the pill away); any other end leaves it
 `'dismissed'`. Both checks are O(1) in the input path.
 
-The review (U97, `#syncReview`, run in `#syncLock` from every frame and on `attachStrip`): the
-optional `strip.setReview?(on)` is on exactly while a completed pass's result shows and the next
-pass has played no correct note (`#lastResult` set, `#resultPlayedIn` null, a loop present, not
-play-through), so it ends with the marks above (and on Hide, which schedules a frame). It is never
-called from the MIDI input path: the next pass's notes are matched at once and the strip hears
-about it in the next frame. A re-attached
-strip gets the review again (and shows it without animation). The card's note line is the
-first of `lastResult.repeatedMistakes`, worded by the view (below).
+The review (U97) begins when a completed loop's result appears. `#syncReview` calls the optional
+`strip.setReview?(on, returnBy)` from the session frame and on `attachStrip`. The review ends on
+the first correct note in waiting practice (U101), on count 2 in Keep time (U103), or when the
+result is dismissed. Keep time sets `#reviewReturnBy` at the last two count-in beats and passes
+the downbeat as the deadline for the strip's zoom. The deadline also keeps review off for that
+result until the next pass completes. `openResultDetails` pauses the session if another Keep time
+pass is pending, preparing, or counting in, restoring the review frame for that result. Starting
+again counts in from the beginning. A reattached strip receives the current review state.
+The card's note line is the first of `lastResult.repeatedMistakes`, worded by the view (below).
 
 Repeated mistakes (`mistakes.ts`, DECISIONS P24): `#onRecord` keeps the last
 `REPEATED_MISTAKE_HISTORY` (8) scored records of the current comparison context (cleared when it

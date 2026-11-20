@@ -121,13 +121,13 @@ test.describe('Practice Metronome switch', () => {
 test.describe('Study Metronome switch', () => {
   test.use({ viewport: { width: 820, height: 1180 }, hasTouch: true })
 
-  test("toggles in the tablet footer's Study menu (U90)", async ({ page }) => {
+  test("toggles in the tablet footer's Sheet music menu (U90)", async ({ page }) => {
     await seedPiece(page)
-    await page.getByRole('button', { name: 'Study Two Hands' }).click()
+    await page.getByRole('button', { name: 'Open sheet music for Two Hands' }).click()
     await expect(page.locator('main')).toHaveAttribute('data-view', 'study')
     await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
     await page.getByTestId('study-screen').locator('footer').getByRole('button', { name: 'Menu', exact: true }).click()
-    const metronome = page.getByRole('dialog', { name: 'Study menu' }).getByRole('switch', { name: 'Metronome' })
+    const metronome = page.getByRole('dialog', { name: 'Sheet music menu' }).getByRole('switch', { name: 'Metronome' })
     await expect(metronome).not.toBeChecked()
     await metronome.click()
     await expect(metronome).toBeChecked()

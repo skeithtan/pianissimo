@@ -44,7 +44,7 @@ export const views: Readonly<Record<ViewName, ViewEntry>> = {
     load: () => import('../views/results/ResultsView').then((m) => ({ default: m.ResultsView })),
   },
   study: {
-    title: 'Study',
+    title: 'Sheet music',
     chrome: 'none',
     load: () => import('../views/study/StudyView').then((m) => ({ default: m.StudyView })),
   },

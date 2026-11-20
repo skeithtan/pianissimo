@@ -65,10 +65,10 @@ export interface StripSink {
   setCorrections?(marks: readonly CorrectionMark[]): void
   /**
    * The review after a completed pass (DECISIONS U97): on while its result shows, the strip zooms
-   * out to show the whole loop; off, it zooms back in to the playing frame. Optional: the page
-   * layout has none (its systems already show the passage).
+   * out to show the whole loop; off, it zooms back in to the playing frame. `returnBy` is an
+   * optional deadline on the performance clock for the zoom back in.
    */
-  setReview?(on: boolean): void
+  setReview?(on: boolean, returnBy?: number): void
   visibleLabels(): number[]
   isBrowsing(): boolean
   /** Onset under a browsed fixed cursor, or null when browsing does not move the cursor. */
@@ -354,9 +354,8 @@ export interface SessionUi {
    */
   readonly resultExit: 'played' | 'dismissed'
   /**
-   * The strip reviews the loop after a completed pass (U97): the result shows at full strength and
-   * the next pass has played no correct note yet (U101). Focus mode waits meanwhile (U102), though
-   * Repeat counts as playing while it waits at Ready.
+   * The score reviews the loop after a completed pass (U97), until the first correct note (U101)
+   * or the last two beats of the Keep time count-in (U103). Focus mode waits meanwhile (U102).
    */
   readonly reviewing: boolean
   /** Teacher's correction marks shown on the score now (0 when none), e.g. "3 points to improve". */

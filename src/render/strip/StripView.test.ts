@@ -1711,6 +1711,35 @@ describe('StripView review after a completed pass (U97)', () => {
     expect(root().style.getPropertyValue('--pn-zoom')).toBe('1')
   })
 
+  it('reaches the playing zoom by the downbeat of a fast count-in', () => {
+    const { v } = looped()
+    v.setReview(true)
+    v.flushNow()
+    now += 650
+    v.flushNow()
+    const reviewScale = scaleOf(content())
+    expect(reviewScale).toBeLessThan(1)
+
+    v.setReview(false, now + 200)
+    now += 100
+    v.flushNow()
+    expect(scaleOf(content())).toBeGreaterThan(reviewScale)
+    expect(scaleOf(content())).toBeLessThan(1)
+    now += 100
+    v.flushNow()
+    expect(scaleOf(content())).toBe(1)
+  })
+
+  it('cancels the zoom out when review ends before it can begin', () => {
+    const { v } = looped()
+    v.setReview(true)
+    v.setReview(false, now + 100)
+    v.flushNow()
+    now += 650
+    v.flushNow()
+    expect(scaleOf(content())).toBe(1)
+  })
+
   it('stops at the review floor for a long loop and shows it from its start', () => {
     const { v, layout } = looped({}, { fromOcc: 2, toOcc: 30 })
     v.setReview(true)
