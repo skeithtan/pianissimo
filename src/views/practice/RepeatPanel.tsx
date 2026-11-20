@@ -151,7 +151,7 @@ export interface RepeatPanelProps extends RepeatOptionsProps {
   readonly browsedOcc: number | null
   readonly zone: RecedeZone
   readonly layout: RepeatLayout
-  /** Something is playing: an open popover closes. */
+  /** Starting playback closes the popover. The revealed button can reopen it. */
   readonly playing: boolean
   /** Phone layouts: open the options sheet (the practice screen owns it). */
   readonly onOpenOptions?: () => void
@@ -224,10 +224,11 @@ function GoalPopover(
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
-  const popover = useFadePresence(open && !playing && !leaving, 160)
+  const popover = useFadePresence(open && !leaving, 160)
   const fit = useStagePlacement(popover.mounted, trigger, panel)
 
   useEffect(() => {
+    // Close on playback starting, while still allowing the revealed button to reopen the menu.
     if (playing || leaving) setOpen(false)
   }, [playing, leaving])
   useEffect(() => {

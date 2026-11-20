@@ -156,6 +156,38 @@ test('a tablet held upright has the footer it has on its side: one row', async (
   }
 })
 
+test.describe('tablet Repeat options', () => {
+  test.use({ viewport: { width: 1180, height: 820 }, hasTouch: true })
+
+  test('the No limit button opens Repeat options during practice when the controls are revealed', async ({ page }) => {
+    await open(page)
+    await page.getByRole('button', { name: 'Repeat from here' }).tap()
+    const panel = page.getByTestId('repeat-controls')
+    const goal = panel.getByRole('button', { name: /^Repeat goal: / })
+    const options = panel.getByRole('dialog', { name: 'Repeat options' })
+    await expect(goal).toHaveText('No limit')
+    await goal.tap()
+    await expect(options.getByRole('radio', { name: 'No limit' })).toBeChecked()
+    await goal.tap()
+    await expect(options).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Start', exact: true }).tap()
+    await focused(page)
+    await page.locator('footer').tap({ position: { x: 5, y: 5 } })
+    await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
+    await goal.tap()
+    await expect(goal).toHaveAttribute('aria-expanded', 'true')
+    await expect(options).toBeVisible({ timeout: 3000 })
+    await page.waitForTimeout(REVEAL_MS + 200)
+    await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
+    await options.getByRole('radio', { name: '3', exact: true }).tap()
+    await expect(goal).toHaveText('Until 3 clean')
+    await options.getByRole('radio', { name: 'No limit' }).tap()
+    await expect(goal).toHaveText('No limit')
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+  })
+})
+
 /**
  * A phone-size screen (U80) has one top bar instead of the header and footer. In focus mode the
  * whole bar slides up, fades and its row collapses like the tablet header (U93), the overview with
