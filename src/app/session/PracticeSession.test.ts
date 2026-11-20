@@ -173,6 +173,42 @@ describe('PracticeSession: reading (both hands)', () => {
 })
 
 describe('PracticeSession: continuous practice timing', () => {
+  it.each([null, { fromOcc: 0, toOcc: 1 }])('shows timing cues with or without a loop (%j)', async (range) => {
+    const h = harness(melody, { range })
+    await h.session.start()
+    h.tap(60)
+    h.step(400)
+    h.tap(62)
+    expect(h.strip.timingCue).toBe('rushing')
+    expect(h.session.engine.state.groupIndex).toBe(1)
+    h.step(600)
+    h.tap(62)
+    h.step(1600)
+    h.tap(64)
+    expect(h.strip.timingCue).toBe('dragging')
+    h.step(1200)
+    expect(h.strip.timingCue).toBeNull()
+    expect(h.session.engine.state.groupIndex).toBe(3)
+  })
+
+  it('compares the first attacks of chords at the chosen speed and resets after a seek', async () => {
+    const h = harness(twoHands, { multiplier: 0.5 })
+    await h.session.start()
+    h.tap(60)
+    h.step(500)
+    h.tap(48)
+    h.step(2000)
+    h.tap(62)
+    expect(h.strip.timingCue).toBe('dragging')
+    h.session.seek(0)
+    h.frames.flush()
+    expect(h.strip.timingCue).toBeNull()
+    h.tap(60, 48)
+    h.step(2000)
+    h.tap(62)
+    expect(h.strip.timingCue).toBeNull()
+  })
+
   it('moves at tempo between onsets and holds for every missing chord pitch without sound output', async () => {
     let audioLoads = 0
     const h = harness(
@@ -835,7 +871,7 @@ describe('PracticeSession: one-hand accompaniment', () => {
     h.tap(62) // gate is ~800 ms away
     expect(h.session.engine.state.lastWrongReason).toBe('early')
     expect(h.session.feedback.get()).toMatchObject({ visible: true, reason: 'early' })
-    expect(h.strip.timingCue).toBeNull()
+    expect(h.strip.timingCue).toBe('rushing')
     expect(h.flash.hits).toHaveLength(1)
     expect(h.flash.hits[0]?.soft).toBe(true)
     h.tap(70)

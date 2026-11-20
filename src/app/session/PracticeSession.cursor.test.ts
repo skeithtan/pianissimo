@@ -51,6 +51,17 @@ function pendingSound() {
 }
 
 describe('Start at the visible cursor after browsing', () => {
+  it('counts in Keep time at the browsed note once Repeat is closed', async () => {
+    const h = harness(melody, {}, { options: { rhythm: true } })
+    browse(h, rat(3, 4))
+    await h.session.start()
+    h.frames.flush()
+    expect(h.strip.isBrowsing()).toBe(false)
+    expect(h.strip.cursor).toBe(0.75)
+    expect(h.session.engine.timeline.start).toEqual(rat(3, 4))
+    expect(h.session.ui.get().countIn).toBe(4)
+  })
+
   it.each(['both', 'right', 'none'] as const)('starts and resumes %s from the visible onset', async (hands) => {
     const h = harness(melody, { hands })
     for (const position of [rat(1, 2), rat(1, 4)]) {

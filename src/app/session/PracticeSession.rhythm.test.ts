@@ -199,13 +199,14 @@ describe('Keep time: count-in', () => {
     const h = open()
     await begin(h)
     at(h, 2500)
-    expect(h.session.seekPosition(melody.occurrences[1]!.start)).toBe(false)
+    expect(h.session.seekPosition(melody.occurrences[1]!.start)).toBe(true)
     h.frames.flush()
     expect(ui(h).countIn).toBeNull()
-    expect(h.session.engine.state.phase).toBe('interrupted')
-    expect(h.session.engine.state.interruptReason).toBe('seek')
+    expect(h.session.engine.state.phase).toBe('paused')
+    expect(h.strip.cursor).toBe(1)
     at(h, RUN + 1000)
-    expect(h.session.engine.state.phase).toBe('interrupted')
+    expect(ui(h).playing).toBe(false)
+    expect(h.attempts).toHaveLength(0)
   })
 
   it('a speed change during the count-in prepares a fresh attempt with its own count-in at the new speed', async () => {
@@ -432,10 +433,11 @@ describe('Keep time: playing against the music', () => {
     expect(ui(h).corrections).toBeGreaterThan(0)
   })
 
-  it('pause interrupts; Start afterwards is a fresh attempt from the start, with a count-in', async () => {
+  it('pause interrupts and Start counts in a fresh attempt at the paused cursor', async () => {
     const h = open()
     await begin(h)
     playOnTime(h, [60, 62])
+    at(h, RUN + 1500)
     h.session.pause()
     h.frames.flush()
     expect(h.attempts.at(-1)).toMatchObject({ completion: 'interrupted', interruptReason: 'pause' })
@@ -444,6 +446,8 @@ describe('Keep time: playing against the music', () => {
     await begin(h)
     expect(h.session.engine.state.phase).toBe('ready')
     expect(h.session.engine.state.groupIndex).toBe(0)
+    expect(h.strip.cursor).toBe(0.5)
+    expect(h.session.engine.state.position).toEqual(rat(1, 2))
     expect(ui(h).countIn).toBe(4)
     at(h, t + 4000)
     expect(h.session.engine.state.phase).toBe('running')
@@ -517,12 +521,105 @@ describe('Keep time: modes', () => {
     expect(h.session.ui.get().rhythm).toBe(false)
   })
 
-  it('without Repeat reads the whole piece from its start, not from the reading position', async () => {
-    const h = open({}, { options: { startPosition: melody.occurrences[1]!.start } })
-    expect(h.session.engine.state.groupIndex).toBe(4)
+  it('starts at the restored mid-bar cursor and scores only the remaining notes', async () => {
+    const start = rat(5, 4)
+    const h = open({}, { options: { startPosition: start } })
     await begin(h)
-    expect(h.session.engine.state.groupIndex).toBe(0)
-    expect(h.session.engine.timeline.groups).toHaveLength(8)
+    expect(h.strip.cursor).toBe(1.25)
+    expect(h.session.engine.timeline.start).toEqual(start)
+    playOnTime(h, [69, 71, 72])
+    expect(h.attempts.at(-1)).toMatchObject({
+      passed: true,
+      groupsTotal: 3,
+      context: { passage: { fromOcc: 1, toOcc: 1, start } },
+    })
+    expect(ui(h).lastResult?.timing?.onTime).toBe(3)
+    expect(h.session.selection.range).toBeNull()
+  })
+
+  it('lets the paused timeline move earlier than the last attempt and forward again', async () => {
+    const h = open()
+    h.session.seek(1)
+    await begin(h)
+    at(h, RUN + 500)
+    h.session.pause()
+    h.frames.flush()
+    expect(h.strip.cursorDraggable).toBe(true)
+    h.session.seek(0)
+    h.frames.flush()
+    expect(h.strip.cursor).toBe(0)
+    h.session.seek(1)
+    h.frames.flush()
+    expect(h.strip.cursor).toBe(1)
+    expect(ui(h)).toMatchObject({ playing: false, countIn: null })
+    await begin(h)
+    expect(h.strip.cursor).toBe(1)
+    expect(h.session.engine.state.missingPitches).toEqual([67])
+  })
+
+  it('checks scoring availability for the passage after a timeline jump', async () => {
+    const score = buildScore({
+      bars: 2,
+      notes: [
+        { at: 0, midi: 60 },
+        { at: 4, midi: 67 },
+      ],
+      unsupported: [{ kind: 'grace', fromOcc: 0, toOcc: 0, message: 'Grace notes' }],
+    })
+    const h = harness(score, {}, { options: { rhythm: true } })
+    expect(ui(h).startEnabled).toBe(false)
+    h.session.seek(1)
+    h.frames.flush()
+    expect(ui(h).startEnabled).toBe(true)
+    await begin(h)
+    expect(h.strip.cursor).toBe(1)
+    expect(ui(h).countIn).toBe(4)
+    h.session.seek(0)
+    h.frames.flush()
+    expect(ui(h).startEnabled).toBe(false)
+  })
+
+  it('uses the meter, tempo, accompaniment and correction marks at the chosen start', async () => {
+    const model = buildScore({
+      notes: [
+        { at: 0, midi: 60 },
+        { at: 0, midi: 48, hand: 'L' },
+        { at: 4, midi: 67 },
+        { at: 4, midi: 43, hand: 'L' },
+        { at: 5, midi: 69 },
+      ],
+      bars: [4, 3],
+    })
+    const start = rat(1)
+    const score = {
+      ...model,
+      meters: [...model.meters, { at: start, occ: 1, beats: 3, beatType: 4, beatsText: '3' }],
+      tempo: {
+        ...model.tempo,
+        segments: [...model.tempo.segments, { ...model.tempo.segments[0]!, start, quarterBpm: 120, beatBpm: 120 }],
+      },
+    }
+    const h = harness(
+      score,
+      { hands: 'right' },
+      { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec) } },
+    )
+    h.session.seek(1)
+    await begin(h)
+    expect(ui(h).countIn).toBe(3)
+    expect(rec.clicks.map((c) => c.time)).toEqual([T0, T0 + 500, T0 + 1000])
+    h.session.setSelection({ multiplier: 0.5 })
+    h.frames.flush()
+    expect(h.strip.cursor).toBe(1)
+    expect(rec.clicks.slice(-3).map((c) => c.time)).toEqual([T0, T0 + 1000, T0 + 2000])
+    at(h, T0 + 3000)
+    expect(h.backend.ons().map((n) => n.note)).toEqual([43])
+    h.tap(67)
+    at(h, T0 + 4200)
+    const details = h.session.resultDetails()
+    const missed = score.notes.find((n) => n.midi === 69)!.index
+    expect(details?.marks.get(1)?.notes).toEqual([missed])
+    expect(h.strip.corrections[0]?.notes).toEqual([missed])
   })
 
   it('Repeat mode: every pass gets its own count-in at the loop start', async () => {
@@ -804,11 +901,19 @@ describe('Keep time: modes', () => {
     expect(h.session.seekPosition(melody.occurrences[0]!.start)).toBe(true)
     h.frames.flush()
     expect(ui(h).leadIn).toBe(false)
+    expect(h.strip.cursor).toBe(0)
     await begin(h)
     expect(h.session.engine.timeline.groups[0]!.notes).toEqual(h.session.timeline.groups[0]!.notes)
     expect(h.session.engine.state.groupIndex).toBe(0)
     expect(h.session.engine.state.position).toEqual(melody.occurrences[1]!.start)
     expect(ui(h).countIn).toBe(4)
+    h.session.pause()
+    h.session.seek(0)
+    h.frames.flush()
+    expect(h.strip.cursor).toBe(0)
+    expect(ui(h)).toMatchObject({ playing: false, range: { fromOcc: 1, toOcc: 1 } })
+    await begin(h)
+    expect(h.strip.cursor).toBe(1)
   })
 
   it('the speed ladder climbs in Keep time, and the next pass counts in at the new speed', async () => {
@@ -969,20 +1074,88 @@ describe('Keep time: score playback', () => {
     expect(h.session.engine.state.phase).toBe('running')
   })
 
-  it('restores normal accompaniment after the switch is turned off and cancels the old score audio', async () => {
+  it('switches back to the other hand mid-pass and reviews the completed pass with Playback', async () => {
     const h = harness(duet, { hands: 'right' }, { options: { rhythm: true }, settings })
     await begin(h)
     at(h, RUN)
     h.tap(60)
     h.session.updateSettings(testSettings())
-    expect(h.attempts.at(-1)).toMatchObject({ context: { scorePlayback: true }, interruptReason: 'setting-change' })
+    expect(h.attempts).toHaveLength(0)
+    expect(h.session.engine.state.clockStartedAt).toBe(RUN)
     expect(h.backend.calls.at(-1)?.op).toBe('cleanup')
-    at(h, RUN + 1500)
-    expect(h.backend.ons().map(({ note }) => note)).toEqual([48, 60])
-    await begin(h)
-    at(h, RUN + 5500)
-    expect(h.backend.ons().map(({ note }) => note)).toEqual([48, 60, 48])
+    at(h, RUN + 1000)
+    expect(h.backend.ons().map(({ note }) => note)).toEqual([48, 60, 50])
+    h.tap(30)
+    h.tap(62)
+    expect(h.attempts.at(-1)).toMatchObject({
+      context: { scorePlayback: true },
+      completion: 'completed',
+      wrongAttacks: 1,
+    })
+    expect(h.session.resultDetails()?.records.at(-1)?.id).toBe(h.attempts.at(-1)!.id)
+    expect(h.session.resultDetails()?.marks.size).toBeGreaterThan(0)
   })
+
+  it('turns Playback on mid-loop at the next notes and keeps the original downbeat and misses', async () => {
+    const h = harness(duet, { range: LOOP }, { options: { rhythm: true }, settings: testSettings() })
+    await begin(h)
+    at(h, RUN + 500)
+    h.session.updateSettings(settings)
+    h.session.updateSettings(settingsAtVolume(0.5))
+    expect(h.backend.ons()).toHaveLength(0)
+    expect(h.session.engine.state.clockStartedAt).toBe(RUN)
+    at(h, RUN + 1000)
+    expect(h.backend.ons().map(({ note, time, velocity }) => [note, time, velocity])).toEqual(
+      [50, 62].map((pitch) => [pitch, RUN + 1000, Math.round(duet.notes.find((n) => n.midi === pitch)!.velocity / 2)]),
+    )
+    h.tap(50, 62)
+    expect(h.attempts.at(-1)).toMatchObject({ context: { scorePlayback: true }, missedGroups: 1 })
+    expect(h.session.resultDetails()?.marks.size).toBeGreaterThan(0)
+  })
+
+  it('honors the final switch position during the count-in without canceling a beat', async () => {
+    const h = open()
+    await begin(h)
+    at(h, T0 + 1500)
+    const cancels = rec.cancels.length
+    h.session.updateSettings(settings)
+    h.session.updateSettings(testSettings())
+    expect(rec.cancels).toHaveLength(cancels)
+    at(h, RUN)
+    expect(h.session.engine.state.clockStartedAt).toBe(RUN)
+    expect(h.backend.ons()).toEqual([])
+    playOnTime(h, [60, 62, 64, 65, 67, 69, 71, 72])
+    expect(h.attempts.at(-1)?.context.scorePlayback).toBeUndefined()
+  })
+
+  it.each([true, false])(
+    'uses the latest Playback choice (%s) when browser sound finishes loading mid-pass',
+    async (on) => {
+      const backend = new RecordingBackend(() => T0)
+      const loaded = vi.fn(() => backend)
+      let finishLoad!: (audio: BrowserAudioModule) => void
+      const module = new Promise<BrowserAudioModule>((resolve) => {
+        finishLoad = resolve
+      })
+      const off = testSettings({ sound: { ...settings.sound, destination: 'browser' } })
+      const h = harness(
+        duet,
+        {},
+        { options: { rhythm: true }, settings: off, deps: { loadBrowserAudio: () => module } },
+      )
+      await begin(h)
+      at(h, RUN + 300)
+      h.session.updateSettings({ ...off, rhythm: settings.rhythm! })
+      if (!on) h.session.updateSettings(off)
+      finishLoad({ createBrowserAudio: loaded } as unknown as BrowserAudioModule)
+      await vi.waitFor(() => expect(loaded).toHaveBeenCalledOnce())
+      expect(h.session.engine.state.clockStartedAt).toBe(RUN)
+      at(h, RUN + 1000)
+      expect(backend.ons().map(({ note }) => note)).toEqual(on ? [50, 62] : [])
+      h.tap(50, 62)
+      expect(h.attempts.at(-1)?.context.scorePlayback).toBe(on ? true : undefined)
+    },
+  )
 
   it('applies volume through Browser sound with an unverified piano output', async () => {
     const backend = new RecordingBackend(() => T0)

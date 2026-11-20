@@ -636,6 +636,17 @@ describe('transport: live tempo changes (spec "Tempo changes during use")', () =
 })
 
 describe('transport: metronome', () => {
+  it('a live sound change keeps an already scheduled beat and plays it exactly once', () => {
+    const s = setup({ notes: quarters([48, 50, 52, 53]), metronome: true })
+    s.t.play()
+    s.clock.advanceTo(950)
+    s.t.replacePerformance([], null)
+    s.clock.advanceTo(2000)
+    expect(s.metronome.clicks.map((c) => c.time)).toEqual([0, 1000, 2000])
+    expect(s.emitted.filter((e) => e.ev.kind === 'click').map((e) => e.time)).toEqual([0, 1000, 2000])
+    expect(s.metronome.cancels).toEqual([])
+  })
+
   it('clicks the beats with an accent on the first beat, and stops when disabled', () => {
     const s = setup({ notes: quarters([48, 50, 52, 53]), metronome: true })
     s.t.play()

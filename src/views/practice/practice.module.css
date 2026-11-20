@@ -328,7 +328,6 @@
   --result-border: color-mix(in srgb, var(--result-tone) 30%, var(--border));
   --result-preview-height: 25px;
   --result-panel-width: min(760px, 100%);
-  --result-open-duration: 420ms;
   position: relative;
   pointer-events: auto;
   display: flex;
@@ -345,10 +344,10 @@
   max-width: var(--result-panel-width);
 }
 .resultCard[data-opening][data-layout='panel'] {
-  animation: result-grow-width var(--result-open-duration) var(--ease-standard);
+  animation: result-grow-width var(--result-open-duration) var(--ease-standard) both;
 }
 .resultCard[data-opening][data-layout='panel'] .result {
-  animation: result-hold-row var(--result-open-duration) linear;
+  animation: result-hold-row var(--result-open-duration) linear both;
 }
 @keyframes result-grow-width {
   from {
@@ -497,14 +496,14 @@
   border-bottom: 0;
   border-radius: 24px 24px 0 0;
   z-index: 1;
-  animation: result-unfold 240ms var(--ease-out) both;
+  animation: result-unfold var(--result-open-duration) var(--ease-out) both;
 }
 .resultCard[data-passed='true'] .resultDetails {
   height: auto;
   max-height: var(--result-details-max, 480px);
 }
-.resultCard[data-opening] .resultDetails[data-layout='panel']:not([data-phase='leaving']) {
-  animation: result-grow-panel var(--result-open-duration) var(--ease-standard);
+.resultCard[data-opening] .resultDetails[data-layout='panel'] {
+  animation: result-grow-panel var(--result-open-duration) var(--ease-standard) both;
 }
 .resultCard[data-opening][data-preview] .resultDetails[data-layout='panel'] {
   --result-open-peek: calc(var(--result-from-preview) + var(--space-1));
@@ -529,17 +528,6 @@
 }
 .resultDetails[data-phase='leaving'] {
   pointer-events: none;
-  animation: result-fold 200ms var(--ease-in) both;
-}
-@keyframes result-fold {
-  from {
-    clip-path: inset(0 0 0 0 round 24px 24px 0 0);
-    opacity: 1;
-  }
-  to {
-    clip-path: inset(100% 0 0 0 round 24px 24px 0 0);
-    opacity: 0.4;
-  }
 }
 .resultDetailsLoading {
   display: grid;
@@ -792,10 +780,10 @@
     border: 0;
     border-radius: 0;
     background: var(--bg-elevated);
-    animation: result-screen-in 260ms var(--ease-out) both;
+    animation: result-screen-in var(--result-open-duration) var(--ease-out) both;
   }
-  .resultCard[data-opening] .resultDetails[data-layout='screen']:not([data-phase='leaving']) {
-    animation: result-grow-screen var(--result-open-duration) var(--ease-standard);
+  .resultCard[data-opening] .resultDetails[data-layout='screen'] {
+    animation: result-grow-screen var(--result-open-duration) var(--ease-standard) both;
   }
   @keyframes result-grow-screen {
     from {
@@ -808,9 +796,6 @@
       border-radius: 0;
     }
   }
-  .resultCard .resultDetails[data-layout='screen'][data-phase='leaving'] {
-    animation: result-screen-out 200ms var(--ease-in) both;
-  }
   @keyframes result-screen-in {
     from {
       transform: translateY(32px);
@@ -819,16 +804,6 @@
     to {
       transform: none;
       opacity: 1;
-    }
-  }
-  @keyframes result-screen-out {
-    from {
-      transform: none;
-      opacity: 1;
-    }
-    to {
-      transform: translateY(32px);
-      opacity: 0;
     }
   }
   .screenHeader {
@@ -1621,7 +1596,7 @@
     transition-duration: var(--dur-base);
   }
   .resultDetails,
-  .resultCard[data-opening] .resultDetails[data-layout]:not([data-phase='leaving']),
+  .resultCard[data-opening] .resultDetails[data-layout],
   .resultDetails[data-phase='leaving'],
   .resultCard .resultDetails[data-layout='screen'],
   .resultCard .resultDetails[data-layout='screen'][data-phase='leaving'] {

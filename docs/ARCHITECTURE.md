@@ -370,7 +370,12 @@ transport position, the timing cue and the guide. `ui.activity` is
 `'playing'`, `ui.playThrough` true, `startAction` `'play'`; the engine records nothing while the
 mode is on and resumes reading at the follower's group when it is switched off.
 For MIDI input, `PerformanceTiming` compares the first attacks of consecutive recognized
-groups to their written gap at the selected speed (U111).
+groups to their written gap at the selected speed (U111). Both score layouts show the same
+transient cue as Keep time.
+Ordinary Practice and gated Repeat use the same comparison on the first accepted pitch of
+each group (U129). A correct pitch rejected as early shows Rushing immediately. The session
+clears the cue on a phase change or new traversal and schedules its expiry even while the
+transport waits at a gate.
 What it follows (P22): without a piano input the microphone, and play-through is then on and
 locked while a hand is selected (`#syncPlayMode`; `ui.playThroughLocked`); with one, the keys
 unless `settings.mic.follow` (`ui.follow`, the menu's Follow choice, U92). While the microphone
@@ -399,8 +404,11 @@ default to a 100% goal (U116). Selecting it at or above 100% makes `setLadder` s
 ladder at 75% through the manual tempo-change path.
 Keep time (rhythm mode, P13, U78): `PracticeSession.setRhythmMode` (saved per piece as
 `PieceRecord.rhythm`) turns every Start into a scored attempt on the engine's strict transport,
-with `rhythm.toleranceMs` from `AppSettings.rhythm`, over the Repeat loop or else the whole
-piece. When the engine is Ready the session counts in through the metronome sink and
+with `rhythm.toleranceMs` from `AppSettings.rhythm`. Outside Repeat, the attempt runs from
+the playable onset at the cursor to the piece end (U128). The strict engine, count-in,
+accompaniment, and results use that passage. In Repeat they use the selected loop. A header
+seek ends the current attempt and positions the paused cursor on the whole score.
+When the engine is Ready the session counts in through the metronome sink and
 publishes the number of clicks left in `ui.countIn`. The plan (`countIn.ts`, U124) fits up to
 one bar into five seconds. If fewer than two whole beats fit and the bar is too long, it uses
 two subdivisions of the entry beat. The count-in always clicks. A Metronome switch turned off
@@ -438,17 +446,19 @@ an unresolved check could still stop playback, so an automatic stop leaves the p
 and does not add a pass to history. On the next downbeat the session hides the previous pass's
 score marks in both layouts. The same marks return with the previous review after a stop.
 
-Score playback (P27) is an opt-in app setting in `AppSettings.rhythm.scorePlayback`. The session
+Playback (P27) is an opt-in app setting in `AppSettings.rhythm.scorePlayback`. The session
 builds both parts with the Listen performance builder on the strict transport. The same transport
 runs the optional metronome and reports each learner gate to the engine. It starts on the downbeat
-after the count-in. Output uses the existing graded route check. A setting change interrupts an
-active Keep time pass and releases its scheduled output. The engine adds `scorePlayback: true` to
+after the count-in. Output uses the existing graded route check. The switch replaces the scheduled score events
+in the existing transport and releases its old notes.
+The count-in, metronome, clock, and grading continue. The engine adds `scorePlayback: true` to
 the comparison context for passes that use it. Result and per-measure keys append the playback
 mode only when it is present, preserving existing keys.
 
-The score playback volume slider reuses the Keep time reveal animation in both menu layouts.
-The session includes the saved score volume in the practice transport's cache key. On Start it
-scales the full score's note velocities relative to the route level and omits score events at 0%.
+The Playback volume slider reuses the Keep time reveal animation in both menu layouts.
+The transport applies the current volume to upcoming full-score attacks and omits score events at 0%.
+The review keeps the completed record, matching timeline, and recent records for that comparison
+context, so a later interrupted repeat can never replace the pass shown on the card.
 
 Keep time is exclusive with play-through and disables Repeat lead-ins. The view adds a
 footer-menu switch with a badge on the Menu button, the `CountIn` overlay on the stage and

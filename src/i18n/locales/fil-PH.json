@@ -1484,12 +1484,11 @@
   "1483": "kanan",
   "1484": "susi ng sol",
   "1485": "susi ng fa",
-  "1486": "Huminto ang pagsubok dahil binago ang pagpapatugtog ng partitura.",
   "1487": "Mga pagtatakda sa pagsabay sa kumpas",
-  "1488": "Pagpapatugtog ng partitura",
+  "1488": "Pagpapatugtog",
   "1489": "Pakinggan ang tugtog ng magkabilang kamay habang tumutugtog ka.",
   "1490": "Lakas ng tugtog",
-  "1491": "{0} · Pagpapatugtog ng partitura",
+  "1491": "{0} · Pagpapatugtog",
   "1492": "Mga may-akda at lisensiya ng mga kasamang partitura",
   "1493": "Labasan ng tunog ng metronomo",
   "1494": "Upang marinig ang metronomo mula sa piyano, ikabit ang piyano sa pamamagitan ng USB at piliin ang labasan ng tunog nito rito o sa mga pagtatakda ng tunog ng iyong aparato.",
@@ -1500,6 +1499,6 @@
   "1499": "Subukan ang tunog ng metronomo",
   "1500": "Hindi magamit ang piniling labasan ng tunog. Sa halip, ginamit sa pagsubok ang tunog ng sistema.",
   "1501": "Hindi mapatunog ang metronomo sa pagsubok.",
-  "1502": "Kailangan ng labasang walang alingawngaw upang mapatugtog ang partitura. Patugtugin ang mga nota ng pagsubok sa Ugnayan o piliin ang tunog ng pambuklat sa Mga pagtatakda → Tunog.",
-  "1503": "Kailangan ng labasan ng tunog upang mapatugtog ang partitura. {0}"
+  "1502": "Kailangan ng labasang walang alingawngaw para sa pagpapatugtog. Patugtugin ang mga nota ng pagsubok sa Ugnayan o piliin ang tunog ng pambuklat sa Mga pagtatakda → Tunog.",
+  "1503": "Kailangan ng labasan ng tunog para sa pagpapatugtog. {0}"
 }

@@ -294,8 +294,8 @@ speed (card cleared, streak 0, also in Keep time). Tests: `ladder.test.ts`, `Pra
 
 `setRhythmMode(on)` (saved on the piece as `rhythm` through the piece saver; `SessionOptions.rhythm`
 opens with it) turns on Keep time: `ui.rhythm` true, `startAction` always `'scored'`
-(`startPlan(…, { rhythm: true })`: over the loop in Repeat mode, else the whole piece from its
-start; ordinary reading is not available). It needs a hand and a numerical tempo (refused
+(`startPlan(…, { rhythm: true })`). Start counts in at the loop start in Repeat mode or at
+the visible cursor in the whole piece. It needs a hand and a numerical tempo (refused
 otherwise; with the hands off the setting stays and Start is Listen). Exclusive with play-through:
 switching one on switches the other off. Switching either way ends an attempt in progress
 ('mode-change') and leaves the engine in ordinary reading, paused (off: at the attempt's current
@@ -348,14 +348,13 @@ both hands, the other hand automatic with one; its click per `metronome.keepTime
   margin when surrounding notation leaves too little space (U120).
   After the attempt the corrections (missed / late marks) and the result card show what happened.
   `lastResult.timing` = `{ groups, onTime, early, late, missed }` from `timingAccuracy(record)`.
-- **Lifecycle.** Pause interrupts (scored); Start afterwards is a fresh attempt from the passage
-  start with a count-in. Seeks interrupt, also during the count-in. Speed, hands and range changes
+- **Lifecycle.** Pause interrupts (scored); Start afterwards is a fresh attempt from the
+  start of the selected loop or the current playable onset with a count-in. Seeks interrupt, also during the count-in. Speed, hands and range changes
   prepare a fresh attempt as for gated attempts, so one in progress counts in again. Repeat: every
   pass (Repeat reset, Restart, Start, a ladder step) goes Preparing → Ready → count-in → running;
   the consecutive-pass target and the ladder read `record.passed` unchanged. Lead-ins (U38) are
-  off: a seek in Repeat mode never sets one up; it interrupts an attempt, or while idle only moves
-  the reading cursor, and the next Start begins at the loop start with a count-in. The playhead is
-  not draggable while Keep time is on.
+  off. The header overview moves the paused cursor across the whole piece, including outside a
+  selected loop. With Repeat closed, the playhead is also draggable while paused.
 - **Settings.** A changed `settings.rhythm.toleranceMs` goes to the engine
   (`updateSettings({ rhythm })`), which interrupts an active strict attempt ('setting-change'); the
   interruption then reads "The Keep time tolerance changed, so the attempt stopped."

@@ -74,5 +74,5 @@
   "1408": "Le mode {0} nécessite un piano connecté. Le jeu en continu utilise le microphone.",
   "1487": "Paramètres du mode En mesure",
   "1494": "Pour entendre le métronome dans les haut-parleurs du piano, branchez le piano par USB et choisissez sa sortie audio ici ou dans les paramètres audio du système.",
-  "1502": "La lecture de la partition nécessite une sortie sans écho. Jouez les notes d’essai dans Connexion ou choisissez le son du navigateur dans Paramètres → Son."
+  "1502": "La lecture nécessite une sortie sans écho. Jouez les notes d’essai dans Connexion ou choisissez le son du navigateur dans Paramètres → Son."
 }

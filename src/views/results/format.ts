@@ -80,7 +80,7 @@ export function strictToleranceMs(c: ComparisonContext): number | null {
 export function rhythmText(c: ComparisonContext): string {
   const tol = strictToleranceMs(c)
   const label = tol === null ? msg('Keep time') : msg('Keep time · ±{0} ms', tol)
-  return c.scorePlayback ? msg('{0} · Score playback', label) : label
+  return c.scorePlayback ? msg('{0} · Playback', label) : label
 }
 
 /** What the piano does for the other hand in this context. */

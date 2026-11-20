@@ -148,6 +148,12 @@ describe('the expanded result card’s details (U99)', () => {
     const attempts = h.attempts.length
     expect(h.session.resultDetails()).toEqual(details)
     expect(h.attempts).toHaveLength(attempts)
+    // A started but interrupted repeat keeps the previous completed pass under the card.
+    ready(h)
+    h.tap(30)
+    h.session.pause()
+    expect(h.attempts.at(-1)?.completion).toBe('interrupted')
+    expect(h.session.resultDetails()).toEqual(details)
     // Hide: no result, no details.
     h.session.dismissResult()
     expect(h.session.resultDetails()).toBeNull()

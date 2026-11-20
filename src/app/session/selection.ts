@@ -109,7 +109,7 @@ export interface StartPlanOptions {
   readonly playThrough?: boolean
   /**
    * Keep time is on (rhythm mode, DECISIONS P13): with a hand selected the action is always
-   * `'scored'` (over the loop in Repeat mode, else the whole piece), with the scored blockers.
+   * `'scored'` (over the loop in Repeat mode, else from the cursor to the end), with the scored blockers.
    * Hands 'none' stays Listen; play-through wins (the session never sets both).
    */
   readonly rhythm?: boolean
@@ -170,9 +170,9 @@ export function startPlan(
       enabled: false,
       reason: ctx.hasOutput
         ? msg(
-            'Score playback needs an echo-free output. Play the test notes in Connection or choose Browser sound in Settings → Sound.',
+            'Playback needs an echo-free output. Play the test notes in Connection or choose Browser sound in Settings → Sound.',
           )
-        : msg('Score playback needs a sound output. {0}', noOutput),
+        : msg('Playback needs a sound output. {0}', noOutput),
     }
   }
   // One hand through the microphone: the app plays nothing (the microphone must never hear it).

@@ -1484,12 +1484,11 @@
   "1483": "derecha",
   "1484": "la clave de sol",
   "1485": "la clave de fa",
-  "1486": "El intento se ha detenido porque ha cambiado el ajuste de reproducción de la partitura.",
   "1487": "Ajustes de «A compás»",
-  "1488": "Reproducción de la partitura",
+  "1488": "Reproducción",
   "1489": "Escucha las dos manos mientras tocas.",
   "1490": "Volumen de reproducción",
-  "1491": "{0} · Reproducción de la partitura",
+  "1491": "{0} · Reproducción",
   "1492": "Créditos y licencias de las partituras incluidas",
   "1493": "Salida del metrónomo",
   "1494": "Para oír el metrónomo por los altavoces del piano, conecta el piano por USB y elige su salida de audio aquí o en los ajustes de sonido del sistema.",
@@ -1500,6 +1499,6 @@
   "1499": "Probar el metrónomo",
   "1500": "La salida seleccionada no estaba disponible. La prueba ha utilizado el audio del sistema.",
   "1501": "No se ha podido reproducir el sonido de prueba del metrónomo.",
-  "1502": "Para reproducir la partitura necesitas una salida sin eco. Reproduce las notas de prueba en Conexión o selecciona el sonido del navegador en Ajustes → Sonido.",
-  "1503": "Para reproducir la partitura necesitas una salida de sonido. {0}"
+  "1502": "Para la reproducción necesitas una salida sin eco. Reproduce las notas de prueba en Conexión o selecciona el sonido del navegador en Ajustes → Sonido.",
+  "1503": "Para la reproducción necesitas una salida de sonido. {0}"
 }

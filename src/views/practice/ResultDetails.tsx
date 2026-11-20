@@ -68,6 +68,11 @@ export function ResultDetails(p: ResultDetailsProps) {
     }
     return plans
   }, [mistakes, timing, limit])
+  const noMistakes =
+    shown.length === 0 &&
+    p.result.wrongAttacks === 0 &&
+    p.result.groupsFirstPass === p.result.groupsTotal &&
+    (!p.result.timing || p.result.timing.onTime === p.result.timing.groups)
   const keeps = shown.filter((plan) => KEEPS.has(plan.items[0]?.level ?? 'timing'))
   const once = shown.filter((plan) => !KEEPS.has(plan.items[0]?.level ?? 'timing'))
   const measurer = useMemo(
@@ -107,7 +112,7 @@ export function ResultDetails(p: ResultDetailsProps) {
       <p class={styles.verdict} data-testid="result-verdict">
         {verdict(p.result)}
       </p>
-      {shown.length === 0 ? (
+      {noMistakes && (p.result.passed || details) ? (
         <p class={styles.clean} data-testid="result-clean">
           {p.result.passed ? msg('No mistakes in this pass.') : msg('No wrong keys or timing marks in this pass.')}
         </p>

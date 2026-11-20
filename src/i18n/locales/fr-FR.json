@@ -1484,12 +1484,11 @@
   "1483": "droite",
   "1484": "clé de sol",
   "1485": "clé de fa",
-  "1486": "L’essai a été interrompu à la suite d’un changement du réglage de lecture de la partition.",
   "1487": "Réglages du mode En mesure",
-  "1488": "Lecture de la partition",
+  "1488": "Lecture",
   "1489": "Écoutez les deux mains pendant que vous jouez.",
   "1490": "Volume de lecture",
-  "1491": "{0} · Lecture de la partition",
+  "1491": "{0} · Lecture",
   "1492": "Crédits et licences des partitions incluses",
   "1493": "Sortie du métronome",
   "1494": "Pour entendre le métronome dans les haut-parleurs du piano, branchez le piano par USB et choisissez sa sortie audio ici ou dans les réglages audio du système.",
@@ -1500,6 +1499,6 @@
   "1499": "Essayer le métronome",
   "1500": "La sortie choisie était indisponible. L’essai a utilisé la sortie audio du système.",
   "1501": "Impossible de faire entendre le métronome pour cet essai.",
-  "1502": "La lecture de la partition nécessite une sortie sans écho. Jouez les notes de test dans Connexion ou choisissez le son du navigateur dans Réglages → Son.",
-  "1503": "La lecture de la partition nécessite une sortie audio. {0}"
+  "1502": "La lecture nécessite une sortie sans écho. Jouez les notes de test dans Connexion ou choisissez le son du navigateur dans Réglages → Son.",
+  "1503": "La lecture nécessite une sortie audio. {0}"
 }

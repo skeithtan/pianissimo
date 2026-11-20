@@ -152,8 +152,8 @@ export interface AttemptResultProps {
 export const DETAILS_MARGIN = 16
 /** The expanded tablet card's details are at most this tall (px); its own list scrolls beyond. */
 export const DETAILS_MAX_HEIGHT = 880
-/** The details fold away in this long (CSS `.resultDetails[data-phase=leaving]`). */
-export const DETAILS_FOLD_MS = 200
+/** Shared duration of the result opening and its reverse. */
+export const DETAILS_FOLD_MS = 420
 /** A newly completed loop briefly reveals more of its preview before settling. */
 const RESULT_PREVIEW_MS = 960
 const RESULT_SWIPE_PX = 40
@@ -186,7 +186,6 @@ export function AttemptResult(p: AttemptResultProps) {
   if (r) lastDimmed.current = ui.resultDimmed && restoredId !== r.id
   const dimmed = lastDimmed.current
   const exit = r ? null : ui.resultExit
-  const presence = useFadePresence(!!r, ui.resultExit === 'played' ? RESULT_SLIDE_MS : RESULT_FADE_MS)
   const shown = r ?? last.current
   const seenResult = useRef(r?.id)
   const [introId, setIntroId] = useState<string | null>(null)
@@ -216,6 +215,7 @@ export function AttemptResult(p: AttemptResultProps) {
   }, [r?.id, ui.resultDimmed])
   // The details unfold and fold like an accordion: they stay mounted while folding.
   const unfold = useFadePresence(expanded, DETAILS_FOLD_MS)
+  const presence = useFadePresence(!!r || unfold.mounted, ui.resultExit === 'played' ? RESULT_SLIDE_MS : RESULT_FADE_MS)
   const root = useRef<HTMLDivElement>(null)
   const toggleButton = useRef<HTMLButtonElement>(null)
   const phone = !!p.phone
@@ -244,6 +244,10 @@ export function AttemptResult(p: AttemptResultProps) {
     if (expanded) {
       setExpandedId(null)
       if (!phone) toggleButton.current?.focus({ preventScroll: true })
+      return
+    }
+    if (unfold.mounted && opening?.id === r.id && opening.phone === phone) {
+      setExpandedId(r.id)
       return
     }
     const pill = root.current
@@ -406,6 +410,18 @@ function ResultCard({
   const wasFull = useRef(false)
   const open = unfold !== null
   const start = opening?.bounds
+  // Reverse the actual opening motion, including its current position on a quick second tap.
+  useLayoutEffect(() => {
+    const card = rootRef.current
+    if (!card || !open) return
+    const closing = unfold === 'leaving'
+    for (const element of [card, card.querySelector(`.${styles.result}`), panel.current]) {
+      for (const animation of element?.getAnimations?.() ?? []) {
+        const reversing = animation.playbackRate < 0
+        if ('animationName' in animation && closing !== reversing) animation.reverse()
+      }
+    }
+  }, [unfold, start])
   useLayoutEffect(() => {
     if (full && open) {
       hide.current?.focus({ preventScroll: true })
@@ -510,6 +526,7 @@ function ResultCard({
       data-dimmed={dimmed || undefined}
       data-exit={exit ?? undefined}
       style={{
+        '--result-open-duration': `${DETAILS_FOLD_MS}ms`,
         '--result-details-max': `${maxHeight}px`,
         '--result-preview-duration': `${RESULT_PREVIEW_MS}ms`,
         ...(opening && start

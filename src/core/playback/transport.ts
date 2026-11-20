@@ -58,6 +58,8 @@ export interface TransportOptions {
   readonly timers?: TimerApi
   readonly tempo: TempoMapData
   readonly multiplier: number
+  /** Optional 0..1 note velocity scale sampled when each attack is scheduled. */
+  readonly velocityScale?: () => number
   readonly events: readonly PerformanceEvent[]
   /** Ascending learner onset positions (index = engine group index); null = no gates. */
   readonly gates: readonly Rational[] | null
@@ -93,6 +95,8 @@ export interface Transport {
   stop(): void
   /** Jump to a position (clamped to the range); gates before it count as passed. */
   seek(position: Rational): void
+  /** Replace the sounding parts while preserving the clock and all gate decisions. */
+  replacePerformance(events: readonly PerformanceEvent[], backend: OutputBackend | null): void
   setMultiplier(multiplier: number): void
   releaseGate(gate: number): void
   /** Float performance position for the cursor (never past an unreleased gate or the end). */
@@ -158,16 +162,16 @@ class MusicalTransport implements Transport {
   private readonly clock: Clock
   private readonly timers: TimerApi
   private readonly index: TempoIndex
-  private readonly backend: OutputBackend | null
+  private backend: OutputBackend | null
   private readonly metronome: MetronomeOptions | undefined
   private readonly lookahead: number
-  private readonly offLookahead: number
+  private offLookahead: number
   private readonly tickMs: number
   private readonly stallMs: number
   private readonly opts: TransportOptions
 
-  private readonly att: Attack[]
-  private readonly attTime: Float64Array
+  private att: Attack[] = []
+  private attTime = new Float64Array(0)
   private readonly offByVoice = new Map<number, { ev: NoteOffEvent; s: number }>()
   private readonly gatePos: readonly Rational[]
   private readonly gateSec: Float64Array
@@ -192,6 +196,7 @@ class MusicalTransport implements Transport {
   private inTick = false
   private again = false
   private clicksOn: boolean
+  private lastClickSec = -Infinity
   private disposed = false
 
   constructor(o: TransportOptions) {
@@ -225,6 +230,13 @@ class MusicalTransport implements Transport {
     this.gateSec = Float64Array.from(gates, (g) => this.index.sec(g))
     this.gateFlags = new Uint8Array(gates.length)
 
+    this.indexPerformance(o.events)
+    this.resetGates(o.range.start)
+  }
+
+  private indexPerformance(events: readonly PerformanceEvent[]): void {
+    const gates = this.gatePos
+    this.offByVoice.clear()
     const sOf = (ev: PerformanceEvent | ClickEvent): number => this.index.sec(ev.position) + ev.offsetSec
     const attackOf = (ev: NoteOnEvent | ControlEvent | ClickEvent): Attack => {
       const s = sOf(ev)
@@ -240,15 +252,15 @@ class MusicalTransport implements Transport {
     }
     const ons = new Set<number>()
     const attacks: Attack[] = []
-    for (const ev of o.events) {
+    for (const ev of events) {
       if (ev.kind === 'off') {
         if (this.offByVoice.has(ev.voice)) throw new Error(`Duplicate note-off for voice ${ev.voice}`)
         this.offByVoice.set(ev.voice, { ev, s: sOf(ev) })
         continue
       }
-      if (lt(ev.position, o.range.start)) continue
-      const atEnd = !lt(ev.position, o.range.end)
-      if (atEnd && (ev.kind === 'on' || gt(ev.position, o.range.end))) continue
+      if (lt(ev.position, this.rangeStart)) continue
+      const atEnd = !lt(ev.position, this.rangeEnd)
+      if (atEnd && (ev.kind === 'on' || gt(ev.position, this.rangeEnd))) continue
       if (ev.kind === 'on') {
         if (ons.has(ev.voice)) throw new Error(`Duplicate note-on for voice ${ev.voice}`)
         ons.add(ev.voice)
@@ -256,15 +268,14 @@ class MusicalTransport implements Transport {
       attacks.push(attackOf(ev))
     }
     for (const v of ons) if (!this.offByVoice.has(v)) throw new Error(`Note-on without note-off for voice ${v}`)
-    for (const ev of o.metronome?.clicks ?? []) {
-      if (lt(ev.position, o.range.start) || !lt(ev.position, o.range.end)) continue
+    for (const ev of this.metronome?.clicks ?? []) {
+      if (lt(ev.position, this.rangeStart) || !lt(ev.position, this.rangeEnd)) continue
       attacks.push(attackOf(ev))
     }
     // In this order every attack after a blocked one is blocked too, so the scheduler can stop
     // at the first blocked attack while everything written before the gate still plays on time.
     this.att = attacks.sort((a, b) => a.k - b.k || a.seg - b.seg || a.s - b.s || a.rank - b.rank)
     this.attTime = new Float64Array(this.att.length)
-    this.resetGates(o.range.start)
   }
 
   get state(): TransportState {
@@ -324,6 +335,23 @@ class MusicalTransport implements Transport {
     } else if (this.stateValue !== 'interrupted') {
       this.stateValue = 'paused'
     }
+  }
+
+  replacePerformance(events: readonly PerformanceEvent[], backend: OutputBackend | null): void {
+    if (this.disposed) return
+    const playing = this.stateValue === 'playing'
+    const now = this.clock()
+    const position = playing ? this.clampedSec(now) : this.pausedSec
+    // The click sink and its queued beats belong to the clock, including during the count-in.
+    if (playing && !this.guard(() => this.backend?.cleanup(now))) return
+    this.backend = backend
+    this.offLookahead = Math.min(this.lookahead, this.opts.offLookaheadMs ?? backend?.offLookaheadMs ?? 0)
+    this.indexPerformance(events)
+    this.ptr = 0
+    this.pending = []
+    // A live switch starts at the next attack. A waiting transport still owes its downbeat.
+    while (this.ptr < this.att.length && this.att[this.ptr]!.k < (playing ? position + EPS : position - EPS)) this.ptr++
+    if (playing) this.tick()
   }
 
   setMultiplier(multiplier: number): void {
@@ -393,7 +421,7 @@ class MusicalTransport implements Transport {
 
   setMetronomeEnabled(enabled: boolean): void {
     this.clicksOn = enabled
-    if (!enabled) this.metronome?.sink.cancel(this.clock())
+    if (!enabled) this.cancelClicks(this.clock())
   }
 
   interrupt(): void {
@@ -413,7 +441,7 @@ class MusicalTransport implements Transport {
       this.stateValue = 'paused'
       this.unemit(now)
     }
-    this.metronome?.sink.cancel(now)
+    this.cancelClicks(now)
     this.guard(() => this.backend?.stopSound(now))
   }
 
@@ -486,6 +514,7 @@ class MusicalTransport implements Transport {
     const s = this.index.sec(pos)
     this.pausedSec = s
     this.floor = pos
+    this.lastClickSec = -Infinity
     let lo = 0
     let hi = this.att.length
     while (lo < hi) {
@@ -511,9 +540,14 @@ class MusicalTransport implements Transport {
     this.pending = []
   }
 
+  private cancelClicks(now: number): void {
+    this.lastClickSec = -Infinity
+    this.metronome?.sink.cancel(now)
+  }
+
   private cleanupOutput(now: number): boolean {
     this.unemit(now)
-    this.metronome?.sink.cancel(now)
+    this.cancelClicks(now)
     return this.guard(() => this.backend?.cleanup(now))
   }
 
@@ -617,12 +651,21 @@ class MusicalTransport implements Transport {
   }
 
   private deliverAttack(a: Attack, time: number): boolean {
-    const ev = a.ev
     const backend = this.backend
+    const source = a.ev
+    const ev =
+      source.kind === 'on' && this.opts.velocityScale
+        ? { ...source, velocity: Math.max(1, Math.round(source.velocity * this.opts.velocityScale())) }
+        : source
     let ok = true
+    let emitted = backend !== null
     if (ev.kind === 'click') {
-      const sink = this.clicksOn ? this.metronome?.sink : undefined
-      if (sink) ok = this.guard(() => sink.click(time, ev.accent))
+      const sink = this.metronome?.sink
+      emitted = !!sink && this.clicksOn && a.s > this.lastClickSec + EPS
+      if (emitted && sink) {
+        ok = this.guard(() => sink.click(time, ev.accent))
+        this.lastClickSec = a.s
+      }
     } else if (backend) {
       ok =
         ev.kind === 'on'
@@ -636,9 +679,7 @@ class MusicalTransport implements Transport {
       const off = this.offByVoice.get(ev.voice)!
       this.pending.push({ ev: off.ev, s: off.s, onTime: time })
     }
-    if (ev.kind !== 'click' ? backend !== null : this.clicksOn && this.metronome !== undefined) {
-      this.opts.onEmit?.(ev, time)
-    }
+    if (emitted) this.opts.onEmit?.(ev, time)
     return true
   }
 

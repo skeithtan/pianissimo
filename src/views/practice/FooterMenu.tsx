@@ -2,7 +2,7 @@ import { msg, percentage } from '../../i18n/messages'
 /**
  * The Practice footer menu (DECISIONS U76): one Menu button at the footer's end edge (U88), across
  * from the always-visible Speed control, that opens an anchored popover (never a modal sheet) holding Note
- * names, Keep time, Score playback, Metronome and Show keys. The Menu button carries a small
+ * names, Keep time, Playback, Metronome and Show keys. The Menu button carries a small
  * metronome badge while Keep time is on. The popover opens upward, stays on screen (`placePopover`)
  * and fades. It
  * closes on Escape, a press outside it, the Menu button again, when playback starts and when the
@@ -131,10 +131,9 @@ export function PracticeMenuItems({
         <MenuReveal open={showScorePlayback}>
           <Toggle
             class={`${toggleRow} ${menuStyles.scorePlayback}`}
-            label={msg('Score playback')}
+            label={msg('Playback')}
             description={msg('Hear both hands while you play.')}
             checked={scorePlayback.on}
-            disabled={ui.playing}
             onChange={scorePlayback.onToggle}
           />
           <MenuReveal open={scorePlayback.on}>
@@ -146,7 +145,6 @@ export function PracticeMenuItems({
                 max={100}
                 step={1}
                 format={(value) => percentage(value / 100)}
-                disabled={ui.playing}
                 onChange={(value) => scorePlayback.onVolume(value / 100)}
               />
             </div>

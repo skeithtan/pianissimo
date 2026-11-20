@@ -46,7 +46,8 @@ Test helpers (not exported): `testkit.ts` (`makeModel`, `ManualClock`, `Recordin
   metronome follows this gated transport; its sink loads only when a click is wanted (the session
   decides: `metronome.enabled`, or `metronome.keepTime` in a Keep time attempt, DECISIONS P20).
 - **Keep time score playback (P27).** The strict transport uses both parts and its existing
-  learner gates. Its clock, score playback and metronome start together after the count-in.
+  learner gates. The downbeat starts the clock, metronome and selected parts. Changing Playback
+  replaces upcoming score events on that clock and keeps scheduled clicks and gate decisions.
   Verified echo-free MIDI output follows the practice pedal setting. Browser sound renders
   the score pedals.
 - **Human input:** forward every human event to `MidiOutputBackend.humanInput`; construct the

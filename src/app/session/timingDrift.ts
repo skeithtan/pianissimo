@@ -166,6 +166,12 @@ export class PerformanceTiming {
     return this.#cue && now < this.#cue.until ? this.#cue.direction : null
   }
 
+  /** Gated practice recognized the correct pitch before its gate's early-press window. */
+  earlyPress(playedMs: number): void {
+    this.#cue = { direction: 'rushing', until: playedMs + TIMING_CUE_MS }
+    this.#previousDirection = 'rushing'
+  }
+
   observe(group: OnsetGroup, playedMs: number): void {
     const previous = this.#previous
     if (group.onsetSec === null || (previous && group.index <= previous.group)) return

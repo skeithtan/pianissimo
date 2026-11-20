@@ -1484,12 +1484,11 @@
   "1483": "right",
   "1484": "treble",
   "1485": "bass",
-  "1486": "The score playback setting changed, so the attempt stopped.",
   "1487": "Keep time settings",
-  "1488": "Score playback",
+  "1488": "Playback",
   "1489": "Hear both hands while you play.",
   "1490": "Playback volume",
-  "1491": "{0} · Score playback",
+  "1491": "{0} · Playback",
   "1492": "Built-in score credits and licenses",
   "1493": "Metronome output",
   "1494": "For piano speakers, connect the piano by USB and choose its audio output here or in your system audio settings.",
@@ -1500,6 +1499,6 @@
   "1499": "Test click",
   "1500": "The selected output was unavailable. The test used system audio.",
   "1501": "The metronome test could not play.",
-  "1502": "Score playback needs an echo-free output. Play the test notes in Connection or choose Browser sound in Settings → Sound.",
-  "1503": "Score playback needs a sound output. {0}"
+  "1502": "Playback needs an echo-free output. Play the test notes in Connection or choose Browser sound in Settings → Sound.",
+  "1503": "Playback needs a sound output. {0}"
 }

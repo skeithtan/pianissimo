@@ -44,10 +44,10 @@ test.describe('Keep time', () => {
     await expect(keep).toBeChecked()
   })
 
-  test('plays the full score after the count-in when Score playback is enabled', async ({ page }) => {
+  test('plays the full score after the count-in when Playback is enabled', async ({ page }) => {
     const menu = await openFooterMenu(page)
     const keepTimeSettings = menu.getByRole('group', { name: 'Keep time settings' })
-    const score = keepTimeSettings.getByRole('switch', { name: 'Score playback' })
+    const score = keepTimeSettings.getByRole('switch', { name: 'Playback' })
     const volume = keepTimeSettings.getByRole('slider', { name: 'Playback volume' })
     await expect(score).toHaveCount(0)
     await expect(volume).toHaveCount(0)
@@ -56,7 +56,7 @@ test.describe('Keep time', () => {
     await expect(score).not.toBeChecked()
     await expect(score).toHaveAccessibleDescription('Hear both hands while you play.')
     const keepTimeLabel = await keepTimeSettings.getByText('Keep time', { exact: true }).boundingBox()
-    const scorePlaybackLabel = await keepTimeSettings.getByText('Score playback', { exact: true }).boundingBox()
+    const scorePlaybackLabel = await keepTimeSettings.getByText('Playback', { exact: true }).boundingBox()
     expect(scorePlaybackLabel!.x).toBeCloseTo(keepTimeLabel!.x)
     await expect(volume).toHaveCount(0)
     await score.click()
@@ -85,6 +85,38 @@ test.describe('Keep time', () => {
       )
       .toEqual([48, 60])
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  })
+
+  test('changes Playback during a loop and still reviews its wrong notes and missed beats', async ({ page }) => {
+    await loopWholePiece(page)
+    const menu = await openFooterMenu(page)
+    await menu.getByRole('switch', { name: 'Keep time', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    const performance = playAfterCountIn(page, [
+      { notes: [60, 48], atMs: 0 },
+      { notes: [64, 30], atMs: 2000 },
+      { notes: [67, 71, 74, 43], atMs: 4000 },
+      { notes: [48], atMs: 5000 },
+    ])
+    const live = await openFooterMenu(page)
+    const playback = live.getByRole('switch', { name: 'Playback', exact: true })
+    await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'running')
+    await playback.click()
+    await expect(playback).toBeChecked()
+    await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'running')
+    await expect(page.getByTestId('count-in')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await performance
+    const card = page.getByTestId('attempt-result')
+    const wrongNotes = card.getByText(/^\d+ wrong notes?$/, { exact: true })
+    await expect(wrongNotes).toBeVisible({ timeout: 15000 })
+    const headline = await wrongNotes.innerText()
+    await card.getByTestId('result-details-toggle').click()
+    await expect(card.getByTestId('result-verdict')).toContainText(headline)
+    await expect(card.getByTestId('result-facts')).toContainText('missed')
+    await expect(card.getByTestId('result-excerpt').first()).toBeVisible()
+    await expect(card.getByTestId('result-clean')).toHaveCount(0)
   })
 
   test('Pause during the count-in cancels it', async ({ page }) => {
@@ -121,6 +153,38 @@ test.describe('Keep time', () => {
     await expect(countIn).toHaveCount(0, { timeout: 2500 })
     await expect(speed).toHaveAccessibleName(/Speed 50%/)
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  })
+
+  test.describe('tablet timeline', () => {
+    test.use({ viewport: { width: 1180, height: 820 }, hasTouch: true })
+
+    test('the paused header timeline chooses where the next Keep time attempt starts', async ({ page }) => {
+      const menu = await openFooterMenu(page)
+      await menu.getByRole('switch', { name: 'Keep time' }).click()
+      await page.keyboard.press('Escape')
+      const overview = page.getByRole('slider', { name: 'Piece overview' })
+      const start = page.getByRole('button', { name: 'Start', exact: true })
+      await start.click()
+      await expect(page.getByTestId('count-in')).toBeVisible()
+      await page.getByRole('button', { name: 'Pause', exact: true }).click()
+
+      const box = (await overview.boundingBox())!
+      await overview.tap({ position: { x: box.width * 0.75, y: box.height / 2 } })
+      await expect(overview).toHaveAttribute('aria-valuenow', '2')
+      await overview.press('ArrowLeft')
+      await expect(overview).toHaveAttribute('aria-valuenow', '1')
+      await overview.press('ArrowRight')
+      await expect(overview).toHaveAttribute('aria-valuenow', '2')
+      await expect(page.getByTestId('count-in')).toHaveCount(0)
+      await start.click()
+      await expect(page.getByTestId('count-in')).toBeVisible()
+      await expect(overview).toHaveAttribute('aria-valuenow', '2')
+      await playAfterCountIn(page, [
+        { notes: [67, 71, 74, 43], atMs: 0 },
+        { notes: [48], atMs: 2 * BEAT_MS },
+      ])
+      await expect(page.getByTestId('attempt-result')).toContainText('On time 2 of 2')
+    })
   })
 
   for (const example of [
@@ -329,13 +393,13 @@ test.describe('Keep time', () => {
 test.describe('Keep time phone menu', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
-  test('nests Score playback under Keep time and hides it when Keep time is off', async ({ page }) => {
+  test('nests Playback under Keep time and hides it when Keep time is off', async ({ page }) => {
     await installFakeMidi(page)
     await seedPiece(page)
     await openSeededPractice(page)
     const menu = await openFooterMenu(page)
     const keepTimeSettings = menu.getByRole('group', { name: 'Keep time settings' })
-    const score = keepTimeSettings.getByRole('switch', { name: 'Score playback' })
+    const score = keepTimeSettings.getByRole('switch', { name: 'Playback' })
     const volume = keepTimeSettings.getByRole('slider', { name: 'Playback volume' })
     await expect(score).toHaveCount(0)
     await expect(volume).toHaveCount(0)

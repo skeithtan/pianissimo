@@ -107,6 +107,12 @@ describe('ResultDetails (U99)', () => {
     expect(facts).toContain('2 of 3 clean in a row toward the goal')
   })
 
+  it('never calls a pass free of marks when its summary contains wrong or missed notes', () => {
+    render([], { ...RESULT, wrongAttacks: 6, timing: { groups: 152, onTime: 151, early: 0, late: 0, missed: 1 } })
+    expect($(view!.container, '[data-testid="result-verdict"]')?.textContent).toContain('6 wrong notes')
+    expect($(view!.container, '[data-testid="result-clean"]')).toBeNull()
+  })
+
   it('one excerpt per bar, the repeated mistake first under its own heading with its count in words', () => {
     const repeated = mistake(1, 0, 'repeated', {
       reason: 'Same wrong key three passes running',

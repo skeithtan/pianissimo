@@ -134,6 +134,8 @@ export class PracticeEngine {
   #transport: TransportKind
   /** Strict transport parameters (kept across transports once set). */
   #rhythm: RhythmParams | null
+  /** Stays true once Playback was enabled during the running pass. */
+  #passPlayback = false
   readonly #pieceId: string
   #hintSettings: EngineHintSettings
   #labelSettings: LabelSettingsSnapshot
@@ -849,6 +851,7 @@ export class PracticeEngine {
   startRunning(now: number): void {
     this.#now(now)
     if (!this.#strict || this.#mode !== 'scored' || this.#phase !== 'ready') return
+    this.#passPlayback = !!this.#rhythm?.scorePlayback
     this.#startClock(now)
     this.#setPhase('running', now)
     this.#runDue(this.#lastNow, true)
@@ -1077,10 +1080,10 @@ export class PracticeEngine {
     }
     if (patch.rhythm) {
       const rhythm = checkRhythm(patch.rhythm)
-      if (rhythm.toleranceMs !== this.#rhythm?.toleranceMs || rhythm.scorePlayback !== this.#rhythm?.scorePlayback) {
-        if (this.#strict && this.#attemptActive()) this.interrupt('setting-change', now)
-        this.#rhythm = rhythm
-      }
+      if (rhythm.toleranceMs !== this.#rhythm?.toleranceMs && this.#strict && this.#attemptActive())
+        this.interrupt('setting-change', now)
+      this.#rhythm = rhythm
+      if (this.#phase === 'running' && rhythm.scorePlayback) this.#passPlayback = true
     }
     if (patch.hints) this.#hintSettings = patch.hints
     if (patch.hintPedal !== undefined) this.#hintPedal = patch.hintPedal
@@ -1276,6 +1279,7 @@ export class PracticeEngine {
 
   /** Start a new attempt/traversal at `startGroup` in `phase`. */
   #begin(now: number, startGroup: number, phase: Phase, runningStart = false): void {
+    this.#passPlayback = false
     this.#newLog(now)
     this.#runningStart = runningStart
     this.#prepared = false
@@ -1399,7 +1403,7 @@ export class PracticeEngine {
       this.#timeline,
       this.#transport,
       this.matchingRules,
-      this.#strict && this.#rhythm?.scorePlayback,
+      this.#strict && this.#passPlayback,
     )
     if (completion === 'abandoned' && reason !== null && log.started && g && log.measureWrong(g.occ) > 0) {
       this.#emit({
@@ -1426,7 +1430,9 @@ export class PracticeEngine {
         reason,
         timeTolerance: this.#passTimeTolerance,
         matchingRules: this.matchingRules,
-        rhythm: this.#strict ? this.#rhythm : null,
+        rhythm: this.#strict
+          ? { toleranceMs: this.#rhythm!.toleranceMs, ...(this.#passPlayback ? { scorePlayback: true } : {}) }
+          : null,
       }),
     })
   }

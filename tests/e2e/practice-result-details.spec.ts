@@ -198,6 +198,43 @@ test.describe('the result details open in place (U99)', () => {
     await expect(card).toBeVisible()
   })
 
+  for (const size of [TABLET_SIZES[0], PHONE_SIZES[0]]) {
+    test(`dismissing the expanded result on ${size.name} reverses its opening motion`, async ({ page }) => {
+      await page.setViewportSize(TABLET_SIZES[0])
+      await openLoop(page)
+      await pass(page, { 1: [61] })
+      const card = page.getByTestId('attempt-result')
+      await expect(card).toContainText('1 wrong note')
+      await expect(card).not.toHaveAttribute('data-intro', 'true')
+      await page.setViewportSize(size)
+      await settled(page)
+      const pill = (await card.boundingBox())!
+      await toggle(page).click()
+      const panel = details(page)
+      await expect(panel.getByTestId('result-excerpt').first()).toBeVisible()
+      await page.waitForTimeout(500)
+      const expanded = (await panel.boundingBox())!
+      const closing = panel.evaluate(
+        (el) =>
+          new Promise<number[]>((resolve) => {
+            const heights: number[] = []
+            const sample = () => {
+              if (!el.isConnected) return resolve(heights)
+              if (el.getAttribute('data-phase') === 'leaving') heights.push(el.getBoundingClientRect().height)
+              requestAnimationFrame(sample)
+            }
+            sample()
+          }),
+      )
+      const controls = size === PHONE_SIZES[0] ? page.getByTestId('result-screen-header') : card
+      await controls.getByRole('button', { name: 'Hide result', exact: true }).click()
+      const heights = await closing
+      expect(heights.some((h) => h < expanded.height - 10 && h > pill.height + 10)).toBe(true)
+      expect(heights.at(-1)!).toBeLessThan(pill.height + 15)
+      await expect(card).toHaveCount(0)
+    })
+  }
+
   test('the next pass: wrong keys keep the card; the first correct note folds and dims it; past that bar it slides away (U101)', async ({
     page,
   }) => {

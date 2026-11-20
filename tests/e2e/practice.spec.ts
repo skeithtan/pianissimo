@@ -23,6 +23,31 @@ test.describe('practice', () => {
     await installFakeMidi(page)
   })
 
+  test('ordinary Practice shows Rushing and Dragging while waiting for the written notes', async ({ page }) => {
+    await seedPiece(page)
+    await openSeededPractice(page)
+    await page.clock.install()
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 100)))
+    const cue = page.getByTestId('timing-cue')
+    await play(page, 60, 48)
+    await page.clock.runFor(400)
+    await play(page, 62)
+    await page.clock.runFor(30)
+    await expect(cue).toHaveText(/Rushing/)
+    await expect(cue).toBeVisible()
+    // The early D still needs a fresh press when its gate arrives.
+    await page.clock.runFor(570)
+    await play(page, 62)
+    await page.clock.runFor(1600)
+    await play(page, 64)
+    await page.clock.runFor(30)
+    await expect(cue).toHaveText(/Dragging/)
+    await expect(cue).toBeVisible()
+    await page.clock.runFor(1300)
+    await expect(cue).toBeHidden()
+  })
+
   test('wrong note flash, scored completion and the result card', async ({ page, browserName }, info) => {
     await seedPiece(page)
     await openSeededPractice(page)
