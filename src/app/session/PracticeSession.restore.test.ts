@@ -161,7 +161,7 @@ describe('PracticeSession: a reload keeps Repeat mode (U98)', () => {
       playing: false,
       lastResult: null,
     })
-    expect(ui(h).ladder).toMatchObject({ goal: 1, step: 0.05, start: 0.8, failures: 0 })
+    expect(ui(h)).toMatchObject({ multiplier: 0.8, ladder: { goal: 1, step: 0.05 } })
     expect(h.session.loop).toEqual(BAR_2)
     expect(h.session.selection.range).toEqual(BAR_2)
     expect(h.session.engine.state.position).toEqual(rat(1))

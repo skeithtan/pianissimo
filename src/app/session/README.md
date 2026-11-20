@@ -14,7 +14,7 @@ practice", "Execution and rendering architecture", "Storage and recovery" (resum
 | Export | Purpose |
 | --- | --- |
 | `new PracticeSession({pieceId, model, selection, settings, startPosition?, repeatTarget?, ladder?, rhythm?}, deps)` | One session per opened piece (`rhythm`: the piece's saved Keep time choice). |
-| `LADDER_DEFAULT_TARGET`, `LADDER_DROP_AFTER`, `LADDER_STEP` | Speed ladder constants (3 passes per rung without a Repeat target, 2 failures per drop, the 5% step the screen sets). |
+| `LADDER_DEFAULT_TARGET`, `LADDER_STEP` | Speed ladder constants (3 passes per rung without a Repeat target and the 5% step the screen sets). |
 | `practiceModel(model, userTempo)` | Applies a user-supplied tempo (`withUserTempo`) when the score has none. |
 | `selectionTimeline`, `startPlan`, `passageSummary`, `rangeText`, `tempoText`, `clampPassage`, `HAND_TEXT` | Selection helpers (timeline, plain-language blockers, "Right hand · Bars 5–8 · 80% (♩ = 58)"). |
 | `PersistentLabels`, `labelSnapshot`, `mergeOpacity` | Persistent label texts, eligibility and fades; engine label snapshot (`rulesJson = JSON.stringify(labels.rules)`). |
@@ -246,7 +246,7 @@ Stores (subscribe from the view):
   after must find them) and coalesced by the saver; only the ladder's own speed step (from the
   MIDI path) and the periodic resume position are debounced. `resume` on pause/seek/hide/dispose and every ≥ 5 s of
   reading (from the frame, never per event); cleared at the end of the piece. The last result,
-  corrections, streak, ladder failures and play-through are never saved: a session opened with
+  corrections, streak and play-through are never saved: a session opened with
   `repeat: true` from the stored loop (`PracticeScreen`) starts paused at the loop start with no
   result, the ladder restarting from the stored speed.
 - **Sound** (DECISIONS S4). `playbackDestination(settings, output, browserSound)`: Auto (the
@@ -265,19 +265,15 @@ Stores (subscribe from the view):
 The metronome-ladder technique, automated (`ladder.ts` holds the pure rules, the session applies
 them). `SessionOptions.ladder` / `setLadder(LadderSettings | null)` set it (`{ goal, step }`,
 speed multipliers; saved on the piece as `ladder` through the piece saver, like `repeatTarget`).
-`ui.ladder: LadderUi | null` = `{ goal, step, start, failures, done }`: `start` is the speed when
-the ladder was switched on (or the opening speed) and the floor for drops. New settings for a
-ladder already on keep its `start` and `failures`. It acts only while Repeat mode is open;
+`ui.ladder: LadderUi | null` = `{ goal, step, done }`. It acts while Repeat mode is open, and
 closing Repeat keeps the setting.
 
 In `#onRecord`, for a completed scored attempt (target = `repeatTarget ?? LADDER_DEFAULT_TARGET`):
 a pass with streak ≥ target climbs to `min(goal, speed + step)` on the 5% grid
-(`offsetOnGrid` in `ui/speed.ts`), or sets `done` at the goal; a failure counts, and
-`LADDER_DROP_AFTER` (2) failures in a row drop to `max(start, speed − step)` (a no-op at the
-floor). Any pass resets the failures; a finished ladder (`done`) does nothing more. A manual speed
-change (`setSelection({ multiplier })`) resets the failures, lowers `start` below it and sets
-`done` exactly when the new speed is at or above the goal. `lastResult.ladder` says what happened
-(`climbedTo` / `droppedTo` / `done`); a climb keeps Repeat going (`targetReached` false).
+(`offsetOnGrid` in `ui/speed.ts`) or sets `done` at the goal. A failure resets the clean
+streak at the current speed. A manual speed change (`setSelection({ multiplier })`) sets
+`done` when the new speed is at or above the goal. `lastResult.ladder` says what happened
+(`climbedTo` / `done`). A climb keeps Repeat going (`targetReached` false).
 
 The new speed waits for the Repeat reset (`#ladderNext`): the music finishes the passage at the
 old speed, then `#ladderStep` changes the speed through `#select` (the `setSelection` path: saved
@@ -306,12 +302,12 @@ Every scored attempt is then `transport: 'strict'` with `rhythm: { toleranceMs }
 changes that prepare a fresh attempt). The transport is the gated one of practice (silent with
 both hands, the other hand automatic with one; its click per `metronome.keepTime`, below).
 
-- **Count-in.** When the engine reaches Ready, `#beginCountIn` counts one bar (`countIn.ts`:
-  the meter numerator at the passage start, compound numerators above 4 divisible by 3 in dotted
-  beats, 4 beats without a meter; the beat from the tempo segment there ÷ speed). All clicks go to
-  the metronome sink at once (accent first); Start loads the metronome for it even when both
-  Metronome switches are off. `ui.countIn`
-  counts the beats left (one timer per beat). At the end (`#endCountIn`) the engine's
+- **Count-in.** When the engine reaches Ready, `#beginCountIn` uses the opening meter and
+  practice tempo (`countIn.ts`). The plan counts a full bar within five seconds or shortens it
+  to the beats that fit. If a bar is too long and fewer than two beats fit, it uses two
+  subdivisions. All clicks go to the metronome sink at once (accent first). Start loads the
+  metronome for it even when both Metronome switches are off. `ui.countIn` counts the clicks
+  left (one timer per click). At the end (`#endCountIn`) the engine's
   `startRunning(t)` and `transport.play(t)` get the same timestamp. Presses meanwhile are not judged
   (the engine ignores them in Ready). Leaving Ready (pause, seek, selection change, interruption,
   a new attempt) cancels it: the timer goes and the sink's `cancel(now)` drops its clicks.

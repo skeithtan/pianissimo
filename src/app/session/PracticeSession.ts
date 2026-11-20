@@ -106,8 +106,6 @@ import {
   LADDER_DEFAULT_TARGET,
   LADDER_FULL_SPEED_GOAL,
   ladderAfterAttempt,
-  ladderAfterManualSpeed,
-  retargetLadder,
   sameLadder,
   startLadder,
 } from './ladder'
@@ -142,7 +140,7 @@ export interface SessionOptions {
   /** Reading starts here (resume position); default: the start of the selection. */
   readonly startPosition?: Rational | null
   readonly repeatTarget?: number | null
-  /** The piece's speed ladder (Repeat mode); its start is the opening speed. Default: off. */
+  /** The piece's speed ladder (Repeat mode). Default: off. */
   readonly ladder?: LadderSettings | null
   /**
    * Open with Repeat mode on (a preset passage, DECISIONS U10). `selection.range` is the loop;
@@ -164,7 +162,7 @@ interface CountIn {
   readonly start: number
   readonly beats: number
   readonly beatMs: number
-  /** Beats left to count, the number shown (`ui.countIn`). */
+  /** Clicks left to count, the number shown (`ui.countIn`). */
   remaining: number
   timer: unknown
 }
@@ -1792,7 +1790,7 @@ export class PracticeSession {
 
   /**
    * Keep time (rhythm mode, DECISIONS P13), saved on the piece. On: every Start is a scored
-   * attempt on the strict transport after a one-bar count-in, over the loop in Repeat mode, else
+   * attempt on the strict transport after a count-in, over the loop in Repeat mode, else
    * the whole piece from its start; play-through goes off; needs a hand selected and a numerical
    * tempo. Switching either way ends an attempt in progress ('mode-change'); off returns to
    * ordinary reading, paused at the attempt's current position.
@@ -1867,9 +1865,9 @@ export class PracticeSession {
   }
 
   /**
-   * Keep time: the engine is Ready, so count in one bar from now (`countInPlan` at the passage
+   * Keep time: the engine is Ready, so count in from now (`countInPlan` at the passage
    * start): every click goes to the metronome sink at once (accent on the first), `ui.countIn`
-   * counts the beats down, and the attempt starts when the bar is over (`#endCountIn`).
+   * counts the clicks down, and the attempt starts on the next pulse (`#endCountIn`).
    */
   #beginCountIn(now: number): void {
     this.#cancelCountIn(now)
@@ -2250,24 +2248,19 @@ export class PracticeSession {
   }
 
   /**
-   * The speed ladder (Repeat mode; null = off), persisted like the Repeat target. A goal change
-   * keeps the ladder's start unless the preset also sets a new practice speed.
+   * The speed ladder (Repeat mode; null = off), persisted like the Repeat target. The 100% preset
+   * can set an opening speed of 75% when the user selects it.
    */
   setLadder(ladder: LadderSettings | null): void {
     if (sameLadder(ladder, this.#ladderSettings)) return
     const speed = this.#sel.multiplier
     const startAt = ladder?.goal === LADDER_FULL_SPEED_GOAL ? fullSpeedLadderStart(speed) : speed
-    const restart = startAt !== speed
     this.#ladderSettings = ladder
-    this.#ladder = ladder
-      ? this.#ladder && !restart
-        ? retargetLadder(this.#ladder, ladder, startAt)
-        : startLadder(ladder, startAt)
-      : null
+    this.#ladder = ladder ? startLadder(ladder, startAt) : null
     this.#ladderNext = null
     this.#deps.piece.save({ ladder }, true)
     // Both piece updates are coalesced by the saver. The new speed takes the manual tempo-change path.
-    if (restart) this.#select({ hands: this.#sel.hands, multiplier: startAt }, this.#loop, this.#repeat)
+    if (startAt !== speed) this.#select({ hands: this.#sel.hands, multiplier: startAt }, this.#loop, this.#repeat)
     this.#publishUi()
   }
 
@@ -2398,7 +2391,7 @@ export class PracticeSession {
   setSelection(patch: Partial<Selection>): void {
     const speed = patch.multiplier
     if (this.#ladder && speed !== undefined && Math.abs(speed - this.#sel.multiplier) > 1e-9) {
-      this.#ladder = ladderAfterManualSpeed(this.#ladder, speed)
+      this.#ladder = startLadder(this.#ladder, speed)
       this.#publishUi()
     }
     let loop = this.#loop
@@ -3401,7 +3394,7 @@ export class PracticeSession {
   }
 
   /**
-   * The speed ladder's climb or drop, at the Repeat reset: the same path as a speed change
+   * The speed ladder's climb, at the Repeat reset: the same path as a speed change
    * (`setSelection({ multiplier })`, saved as the piece's last speed; the streak starts over) but
    * the result card stays and the fresh attempt is prepared at the new speed.
    */

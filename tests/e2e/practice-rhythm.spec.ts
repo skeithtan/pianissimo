@@ -103,6 +103,26 @@ test.describe('Keep time', () => {
     await expect(page.getByTestId('attempt-result')).toHaveCount(0)
   })
 
+  test('shortens the count-in at half speed to two clicks in four seconds', async ({ page }) => {
+    const menu = await openFooterMenu(page)
+    await menu.getByRole('switch', { name: 'Keep time' }).click()
+    await page.keyboard.press('Escape')
+    const speed = page.getByRole('button', { name: /Open speed options/ })
+    await speed.click()
+    const presets = page.getByRole('dialog', { name: 'Playback speed' })
+    await presets.getByRole('button', { name: '50%', exact: true }).click()
+    await speed.click()
+    await expect(presets).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    const countIn = page.getByTestId('count-in')
+    await expect(countIn).toHaveText('2')
+    await expect(countIn).toHaveText('1', { timeout: 2500 })
+    await expect(countIn).toHaveCount(0, { timeout: 2500 })
+    await expect(speed).toHaveAccessibleName(/Speed 50%/)
+    await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  })
+
   for (const example of [
     { direction: 'rushing', label: 'Rushing', mode: 'strip', width: 1180, height: 820, sign: -1 },
     { direction: 'dragging', label: 'Dragging', mode: 'page', width: 820, height: 1180, sign: 1 },

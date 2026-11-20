@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { ladderAfterAttempt, ladderAfterManualSpeed, retargetLadder, sameLadder, startLadder } from './ladder'
+import { ladderAfterAttempt, sameLadder, startLadder } from './ladder'
 
 const settings = { goal: 1, step: 0.05 }
 
 describe('speed ladder rules', () => {
   it('starts at the current speed, done when already at the goal', () => {
-    expect(startLadder(settings, 0.6)).toEqual({ goal: 1, step: 0.05, start: 0.6, failures: 0, done: false })
+    expect(startLadder(settings, 0.6)).toEqual({ goal: 1, step: 0.05, done: false })
     expect(startLadder(settings, 1).done).toBe(true)
     expect(startLadder(settings, 1.25).done).toBe(true)
   })
@@ -28,34 +28,9 @@ describe('speed ladder rules', () => {
     expect(ladderAfterAttempt(top.ladder, 0.62, true, 6, 3)).toEqual({ ladder: top.ladder })
   })
 
-  it('drops one step after two failures in a row; a pass in between starts the count over', () => {
-    const l = { ...startLadder(settings, 0.5), start: 0.5 }
-    const one = ladderAfterAttempt(l, 0.6, false, 0, 3)
-    expect(one).toEqual({ ladder: { ...l, failures: 1 } })
-    expect(ladderAfterAttempt(one.ladder, 0.6, true, 1, 3).ladder.failures).toBe(0)
-    const two = ladderAfterAttempt(one.ladder, 0.6, false, 0, 3)
-    expect(two).toEqual({ ladder: { ...l, failures: 0 }, next: 0.55, note: { droppedTo: 0.55 } })
-  })
-
-  it('never drops below the start; a drop at the floor is a no-op', () => {
-    const l = { ...startLadder(settings, 0.58), failures: 1 }
-    expect(ladderAfterAttempt(l, 0.6, false, 0, 3).next).toBe(0.58)
-    const floor = ladderAfterAttempt(l, 0.58, false, 0, 3)
-    expect(floor).toEqual({ ladder: { ...l, failures: 0 } })
-  })
-
-  it('a manual speed resets failures, lowers the floor and sets done at the goal', () => {
-    const l = { ...startLadder(settings, 0.6), failures: 1 }
-    expect(ladderAfterManualSpeed(l, 0.5)).toMatchObject({ start: 0.5, failures: 0, done: false })
-    expect(ladderAfterManualSpeed(l, 0.8)).toMatchObject({ start: 0.6, failures: 0, done: false })
-    expect(ladderAfterManualSpeed(l, 1)).toMatchObject({ done: true })
-    expect(ladderAfterManualSpeed({ ...l, done: true }, 0.9).done).toBe(false)
-  })
-
-  it('new settings keep the start and failures', () => {
-    const l = { ...startLadder(settings, 0.6), failures: 1 }
-    expect(retargetLadder(l, { goal: 0.75, step: 0.1 }, 0.7)).toEqual({ ...l, goal: 0.75, step: 0.1, done: false })
-    expect(retargetLadder(l, { goal: 0.5, step: 0.05 }, 0.7).done).toBe(true)
+  it('holds the current speed on a failed pass', () => {
+    const ladder = startLadder(settings, 0.5)
+    expect(ladderAfterAttempt(ladder, 0.6, false, 0, 3)).toEqual({ ladder })
   })
 
   it('compares settings by value', () => {

@@ -17,7 +17,7 @@ describe('countInPlan', () => {
     // A dotted quarter at quarter = 60 lasts 1.5 s.
     expect(countInPlan(six, six.tempo, ZERO, 1)).toEqual({ beats: 2, beatMs: 1500 })
     const twelve = buildScore({ notes: note, meter: [12, 8], tempo: { bpm: 60 } })
-    expect(countInPlan(twelve, twelve.tempo, ZERO, 1).beats).toBe(4)
+    expect(countInPlan(twelve, twelve.tempo, ZERO, 1)).toEqual({ beats: 3, beatMs: 1500 })
     // 3/8 is not compound here: three eighth beats.
     const three = buildScore({ notes: note, meter: [3, 8], tempo: { bpm: 60 } })
     expect(countInPlan(three, three.tempo, ZERO, 1)).toEqual({ beats: 3, beatMs: 500 })
@@ -27,6 +27,19 @@ describe('countInPlan', () => {
     const m = buildScore({ notes: note, tempo: { bpm: 60 } })
     const bare = { ...m, meters: [] }
     expect(countInPlan(bare, m.tempo, ZERO, 1)).toEqual({ beats: 4, beatMs: 1000 })
+  })
+
+  it('shortens a slow bar using whole beats up to the five-second limit', () => {
+    const m = buildScore({ notes: note, meter: [5, 4], tempo: { bpm: 60 } })
+    expect(countInPlan(m, m.tempo, ZERO, 0.8)).toEqual({ beats: 4, beatMs: 1250 })
+    expect(countInPlan(m, m.tempo, ZERO, 0.5)).toEqual({ beats: 2, beatMs: 2000 })
+  })
+
+  it('uses two subdivisions when whole beats are too far apart', () => {
+    const simple = buildScore({ notes: note, meter: [4, 4], tempo: { bpm: 60 } })
+    expect(countInPlan(simple, simple.tempo, ZERO, 0.05)).toEqual({ beats: 2, beatMs: 2500 })
+    const compound = buildScore({ notes: note, meter: [6, 8], tempo: { bpm: 60 } })
+    expect(countInPlan(compound, compound.tempo, ZERO, 0.5)).toEqual({ beats: 2, beatMs: 1000 })
   })
 
   it('uses the tempo in effect at the start position', () => {

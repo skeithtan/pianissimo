@@ -99,14 +99,13 @@ export function Banners(p: BannersProps) {
 }
 
 /**
- * What the speed ladder did after an attempt, in one line ("Speed up: next at 65%", "Back to
- * 55%", "Goal reached: 100%"), or null. `multiplier` is the current speed (the goal when done).
+ * What the speed ladder did after an attempt, in one line ("Speed up: next at 65%" or
+ * "Goal reached: 100%"), or null. `multiplier` is the current speed (the goal when done).
  */
 export function ladderResultText(r: AttemptSummary, multiplier: number): string | null {
   const l = r.ladder
   if (!l) return null
   if (l.climbedTo !== undefined) return `Speed up: next at ${formatSpeedPercent(l.climbedTo)}`
-  if (l.droppedTo !== undefined) return `Back to ${formatSpeedPercent(l.droppedTo)}`
   if (l.done) return `Goal reached: ${formatSpeedPercent(multiplier)}`
   return null
 }

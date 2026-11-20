@@ -39,7 +39,7 @@ export interface ResumePosition {
 export interface LadderSettings {
   /** Speed the climb ends at, in [0.05, 10]. */
   readonly goal: number
-  /** Speed added per climb (and taken away per drop), in (0, 1]. */
+  /** Speed added per climb, in (0, 1]. */
   readonly step: number
 }
 

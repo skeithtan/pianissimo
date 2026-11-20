@@ -378,22 +378,24 @@ from the resume position. A preset's opening state is saved on the piece when it
 state. Repeat closed by the no-piano rule is held, not saved (`#repeatHeld`), and reopens in
 `setInputAvailable(true)`: a reload always passes through "no piano" before the piano connects.
 Results, corrections, the streak and Play through are never stored.
-Speed ladder (U77): the piece's `ladder` (`LadderSettings { goal, step }`, null = off) is stored on
-`PieceRecord` and opened into `PracticeSession`, which publishes `ui.ladder` (`{ goal, step,
-start, failures, done }`); the pure rules are `app/session/ladder.ts`. After each completed
+Speed ladder (U77, U124): the piece's `ladder` (`LadderSettings { goal, step }`, null = off) is
+stored on `PieceRecord` and opened into `PracticeSession`, which publishes `ui.ladder`
+(`{ goal, step, done }`). The pure rules are in `app/session/ladder.ts`. After each completed
 scored attempt while Repeat is open, meeting the consecutive-pass target (`repeatTarget ?? 3`)
-climbs one step on the 5% grid toward the goal (or ends the climb at the goal); two failures in
-a row drop one step, never below the start speed; manual speed changes reset the failures and
-can lower the floor. Automatic steps take effect at the Repeat reset through the ordinary
-speed-change path, and `AttemptSummary.ladder` tells the result card what happened. The options
+climbs one step on the 5% grid toward the goal (or ends the climb at the goal). A failed pass
+resets the clean streak at the current speed. Automatic steps take effect at the Repeat reset
+through the ordinary speed-change path. `AttemptSummary.ladder` tells the result card what
+happened. The options
 default to a 100% goal (U116). Selecting it at or above 100% makes `setLadder` start a fresh
 ladder at 75% through the manual tempo-change path.
 Keep time (rhythm mode, P13, U78): `PracticeSession.setRhythmMode` (saved per piece as
 `PieceRecord.rhythm`) turns every Start into a scored attempt on the engine's strict transport,
 with `rhythm.toleranceMs` from `AppSettings.rhythm`, over the Repeat loop or else the whole
-piece. When the engine is Ready the session counts in one bar (`countIn.ts`) through the
-metronome sink (whatever the Metronome switches say; a switch turned off meanwhile cancels the
-sink, so the session clicks the beats still to come again) and publishes `ui.countIn`. The
+piece. When the engine is Ready the session counts in through the metronome sink and
+publishes the number of clicks left in `ui.countIn`. The plan (`countIn.ts`, U124) fits up to
+one bar into five seconds. If fewer than two whole beats fit and the bar is too long, it uses
+two subdivisions of the entry beat. The count-in always clicks. A Metronome switch turned off
+meanwhile cancels the sink, so the session schedules the remaining clicks again. The
 attempt itself clicks per `metronome.keepTime` (P20; `app/session/metronome.ts`: `metronomeScope`,
 `metronomeOn`, `metronomePatch`; `ui.metronomeScope` names the switch the current mode uses and
 `ui.metronomeMuted` is true in play-through while the microphone follows). Start creates the shared

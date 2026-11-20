@@ -1,11 +1,13 @@
 /**
  * The speed ladder (Repeat mode) in the real app: start the default climb at the written
- * tempo. Three clean passes at 75% climb to 80%. Reloading restores the ladder and loop (U98).
+ * tempo. Three clean passes at 75% climb to 80%. Failed passes hold 80%, even across reload.
  */
 import { expect, test } from '../browser-test'
-import { installFakeMidi, openSeededPractice, playWhenDue, seedPiece } from './practice-helpers'
+import { installFakeMidi, openSeededPractice, play, playWhenDue, seedPiece, waitForOnset } from './practice-helpers'
 
-test('the default ladder starts at 75%, climbs after three clean passes, and survives a reload', async ({ page }) => {
+test('the default ladder climbs after three clean passes, holds after failures, and survives a reload', async ({
+  page,
+}) => {
   await installFakeMidi(page)
   await seedPiece(page)
   await openSeededPractice(page)
@@ -34,24 +36,35 @@ test('the default ladder starts at 75%, climbs after three clean passes, and sur
 
   await page.getByRole('button', { name: 'Start', exact: true }).click()
   const card = page.getByTestId('attempt-result')
-  const cleanPass = async () => {
-    await playWhenDue(page, 60, 48)
+  const pass = async (wrong = false) => {
+    await waitForOnset(page, 60, 48)
+    if (wrong) {
+      await play(page, 61)
+      await waitForOnset(page, 60, 48)
+    }
+    await play(page, 60, 48)
     await playWhenDue(page, 62)
     await playWhenDue(page, 64)
     await playWhenDue(page, 65)
   }
-  await cleanPass()
+  await pass()
   await expect(card).toContainText('Clean pass')
   await expect(speedButton).toHaveAccessibleName(/Speed 75%/)
-  await cleanPass()
+  await pass()
   await expect(card).toContainText('2 clean in a row')
   await expect(speedButton).toHaveAccessibleName(/Speed 75%/)
-  await cleanPass()
+  await pass()
   await expect(card).toContainText('Speed up')
   await expect(card).toContainText('next at 80%')
   // The new speed waits for the Repeat reset, then the Speed control shows it.
   await expect(speedButton).toHaveAccessibleName(/Speed 80%/, { timeout: 20_000 })
   await expect(panel.getByTestId('ladder-line')).toHaveText('80% → 100%')
+  for (let failure = 0; failure < 2; failure++) {
+    await pass(true)
+    await expect(card).toContainText('1 wrong note')
+  }
+  await waitForOnset(page, 60, 48)
+  await expect(speedButton).toHaveAccessibleName(/Speed 80%/)
   await page.getByRole('button', { name: 'Pause', exact: true }).click()
 
   // The ladder is saved on the piece: still on after a reload.
@@ -64,7 +77,7 @@ test('the default ladder starts at 75%, climbs after three clean passes, and sur
   const restored = page.getByTestId('repeat-controls')
   // Repeat was on when the page went away: it comes back on its own (DECISIONS U98).
   await expect(restored).toBeVisible()
-  await expect(restored.getByTestId('ladder-line')).toContainText('→ 100%')
+  await expect(restored.getByTestId('ladder-line')).toHaveText('80% → 100%')
   await restored.getByRole('button', { name: /^Repeat goal: / }).click()
   const reopened = restored.getByRole('dialog', { name: 'Repeat options' })
   await expect(reopened.getByRole('switch', { name: 'Speed ladder' })).toBeChecked()

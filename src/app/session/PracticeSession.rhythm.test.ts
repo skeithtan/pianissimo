@@ -134,7 +134,7 @@ describe('Keep time: count-in', () => {
     ])
   })
 
-  it('counts in at the speed and in dotted beats for a compound meter', async () => {
+  it('subdivides a slow compound count-in and plays the score at the selected speed', async () => {
     const six = buildScore({ notes: [0, 3, 6, 9].map((at, i) => ({ at: at / 2, midi: 60 + i })), meter: [6, 8] })
     const h = harness(
       six,
@@ -142,12 +142,19 @@ describe('Keep time: count-in', () => {
       { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec) } },
     )
     await begin(h)
-    // Two dotted-quarter beats of 1.5 s, at half speed 3 s each.
-    expect(rec.clicks.map((c) => c.time)).toEqual([1000, 4000])
+    // Two eighth-note clicks lead to a downbeat, then the dotted-quarter pulse is 3 s apart.
+    expect(rec.clicks.map((c) => c.time)).toEqual([1000, 2000])
     expect(ui(h).countIn).toBe(2)
-    at(h, 7000)
+    at(h, 2000)
+    expect(ui(h).countIn).toBe(1)
+    at(h, 3000)
     expect(h.session.engine.state.phase).toBe('running')
-    expect(h.session.engine.state.clockStartedAt).toBe(7000)
+    expect(h.session.engine.state.clockStartedAt).toBe(3000)
+    h.tap(60)
+    at(h, 6000)
+    h.tap(61)
+    expect(h.session.engine.state.groupIndex).toBe(2)
+    expect(rec.clicks.slice(2, 4).map((c) => c.time)).toEqual([3000, 6000])
   })
 
   it('clicks with the metronome on too; the attempt then clicks its own beats', async () => {
@@ -208,11 +215,11 @@ describe('Keep time: count-in', () => {
     h.session.setSelection({ multiplier: 0.5 })
     h.frames.flush()
     expect(h.session.engine.state.phase).toBe('ready')
-    expect(ui(h).countIn).toBe(4)
-    expect(rec.clicks.slice(-4).map((c) => c.time)).toEqual([2500, 4500, 6500, 8500])
+    expect(ui(h).countIn).toBe(2)
+    expect(rec.clicks.slice(-2).map((c) => c.time)).toEqual([2500, 4500])
     at(h, RUN)
     expect(h.session.engine.state.phase).toBe('ready')
-    at(h, 10500)
+    at(h, 6500)
     expect(h.session.engine.state.phase).toBe('running')
   })
 })
@@ -796,8 +803,8 @@ describe('Keep time: modes', () => {
     const ladder: LadderSettings = { goal: 1, step: 0.05 }
     const h = open({ range: LOOP, multiplier: 0.5 }, { options: { ladder, repeatTarget: 1 } })
     await begin(h)
-    // Half speed: two-second beats.
-    const run = T0 + 8000
+    // Half speed: two clicks in the count-in, two seconds apart.
+    const run = T0 + 4000
     at(h, run)
     expect(h.session.engine.state.phase).toBe('running')
     playOnTime(h, [60, 62, 64, 65], [], run, 2000)
@@ -806,9 +813,9 @@ describe('Keep time: modes', () => {
     expect(ui(h).multiplier).toBe(0.55)
     expect(h.session.engine.state.phase).toBe('ready')
     expect(h.session.engine.transport).toBe('strict')
-    expect(ui(h).countIn).toBe(4)
+    expect(ui(h).countIn).toBe(2)
     const beat = 1000 / 0.55
-    const last = rec.clicks.slice(-4).map((c) => c.time - (run + 8000))
+    const last = rec.clicks.slice(-2).map((c) => c.time - (run + 8000))
     last.forEach((t, k) => expect(t).toBeCloseTo(k * beat, 6))
     expect(h.attempts.at(-1)?.context.multiplier).toBe(0.5)
   })
@@ -817,7 +824,7 @@ describe('Keep time: modes', () => {
     const ladder: LadderSettings = { goal: 1, step: 0.05 }
     const h = open({ range: LOOP, multiplier: 0.5 }, { options: { ladder, repeatTarget: 1 } })
     await begin(h)
-    const run = T0 + 8000
+    const run = T0 + 4000
     at(h, run)
     playOnTime(h, [60, 62, 64, 65], [], run, 2000)
     expect(ui(h).lastResult).toMatchObject({ passed: true, ladder: { climbedTo: 0.55 } })
@@ -829,12 +836,12 @@ describe('Keep time: modes', () => {
     expect(h.session.engine.mode).toBe('scored')
     expect(h.session.engine.transport).toBe('strict')
     expect(h.session.engine.state.phase).toBe('ready')
-    expect(ui(h).countIn).toBe(4)
+    expect(ui(h).countIn).toBe(2)
     const next = run + 6500
     const beat = 1000 / 0.55
-    const last = rec.clicks.slice(-4).map((c) => c.time - next)
+    const last = rec.clicks.slice(-2).map((c) => c.time - next)
     last.forEach((t, k) => expect(t).toBeCloseTo(k * beat, 6))
-    playOnTime(h, [60, 62, 64, 65], [], next + 4 * beat, beat)
+    playOnTime(h, [60, 62, 64, 65], [], next + 2 * beat, beat)
     expect(h.attempts.at(-1)?.context.multiplier).toBe(0.55)
     expect(h.attempts.at(-1)?.passed).toBe(true)
   })
@@ -894,7 +901,7 @@ describe('Keep time: score playback', () => {
         },
       )
       await begin(h)
-      const downbeat = T0 + 8000
+      const downbeat = T0 + 4000
       at(h, downbeat - 1)
       expect(h.backend.ons()).toEqual([])
       at(h, downbeat)

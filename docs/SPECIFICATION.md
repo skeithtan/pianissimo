@@ -236,7 +236,7 @@ Select a contiguous range of measures with visible start and end handles. Select
 
 Show the selected hand, measure range, repeat occurrence, and practice tempo before starting. If the selected hand has no required onsets in the passage, disable scored practice and explain why; retain Listen and selection controls. Repeat the passage indefinitely or until a chosen number of consecutive passes.
 
-Offer a speed ladder with 100% of the written tempo as its default goal. Start at the current speed if it is below 100%, or at 75% if it is already at or above 100%. Keep 100% selectable when the current speed is at or above it. The ladder advances one step after each set of consecutive clean passes.
+Offer a speed ladder with 100% of the written tempo as its default goal. Start at the current speed if it is below 100%, or at 75% if it is already at or above 100%. Keep 100% selectable when the current speed is at or above it. The ladder advances one step after each set of consecutive clean passes. A failed pass resets the clean streak at the current speed.
 
 The default pass condition is completion with zero wrong-note attacks and no assistance, including persistent note labels, temporary hints, or keyboard rescue. Timing appears separately. An optional timing tolerance can be added to the pass condition, but it must be labeled as total completion-time tolerance, not proof of rhythm accuracy.
 
@@ -348,6 +348,8 @@ The metronome click and Keep time count-in follow the system audio output by def
 with USB audio can play the click through its speakers. Settings → Sound → Metronome offers
 Test click and remembers a separate audio output where the browser supports selecting one.
 Use system audio when a saved output cannot be opened.
+
+The Keep time count-in uses the opening meter and selected practice tempo. Count up to one bar and fit the lead-in within five seconds. If the full bar is too long and fewer than two whole beats fit, use two subdivisions of the opening beat. Start playback and grading together on the downbeat at the selected speed.
 
 Playback is a reference performance generated from the common score model and sent to the selected sound destination. For MusicXML imports, use supported numerical tempo, dynamics, and pedal instructions when present; notation-only or missing expressive instructions require a defined interpretation. [MusicXML playback parameters](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/sound/).
 

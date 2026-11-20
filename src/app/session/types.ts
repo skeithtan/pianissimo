@@ -230,8 +230,6 @@ export interface AttemptSummary {
   readonly ladder?: {
     /** The next attempt is prepared at this faster speed. */
     readonly climbedTo?: number
-    /** The next attempt is prepared at this slower speed. */
-    readonly droppedTo?: number
     /** The target was met at the goal: the climb is over. */
     readonly done?: boolean
   }
@@ -289,10 +287,6 @@ export interface AttemptTiming {
 export interface LadderUi {
   readonly goal: number
   readonly step: number
-  /** The speed when the ladder was switched on (or opened with): the floor for drops. */
-  readonly start: number
-  /** Consecutive failed attempts since the last pass, climb, drop or manual speed change. */
-  readonly failures: number
   /** The target was met at the goal (or the speed was set at or above it). */
   readonly done: boolean
 }
@@ -390,10 +384,10 @@ export interface SessionUi {
   readonly playThroughLocked: boolean
   /**
    * Keep time (rhythm mode, DECISIONS P13) is on: every Start is a scored attempt played against
-   * the music (strict transport), after a one-bar count-in. Exclusive with play-through.
+   * the music (strict transport), after a count-in. Exclusive with play-through.
    */
   readonly rhythm: boolean
-  /** Beats left in the Keep time count-in (the number to show), else null. */
+  /** Clicks left in the Keep time count-in (the number to show), else null. */
   readonly countIn: number | null
   /** Which Metronome preference the current mode uses, so the Practice menu's switch edits the right one (DECISIONS P20). */
   readonly metronomeScope: MetronomeScope

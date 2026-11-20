@@ -193,8 +193,6 @@ describe('Banners', () => {
     const line = () => $(view!.container, '[data-testid="ladder-result"]')?.textContent
     view = mount(result({ repeat: true, lastResult: { ...RESULT, ladder: { climbedTo: 0.65 } }, multiplier: 0.6 }))
     expect(line()).toBe('Speed up: next at 65%')
-    view.rerender(result({ repeat: true, lastResult: { ...RESULT, ladder: { droppedTo: 0.55 } }, multiplier: 0.6 }))
-    expect(line()).toBe('Back to 55%')
     view.rerender(result({ repeat: true, lastResult: { ...RESULT, ladder: { done: true } }, multiplier: 1 }))
     expect(line()).toBe('Goal reached: 100%')
     view.rerender(result({ repeat: true, lastResult: RESULT }))
@@ -554,13 +552,13 @@ describe('Keep time on the result card and the stage (P13)', () => {
     )
   })
 
-  it('shows timing accuracy in place of the completion time, keeping the streak and ladder lines', () => {
+  it('shows timing accuracy and the streak in place of the completion time for a failed pass', () => {
     view = mount(
       result({
         activity: 'scored',
         rhythm: true,
         repeat: true,
-        lastResult: { ...RESULT, passed: false, timing: TIMING, ladder: { droppedTo: 0.55 } },
+        lastResult: { ...RESULT, passed: false, timing: TIMING },
       }),
     )
     const card = $(view.container, '[data-testid="attempt-result"]')!
@@ -568,7 +566,7 @@ describe('Keep time on the result card and the stage (P13)', () => {
     expect(card.textContent).toContain('Timing slipped')
     expect(card.textContent).not.toContain('expected')
     expect(card.textContent).toContain('2 clean in a row')
-    expect($(card, '[data-testid="ladder-result"]')?.textContent).toBe('Back to 55%')
+    expect($(card, '[data-testid="ladder-result"]')).toBeNull()
   })
 
   it('a gated result shows no timing line and no completion time (Details has it)', () => {

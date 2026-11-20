@@ -61,7 +61,7 @@ const ui = (h: Harness) => h.session.ui.get()
 describe('PracticeSession: speed ladder', () => {
   it('starts at the opening speed and shows in the UI', async () => {
     const h = await open(0.6)
-    expect(ui(h).ladder).toEqual({ goal: 1, step: 0.05, start: 0.6, failures: 0, done: false })
+    expect(ui(h).ladder).toEqual({ goal: 1, step: 0.05, done: false })
     expect(harness(melody).session.ui.get().ladder).toBeNull()
   })
 
@@ -114,34 +114,24 @@ describe('PracticeSession: speed ladder', () => {
     expect(h.session.engine.state.phase).toBe('ready')
   })
 
-  it('drops one step after two failures in a row, never below the start', async () => {
-    const h = await open(0.6, LADDER, 1)
+  it('keeps the new speed after consecutive failures and restarts the clean streak', async () => {
+    const h = await open(0.6, LADDER, 2)
+    pass(h)
     pass(h)
     expect(ui(h).multiplier).toBe(0.65)
-    fail(h)
-    expect(ui(h).ladder?.failures).toBe(1)
-    expect(ui(h).multiplier).toBe(0.65)
-    fail(h)
-    expect(h.attempts.map((a) => a.passed)).toEqual([true, false, false])
-    expect(h.attempts[2]!.context.multiplier).toBe(0.65)
-    expect(ui(h).lastResult?.ladder).toEqual({ droppedTo: 0.6 })
-    expect(ui(h).multiplier).toBe(0.6)
-    expect(ui(h).ladder?.failures).toBe(0)
-    expect(h.session.engine.state.phase).toBe('ready')
-    // At the floor a drop is a no-op.
-    fail(h)
-    fail(h)
-    expect(ui(h).multiplier).toBe(0.6)
-    expect(ui(h).lastResult?.ladder).toBeUndefined()
-    expect(ui(h).ladder?.failures).toBe(0)
-  })
-
-  it('a pass resets the failure count', async () => {
-    const h = await open(0.6, LADDER, 3)
-    fail(h)
-    expect(ui(h).ladder?.failures).toBe(1)
     pass(h)
-    expect(ui(h).ladder?.failures).toBe(0)
+    expect(ui(h).lastResult?.streak).toBe(1)
+    for (let i = 0; i < 3; i++) {
+      fail(h)
+      expect(h.attempts.at(-1)).toMatchObject({ passed: false, context: { multiplier: 0.65 } })
+      expect(ui(h)).toMatchObject({ multiplier: 0.65, lastResult: { streak: 0 } })
+      expect(ui(h).lastResult?.ladder).toBeUndefined()
+      expect(h.session.engine.state.phase).toBe('ready')
+    }
+    pass(h)
+    expect(ui(h).multiplier).toBe(0.65)
+    pass(h)
+    expect(ui(h).multiplier).toBe(0.7)
   })
 
   it('ends at the goal: the target met there is "Goal reached"', async () => {
@@ -166,16 +156,13 @@ describe('PracticeSession: speed ladder', () => {
     expect(ui(h).lastResult?.ladder).toBeUndefined()
   })
 
-  it('manual speed changes reset failures, lower the floor and set done at the goal', async () => {
+  it('manual speed changes update whether the ladder is at its goal', async () => {
     const h = await open(0.6, LADDER, 3)
-    fail(h)
-    expect(ui(h).ladder?.failures).toBe(1)
-    h.session.setSelection({ multiplier: 0.5 })
-    expect(ui(h).ladder).toMatchObject({ start: 0.5, failures: 0, done: false })
-    h.session.setSelection({ multiplier: 0.8 })
-    expect(ui(h).ladder).toMatchObject({ start: 0.5, done: false })
     h.session.setSelection({ multiplier: 1 })
     expect(ui(h).ladder?.done).toBe(true)
+    h.session.setSelection({ multiplier: 0.8 })
+    h.frames.flush()
+    expect(ui(h)).toMatchObject({ multiplier: 0.8, ladder: { done: false } })
   })
 
   it('a speed change while the climb waits for the music cancels the climb', async () => {
@@ -195,22 +182,22 @@ describe('PracticeSession: speed ladder', () => {
     expect(ui(h).ladder).toMatchObject({ goal: 1 })
     h.session.setRepeatMode(true)
     h.frames.flush()
-    expect(ui(h).ladder).toMatchObject({ goal: 1, start: 0.6 })
+    expect(ui(h)).toMatchObject({ multiplier: 0.6, ladder: { goal: 1 } })
   })
 
   it('setLadder persists the setting, starts at the current speed and turns off', async () => {
     const h = await open(0.75, null)
     expect(ui(h).ladder).toBeNull()
     h.session.setLadder({ goal: 1, step: 0.05 })
-    expect(ui(h).ladder).toEqual({ goal: 1, step: 0.05, start: 0.75, failures: 0, done: false })
+    expect(ui(h)).toMatchObject({ multiplier: 0.75, ladder: { goal: 1, step: 0.05, done: false } })
     expect(h.saves.filter((s) => 'ladder' in s.patch).map((s) => s.patch.ladder)).toEqual([{ goal: 1, step: 0.05 }])
     // The same settings again change nothing.
     h.session.setLadder({ goal: 1, step: 0.05 })
     expect(h.saves.filter((s) => 'ladder' in s.patch)).toHaveLength(1)
-    // A new goal keeps the start.
+    // Changing to a higher goal keeps the selected speed.
     h.session.setSelection({ multiplier: 0.8 })
     h.session.setLadder({ goal: 1.25, step: 0.05 })
-    expect(ui(h).ladder).toMatchObject({ goal: 1.25, start: 0.75 })
+    expect(ui(h)).toMatchObject({ multiplier: 0.8, ladder: { goal: 1.25 } })
     h.session.setLadder(null)
     expect(ui(h).ladder).toBeNull()
     expect(h.saves.at(-1)?.patch).toEqual({ ladder: null })
@@ -222,7 +209,7 @@ describe('PracticeSession: speed ladder', () => {
     h.session.setLadder(LADDER)
     expect(ui(h)).toMatchObject({
       multiplier: 0.75,
-      ladder: { goal: 1, start: 0.75, failures: 0, done: false },
+      ladder: { goal: 1, done: false },
     })
     for (const speed of [0.75, 0.8, 0.85, 0.9, 0.95, 1]) {
       expect(ui(h).multiplier).toBe(speed)

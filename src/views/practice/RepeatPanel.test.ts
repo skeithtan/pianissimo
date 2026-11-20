@@ -15,7 +15,7 @@ describe('speed ladder controls', () => {
   })
 
   it('reads "60% → 100%" while climbing and "Goal reached" at the goal', () => {
-    const ladder = { goal: 1, step: 0.05, start: 0.6, failures: 0, done: false }
+    const ladder = { goal: 1, step: 0.05, done: false }
     expect(ladderLine(ladder, 0.65)).toBe('65% → 100%')
     expect(ladderLine({ ...ladder, done: true }, 1)).toBe('Goal reached')
   })
@@ -23,7 +23,7 @@ describe('speed ladder controls', () => {
   it('sums the goal up for the goal button and the options button', () => {
     expect(targetLine(null)).toBe('No limit')
     expect(targetLine(3)).toBe('Until 3 clean')
-    const ladder = { goal: 1, step: 0.05, start: 0.6, failures: 0, done: false }
+    const ladder = { goal: 1, step: 0.05, done: false }
     expect(goalWords(3, ladder, 0.6)).toBe('until 3 clean in a row; speed ladder 60% to 100%')
     expect(goalWords(null, null, 1)).toBe('repeat with no limit')
   })
