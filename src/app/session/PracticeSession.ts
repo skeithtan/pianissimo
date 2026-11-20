@@ -713,10 +713,11 @@ export class PracticeSession {
       if (phase === 'completed') {
         this.#engine.restart(t)
         this.#accomp?.stop()
+        this.#accomp?.play(t)
       } else if (phase === 'paused' || phase === 'interrupted') this.#engine.resume(t)
       if (this.#engine.state.phase === 'paused') this.#engine.resume(t)
       this.#readingStarted = true
-      this.#playAccompanimentFromCurrent(t)
+      if (phase !== 'completed') this.#playAccompanimentFromCurrent(t)
     }
     this.#process(this.#deps.clock())
   }
@@ -1614,15 +1615,16 @@ export class PracticeSession {
     this.#scheduleTick()
   }
 
-  /** The transport played the piece's tail: idle at the end; the next Start begins at the start. */
+  /** The transport played the piece's tail. Rewind and wait for Start. */
   #onPlayEnd(): void {
     const p = this.#play
     if (!p) return
     const now = this.#deps.clock()
     p.transport.stop()
-    p.transport.seek(this.#timeline.end)
     p.playing = false
+    this.#mic?.pause()
     this.#clearSounding()
+    this.#rewindPiece()
     this.#saveResume(now, true, null)
     this.#process(now)
   }
@@ -3431,8 +3433,9 @@ export class PracticeSession {
       this.#repeatReset(now)
     } else {
       this.#accomp?.stop()
-      this.#accomp?.seek(this.#timeline.end)
       this.#clearSounding()
+      if (this.#repeat) this.#accomp?.seek(this.#timeline.end)
+      else this.#rewindPiece()
     }
     this.#process(now)
   }
@@ -3447,9 +3450,17 @@ export class PracticeSession {
     } else {
       l.transport.stop()
       l.playing = false
+      this.#rewindPiece()
     }
     this.#clearSounding()
     this.#process(now)
+  }
+
+  /** The stopped transport is at zero. Animate the view without starting another pass. */
+  #rewindPiece(): void {
+    this.#lastVersion = -1
+    this.#playVersion = -1
+    this.#strip?.wrapTo?.(0, { rewind: true })
   }
 
   /**
@@ -4252,7 +4263,7 @@ export class PracticeSession {
     if (this.#accomp) return this.#accomp.positionNow()
     const s = this.#engine.state
     if (s.position) return toNumber(s.position)
-    return toNumber(s.phase === 'completed' ? this.#timeline.end : this.#timeline.start)
+    return toNumber(s.phase === 'completed' && this.#repeat ? this.#timeline.end : this.#timeline.start)
   }
 
   #computeProgress(): SessionProgress {
@@ -4312,13 +4323,9 @@ export class PracticeSession {
       { reattackHeldAtStart: lead === null },
     )
     const groups = this.#bothTimeline.groups
-    // Numeric search: the Listen transport reports float positions.
-    const at =
-      (this.#listen
-        ? this.#listen.transport.positionNow()
-        : toNumber(
-            (this.#play ? this.#play.follower.state.position : this.#engine.state.position) ?? this.#timeline.end,
-          )) - 1e-9
+    // Prefer the learner target while reading. At completion, follow the transport instead.
+    const target = this.#play ? this.#play.follower.state.position : this.#engine.state.position
+    const at = (!this.#listen && target ? toNumber(target) : this.#cursorPosition()) - 1e-9
     let lo = 0
     let hi = groups.length
     while (lo < hi) {
@@ -4369,7 +4376,7 @@ export class PracticeSession {
       this.#lastResult !== null &&
       this.#resultPlayedIn === null &&
       this.#reviewReturnBy === null &&
-      this.#loop !== null &&
+      this.#sel.range !== null &&
       !this.#playThrough
     )
   }

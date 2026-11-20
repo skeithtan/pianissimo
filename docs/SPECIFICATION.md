@@ -80,6 +80,12 @@ When ornaments, grace notes, tremolo shorthand, microtones, free time, or custom
 
 A numerical tempo must include its beat unit. If the source has no numerical tempo, request a practice tempo before timing or playback. A verbal tempo, fermata, or “rit.” marking does not supply an exact duration by itself. For MusicXML, normalize playback tempo and printed metronome markings to the same tempo map: the sound tempo value uses quarter notes per minute, while a displayed beat unit may be different or dotted. Report conflicting values instead of silently treating them as equivalent. [MusicXML playback parameters](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/sound/).
 
+When a piece finishes with Repeat off, let playback and accompaniment reach the end, then
+return the score and playhead to the beginning before the first beat. Animate the return
+with a quick glide. Long returns glide through the opening portion of the score. With
+Reduced Motion enabled, move to the beginning immediately. Wait for the player to press
+Play or Start before beginning again.
+
 ## Score following
 
 The practice engine follows onset groups: all distinct pitches that begin at the same musical position in the selected hand or hands. Matching is based on fresh key presses at the current required position. A correct attack remains counted after key release; holding duration and simultaneous physical holding are not grading requirements.

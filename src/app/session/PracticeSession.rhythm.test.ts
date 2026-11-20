@@ -773,6 +773,18 @@ describe('Keep time: modes', () => {
     expect(ui(h).lastResult?.id).toBe(id)
   })
 
+  it('rewinds a completed full-piece pass after its tail and keeps the result visible', async () => {
+    const h = open({ range: { fromOcc: 1, toOcc: 1 } }, { options: { repeat: false } })
+    await begin(h)
+    playOnTime(h, [60, 62, 64, 65, 67, 69, 71, 72])
+    expect(h.strip.wrappedTo).toBeNull()
+    at(h, RUN + 8100)
+    expect(h.strip.wrappedTo).toBe(0)
+    expect(h.strip.cursor).toBe(0)
+    expect(ui(h)).toMatchObject({ phase: 'completed', playing: false, reviewing: false, lastResult: { passed: true } })
+    expect(h.attempts).toHaveLength(1)
+  })
+
   it('restores review when opening result details during the zoom back in', async () => {
     const h = open({ range: LOOP })
     await begin(h)

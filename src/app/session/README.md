@@ -231,6 +231,10 @@ Stores (subscribe from the view):
   fades (waiting text "Release the keys to begin."). Repeat after completion: accompaniment finishes to the boundary (`onRangeEnd`), then
   `stop` (cleanup) → `engine.restart` → prepare; the decision is taken after the whole event
   batch so the attempt record is known (consecutive-pass target).
+- **Whole-piece finish.** With Repeat off, the transport stops at the end of the written
+  tail and resets to position zero. The session asks the renderer to glide back to the
+  opening. Listen, reading, Keep time, and Follow my playing wait for Play or Start.
+  The completed Keep time result remains available.
 - **Interruptions.** Pause (scored; no banner, the main button reads Start), seek while running,
   hands/range/speed change (new attempt prepared when still allowed), label mode/rule
   (`beforeApplyLabels`), layout (`layoutChanging`; zoom and orientation never interrupt), opening

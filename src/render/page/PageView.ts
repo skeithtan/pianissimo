@@ -184,7 +184,7 @@ export class PageView {
   private following = false
   private cursorAction = false
   /** The page should bring the current system to its resting place in the next frame. */
-  private followRequest: 'smooth' | 'instant' | null = 'instant'
+  private followRequest: 'smooth' | 'instant' | 'rewind' | null = 'instant'
   private followXRequest = true
   private lastSystem = -1
   private readonly reducedMotion =
@@ -425,11 +425,12 @@ export class PageView {
       this.cursorDrag.restore = position
       return
     }
+    // Repeated samples at a stopped position must leave its rewind animation running.
+    if (position === this.cursorPos) return
     if (follow !== this.following) {
       this.following = follow
       this.root.classList.toggle('pn-follow', follow)
     }
-    if (position === this.cursorPos) return
     this.cursorPos = position
     this.cursor = this.geo.cursorAt(position)
     if (instant) this.instant = true
@@ -441,8 +442,8 @@ export class PageView {
     this.schedule()
   }
 
-  /** A loop wrap: a seek to the loop start; the page scrolls there with the same ease. */
-  wrapTo(position: number): void {
+  /** Glide back to the start. On a single system a whole-piece rewind glides the cursor. */
+  wrapTo(position: number, opts: { rewind?: boolean } = {}): void {
     this.followPos = position
     if (this.cursorDrag?.moved) {
       this.cursorDrag.restore = position
@@ -450,8 +451,12 @@ export class PageView {
     }
     this.cursorPos = position
     this.cursor = this.geo.cursorAt(position)
-    this.instant = true
-    this.followRequest = 'smooth'
+    if (opts.rewind) {
+      this.following = false
+      this.root.classList.remove('pn-follow')
+    }
+    this.instant = !opts.rewind || this.reducedMotion
+    this.followRequest = opts.rewind ? 'rewind' : 'smooth'
     this.followXRequest = true
     this.schedule()
   }
@@ -1024,7 +1029,7 @@ export class PageView {
       const targetX = changed || requestX ? this.followScrollX(true) : this.scrollX
       // The cursor already belongs to the next system. Panning from the previous system's
       // right edge would carry that new cursor offscreen, so only the vertical axis glides.
-      this.scrollTo(target, animate, targetX, !changed)
+      this.scrollTo(target, animate, targetX, !changed, request === 'rewind')
     } else if (
       this.cursorPos !== this.applied.position &&
       !this.browsing &&
@@ -1077,10 +1082,12 @@ export class PageView {
   }
 
   /** Scrolls the page in both axes, animated as a FLIP glide of the sheet. */
-  private scrollTo(y: number, animate: boolean, x = this.scrollX, animateX = true): void {
+  private scrollTo(y: number, animate: boolean, x = this.scrollX, animateX = true, rewind = false): void {
     if (Math.abs(y - this.scrollY) < 1 && Math.abs(x - this.scrollX) < 1) return
     const frame = this.screenFrame()
-    const from = PAGE_PAD_TOP - this.layout.top * this.scale - frame.dy
+    const visibleY = PAGE_PAD_TOP - this.layout.top * this.scale - frame.dy
+    // For a long rewind, glide through the opening systems without mounting the entire score.
+    const from = rewind ? Math.min(visibleY, y + this.hostH * 1.5) : visibleY
     const fromX = animateX ? this.applied.gx - frame.dx : x
     this.panTo(x)
     this.writtenY = y

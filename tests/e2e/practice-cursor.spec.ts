@@ -99,3 +99,61 @@ test.describe('playback from the visible cursor', () => {
     await expect.poll(async () => Math.abs((await headX(page, 64)) - line)).toBeLessThan(3)
   })
 })
+
+for (const portrait of [false, true]) {
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    test(`Listen rewinds and waits for Play in ${portrait ? 'page' : 'strip'} view (${reducedMotion})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(portrait ? { width: 820, height: 1180 } : { width: 1180, height: 820 })
+      await page.emulateMedia({ reducedMotion })
+      await installFakeMidi(page)
+      await seedPiece(page)
+      await openSeededPractice(page)
+      await page.getByRole('button', { name: 'Left hand', exact: true }).click()
+      await page.getByRole('button', { name: 'Right hand', exact: true }).click()
+      const moving = page.locator(portrait ? '.pn-page .pn-cursor' : '.pn-strip .pn-content')
+      const openingX = await moving.evaluate((el) => new DOMMatrix((el as HTMLElement).style.transform).m41)
+      const overview = page.getByRole('slider', { name: 'Piece overview' })
+      await overview.press('End')
+      await expect(overview).toHaveAttribute('aria-valuenow', '2')
+      await page.getByRole('button', { name: 'Listen', exact: true }).click()
+      await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+
+      // At the rewind the inline transform points to the opening. The computed transform
+      // still shows an intermediate frame unless Reduced Motion was requested.
+      const animated = await moving.evaluate(
+        (el, openingX) =>
+          new Promise<boolean>((resolve, reject) => {
+            const deadline = performance.now() + 10_000
+            const sample = () => {
+              const x = new DOMMatrix((el as HTMLElement).style.transform).m41
+              if (Math.abs(x - openingX) < 1) {
+                const visibleX = new DOMMatrix(getComputedStyle(el).transform).m41
+                resolve(Math.abs(visibleX - openingX) > 1)
+              } else if (performance.now() >= deadline) reject(new Error('The score did not return to the opening'))
+              else requestAnimationFrame(sample)
+            }
+            requestAnimationFrame(sample)
+          }),
+        openingX,
+      )
+      expect(animated).toBe(reducedMotion === 'no-preference')
+      await expect(overview).toHaveAttribute('aria-valuenow', '1')
+      const play = page.getByRole('button', { name: 'Play', exact: true })
+      await expect(play).toBeVisible()
+
+      const attacks = () =>
+        page.evaluate(
+          () => window.__midi.sent.filter(([status, , velocity]) => status === 0x90 && velocity! > 0).length,
+        )
+      const before = await attacks()
+      await expect
+        .poll(() => moving.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41))
+        .toBeCloseTo(openingX, 0)
+      expect(await attacks()).toBe(before)
+      await play.click()
+      await expect.poll(attacks).toBeGreaterThan(before)
+    })
+  }
+}

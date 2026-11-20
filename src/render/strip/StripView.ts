@@ -515,8 +515,8 @@ export class StripView {
   }
 
   /**
-   * The transport wrapped back to the start of a loop (`position`, whole notes): the music pans
-   * back quickly (320 ms ease-out, `pn-wrap`) to put that position under the fixed cursor. A wrap
+   * The transport returned to the start of a loop or piece (`position`, whole notes): the music
+   * pans back quickly (320 ms ease-out, `pn-wrap`) to put that position under the fixed cursor. A wrap
    * longer than 2.5 viewports does not sweep every bar: the content lands 1.5 viewports short of
    * the target (on the side it came from, no transition), then pans the rest on the next frame.
    * Later `setCursor(position, { smooth: false })` calls at the same position are no-ops, and a

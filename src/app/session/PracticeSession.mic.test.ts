@@ -156,13 +156,16 @@ describe('Play-through through the microphone', () => {
     expect(h.strip.cursor).toBeCloseTo(0.75)
   })
 
-  it('an estimate at the end finishes the piece', async () => {
+  it('an estimate at the end rewinds the piece and pauses the microphone follower', async () => {
     const { h, mic } = micHarness()
     await playThrough(h)
     mic().hear(5)
     h.step(6000)
     expect(h.session.ui.get().playing).toBe(false)
     expect(h.session.ui.get().phase).toBe('completed')
+    expect(h.strip.wrappedTo).toBe(0)
+    expect(h.strip.cursor).toBe(0)
+    expect(mic().calls.at(-1)).toBe('pause')
   })
 
   it('pause and resume freeze and restart the estimate; a seek restarts it there', async () => {

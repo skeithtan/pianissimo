@@ -308,6 +308,24 @@ describe('PageView', () => {
     expect(root.classList.contains('pn-instant')).toBe(true)
   })
 
+  it('glides back to the first system without mounting the full score during a long rewind', () => {
+    const { v, root } = view(500)
+    v.setCursor(499)
+    v.flushNow()
+    expect(scroller(root).scrollTop).toBeGreaterThan(VIEW_H * 10)
+
+    const sheet = root.querySelector<HTMLElement>('.pn-page-sheet')!
+    const animate = vi.fn(() => ({ cancel: vi.fn() }))
+    Object.defineProperty(sheet, 'animate', { value: animate })
+    v.wrapTo(0, { rewind: true })
+    v.flushNow()
+
+    expect(v.currentSystem()).toBe(0)
+    expect(scroller(root).scrollTop).toBe(0)
+    expect(animate).toHaveBeenCalledOnce()
+    expect(v.stats().mountedSegments).toBeLessThan(12)
+  })
+
   it('hands off a spacing change from the visible position during a system-follow glide', () => {
     const { v, layout, root } = view()
     const sheet = root.querySelector<HTMLElement>('.pn-page-sheet')!

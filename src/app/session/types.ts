@@ -51,11 +51,11 @@ export interface StripSink {
    */
   setCursorAction(visible: boolean): void
   /**
-   * A Repeat pass wrapped back to the loop start: the next cursor position is `position` (a
-   * float whole-note position). The strip pans there quickly instead of scrolling backward.
+   * Animate a return to `position` (a float whole-note position) after a pass. `rewind`
+   * identifies the return to the opening after a whole piece finishes without Repeat.
    * Optional; without it the next `setCursor` jumps.
    */
-  wrapTo?(position: number): void
+  wrapTo?(position: number, opts?: { rewind?: boolean }): void
   /**
    * The teacher's corrections after a completed scored attempt (red-pen rings with "Wrong note",
    * "Too soon", "Too late"; `./corrections.ts`); `[]` clears them.

@@ -242,7 +242,7 @@ describe('PracticeSession: continuous practice timing', () => {
     expect(h.session.ui.get().interruption).toBeNull()
   })
 
-  it('restarts the flow from the opening gate, including after the whole piece finishes', async () => {
+  it('rewinds at the end of the piece and waits for an explicit Start', async () => {
     const score = buildScore({
       notes: [
         { at: 0, midi: 60 },
@@ -259,7 +259,11 @@ describe('PracticeSession: continuous practice timing', () => {
     expect(h.strip.cursor).toBe(0)
     h.play(60, 62)
     h.step(3000)
-    expect(h.strip.cursor).toBe(1)
+    expect(h.strip.wrappedTo).toBe(0)
+    expect(h.strip.cursor).toBe(0)
+    expect(h.session.progress.get()).toEqual({ position: 0, occ: 0 })
+    expect(h.session.ui.get()).toMatchObject({ phase: 'completed', playing: false })
+    expect(h.attempts).toMatchObject([{ completion: 'abandoned' }, { completion: 'completed' }])
     await h.session.start()
     h.frames.flush()
     expect(h.strip.cursor).toBe(0)
@@ -767,6 +771,37 @@ describe('PracticeSession: scored attempts', () => {
 })
 
 describe('PracticeSession: one-hand accompaniment', () => {
+  it('finishes accompaniment before rewinding to the opening, including its introduction', async () => {
+    const score = buildScore({
+      notes: [
+        { at: 0, midi: 48, hand: 'L' },
+        { at: 1, midi: 60 },
+        { at: 3, midi: 43, hand: 'L' },
+      ],
+      bars: 1,
+    })
+    const h = harness(score, { hands: 'right' })
+    await h.session.start()
+    h.tap(60)
+    h.step(2000)
+    expect(h.backend.ons().map((c) => c.note)).toContain(43)
+    expect(h.strip.wrappedTo).toBeNull()
+    h.step(1100)
+    expect(h.strip.cursor).toBe(0)
+    expect(h.strip.wrappedTo).toBe(0)
+    expect(h.session.ui.get().playing).toBe(false)
+    const before = h.backend.ons().length
+    h.step(1000)
+    expect(h.backend.ons()).toHaveLength(before)
+    await h.session.start()
+    expect(
+      h.backend
+        .ons()
+        .slice(before)
+        .map((c) => c.note),
+    ).toEqual([48])
+  })
+
   it('plays the other hand, waits at the learner gate and releases it on completion', async () => {
     const h = harness(twoHands, { hands: 'right', range: { fromOcc: 0, toOcc: 0 } })
     expect(h.strip.targets).toEqual([twoHands.notes.findIndex((note) => note.midi === 60)])
@@ -853,6 +888,21 @@ describe('PracticeSession: one-hand accompaniment', () => {
 })
 
 describe('PracticeSession: Preview', () => {
+  it('rewinds Listen at the end even when a loop is saved but inactive', async () => {
+    const h = harness(melody, { hands: 'none', range: { fromOcc: 1, toOcc: 1 } }, { options: { repeat: false } })
+    h.session.seek(1)
+    await h.session.start()
+    h.step(4500)
+    expect(h.session.ui.get()).toMatchObject({ repeat: false, playing: false })
+    expect(h.strip.wrappedTo).toBe(0)
+    expect(h.session.progress.get().position).toBe(0)
+    const before = h.backend.ons().length
+    h.step(1000)
+    expect(h.backend.ons()).toHaveLength(before)
+    await h.session.start()
+    expect(h.backend.ons()[before]?.note).toBe(60)
+  })
+
   it.each([false, true])('Listen starts at a backward cursor seek with an existing transport: %s', async (started) => {
     const h = harness(twoHands, { hands: 'none' })
     h.session.seekPosition(rat(1, 2))

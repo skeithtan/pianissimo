@@ -238,7 +238,7 @@ describe('Play-through mode', () => {
     expect(h.session.ui.get().playing).toBe(true)
   })
 
-  it('reaches the end of the piece, then the next Start begins at the start', async () => {
+  it('rewinds when following reaches the end and waits for Start', async () => {
     const h = harness(melody)
     await playThrough(h)
     for (const n of [60, 62, 64, 65, 67, 69, 71]) {
@@ -251,7 +251,9 @@ describe('Play-through mode', () => {
     const ui = h.session.ui.get()
     expect(ui.playing).toBe(false)
     expect(ui.phase).toBe('completed')
-    expect(h.strip.cursor).toBe(2)
+    expect(h.strip.wrappedTo).toBe(0)
+    expect(h.strip.cursor).toBe(0)
+    expect(h.session.progress.get().position).toBe(0)
     await h.session.start()
     h.frames.flush()
     expect(h.session.ui.get().playing).toBe(true)
