@@ -12,7 +12,8 @@ import { buildTimeline } from '../../core/engine'
 import { buildScore } from '../../core/engine/testkit'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { $, $$, byText, click, mount, type Mounted } from '../shared/testing'
-import { ResultDetails, passFacts, verdict } from './ResultDetails'
+import { ResultDetails, verdict } from './ResultDetails'
+import { passFacts } from './format'
 
 let view: Mounted | null = null
 afterEach(() => {
@@ -186,7 +187,11 @@ describe('ResultDetails (U99)', () => {
     expect(verdict({ ...RESULT, wrongAttacks: 0, assistance: 'names' })).toBe('Not clean: note names helped.')
     const timing = { groups: 8, onTime: 6, early: 1, late: 1, missed: 0 }
     expect(verdict({ ...RESULT, wrongAttacks: 0, timing })).toBe('Not clean: the timing slipped.')
-    expect(passFacts({ ...RESULT, timing }, null)[0]).toBe('On time 6 of 8 · 1 early · 1 late')
+    expect(passFacts({ ...RESULT, timing }, null).slice(0, 3)).toEqual([
+      'Right the first time at 2 of 5 places',
+      'No help used',
+      'On time 6 of 8 · 1 early · 1 late',
+    ])
     expect(passFacts({ ...RESULT, targetReached: true }, 3)).toContain('Goal reached: 3 clean in a row')
   })
 })

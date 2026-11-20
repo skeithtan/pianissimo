@@ -192,6 +192,10 @@
 .stageCue[data-kind='octave'] {
   padding: 0;
 }
+.stageCue[data-kind='retry'] {
+  left: max(calc(33.333% - 28px), 92px);
+  font-size: var(--text-s);
+}
 .stageCue strong {
   font-size: var(--text-2xl);
   font-weight: 700;
@@ -269,26 +273,34 @@
 .resultRow:empty {
   display: none;
 }
+.resultDock:has(.result[data-expandable]),
+.resultRow:has(.result[data-expandable]) {
+  padding-top: var(--space-5);
+}
 /* The expanded card rises over the stage above it. */
 .resultRow {
   position: relative;
   z-index: 6;
 }
 
-/* The attempt result (U97, revising U33): one slim pill. A badge in the outcome's tone (a check
+/* The attempt result: a badge in the outcome's tone (a check
    for a clean pass, the count of wrong notes otherwise), the headline with the Repeat goal as
-   dots, one muted status line and an optional note line, then Again, Details and Hide. No shadow
+   dots, one muted status line and an optional note line, then Again and Hide. A clipped preview
+   of the details sits below the summary inside the same outline. No shadow
    (A11): a 1 px border tinted by the tone. It fades and rises in from below, fades and sinks out
    (`data-phase` from `useFadePresence`, RESULT_FADE_MS in Banners.tsx); reduced motion keeps only
    a short fade.
 
-   Details expands it in place (U99): the details open above the pill as one card with it,
+   A tap or upward swipe expands it in place: the details open above the pill as one card with it,
    positioned over the score (absolute, so the dock keeps the pill's height and the strip's
-   review never re-fits), revealed upward like an accordion (clip-path, 240 ms). */
+   review stays in place), growing from the measured pill to the expanded panel. */
 .resultCard {
   --result-tone: var(--fg-muted);
   --result-tone-bg: var(--bg-sunken);
   --result-border: color-mix(in srgb, var(--result-tone) 30%, var(--border));
+  --result-preview-height: 25px;
+  --result-panel-width: min(760px, 100%);
+  --result-open-duration: 420ms;
   position: relative;
   pointer-events: auto;
   display: flex;
@@ -301,23 +313,94 @@
     transform 220ms var(--ease-out);
 }
 .resultCard[data-expanded] {
-  width: min(760px, 100%);
-  max-width: min(760px, 100%);
+  width: var(--result-panel-width);
+  max-width: var(--result-panel-width);
+}
+.resultCard[data-opening][data-layout='panel'] {
+  animation: result-grow-width var(--result-open-duration) var(--ease-standard);
+}
+.resultCard[data-opening][data-layout='panel'] .result {
+  animation: result-hold-row var(--result-open-duration) linear;
+}
+@keyframes result-grow-width {
+  from {
+    width: var(--result-from-width);
+  }
+  to {
+    width: var(--result-panel-width);
+  }
+}
+@keyframes result-hold-row {
+  from,
+  to {
+    height: var(--result-open-row-height);
+    overflow: hidden;
+  }
+}
+/* Reserve the collapsed preview's space so opening over the score doesn't reframe it. */
+.resultCard[data-expanded][data-preview] {
+  margin-top: calc(var(--result-preview-height) + var(--space-1));
 }
 .result {
+  position: relative;
   pointer-events: auto;
   display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
-  align-items: center;
-  gap: var(--space-3);
   min-width: 0;
   min-height: 60px;
   padding: var(--space-2);
   background: var(--bg-elevated);
   color: var(--fg);
   border: 1px solid var(--result-border);
-  border-radius: 32px;
+  border-radius: var(--radius-l);
+  touch-action: none;
+  user-select: none;
   transition: border-radius var(--dur-fast) var(--ease-standard);
+}
+.resultSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.resultPreview {
+  --result-preview-fade: linear-gradient(currentColor calc(100% - 8px), transparent);
+  --result-preview-tall: 52px;
+  margin: var(--space-1) var(--space-2) 0;
+  padding: 0;
+  height: var(--result-preview-height);
+  overflow: hidden;
+  list-style: none;
+  color: var(--fg-muted);
+  font-size: var(--text-s);
+  line-height: 17px;
+  -webkit-mask-image: var(--result-preview-fade);
+  mask-image: var(--result-preview-fade);
+}
+.resultPreview:has(li:nth-child(3)) {
+  --result-preview-tall: 64px;
+}
+.resultCard[data-intro] .resultPreview {
+  animation: result-preview-settle var(--result-preview-duration) var(--ease-out) both;
+}
+@keyframes result-preview-settle {
+  0%,
+  48% {
+    height: var(--result-preview-tall);
+  }
+  100% {
+    height: var(--result-preview-height);
+  }
+}
+.resultPreview > li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Clip the full time comparison to the width set by the pill's summary and first two facts. */
+.resultPreview > li:nth-child(3) {
+  contain: inline-size;
 }
 .resultCard[data-expanded] .result {
   border-radius: 0 0 24px 24px;
@@ -391,6 +474,20 @@
 .resultCard[data-passed='true'] .resultDetails {
   height: auto;
   max-height: var(--result-details-max, 480px);
+}
+.resultCard[data-opening] .resultDetails[data-layout='panel']:not([data-phase='leaving']) {
+  animation: result-grow-panel var(--result-open-duration) var(--ease-standard);
+}
+.resultCard[data-opening][data-preview] .resultDetails[data-layout='panel'] {
+  --result-open-peek: calc(var(--result-from-preview) + var(--space-1));
+}
+@keyframes result-grow-panel {
+  from {
+    max-height: var(--result-open-peek, 0px);
+  }
+  to {
+    max-height: var(--result-details-max);
+  }
 }
 @keyframes result-unfold {
   from {
@@ -493,6 +590,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  pointer-events: none;
+}
+.resultActions > button {
+  pointer-events: auto;
+}
+.resultCard:not([data-expanded]) .resultActions > button:not(.resultSurface) {
+  position: relative;
+  z-index: 2;
 }
 .resultAgain {
   min-height: 44px;
@@ -520,7 +625,37 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
-/* Details: a chevron with its word where there is room (a phone upright: the chevron only). */
+/* The summary surface is one native button, with the Again and Hide actions raised above it. */
+.resultSurface {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.resultCard:not([data-expanded]) .resultSurface {
+  top: calc(-1 * var(--space-5));
+}
+.resultLift {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  line-height: 0;
+  color: var(--fg-muted);
+}
+.result:has(.resultSurface:hover) {
+  background-color: color-mix(in srgb, var(--fg) 4%, var(--bg-elevated));
+}
+.resultSurface:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+/* The expanded card uses its original in-row fold control. */
 .resultDetailsButton {
   display: inline-flex;
   align-items: center;
@@ -560,12 +695,15 @@
     width: 100%;
     max-width: 100%;
   }
-  .result {
+  .resultCard[data-preview]:not([data-expanded]) {
+    width: calc(100% - 16px);
+  }
+  .resultSummary {
     gap: var(--space-2);
   }
   .resultDetailsButton {
-    padding: 0;
     width: 44px;
+    padding: 0;
   }
   .resultDetailsLabel {
     display: none;
@@ -584,13 +722,15 @@
     white-space: nowrap;
   }
 }
-
 /* The expanded result, by screen size (U99, 17 November 2026).
    Tablet (wider and taller than a phone, DECISIONS U74): a generous panel over the score, wider
    than the pill (900 px at most) and up to 880 px tall, with the same 16 px of margin on every
    side (to the stage's top and sides, and to the footer under the pill). The collapsed pill keeps
    its size; the dock only moves to the margin. */
 @media (min-width: 521px) and (min-height: 521px) {
+  .resultCard {
+    --result-panel-width: min(900px, 100%);
+  }
   .resultDock {
     left: calc(var(--space-4) + var(--safe-l));
     right: calc(var(--space-4) + var(--safe-r));
@@ -598,10 +738,6 @@
   }
   .resultRow {
     padding: var(--space-2) calc(var(--space-4) + var(--safe-r)) var(--space-4) calc(var(--space-4) + var(--safe-l));
-  }
-  .resultCard[data-expanded] {
-    width: min(900px, 100%);
-    max-width: min(900px, 100%);
   }
 }
 
@@ -629,6 +765,20 @@
     border-radius: 0;
     background: var(--bg-elevated);
     animation: result-screen-in 260ms var(--ease-out) both;
+  }
+  .resultCard[data-opening] .resultDetails[data-layout='screen']:not([data-phase='leaving']) {
+    animation: result-grow-screen var(--result-open-duration) var(--ease-standard);
+  }
+  @keyframes result-grow-screen {
+    from {
+      inset: var(--result-from-top) calc(100% - var(--result-from-right)) calc(100% - var(--result-from-bottom))
+        var(--result-from-left);
+      border-radius: var(--radius-l);
+    }
+    to {
+      inset: 0;
+      border-radius: 0;
+    }
   }
   .resultCard .resultDetails[data-layout='screen'][data-phase='leaving'] {
     animation: result-screen-out 200ms var(--ease-in) both;
@@ -666,6 +816,8 @@
       calc(var(--space-2) + var(--safe-l));
     background: var(--bg-elevated);
     border-bottom: 1px solid color-mix(in srgb, var(--result-tone, var(--fg-muted)) 30%, var(--border));
+    touch-action: none;
+    user-select: none;
   }
   .screenBack {
     flex: none;
@@ -1407,6 +1559,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .resultCard[data-opening][data-layout='panel'],
+  .resultCard[data-opening][data-layout='panel'] .result,
+  .resultCard[data-intro] .resultPreview {
+    animation: none;
+  }
   .countInBeat {
     animation: none;
   }
@@ -1436,6 +1593,7 @@
     transition-duration: var(--dur-base);
   }
   .resultDetails,
+  .resultCard[data-opening] .resultDetails[data-layout]:not([data-phase='leaving']),
   .resultDetails[data-phase='leaving'],
   .resultCard .resultDetails[data-layout='screen'],
   .resultCard .resultDetails[data-layout='screen'][data-phase='leaving'] {

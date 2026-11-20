@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { CHORD_SLIP_MS } from '../../core/engine'
 import { buildScore } from '../../core/engine/testkit'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { sharedAudioContext, type BrowserAudioModule } from '../../core/playback'
@@ -2133,6 +2134,7 @@ describe('PracticeSession: teacher corrections after an attempt', () => {
       corrections: 0,
       lastResult: { passed: false },
     })
+    h.step(CHORD_SLIP_MS)
     h.play(62, 64)
     expect(h.session.ui.get()).toMatchObject({ resultDimmed: true, lastResult: { passed: false } })
     // The bar's last note: the cursor moves into the next bar and the result slides away.
@@ -2204,9 +2206,11 @@ describe('PracticeSession: the review after a completed pass (U97)', () => {
     // The first press is matched at once and the review ends in the same frame.
     h.play(60)
     expect(h.session.engine.state.phase).toBe('running')
-    expect(h.session.engine.state.groupIndex).toBe(1)
+    expect(h.session.engine.state.acceptedPitches).toEqual([60])
     expect(h.strip.reviewing).toBe(false)
     expect(h.strip.reviews).toEqual([false, true, false])
+    h.step(CHORD_SLIP_MS)
+    expect(h.session.engine.state.groupIndex).toBe(1)
   })
 
   it('never asks the strip from the input path: a key press only records, the frame tells the strip', async () => {

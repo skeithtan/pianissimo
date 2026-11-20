@@ -23,6 +23,7 @@
  * - A new engraving with other spacing (Labels Off ↔ on) keeps the cursor's line where it was on
  *   screen and glides the notes in from the previous view's columns (`respaceFrom`).
  */
+import type { TimingDirection } from '../../core/model/practice'
 import type { Hand } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import { toNumber } from '../../core/music/rational'
@@ -50,6 +51,7 @@ import {
 } from '../strip/snap'
 import type { StripOptions, StripStats, LoopSelectMode } from '../strip/StripView'
 import { ACTION_RADIUS, staffGap } from '../shared/cursorAction'
+import { TimingCue } from '../shared/timingCue'
 import {
   collectPieces,
   lineOf,
@@ -155,6 +157,7 @@ export class PageView {
   private readonly corrLayer: HTMLDivElement
   private readonly overlay: HTMLDivElement
   private readonly cursorEl: HTMLDivElement
+  private readonly timingCue = new TimingCue()
   private readonly cursorBtn: HTMLButtonElement
   private readonly cursorGrip: HTMLDivElement
   private readonly readoutEl: HTMLDivElement
@@ -363,6 +366,7 @@ export class PageView {
     // Without a handler (Study mode, U72) the button is never shown, so it is not in the DOM.
     this.cursorEl.append(bar, grip, this.readoutEl)
     if (opts.onCursorAction) this.cursorEl.append(this.cursorBtn)
+    this.cursorEl.append(this.timingCue.element)
     this.startHandle = this.button(
       'pn-loop-ctl pn-handle pn-handle-start',
       icon.left,
@@ -512,6 +516,10 @@ export class PageView {
     if (on === this.earlyOn) return
     this.earlyOn = on
     this.schedule()
+  }
+
+  setTimingCue(direction: TimingDirection | null): void {
+    if (this.timingCue.set(direction)) this.schedule()
   }
 
   /**
@@ -1178,6 +1186,8 @@ export class PageView {
       this.cursorEl.style.height = `${h}px`
       this.applied.cursorH = h
     }
+    const viewportY = sy - this.scrollY
+    this.timingCue.place(sx - this.scrollX, viewportY, viewportY + margin.top, this.hostW)
     this.placeActionButton(span.top, h, margin.top)
   }
 

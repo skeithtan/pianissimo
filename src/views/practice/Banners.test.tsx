@@ -279,9 +279,13 @@ describe('Banners', () => {
     expect(card()?.dataset['tone']).toBe('clean')
     expect(card()?.textContent).toContain('Clean pass')
     expect(card()?.textContent).toContain('2 clean in a row')
-    // The details open in place (U99): the pill has no time, first-try share, help or marks count.
-    for (const gone of ['3.0 s', 'right first time', 'No help', 'marks on the score', 'No wrong notes'])
-      expect(card()?.textContent).not.toContain(gone)
+    const preview = $(card()!, '[data-testid="result-details-preview"]')!
+    expect(Array.from(preview.querySelectorAll('li'), (li) => li.textContent)).toEqual([
+      'Right the first time at 4 of 4 places',
+      'No help used',
+      'Took 3.0 s; the music lasts 3.0 s at this speed (0.0 s)',
+    ])
+    for (const gone of ['marks on the score', 'No wrong notes']) expect(card()?.textContent).not.toContain(gone)
     expect(byLabel(card()!, 'Show details of this pass')).not.toBeNull()
     expect(byText(card()!, 'Again')).not.toBeNull()
 
@@ -302,7 +306,7 @@ describe('the result card expands in place (U99)', () => {
   const toggle = () => $(view!.container, '[data-testid="result-details-toggle"]')!
   const body = () => $(view!.container, '[data-testid="result-details"]')
 
-  it('Details unfolds the details above the row and folds them back with the chevron', () => {
+  it('the summary opens and folds the details, with an unlabeled visual cue', () => {
     vi.useFakeTimers()
     const details = vi.fn(() => <p data-testid="details-body">The details</p>)
     view = mount(result({ lastResult: RESULT }, { details }))
@@ -311,7 +315,8 @@ describe('the result card expands in place (U99)', () => {
     expect(details).not.toHaveBeenCalled() // nothing rendered (nor loaded) until the first expansion
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
     expect(toggle().getAttribute('aria-label')).toBe('Show details of this pass')
-    expect(toggle().textContent).toContain('Details')
+    expect(toggle().textContent).toBe('')
+    expect(toggle().querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
 
     click(toggle())
     expect(body()?.textContent).toBe('The details')
@@ -330,6 +335,29 @@ describe('the result card expands in place (U99)', () => {
     expect(body()?.dataset['phase']).toBe('leaving') // folding
     advance(DETAILS_FOLD_MS + 1)
     expect(body()).toBeNull()
+  })
+
+  it('swiping the summary opens or dismisses it without also clicking it', () => {
+    vi.useFakeTimers()
+    const onDismiss = vi.fn()
+    view = mount(result({ lastResult: RESULT }, { onDismiss }))
+    advance(50)
+    const swipe = (x: number, y: number) =>
+      act(() => {
+        const common = { bubbles: true, pointerId: 1, isPrimary: true, pointerType: 'touch', button: 0 }
+        toggle().dispatchEvent(new PointerEvent('pointerdown', common))
+        toggle().dispatchEvent(new PointerEvent('pointerup', { ...common, clientX: x, clientY: y }))
+        toggle().dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+      })
+    swipe(52, -42)
+    expect(body()).toBeNull()
+    expect(onDismiss).not.toHaveBeenCalled()
+    swipe(3, -54)
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    expect(body()).not.toBeNull()
+    swipe(-3, 56)
+    expect(onDismiss).toHaveBeenCalledOnce()
+    expect(toggle().getAttribute('aria-expanded')).toBe('true') // the session owns dismissal
   })
 
   it('Escape folds it; a new result or none starts folded', () => {

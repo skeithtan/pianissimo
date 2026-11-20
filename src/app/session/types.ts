@@ -5,7 +5,13 @@
 import type { MidiRouteEvent } from '../../core/midi/adapter'
 import type { MidiInputEvent } from '../../core/midi/types'
 import type { MidiOutputLike } from '../../core/midi/webmidi'
-import type { AbandonEvent, AttemptRecord, InterruptReason, PassageRange } from '../../core/model/practice'
+import type {
+  AbandonEvent,
+  AttemptRecord,
+  InterruptReason,
+  PassageRange,
+  TimingDirection,
+} from '../../core/model/practice'
 import type { HandSelection, ScoreModel } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import type { AppSettings } from '../../core/model/settings'
@@ -33,6 +39,8 @@ export interface StripSink {
    * marker, P3 revised). Optional: a strip without it shows nothing for early presses.
    */
   setEarlyMarker?(on: boolean): void
+  /** Live Keep time feedback above the playhead. */
+  setTimingCue?(direction: TimingDirection | null): void
   setOttavaEmphasis(spans: readonly number[]): void
   setLabels(texts: ReadonlyMap<number, string>): void
   setLabelOpacity(opacity: ReadonlyMap<number, number>): void
@@ -416,6 +424,7 @@ export interface SessionProgress {
  */
 export type StageCue =
   | { readonly kind: 'octave'; readonly direction: 'up' | 'down' }
+  | { readonly kind: 'retry' }
   | {
       readonly kind: 'accidental'
       /** The target's name per the naming settings, accidental always shown ("F♯4", "fa♮"). */

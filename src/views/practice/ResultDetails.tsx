@@ -4,8 +4,8 @@
  * (`rankMistakes`), each place shown as a small excerpt of the score (`render/excerpt`) with the
  * teacher's ring and a ghost note for each key pressed that is not written there, and a plain
  * sentence per wrong key ("You pressed D♭ where D♮ is written"). The same wrong key pass after
- * pass leads, under "Keeps happening". Below: this pass in a few plain lines, then, folded, all
- * its numbers and the earlier passes of this loop (the Results panels, reused). Nothing here
+ * pass leads the excerpts, under "Keeps happening". The pill previews the pass facts at the top.
+ * Below the excerpts sit all the numbers and the earlier passes of this loop, folded. Nothing here
  * navigates: a history row shows that pass's numbers in the card; an excerpt is only a picture.
  */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
@@ -13,7 +13,6 @@ import type { AttemptSummary, SnippetState } from '../../app/session'
 import type { SnippetKind } from '../../app/session/snippets'
 import { passesText, pressGhost, rankMistakes, wrongPressLine, type RankedMistake } from '../../app/session/ranking'
 import { getStorage } from '../../app/services'
-import { formatSeconds } from '../../core/history'
 import type { ScoreModel } from '../../core/model/score'
 import type { NamingSettings } from '../../core/model/settings'
 import { canvasMeasurer, estimateMeasurer, type PreparedLayout } from '../../render'
@@ -26,8 +25,10 @@ import { ScorecardPanel } from '../results/ScorecardPanel'
 import { loadResultsData, type ResultsData } from '../results/data'
 import { handsAndSpeed } from '../results/format'
 import { deriveResults, passageText } from '../results/model'
-import { timingText, wrongText } from './format'
+import { passFacts, wrongText } from './format'
 import type { ResultDetailsProps } from './resultDetailsTypes'
+import { buildTimingReview } from './timingReview'
+import { TimingReviewStrip } from './TimingReviewStrip'
 import { useStore } from './useStore'
 import '../../render/excerpt.css'
 import styles from './resultDetails.module.css'
@@ -41,11 +42,18 @@ const KEEPS: ReadonlySet<RankedMistake['level']> = new Set(['repeated', 'habit',
 
 export function ResultDetails(p: ResultDetailsProps) {
   // Ranked once per result, on this render after the tap, never in the input path.
-  const mistakes = useMemo(() => {
-    const d = p.session.resultDetails()
-    if (!d || d.attemptId !== p.result.id) return []
-    return (p.rank ?? rankMistakes)(d.records, d.timeline, p.model, d.marks)
-  }, [p.session, p.result.id, p.model, p.rank])
+  const details = useMemo(() => {
+    const current = p.session.resultDetails()
+    return current?.attemptId === p.result.id ? current : null
+  }, [p.session, p.result.id])
+  const mistakes = useMemo(
+    () => (details ? (p.rank ?? rankMistakes)(details.records, details.timeline, p.model, details.marks) : []),
+    [details, p.model, p.rank],
+  )
+  const timing = useMemo(
+    () => (details && p.result.timing ? buildTimingReview(details) : null),
+    [details, p.result.timing],
+  )
   const [limit, setLimit] = useState(EXCERPT_LIMIT)
   const { shown, more } = useMemo(() => planExcerpts(mistakes, limit), [mistakes, limit])
   const keeps = shown.filter((plan) => KEEPS.has(plan.items[0]!.level))
@@ -81,16 +89,21 @@ export function ResultDetails(p: ResultDetailsProps) {
       listen={listen}
     />
   )
+  const timingStrip =
+    timing && details ? (
+      <TimingReviewStrip key={p.result.id} data={timing} layout={p.layout} marks={details.marks} measurer={measurer} />
+    ) : null
   return (
     <div class={styles.details}>
       <p class={styles.verdict} data-testid="result-verdict">
         {verdict(p.result)}
       </p>
-      {mistakes.length === 0 ? (
+      {mistakes.length === 0 && !timing?.hasTimingDeviation ? (
         <p class={styles.clean} data-testid="result-clean">
           {p.result.passed ? 'No mistakes in this pass.' : 'No wrong keys or timing marks in this pass.'}
         </p>
       ) : null}
+      <PassFacts result={p.result} goal={p.goal} />
       {keeps.length ? (
         <section class={styles.group} data-group="keeps" aria-labelledby="result-keeps">
           <h3 id="result-keeps" class={styles.keepsHeading}>
@@ -112,7 +125,8 @@ export function ResultDetails(p: ResultDetailsProps) {
           {more.length === 1 ? 'Show 1 more bar' : `Show ${more.length} more bars`}
         </Button>
       ) : null}
-      <PassFacts result={p.result} goal={p.goal} />
+      {timing?.hasTimingDeviation ? timingStrip : null}
+      {timing?.hasTimingDeviation ? null : timingStrip}
       <Earlier pieceId={p.pieceId} attemptId={p.result.id} {...(p.loadHistory ? { load: p.loadHistory } : {})} />
     </div>
   )
@@ -262,37 +276,6 @@ export function verdict(r: AttemptSummary): string {
   if (r.assistance === 'keyboard') return 'Not clean: the keyboard guide helped.'
   if (r.assistance === 'names') return 'Not clean: note names helped.'
   return 'Completed, but not counted as clean.'
-}
-
-/** This pass in a few plain lines: time against the written time, first tries, help, the streak. */
-export function passFacts(r: AttemptSummary, goal: number | null): string[] {
-  const out: string[] = []
-  if (r.timing) out.push(timingText(r.timing))
-  else if (r.completionTimeSec !== null && r.expectedTimeSec !== null && r.expectedTimeSec > 0) {
-    const diff = r.completionTimeSec - r.expectedTimeSec
-    const sign = diff > 0.05 ? '+' : ''
-    out.push(
-      `Took ${formatSeconds(r.completionTimeSec)}; the music lasts ${formatSeconds(r.expectedTimeSec)} at this speed (${sign}${formatSeconds(diff)})`,
-    )
-  } else if (r.completionTimeSec !== null) out.push(`Took ${formatSeconds(r.completionTimeSec)}`)
-  if (r.groupsTotal > 0) out.push(`Right the first time at ${r.groupsFirstPass} of ${r.groupsTotal} places`)
-  out.push(
-    r.assistance === 'keyboard'
-      ? 'Help: the keyboard guide'
-      : r.assistance === 'names'
-        ? 'Help: note names'
-        : r.persistentLabels
-          ? 'Help: note names on the score'
-          : 'No help used',
-  )
-  if (goal !== null && goal > 1)
-    out.push(
-      r.targetReached
-        ? `Goal reached: ${goal} clean in a row`
-        : `${r.streak} of ${goal} clean in a row toward the goal`,
-    )
-  else if (r.streak > 1) out.push(`${r.streak} clean in a row`)
-  return out
 }
 
 function PassFacts({ result, goal }: { result: AttemptSummary; goal: number | null }) {

@@ -100,6 +100,7 @@ import { REPEATED_MISTAKE_HISTORY, repeatedMistakes } from './mistakes'
 import { PassCapture, SNIPPET_PEDALS, SnippetPlayer, playedSnippet, writtenSnippet, type SnippetKind } from './snippets'
 import { countInPlan } from './countIn'
 import { metronomeOn, metronomeScope, type MetronomeScope } from './metronome'
+import { TimingDrift } from './timingDrift'
 import {
   LADDER_DEFAULT_TARGET,
   ladderAfterAttempt,
@@ -216,6 +217,7 @@ const MIC_LISTENING = 'Following through the microphone.'
 const MIC_FAILED_TEXT = 'The microphone could not be started.'
 
 const ACTIVE: readonly Phase[] = ['preparing', 'ready', 'running']
+const RETRY_CUE: StageCue = { kind: 'retry' }
 /** How long `revealAtCursor` names stay when hints are set to last until the correct note (no attempt here). */
 export const REVEAL_FALLBACK_S = 4
 
@@ -387,6 +389,7 @@ export class PracticeSession {
   #wrongReason: 'wrong' | 'early' = 'wrong'
   /** The correction cue at the cursor and the missing pitch it points to (U30 revised). */
   #cue: { target: number; cue: StageCue } | null = null
+  readonly #timingDrift = new TimingDrift()
   /** The chrome is revealed (not in focus mode): the cursor's repeat button may show while playing. */
   #chromeRevealed = true
   /** The cursor's repeat button exists at all (`SessionOptions.cursorAction`). */
@@ -2919,12 +2922,19 @@ export class PracticeSession {
       case 'input-complete':
         this.#cue = null
         // Keep time: the music never waits, and releasing a gate early would move it ahead.
-        if (this.#engine.transport !== 'strict') this.#accomp?.releaseGate(ev.group + this.#gateOffset)
+        if (this.#engine.transport !== 'strict') {
+          this.#accomp?.releaseGate(ev.group + this.#gateOffset)
+        } else if (ev.onsetOffsetMs !== undefined) {
+          this.#timingDrift.observe(ev.onsetOffsetMs, this.#toleranceMs(this.#settings))
+        } else {
+          this.#timingDrift.reset()
+        }
         break
       case 'missed':
-        // The music passed the group (Keep time): the soft wash only, never a pulse or a cue.
+        // Silence ends the timing pattern. The missed group still gets its usual soft wash.
         this.#missedPending++
         this.#cue = null
+        this.#timingDrift.reset()
         break
       case 'wrong':
         // A re-attacked tie end is a gentle nudge: the amber marker only (`#frame`), no pulse,
@@ -2945,6 +2955,7 @@ export class PracticeSession {
         break
       case 'phase':
         this.#cue = null
+        this.#timingDrift.reset()
         this.#onPhase(ev.phase, now)
         break
       case 'attempt-ended':
@@ -3194,7 +3205,7 @@ export class PracticeSession {
     this.#pendingRepeat = false
     this.#accomp?.stop()
     this.#clearHighlights()
-    this.#engine.restart(now)
+    this.#engine.restart(now, { continueRepeat: true })
     this.#prepareAttempt(now)
     // Back to the loop start: the strip pans there quickly instead of scrolling backward.
     this.#strip?.wrapTo?.(this.#cursorPosition())
@@ -3571,6 +3582,9 @@ export class PracticeSession {
     const versionChanged = s.version !== this.#lastVersion || force
     // Listen mode (both hands off, U9) shows no targets, even before Play.
     const quiet = this.#listen !== null || this.#sel.hands === 'none'
+    strip?.setTimingCue?.(
+      !quiet && s.phase === 'running' && this.#engine.transport === 'strict' ? this.#timingDrift.direction : null,
+    )
     // A late slip (Keep time) tints the cursor amber for a moment; the engine records nothing.
     const late = now < this.#lateUntil
     const lateChanged = late !== this.#lateShown
@@ -3617,7 +3631,7 @@ export class PracticeSession {
       visible: showing,
       reason: s.lastWrongReason === 'early' ? 'early' : 'wrong',
       pulse: this.#pulse,
-      cue: showing ? (this.#cue?.cue ?? null) : null,
+      cue: showing ? (s.retryGroup ? RETRY_CUE : (this.#cue?.cue ?? null)) : null,
     })
 
     const labelsChanging = this.#frameLabels(now, strip, s)
@@ -3717,6 +3731,7 @@ export class PracticeSession {
     if (changed) {
       this.#playVersion = f.version
       if (strip) {
+        strip.setTimingCue?.(null)
         strip.setTargets(f.targetNotes)
         strip.setAccepted(f.acceptedNotes)
         strip.setWrongMarker(false)

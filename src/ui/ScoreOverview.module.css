@@ -59,6 +59,14 @@
     opacity var(--dur-base) var(--ease-standard),
     scale var(--dur-base) var(--ease-out);
 }
+.loop[data-at-start] {
+  border-top-left-radius: var(--radius-l);
+  border-bottom-left-radius: var(--radius-l);
+}
+.loop[data-at-end] {
+  border-top-right-radius: var(--radius-l);
+  border-bottom-right-radius: var(--radius-l);
+}
 .loop[data-phase='entering'],
 .loop[data-phase='leaving'] {
   opacity: 0;
@@ -102,6 +110,16 @@
   border: 1px solid var(--bg-sunken);
   border-radius: 3px;
   background: var(--color-loop);
+}
+/* Keep a grip inside the curved outline when it is the piece's outer edge. */
+.handle[data-at-piece-edge]::before {
+  content: none;
+}
+.handle[data-at-piece-edge][data-edge='start'] {
+  margin-left: 0;
+}
+.handle[data-at-piece-edge][data-edge='end'] {
+  margin-left: -12px;
 }
 .handle:focus-visible {
   outline: 2px solid var(--focus-ring);

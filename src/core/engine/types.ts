@@ -137,6 +137,11 @@ export interface AttemptStartOptions {
   readonly runningStart?: boolean
 }
 
+export interface EngineRestart extends AttemptStartOptions {
+  /** Automatic next pass of the same waiting-practice loop. */
+  readonly continueRepeat?: boolean
+}
+
 export interface EngineReconfigure extends AttemptStartOptions {
   /** Why the current attempt/traversal ends ('hand-change', 'tempo-change', 'range-change', 'mode-change', …). */
   readonly reason: InterruptReason
@@ -204,6 +209,8 @@ export interface EngineState {
   readonly acceptedNotes: readonly number[]
   readonly missingPitches: readonly number[]
   readonly inputComplete: boolean
+  /** A repeated extra key invalidated the notes played at this onset. */
+  readonly retryGroup: boolean
   /** Accompaniment: input complete, waiting for the transport to reach the position. */
   readonly waitingForTransport: boolean
   /** Highest transport gate reached (−1 before the first). */
@@ -270,7 +277,13 @@ export type EngineEvent =
   | { readonly type: 'ottava-warning'; readonly group: number; readonly spans: readonly number[] }
   | { readonly type: 'ottava-cleared' }
   /** Every required pitch was attacked: release transport gate `group` (exactly once per group). */
-  | { readonly type: 'input-complete'; readonly group: number; readonly time: number }
+  | {
+      readonly type: 'input-complete'
+      readonly group: number
+      readonly time: number
+      /** Strict: first matched attack minus scheduled onset (ms), before chord spread. */
+      readonly onsetOffsetMs?: number
+    }
   | { readonly type: 'waiting-for-transport'; readonly group: number }
   /**
    * Strict transport: group `group` closed incomplete at `time` (its scheduled time plus the

@@ -25,17 +25,69 @@ const score = buildScore({
 })
 const loop = { fromOcc: 0, toOcc: 0 }
 
+function ready(h: Harness): void {
+  for (let k = 0; k < 500 && h.session.engine.state.phase !== 'ready'; k++) h.step(20)
+  expect(h.session.engine.state.phase).toBe('ready')
+}
+
 /** One pass over bar 1 from Ready: C, then `wrong` (300 ms later, before D), D, E, the chord. */
 function pass(h: Harness, wrong: number | null): void {
-  for (let k = 0; k < 500 && h.session.engine.state.phase !== 'ready'; k++) h.step(20)
+  ready(h)
   h.play(60)
   if (wrong !== null) {
     h.step(300)
     h.tap(wrong)
+    h.step(CHORD_SLIP_MS)
   }
-  h.play(62, 64, 60, 64)
+  h.play(62)
+  h.step(CHORD_SLIP_MS)
+  h.play(64, 60, 64)
   h.step(200)
 }
+
+describe('replaying a group with a repeated extra key', () => {
+  it.each(['before', 'after'])('holds the cursor when the same extra key arrives %s the right keys', async (order) => {
+    const h = harness(score, { range: { fromOcc: 0, toOcc: 1 } })
+    await h.session.start()
+    h.play(60, 62, 64, 60, 64)
+    h.step(20)
+    h.tap(65)
+    expect(h.session.engine.state.groupIndex).toBe(4)
+    h.play(67)
+    expect(h.attempts[0]?.groups?.[3]?.wrongPitches).toEqual([65])
+
+    ready(h)
+    h.play(60, 62, 64)
+    h.step(1000)
+    const atChord = h.strip.cursor
+    if (order === 'before') h.tap(65, 60, 64)
+    else {
+      h.play(60, 64)
+      h.step(20)
+      h.tap(65)
+    }
+    h.step(CHORD_SLIP_MS * 2)
+    expect(h.session.engine.state).toMatchObject({
+      groupIndex: 3,
+      acceptedPitches: [],
+      retryGroup: true,
+    })
+    expect(h.strip.cursor).toBe(atChord)
+    expect(h.session.feedback.get().cue).toEqual({ kind: 'retry' })
+
+    h.play(64, 60)
+    h.step(CHORD_SLIP_MS)
+    expect(h.session.engine.state.groupIndex).toBe(4)
+    h.play(67)
+    expect(h.attempts[1]).toMatchObject({ completion: 'completed', wrongAttacks: 1 })
+
+    ready(h)
+    h.play(60, 62, 64, 60, 64)
+    h.step(CHORD_SLIP_MS)
+    h.play(67)
+    expect(h.attempts[2]).toMatchObject({ completion: 'completed', wrongAttacks: 0 })
+  })
+})
 
 describe('repeated mistakes in the result summary (P24)', () => {
   it('the same wrong key at the same note three passes running is named in lastResult', async () => {

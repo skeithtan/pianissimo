@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CHORD_SLIP_MS } from '../../core/engine'
 import { buildScore } from '../../core/engine/testkit'
 import type { LadderSettings } from '../../core/storage/records'
 import { harness, type Harness } from './testkit'
@@ -37,13 +38,20 @@ function settle(h: Harness): void {
 }
 
 function pass(h: Harness): void {
-  h.play(60, 62, 64, 65)
+  h.play(60)
+  h.step(CHORD_SLIP_MS)
+  h.play(62, 64, 65)
   settle(h)
 }
 
 function fail(h: Harness): void {
   h.play(60)
   h.tap(61)
+  if (h.session.engine.state.retryGroup) {
+    h.step(CHORD_SLIP_MS)
+    h.play(60)
+    h.step(CHORD_SLIP_MS)
+  }
   h.play(62, 64, 65)
   settle(h)
 }

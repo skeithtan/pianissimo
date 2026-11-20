@@ -225,6 +225,20 @@ describe('<ScoreOverview>', () => {
     expect(root.querySelector('[data-testid="overview-loop"]')).toBeNull()
   })
 
+  it.each([
+    { loop: { fromOcc: 0, toOcc: 9 }, start: true, end: true },
+    { loop: { fromOcc: 0, toOcc: 4 }, start: true, end: false },
+    { loop: { fromOcc: 4, toOcc: 9 }, start: false, end: true },
+    { loop: { fromOcc: 0, toOcc: 9, start: rat(1, 2), end: rat(9) }, start: false, end: false },
+  ])('matches the track radius at the ends reached by $loop', ({ loop, start, end }) => {
+    const { root } = setup({ loop, onLoopChange: vi.fn() })
+    const highlight = root.querySelector('[data-testid="overview-loop"]')!
+    expect(highlight.hasAttribute('data-at-start')).toBe(start)
+    expect(highlight.hasAttribute('data-at-end')).toBe(end)
+    expect(root.querySelector('[data-testid="overview-loop-start"]')!.hasAttribute('data-at-piece-edge')).toBe(start)
+    expect(root.querySelector('[data-testid="overview-loop-end"]')!.hasAttribute('data-at-piece-edge')).toBe(end)
+  })
+
   it('seeks immediately on tap and emits the final bar on release', () => {
     const { root, onScrub } = setup()
     act(() => {

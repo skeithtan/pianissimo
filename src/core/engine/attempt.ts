@@ -40,6 +40,7 @@ interface GroupAcc {
   tieEnd: number
   /** Strict transport: completion − scheduled arrival (whole ms); null when not completed or not strict. */
   offsetMs: number | null
+  onsetOffsetMs?: number
   missed: boolean
 }
 
@@ -51,12 +52,16 @@ export interface GroupCompletion {
   readonly spreadMs?: number
   /** Strict transport: whole ms from the scheduled arrival to completion (negative = early). */
   readonly offsetMs?: number
+  /** Strict: first matched attack offset when it differs from completion. */
+  readonly onsetOffsetMs?: number
 }
 
 export const READING_UNTIMED = 'Ordinary reading is not timed.'
 
 export class AttemptLog {
   readonly id: string
+  /** Distinct wrong pitches by group, handed to the next automatic Repeat pass. */
+  readonly wrongKeys = new Map<number, Set<number>>()
   /** Epoch milliseconds. */
   readonly createdAt: number
   /** MIDI timestamp of the first fresh press (performance.now() timebase). */
@@ -146,7 +151,12 @@ export class AttemptLog {
     const g = this.#group(group)
     g.wrong++
     if (early) g.early++
-    else g.wrongPitches.push(pitch)
+    else {
+      g.wrongPitches.push(pitch)
+      let keys = this.wrongKeys.get(group)
+      if (!keys) this.wrongKeys.set(group, (keys = new Set()))
+      keys.add(pitch)
+    }
     if (this.#firstPass.delete(group)) this.groupsFirstPass--
     const own = !fallback || !this.#closed.has(occ)
     const m = this.#measure(own ? occ : fallback.occ)
@@ -176,6 +186,7 @@ export class AttemptLog {
     g.lateMs = detail.lateMs ?? 0
     g.spreadMs = detail.spreadMs ?? 0
     if (detail.offsetMs !== undefined) g.offsetMs = detail.offsetMs
+    if (detail.onsetOffsetMs !== undefined) g.onsetOffsetMs = detail.onsetOffsetMs
     this.#measure(occ).completed++
     if (firstPass) {
       this.groupsFirstPass++
@@ -280,6 +291,7 @@ export class AttemptLog {
         spreadMs: g.spreadMs,
         tieEndPresses: g.tieEnd,
         ...(g.offsetMs !== null ? { offsetMs: g.offsetMs } : {}),
+        ...(g.onsetOffsetMs !== undefined ? { onsetOffsetMs: g.onsetOffsetMs } : {}),
         ...(g.missed ? { missed: true } : {}),
       }))
   }

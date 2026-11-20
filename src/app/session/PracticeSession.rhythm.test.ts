@@ -216,6 +216,72 @@ describe('Keep time: count-in', () => {
 })
 
 describe('Keep time: playing against the music', () => {
+  it.each([
+    { direction: 'rushing', sign: -1 },
+    { direction: 'dragging', sign: 1 },
+  ])(
+    'shows $direction on the third drifting onset and clears on the second near the beat',
+    async ({ direction, sign }) => {
+      const h = open()
+      await begin(h)
+      h.tap(60)
+      expect(h.strip.timingCue).toBeNull()
+      playOnTime(h, [60, 62], [3, sign * 54])
+      expect(h.strip.timingCue).toBeNull()
+      playOnTime(h, [64], [sign * 101], RUN + 2000)
+      expect(h.strip.timingCue).toBe(direction)
+      expect(h.session.engine.state.phase).toBe('running')
+      playOnTime(h, [65], [sign * 12], RUN + 3000)
+      expect(h.strip.timingCue).toBe(direction)
+      playOnTime(h, [67], [sign * 8], RUN + 4000)
+      expect(h.strip.timingCue).toBeNull()
+      expect(h.session.engine.state.phase).toBe('running')
+      expect(rec.clicks.slice(4, 9).map((c) => c.time)).toEqual([RUN, RUN + 1000, RUN + 2000, RUN + 3000, RUN + 4000])
+    },
+  )
+
+  it('uses the first matched attack of a chord for the live cue, with completion still scored', async () => {
+    const chords = buildScore({
+      notes: [0, 1, 2, 3].flatMap((at) => [
+        { at, midi: 60 },
+        { at, midi: 64 },
+      ]),
+    })
+    const h = harness(chords, {}, { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec) } })
+    await begin(h)
+    for (const [i, spread] of [0, 54, 101, 110].entries()) {
+      at(h, RUN + i * 1000)
+      h.tap(60)
+      at(h, RUN + i * 1000 + spread)
+      h.tap(64)
+      expect(h.strip.timingCue).toBeNull()
+    }
+    expect(h.attempts[0]?.groups?.map((group) => group.offsetMs)).toEqual([0, 54, 101, 110])
+    expect(h.attempts[0]?.groups?.map((group) => group.onsetOffsetMs)).toEqual([undefined, 0, 0, 0])
+  })
+
+  it('ignores a steady lead, resets on a miss, and clears when a fresh count-in begins', async () => {
+    const h = open()
+    await begin(h)
+    playOnTime(h, [60, 62, 64], [8, -54, -101])
+    expect(h.strip.timingCue).toBe('rushing')
+    at(h, RUN + 3151)
+    expect(h.session.engine.state.missedGroups).toBe(1)
+    expect(h.session.engine.state.phase).toBe('running')
+    expect(h.strip.timingCue).toBeNull()
+
+    playOnTime(h, [67, 69, 71], [0, 54, 101], RUN + 4000)
+    expect(h.strip.timingCue).toBe('dragging')
+    h.session.pause()
+    h.frames.flush()
+    expect(h.strip.timingCue).toBeNull()
+    await begin(h)
+    expect(ui(h).countIn).toBe(4)
+    expect(h.strip.timingCue).toBeNull()
+    playOnTime(h, [60, 62, 64, 65], [0, -58, -58, -58], h.clock.now + 4000)
+    expect(h.strip.timingCue).toBeNull()
+  })
+
   it('releases every gate: the music never waits for the learner', async () => {
     const h = open()
     await begin(h)

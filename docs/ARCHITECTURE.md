@@ -113,8 +113,10 @@ tolerance waits for that group (nearest first, P17), so a slip on a fast run cos
 groups slipped. Strict records use `matchingRules` `strict-v1-tol-<n>ms` and
 carry `rhythm`, `missedGroups` and per-group `offsetMs` / `missed`; they pass only with no wrong
 attack, no assistance, no missed group and every group within the tolerance. Close times come
-from injected arrivals and surface through `nextDeadline()`; `input-complete` is still emitted
-but must not release gates in strict.
+from injected arrivals and surface through `nextDeadline()`. Strict `input-complete` also
+carries `onsetOffsetMs`, the first matched attack's offset, for live timing feedback. The
+record stores the completion offset for grading and an optional differing first-attack
+offset for the review strip. The event never releases a gate in strict mode.
 
 ### core/audio (worker-safe)
 The audio score follower behind play-through on an acoustic piano (DECISIONS P14 spike, P15
@@ -386,10 +388,20 @@ attempt itself clicks per `metronome.keepTime` (P20; `app/session/metronome.ts`:
 AudioContext synchronously inside the tap when it will click (iPadOS gesture rule); at the end it calls `engine.startRunning(t)` and
 `transport.play(t)` with one timestamp after releasing every gate, so the music never holds. The
 transport reports each arrival (`transportArrived`); the engine judges, closes missed groups and
-builds the record. The session renders only gentle feedback (soft wash for `missed`, amber
-marker for `'late'`) and the result card's timing line (`timingAccuracy`). Keep time is exclusive
-with play-through and disables Repeat lead-ins. The view adds a footer-menu switch with a badge
-on the Menu button, the `CountIn` overlay on the stage and the tolerance choice in Settings →
+builds the record. The session renders gentle feedback (soft wash for `missed`, amber marker
+for `'late'`) and tracks sustained drift in `TimingDrift` (U107), using consecutive matched
+groups and resetting on a miss or phase change. The session sends the direction to
+`StripSink.setTimingCue` in the animation frame. Strip and Page share a screen-space cue
+anchored to their playheads. The result card's timing line comes from `timingAccuracy`.
+The lazy Details view uses `buildTimingReview` on the completed record and its timeline.
+`TimingReviewStrip` mounts up to three score excerpts with their onset plot below them.
+It uses the same engraving anchors and scrolls the score, graph, and bar controls together.
+A pass with drift outside the live cue's near-beat window or a missed entry shows the strip
+among the corrections. Otherwise the strip appears as a folded row beneath the pass facts and
+mounts its content when opened.
+Keep time is exclusive with play-through and disables Repeat lead-ins. The view adds a
+footer-menu switch with a badge on the Menu button, the `CountIn` overlay on the stage and
+the tolerance choice in Settings →
 Hints (`KeepTimeGroup`).
 `views/practice/`: `PracticeView` reads `practiceRequest`, loads piece and package, builds the
 session and `StripView` (`prepareLayout` + IndexedDB layout cache; re-prepared when
@@ -432,11 +444,15 @@ U99 nothing in the app calls it (the Results route stays for `#/results/…` dee
 
 **Only Back leaves Practice (U99).** Practice's exits are its Back button (to the Library) and the
 overlays over it (Settings, the Connection setup, sheets and popovers). The result's details open
-in place: `AttemptResult` (`views/practice/Banners.tsx`) expands the pill into a card whose details
+in place: tap the whole pill or swipe up (U110). The collapsed pill shows a clipped,
+fading preview of pass facts from the same formatters as the expanded details.
+`AttemptResult` (`views/practice/Banners.tsx`) expands the pill into a card whose details
 sit over the score and never change the dock's height (so `reviewInset`/`setReviewInset` never
 see them): on a tablet a panel above the pill (up to 900 × 880 px, 16 px of margin on every
 side); on a phone (`usePhone`) a fixed full-screen dialog with its own sticky header (U99); its contents load on the first expansion
-(`ResultDetailsLoader` → `ResultDetails.tsx`). `PracticeSession.resultDetails()` hands over the last
+(`ResultDetailsLoader` → `ResultDetails.tsx`). Swiping down on the pill or the phone's expanded
+header calls `dismissResult`, which clears the result and marks and restores the playing zoom.
+`PracticeSession.resultDetails()` hands over the last
 result's inputs on demand; the card ranks them (`app/session/ranking.ts` `rankMistakes`, loaded with the card, fed by the last scored
 records of the context and `correctionMarksByGroup`), never in the input path.
 `render/excerpt.ts` (pure, string SVG) cuts one bar of the shown `PreparedLayout` (strip or page)
@@ -490,7 +506,11 @@ plays), and any other key stops it before being handled as usual.
   pressed with a chord (within `CHORD_SLIP_MS`, also after a pass's final chord) is that chord's,
   and `app/session/mistakes.ts` finds the same wrong key at the same group three passes running
   (`AttemptSummary.repeatedMistakes`, P24; the result card words the first with
-  `repeatedMistakeLine` on its note line, U97). While nothing
+  `repeatedMistakeLine` on its note line, U97). At an automatic waiting-practice Repeat reset,
+  the engine keeps the finished pass's wrong-key index by group (P26). It holds input
+  completion briefly at those groups so a recurring extra key can invalidate the stroke
+  before the cursor or accompaniment gate is released. The feedback store shows the retry cue.
+  While nothing
   plays the session previews held keys against the current group (U37). Strip extras:
   `wrapTo` (loop wrap pan), `setEarlyMarker` (amber tint), the cursor bar bounded to the staves.
   After a completed pass the session starts the review (U97) by calling the optional

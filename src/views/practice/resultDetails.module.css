@@ -1,6 +1,5 @@
-/* The expanded result card's contents (ResultDetails.tsx, DECISIONS U99). The music leads:
-   excerpts stacked like the systems of a page, each with its bar and why it ranks there, then
-   the plain facts and the folded numbers and history. Theme tokens only. */
+/* The pass facts sit under the verdict, followed by the timing strip or score excerpts
+   and the folded numbers and history (ResultDetails.tsx, DECISIONS U99 and U110). */
 .details {
   display: flex;
   flex-direction: column;

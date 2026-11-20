@@ -354,6 +354,40 @@
   background: var(--pn-cursor-wrong);
 }
 
+/* Fixed-size text belongs to the playhead, independent of the notation zoom. */
+.pn-timing-cue {
+  position: absolute;
+  top: 0;
+  left: 0;
+  translate: -50% 0;
+  box-sizing: border-box;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 32px;
+  border: 1px solid var(--pn-action-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--pn-handle-bg) 88%, var(--pn-handle-fg));
+  color: var(--pn-handle-fg);
+  font: 650 var(--text-s, 14px) / 1 var(--font-ui, system-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.pn-timing-cue[data-direction] {
+  display: flex;
+}
+
+.pn-timing-cue[data-direction='dragging'] {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.pn-timing-cue[data-direction='dragging'] .pn-timing-arrow {
+  order: 1;
+}
+
 /* Optional action on the cursor (StripView.setCursorAction): a flat circle centered on the bar. */
 .pn-cursor-action {
   position: absolute;

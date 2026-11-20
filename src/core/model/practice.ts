@@ -57,6 +57,9 @@ export type TransportKind = (typeof TRANSPORT_KINDS)[number]
 /** Every `TransportKind`, for code that checks a stored or parsed value at run time. */
 export const TRANSPORT_KINDS = ['free', 'accompaniment', 'strict'] as const
 
+/** Sustained timing drift relative to the Keep time transport. */
+export type TimingDirection = 'rushing' | 'dragging'
+
 /** Rhythm mode (strict transport) parameters recorded with an attempt. */
 export interface RhythmParams {
   /** A group completed within this many ms of its scheduled time is on time (pass condition). */
@@ -230,6 +233,8 @@ export interface GroupOutcome {
    * when the group was not completed or on gated attempts.
    */
   readonly offsetMs?: number
+  /** Strict: first matched attack offset when it differs from completion. */
+  readonly onsetOffsetMs?: number
   /** Strict transport only: the music moved on before the group was complete. */
   readonly missed?: boolean
 }

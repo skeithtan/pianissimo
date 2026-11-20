@@ -49,6 +49,7 @@ export type {
   EngineEvent,
   EngineHintSettings,
   EngineReconfigure,
+  EngineRestart,
   EngineSettingsPatch,
   EngineState,
   HintPedalDetector,

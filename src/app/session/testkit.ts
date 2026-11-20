@@ -5,7 +5,7 @@
 import type { MidiRouteEvent } from '../../core/midi/adapter'
 import type { MidiInputEvent } from '../../core/midi/types'
 import type { MidiOutputLike } from '../../core/midi/webmidi'
-import type { AbandonEvent, AttemptRecord, PassageRange } from '../../core/model/practice'
+import type { AbandonEvent, AttemptRecord, PassageRange, TimingDirection } from '../../core/model/practice'
 import type { ScoreModel } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
@@ -136,6 +136,10 @@ export class FakeStrip implements StripSink {
   earlyMarker = false
   setEarlyMarker(on: boolean): void {
     this.earlyMarker = on
+  }
+  timingCue: TimingDirection | null = null
+  setTimingCue(direction: TimingDirection | null): void {
+    this.timingCue = direction
   }
   /** The last `wrapTo` position (null until a Repeat pass wraps). */
   wrappedTo: number | null = null

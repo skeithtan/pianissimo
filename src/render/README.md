@@ -30,7 +30,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   target without a transition, then pans the rest), `setTargets(notes)`, `setAccepted(notes)`,
   `setAutomatic(notes)`, `setPlaybackHighlights(notes)`, `setSubduedHand('L'|'R'|null)`,
   `setWrongMarker(on)`, `pulseWrong()` (cursor tint only), `setEarlyMarker(on)` (amber tint for a
-  too-early press; the wrong tint wins), `setOttavaEmphasis(spans)`,
+  too-early press; the wrong tint wins), `setTimingCue('rushing'|'dragging'|null)` (above the
+  playhead in both layouts, independent of the notation scale), `setOttavaEmphasis(spans)`,
   `setLabels(Map<note, text>)`, `setLabelOpacity(Map<note, 0..1>)` (every frame OK),
   `setLoop({fromOcc,toOcc,start?,end?}|null)` (a `PassageRange`; exact edges draw a note-level band),
   `setSnapPositions(onsets)` (the hands' exact onsets: loop edges and the dragged playhead snap to

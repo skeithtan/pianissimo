@@ -24,11 +24,11 @@ import { ActiveClock, HintState, type HintSource } from './hints'
 import { PhysicalState } from './physical'
 import { type OnsetGroup, type Timeline, groupAtOrAfter } from './timeline'
 import type {
-  AttemptStartOptions,
   EngineConfig,
   EngineEvent,
   EngineHintSettings,
   EngineReconfigure,
+  EngineRestart,
   EngineSettingsPatch,
   EngineState,
   HintPedalDetector,
@@ -165,6 +165,11 @@ export class PracticeEngine {
   #group: number | null = null
   readonly #accepted = new Set<number>()
   #inputComplete = false
+  #previousWrongKeys: ReadonlyMap<number, ReadonlySet<number>> | null = null
+  /** Fully played at a previously mistaken onset, with time for an extra key in the same stroke. */
+  #confirmation: { readonly attack: number; readonly until: number } | null = null
+  /** A repeated extra invalidated this stroke. Discard attacks from the remainder of the stroke. */
+  #retryAfter = -Infinity
   #transportGate = -1
   /** Time the latest gate (`#transportGate`) was reached. */
   #gateAt = -Infinity
@@ -278,6 +283,7 @@ export class PracticeEngine {
     this.#lastSeq = ev.seq
     this.#now(ev.time)
     if (this.#finishAt !== null && ev.time > this.#finishAt) this.#finishHeld()
+    this.#confirmPlayedGroup(ev.time, false)
     if (this.#strict) this.#runDue(ev.time, false)
     else this.#expirePending(ev.time)
     if (ev.kind === 'noteon' && ev.velocity > 0) this.#press(ev.note, ev.channel, ev.time)
@@ -383,7 +389,8 @@ export class PracticeEngine {
       this.#emit({ type: 'wrong', group: closed.group, pitch, time, feedbackUntil: this.#wrongUntil, reason: 'late' })
       return false
     }
-    if (groups[gi + 1]?.pitches.includes(pitch)) {
+    const canBuffer = time >= this.#retryAfter
+    if (canBuffer && groups[gi + 1]?.pitches.includes(pitch)) {
       this.#pending.push({ pitch, time, from: gi, target: gi + 1, deadline: time + this.#windowMs })
       return false
     }
@@ -396,7 +403,7 @@ export class PracticeEngine {
       this.#tieEnd(gi, pitch, time)
       return false
     }
-    if (groups[gi + 1]?.tiedPitches.includes(pitch)) {
+    if (canBuffer && groups[gi + 1]?.tiedPitches.includes(pitch)) {
       this.#pending.push({ pitch, time, from: gi, target: gi + 1, deadline: time + this.#windowMs, tieEnd: true })
       return false
     }
@@ -508,12 +515,39 @@ export class PracticeEngine {
   }
 
   #accept(gi: number, g: OnsetGroup, k: number, time: number): void {
+    if (time < this.#retryAfter) return
     const pitch = g.pitches[k]!
     this.#accepted.add(pitch)
     if (time < this.#firstAcceptAt) this.#firstAcceptAt = time
     if (time > this.#lastAcceptAt) this.#lastAcceptAt = time
     this.#emit({ type: 'accepted', group: gi, pitch, notes: g.notesByPitch[k] ?? [], time })
-    if (this.#accepted.size === g.pitches.length) this.#complete(gi, g, Math.max(time, this.#lastCompleteAt))
+    if (this.#accepted.size !== g.pitches.length) return
+    const attack = Math.max(time, this.#lastCompleteAt)
+    if (this.#previousWrongKeys?.has(gi)) {
+      const window = this.#mistakeWindow(gi, attack)
+      if (window > 0) {
+        this.#confirmation = { attack, until: attack + window }
+        return
+      }
+    }
+    this.#complete(gi, g, attack)
+  }
+
+  /** Same short window as chord-slip attribution, cut off halfway to the next onset. */
+  #mistakeWindow(gi: number, time: number): number {
+    const untilNext = gi + 1 < this.#timeline.groups.length ? this.#untilMoment(gi + 1, time, 0) : null
+    return Math.min(CHORD_SLIP_MS, (untilNext ?? Infinity) / 2)
+  }
+
+  #confirmPlayedGroup(now: number, inclusive: boolean): boolean {
+    const confirmation = this.#confirmation
+    if (!confirmation || now < confirmation.until || (!inclusive && now === confirmation.until)) return false
+    const expired = this.#expirePending(confirmation.until)
+    if (this.#confirmation !== confirmation) return expired
+    this.#confirmation = null
+    const gi = this.#group!
+    this.#complete(gi, this.#timeline.groups[gi]!, confirmation.attack, true)
+    return true
   }
 
   #wrong(gi: number, g: OnsetGroup, pitch: number, time: number, reason: WrongReason): void {
@@ -525,6 +559,14 @@ export class PracticeEngine {
     this.#emit({ type: 'wrong', group: gi, pitch, time, feedbackUntil: this.#wrongUntil, reason })
     // A too-early press had the right pitch: no wrong-key marking, ottava emphasis or hint count.
     if (reason === 'early') return
+    if (!this.#inputComplete && (this.#retryAfter !== -Infinity || this.#previousWrongKeys?.get(gi)?.has(pitch))) {
+      this.#confirmation = null
+      this.#accepted.clear()
+      this.#firstAcceptAt = Infinity
+      this.#lastAcceptAt = -Infinity
+      this.#retryAfter = Math.max(this.#retryAfter, time + CHORD_SLIP_MS)
+      this.#pending = []
+    }
     if (this.#physical.isHeld(pitch)) this.#heldWrong.add(pitch)
     if (g.ottavas.length > 0 && this.#ottava !== g.ottavas) {
       this.#ottava = g.ottavas
@@ -537,25 +579,34 @@ export class PracticeEngine {
       this.#showHint('auto', Math.max(time, this.#lastNow))
   }
 
-  #complete(gi: number, g: OnsetGroup, time: number): void {
+  #complete(gi: number, g: OnsetGroup, time: number, slipChecked = false): void {
     this.#inputComplete = true
+    this.#retryAfter = -Infinity
     this.#lastCompleteAt = time
     this.#lastCompletedGroup = gi
     const spreadMs = g.pitches.length > 1 ? Math.max(0, Math.round(this.#lastAcceptAt - this.#firstAcceptAt)) : 0
     const offsetMs = this.#strict ? this.#offsetMs(gi, time) : null
+    const onsetOffsetMs =
+      !this.#strict || this.#firstAcceptAt === time ? offsetMs : this.#offsetMs(gi, this.#firstAcceptAt)
     if (offsetMs !== null) this.#lastOffsetMs = offsetMs
     this.#log.groupComplete(gi, g.occ, time, this.#groupWrong === 0, {
       lateMs: this.#lateMs(gi, time),
       spreadMs,
       ...(offsetMs !== null ? { offsetMs } : {}),
+      ...(onsetOffsetMs !== null && onsetOffsetMs !== offsetMs ? { onsetOffsetMs } : {}),
     })
     if (gi === this.#timeline.groups.length - 1) this.#log.finalAttack = time
-    this.#emit({ type: 'input-complete', group: gi, time })
+    this.#emit({
+      type: 'input-complete',
+      group: gi,
+      time,
+      ...(onsetOffsetMs !== null ? { onsetOffsetMs } : {}),
+    })
     this.#groupHasError = false
     this.#clearOttava()
     this.#retireHint(time, 'completed')
     // Strict never waits for the transport: a completed group advances at once.
-    if (this.#transport !== 'accompaniment' || this.#transportGate >= gi) this.#advance(time)
+    if (this.#transport !== 'accompaniment' || this.#transportGate >= gi) this.#advance(time, slipChecked)
     else this.#emit({ type: 'waiting-for-transport', group: gi })
   }
 
@@ -583,13 +634,13 @@ export class PracticeEngine {
     return at === undefined ? 0 : Math.max(0, Math.round(time - at))
   }
 
-  #advance(now: number, held = false): void {
+  #advance(now: number, slipChecked = false): void {
     const from = this.#group!
     const groups = this.#timeline.groups
     // A completed final group stays current a moment longer: a key pressed with that chord is
     // still its wrong attack (P24). Its completion time is already recorded.
     if (
-      !held &&
+      !slipChecked &&
       this.#finalSlipMs > 0 &&
       from === groups.length - 1 &&
       this.#mode === 'scored' &&
@@ -917,14 +968,19 @@ export class PracticeEngine {
    * never block). Reading: a new traversal from the first group. An attempt in progress is
    * abandoned ('user-restart').
    */
-  restart(now: number, options: AttemptStartOptions = {}): void {
+  restart(now: number, options: EngineRestart = {}): void {
     this.#now(now)
     this.#finishHeld()
     this.#pending = []
     if (this.#attemptActive()) this.#end('abandoned', 'user-restart', now)
+    const previous =
+      options.continueRepeat && this.#mode === 'scored' && this.#phase === 'completed' && !this.#strict
+        ? this.#log.wrongKeys
+        : null
     this.#clearGroupState(now)
     if (this.#mode === 'scored') {
       this.#begin(now, 0, 'preparing', options.runningStart)
+      this.#previousWrongKeys = previous
       this.#checkReady(now)
     } else {
       this.#begin(now, 0, 'running')
@@ -1052,6 +1108,7 @@ export class PracticeEngine {
     this.#now(now)
     const held = this.#finishAt !== null && this.#lastNow >= this.#finishAt
     if (held) this.#finishHeld()
+    const confirmed = this.#confirmPlayedGroup(this.#lastNow, true)
     let changed = this.#strict ? this.#runDue(this.#lastNow, true) : this.#expirePending(this.#lastNow)
     const t = this.#clock.active(this.#lastNow)
     const expired = this.#hints.expire(t)
@@ -1063,7 +1120,7 @@ export class PracticeEngine {
     if (this.#hints.prune(t)) changed = true
     const phase = this.#phase
     this.#checkReady(this.#lastNow)
-    if (held || changed || phase !== this.#phase) this.#touch()
+    if (held || confirmed || changed || phase !== this.#phase) this.#touch()
   }
 
   /**
@@ -1072,7 +1129,7 @@ export class PracticeEngine {
    * reading pause freezes them.
    */
   nextDeadline(): number | null {
-    let next: number | null = this.#finishAt ?? this.#dueClose()
+    let next: number | null = this.#finishAt ?? this.#confirmation?.until ?? this.#dueClose()
     for (const p of this.#pending) if (next === null || p.deadline < next) next = p.deadline
     const d = this.#hints.nextDeadline()
     const hint = d === null ? null : this.#clock.toReal(d)
@@ -1125,6 +1182,7 @@ export class PracticeEngine {
       acceptedNotes,
       missingPitches: missing,
       inputComplete: this.#inputComplete,
+      retryGroup: this.#retryAfter !== -Infinity,
       waitingForTransport: this.#waitingForTransport(),
       transportGate: this.#transportGate,
       heldKeys: this.#physical.heldKeys(),
@@ -1223,6 +1281,7 @@ export class PracticeEngine {
     this.#prepared = false
     this.#pending = []
     this.#finishAt = null
+    this.#previousWrongKeys = null
     this.#lastCompleteAt = -Infinity
     this.#lastWrongReason = null
     this.#setPhase(phase, now)
@@ -1264,6 +1323,8 @@ export class PracticeEngine {
     this.#firstAcceptAt = Infinity
     this.#lastAcceptAt = -Infinity
     this.#inputComplete = false
+    this.#confirmation = null
+    this.#retryAfter = -Infinity
     this.#groupWrong = 0
     this.#sinceArm = 0
     this.#groupHasError = false
@@ -1280,6 +1341,8 @@ export class PracticeEngine {
     this.#firstAcceptAt = Infinity
     this.#lastAcceptAt = -Infinity
     this.#inputComplete = false
+    this.#confirmation = null
+    this.#retryAfter = -Infinity
     this.#groupWrong = 0
     this.#sinceArm = 0
     this.#groupHasError = false

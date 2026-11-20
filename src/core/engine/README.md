@@ -37,7 +37,7 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `markPrepared(now)` | Scored: preparation done (score ready, automatic tail finished, output released, transport at the passage start, persistent-label fades finished). |
 | `pause` / `resume` | Reading: freeze/unfreeze (progress kept). Scored: `pause` interrupts. |
 | `interrupt(reason, now)` | Ends the attempt/traversal: `user-stop`/`user-restart` → abandoned, others → interrupted. `disconnect` forgets physical state. |
-| `restart(now, {runningStart?})` | Repeat reset (scored → Preparing) / restart passage (reading → group 0). `runningStart`: see "Per-group outcomes". |
+| `restart(now, {runningStart?, continueRepeat?})` | Repeat reset (scored → Preparing) / restart passage (reading → group 0). `runningStart`: see "Per-group outcomes". `continueRepeat`: keep the previous pass's wrong-key index for the same waiting-practice loop. |
 | `seek(group, now)` | Scored: interrupts. Reading: new traversal at `group`. |
 | `transportArrived(group, now?)` | Transport reached gate `group` (accompaniment and strict; ignored in free). |
 | `startRunning(now)` | Strict transport only: the count-in ended; Ready → Running and the attempt clock starts at `now`. A no-op in any other transport or phase. |
@@ -119,6 +119,12 @@ current bar when that one already closed. The `wrong` event carries the previous
 `lastWrongReason` and held-wrong marking as usual; no local marker, hint count or ottava warning
 on the current group. A pass's final chord: see `config.finalSlipMs`.
 
+On the automatic next waiting-practice pass (P26), a previously mistaken group holds provisional
+completion for up to `CHORD_SLIP_MS`, capped halfway to the next onset. A matching wrong pitch
+cancels completion, clears the group's accepted attacks and pending early presses, and requires
+fresh attacks after the remainder of the stroke. The extra key still counts as a wrong attack.
+The completion event keeps the timestamp of the last accepted attack on the successful retry.
+
 ## Per-group outcomes (teacher corrections, E15–E16)
 
 Scored records carry `groups: GroupOutcome[]`, one per reached group, ascending (completed
@@ -155,8 +161,11 @@ onset group is judged against its scheduled time, the transport's arrival at its
    before arrival, or any time after arrival while the group is open, it is accepted.
 3. **Offsets.** When the group completes, `offsetMs` = completion − scheduled arrival in whole
    ms (before arrival the scheduled time is completion + ETA, so it is negative). `lateMs` stays
-   ≥ 0 as before. `state.lastOffsetMs` holds the latest one for live feedback. A completed group
-   advances at once: strict never sets `waitingForTransport`.
+   ≥ 0 as before. `state.lastOffsetMs` holds the latest completion offset.
+   `input-complete.onsetOffsetMs` gives the first matched attack's offset for the live timing cue
+   (U107). The record stores that value when it differs from the completion offset for the
+   review strip (U108). A completed group advances at once: strict never sets
+   `waitingForTransport`.
 4. **Closing by the clock.** Group i closes at `arrival(i) + toleranceMs` if still incomplete:
    event `missed { group, notes, time }`, outcome `missed: true`, `missedGroups` + 1, a group with
    errors of its bar (whose traversal can still be `complete`: missed groups count as traversed),
@@ -194,7 +203,7 @@ Session wiring (strict):
 ```
 count-in ends at t0 ─────────► engine.startRunning(t0); the transport runs from t0
 transport.onGateReached(i) ──► transport.releaseGate(i) at once, then engine.transportArrived(i, at)
-'input-complete' {group} ────► (ignored: releasing a gate early would move the music)
+'input-complete' {group, onsetOffsetMs} ────► live timing cue (gate stays released)
 'missed' {group, notes} ─────► gentle "missed" feedback; nothing to release
 schedule tick at nextDeadline() (closes and pending windows)
 ```

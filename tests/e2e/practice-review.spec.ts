@@ -262,7 +262,7 @@ test.describe('the review after a completed pass (U97)', () => {
     expect(await stripScale(page)).toBeCloseTo(before, 4)
   })
 
-  test('Hide ends the review, and the saved zoom is never touched by it', async ({ page }) => {
+  test('swipe up opens the result and swipe down clears the marks and restores the playing zoom', async ({ page }) => {
     await page.setViewportSize({ width: 900, height: 700 })
     await installFakeMidi(page)
     await seedPiece(page, { view: { ...DEFAULT_SETTINGS.view, zoom: 2.2 } })
@@ -271,17 +271,34 @@ test.describe('the review after a completed pass (U97)', () => {
     const before = await stripScale(page)
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await playWhenDue(page, 60, 48)
+    await play(page, 30)
     await playWhenDue(page, 62)
     await playWhenDue(page, 64)
     await playWhenDue(page, 65)
     await playWhenDue(page, 67, 71, 74, 43)
     await playWhenDue(page, 48)
-    await expect(page.getByTestId('attempt-result')).toContainText('Clean pass')
+    const card = page.getByTestId('attempt-result')
+    await expect(card).toContainText('1 wrong note')
     await expect(page.locator('.pn-strip')).toHaveClass(/pn-review/)
+    await expect(page.locator('.pn-corr')).not.toHaveCount(0)
     await settled(page)
     // Two bars at 2.2 are wider than this stage: the review zoomed out.
     expect(await stripScale(page)).toBeLessThan(before)
-    await page.getByTestId('attempt-result').getByRole('button', { name: 'Hide result' }).click()
+    const swipe = async (dy: number) => {
+      const box = (await card.getByTestId('result-details-toggle').boundingBox())!
+      const x = box.x + box.width / 3
+      const y = box.y + box.height / 2
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      await page.mouse.move(x, y + dy, { steps: 5 })
+      await page.mouse.up()
+    }
+    await swipe(-62)
+    await expect(page.getByTestId('result-details')).toBeVisible()
+    await expect(page.locator('.pn-strip')).toHaveClass(/pn-review/)
+    await swipe(62)
+    await expect(card).toHaveCount(0)
+    await expect(page.locator('.pn-corr')).toHaveCount(0)
     await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-review/)
     await settled(page)
     expect(await stripScale(page)).toBeCloseTo(before, 4)

@@ -107,7 +107,7 @@ const PANEL_MARGIN = 16
 const PANEL_MAX_HEIGHT = 880
 
 test.describe('the result details open in place (U99)', () => {
-  test('Details expands the pill over the score, the URL and the review stay, the chevron folds it', async ({
+  test('tapping the pill opens and folds its details without moving the score or changing the URL', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1194, height: 834 })
@@ -115,18 +115,56 @@ test.describe('the result details open in place (U99)', () => {
     await pass(page)
     const card = page.getByTestId('attempt-result')
     await expect(card).toContainText('Clean pass')
+    const preview = card.getByTestId('result-details-preview')
+    await expect(card).toHaveAttribute('data-intro', 'true')
+    const intro = (await card.boundingBox())!
+    await expect(card).not.toHaveAttribute('data-intro', 'true')
     await settled(page)
     const url = page.url()
     const before = await stripTransform(page)
     const dock = (await page.getByTestId('result-dock').boundingBox())!
 
+    const peek = await preview.evaluate((el) => ({
+      height: el.clientHeight,
+      contentHeight: el.scrollHeight,
+      mask: getComputedStyle(el).maskImage,
+    }))
+    expect(peek.contentHeight).toBeGreaterThan(peek.height)
+    expect(peek.mask).toContain('linear-gradient')
+    await expect(card.getByText('More below')).toHaveCount(0)
+    const previewLines = await preview.locator('li').allTextContents()
+    const collapsed = (await card.boundingBox())!
+    expect(intro.width).toBeCloseTo(collapsed.width, 0)
+    expect(intro.height - collapsed.height).toBeGreaterThan(30)
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
     await expect(toggle(page)).toHaveAccessibleName('Show details of this pass')
+    // Sample the actual growing boxes before waiting for the lazy details.
+    const motion = card.evaluate(
+      (el) =>
+        new Promise<{ width: number; height: number }[]>((resolve) => {
+          const trail: { width: number; height: number }[] = []
+          const sample = () => {
+            const panel = el.querySelector('[data-testid="result-details"]')
+            if (panel) {
+              const box = panel.getBoundingClientRect()
+              const bottom = el.getBoundingClientRect().bottom
+              trail.push({ width: box.width, height: bottom - box.top })
+            }
+            if (trail.length < 20) requestAnimationFrame(sample)
+            else resolve(trail)
+          }
+          requestAnimationFrame(sample)
+        }),
+    )
     await toggle(page).click()
     await expect(details(page)).toBeVisible()
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true')
-    await expect(details(page).getByTestId('result-clean')).toHaveText('No mistakes in this pass.')
-    await expect(details(page).getByTestId('result-facts')).toContainText('No help used')
+    await expect(toggle(page)).toHaveText('Details')
+    await expect(preview).toHaveCount(0)
+    await expect(details(page).getByTestId('result-verdict')).toHaveText('Clean pass: no wrong notes and no help.')
+    const expandedFacts = details(page).getByTestId('result-facts')
+    await expect(expandedFacts).toBeInViewport({ ratio: 0.9 })
+    expect((await expandedFacts.locator('li').allTextContents()).slice(0, previewLines.length)).toEqual(previewLines)
     // Still Practice, same URL, same review frame; the dock (and so the review inset) did not grow.
     expect(page.url()).toBe(url)
     await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
@@ -136,11 +174,19 @@ test.describe('the result details open in place (U99)', () => {
     expect((await page.getByTestId('result-dock').boundingBox())!.height).toBeCloseTo(dock.height, 0)
     // The details sit above the pill, over the stage.
     const panel = (await details(page).boundingBox())!
-    expect(panel.y + panel.height).toBeLessThanOrEqual(dock.y + 2)
+    const pill = (await card.locator('[data-expandable]').boundingBox())!
+    expect(panel.width).toBe(900)
+    expect(panel.y + panel.height).toBeCloseTo(pill.y + 1, 0)
+    const expandedHeight = pill.y + pill.height - panel.y
+    const frames = await motion
+    expect(frames.some(({ width }) => width > collapsed.width + 10 && width < panel.width - 10)).toBe(true)
+    expect(frames.some(({ height }) => height > collapsed.height + 5 && height < expandedHeight - 5)).toBe(true)
 
     await toggle(page).click()
     await expect(details(page)).toHaveCount(0)
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
+    await expect(preview).toBeVisible()
+    await expect(card).not.toHaveAttribute('data-intro', 'true')
     expect(await stripTransform(page)).toBe(before)
 
     // Escape folds it too; nothing navigates.
@@ -220,9 +266,13 @@ test.describe('the result details open in place (U99)', () => {
     await settled(page)
     const url = page.url()
     const before = await stripTransform(page)
+    const previewLines = await page.getByTestId('result-details-preview').locator('li').allTextContents()
     await toggle(page).click()
     const excerpts = details(page).getByTestId('result-excerpt')
     await expect(excerpts).toHaveCount(2)
+    const expandedFacts = details(page).getByTestId('result-facts')
+    await expect(expandedFacts).toBeInViewport({ ratio: 0.9 })
+    expect((await expandedFacts.locator('li').allTextContents()).slice(0, previewLines.length)).toEqual(previewLines)
     // Bar 1 leads under "Keeps happening": D♭ for D three passes running, E♭ for E twice now.
     const keeps = details(page).locator('[data-group="keeps"]')
     await expect(keeps.getByRole('heading', { name: 'Keeps happening' })).toBeVisible()
@@ -434,13 +484,11 @@ test.describe('the expanded result by screen size (U99, 17 November 2026)', () =
     await page.setViewportSize({ width: 390, height: 844 })
     await page.waitForTimeout(2500)
     await toggle(page).click()
-    await expect(details(page).getByTestId('result-clean')).toHaveText('No mistakes in this pass.')
+    await expect(details(page).getByTestId('result-verdict')).toHaveText('Clean pass: no wrong notes and no help.')
     await expect(page.getByTestId('result-screen-header')).toContainText('Clean pass')
     // Rotated: still open, laid out again for the short screen.
     await page.setViewportSize({ width: 852, height: 360 })
-    await page.waitForTimeout(800)
-    await expect(details(page)).toBeVisible()
-    expect(await details(page).boundingBox()).toMatchObject({ x: 0, y: 0, width: 852, height: 360 })
+    await expect.poll(() => details(page).boundingBox()).toMatchObject({ x: 0, y: 0, width: 852, height: 360 })
     const head = (await page.getByTestId('result-screen-header').boundingBox())!
     expect(head.height).toBeLessThanOrEqual(52)
     await expect(details(page).getByTestId('result-facts')).toBeAttached()

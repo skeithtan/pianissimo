@@ -181,6 +181,8 @@ export function ScoreOverview({
   const lastExtent = useRef(extent)
   if (extent) lastExtent.current = extent
   const shownExtent = extent ?? lastExtent.current
+  const atStart = shownExtent?.left === 0
+  const atEnd = shownExtent !== null && shownExtent.width === 1 - shownExtent.left
   const showHandles =
     onLoopChange !== undefined && !inactive && (loopPresence.phase === 'visible' || loopPresence.phase === 'entering')
 
@@ -312,6 +314,8 @@ export function ScoreOverview({
           class={styles.loop}
           data-testid="overview-loop"
           data-phase={loopPresence.phase}
+          data-at-start={atStart || undefined}
+          data-at-end={atEnd || undefined}
           style={{ left: `${shownExtent.left * 100}%`, width: `${shownExtent.width * 100}%` }}
         />
       ) : null}
@@ -325,6 +329,7 @@ export function ScoreOverview({
                 key={edge}
                 class={styles.handle}
                 data-edge={edge}
+                data-at-piece-edge={(edge === 'start' ? atStart : atEnd) || undefined}
                 data-testid={`overview-loop-${edge}`}
                 data-phase={loopPresence.phase}
                 role="slider"

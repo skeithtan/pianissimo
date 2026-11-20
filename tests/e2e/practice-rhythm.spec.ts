@@ -57,6 +57,85 @@ test.describe('Keep time', () => {
     await expect(page.getByTestId('attempt-result')).toHaveCount(0)
   })
 
+  for (const example of [
+    { direction: 'rushing', label: 'Rushing', mode: 'strip', width: 1180, height: 820, sign: -1 },
+    { direction: 'dragging', label: 'Dragging', mode: 'page', width: 820, height: 1180, sign: 1 },
+    { direction: 'steady', label: 'On the beat', mode: 'strip', width: 1180, height: 820, sign: 0 },
+  ]) {
+    const title = example.sign
+      ? `shows and clears ${example.direction} above the moving score in ${example.mode} mode`
+      : 'a steady pass starts with the timing strip folded and can be expanded'
+    test(title, async ({ page }) => {
+      await page.setViewportSize({ width: example.width, height: example.height })
+      const host = page.getByTestId('strip-host')
+      await expect(host).toHaveAttribute('data-mode', example.mode)
+      const menu = await openFooterMenu(page)
+      await menu.getByRole('switch', { name: 'Keep time' }).click()
+      await page.keyboard.press('Escape')
+      // Advance the browser clock between presses so timer jitter cannot change a timing sample.
+      await page.clock.install()
+      await page.getByRole('button', { name: 'Start', exact: true }).click()
+      const cue = page.getByTestId('timing-cue')
+      await expect(page.getByTestId('count-in')).toBeVisible()
+      await expect(cue).toBeHidden()
+      await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 150)))
+
+      const pass = playAfterCountIn(page, [
+        { notes: [60, 48], atMs: 0 },
+        { notes: [62], atMs: BEAT_MS + example.sign * 67 },
+        { notes: [64], atMs: 2 * BEAT_MS + example.sign * 119 },
+        { notes: [65], atMs: 3 * BEAT_MS },
+        { notes: [67, 71, 74, 43], atMs: 4 * BEAT_MS },
+        { notes: [48], atMs: 6 * BEAT_MS },
+      ])
+      await page.clock.runFor(6100)
+      if (example.sign) {
+        await expect(cue).toHaveAttribute('data-direction', example.direction)
+        await expect(cue).toContainText(example.label)
+        // Chromium can round a fully visible cue's intersection ratio just below 1.
+        await expect(cue).toBeInViewport({ ratio: 0.999 })
+      } else {
+        await expect(cue).toBeHidden()
+      }
+      await expect(page.getByTestId('attempt-result')).toHaveCount(0)
+      await page.clock.runFor(2000)
+      await expect(cue).toBeHidden()
+      await expect(page.getByTestId('attempt-result')).toHaveCount(0)
+      await page.clock.runFor(2400)
+      await pass
+      await page.clock.resume()
+      const card = page.getByTestId('attempt-result')
+      await expect(card).toContainText('On time 6 of 6')
+      await card.getByRole('button', { name: 'Show details of this pass' }).click({ position: { x: 28, y: 37 } })
+      const strip = page.getByTestId('timing-review')
+      const disclosure = strip.locator('summary')
+      const summary = strip.getByTestId('timing-review-summary')
+      if (example.sign) {
+        await expect(strip.getByRole('heading', { name: 'Timing strip' })).toBeVisible()
+        await expect(disclosure).toHaveCount(0)
+        await expect(summary).toContainText(`${example.label} in bar 1`)
+      } else {
+        await expect(strip).toHaveJSProperty('open', false)
+        await expect(disclosure).toHaveText('Timing strip')
+        await expect(strip.getByTestId('timing-review-score')).toHaveCount(0)
+        await disclosure.click()
+        await expect(strip).toHaveJSProperty('open', true)
+      }
+      await expect(strip.getByTestId('timing-review-score')).toBeVisible()
+      await expect(strip.locator('span[data-offset-ms]')).toHaveCount(6)
+      await strip.getByRole('button', { name: 'Bar 2', exact: true }).click()
+      await expect(strip.getByRole('button', { name: 'Bar 2', exact: true })).toHaveAttribute('aria-pressed', 'true')
+      await expect(summary).toContainText('Timing in bar 2')
+      if (!example.sign) {
+        await disclosure.click()
+        await expect(strip).toHaveJSProperty('open', false)
+        await expect(strip.getByTestId('timing-review-score')).toHaveCount(0)
+        await disclosure.click()
+        await expect(summary).toContainText('Timing in bar 2')
+      }
+    })
+  }
+
   test('a count-in, then on-time and a late group are reported on the card and in Results', async ({ page }) => {
     await page.getByRole('button', { name: 'Repeat from here' }).click()
     const panel = page.getByTestId('repeat-controls')
@@ -94,6 +173,13 @@ test.describe('Keep time', () => {
     // The details open in place over Practice (U99), never another screen.
     const details = page.getByTestId('result-details')
     await expect(details).toBeVisible()
+    const strip = details.getByTestId('timing-review')
+    await expect(strip.getByRole('heading', { name: 'Timing strip' })).toBeVisible()
+    await expect(strip.locator('summary')).toHaveCount(0)
+    await expect(strip.getByTestId('timing-review-summary')).toContainText('1 missed')
+    await expect(strip.getByText('×', { exact: true })).toBeVisible()
+    await expect(strip.locator('line[data-offset]')).toHaveCount(1)
+    expect((await strip.getByTestId('timing-review-score').boundingBox())!.height).toBeLessThanOrEqual(191)
     await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
     await expect(details.getByTestId('result-facts')).toContainText('On time 3 of 4')
     await details.getByText('All the numbers for this pass').click()

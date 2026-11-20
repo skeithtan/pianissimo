@@ -18,6 +18,7 @@
  * - A new engraving of the same score with other spacing (Labels Off ↔ on) glides in from the
  *   previous view's columns, the cursor note staying under the fixed line (`respaceFrom`).
  */
+import type { TimingDirection } from '../../core/model/practice'
 import type { Hand } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import { canvasMeasurer, estimateMeasurer, loadLabelFont, type TextMeasurer } from '../labels/metrics'
@@ -30,6 +31,7 @@ import {
   type CorrectionMark,
 } from '../shared/corrections'
 import { ACTION_RADIUS, staffGap } from '../shared/cursorAction'
+import { TimingCue } from '../shared/timingCue'
 import {
   collectPieces,
   standardEasing,
@@ -218,6 +220,7 @@ export class StripView {
   private readonly content: HTMLDivElement
   private readonly segLayer: HTMLDivElement
   private readonly cursorEl: HTMLDivElement
+  private readonly timingCue = new TimingCue()
   private readonly cursorBar: HTMLDivElement
   private readonly cursorBtn: HTMLButtonElement
   private readonly cursorGrip: HTMLDivElement
@@ -434,6 +437,7 @@ export class StripView {
     // Without a handler (Study mode, U72) the button is never shown, so it is not in the DOM.
     this.cursorEl.append(bar, grip, this.readoutEl)
     if (opts.onCursorAction) this.cursorEl.append(this.cursorBtn)
+    this.cursorEl.append(this.timingCue.element)
 
     this.startHandle = this.button(
       'pn-loop-ctl pn-handle pn-handle-start',
@@ -612,6 +616,10 @@ export class StripView {
     if (on === this.earlyOn) return
     this.earlyOn = on
     this.schedule()
+  }
+
+  setTimingCue(direction: TimingDirection | null): void {
+    if (this.timingCue.set(direction)) this.schedule()
   }
 
   /**
@@ -1295,7 +1303,7 @@ export class StripView {
       this.cursorEl.style.transform = `translate3d(${sx}px, 0, 0)`
       this.applied.cursorSx = sx
     }
-    this.applyCursorBar()
+    this.applyCursorBar(sx)
     this.placeActionButton()
     this.applyWrong()
     this.applyLoop()
@@ -1332,13 +1340,14 @@ export class StripView {
     this.applied.actionTop = top
   }
 
-  private applyCursorBar(): void {
+  private applyCursorBar(cursorX: number): void {
     const L = this.layout
     const first = L.staves[0]
     const last = L.staves[L.staves.length - 1]
     if (!first || !last) return
     const top = r2(this.ty + (first.top - L.top) * this.shown - CURSOR_MARGIN)
     const h = r2((last.bottom - first.top) * this.shown + 2 * CURSOR_MARGIN)
+    this.timingCue.place(cursorX, 0, top + CURSOR_MARGIN, this.hostW)
     if (top === this.applied.barTop && h === this.applied.barH) return
     this.cursorBar.style.top = `${top}px`
     this.cursorBar.style.height = `${h}px`

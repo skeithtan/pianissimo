@@ -177,6 +177,10 @@ engine's final-chord hold; the test harness passes 0 so scenario tests see the r
 final key. Tests: `mistakes.test.ts`, `PracticeSession.mistakes.test.ts`;
 `PracticeSession.required.test.ts` sweeps one-hand presses through the session (P23).
 
+The next automatic waiting-practice Repeat pass calls `engine.restart(now, { continueRepeat: true })`
+(P26). A recurring extra key keeps the transport at that onset and clears accepted notes there.
+The feedback store shows "Try again" until the player replays the written pitches.
+
 Stores (subscribe from the view):
 
 | Store | Changes | Consumers |
@@ -334,10 +338,13 @@ both hands, the other hand automatic with one; its click per `metronome.keepTime
   `transportArrived(i, now)` and calls `releaseGate(i)` again, a harmless no-op. `input-complete`
   never releases a gate in strict mode (it would move the music ahead).
 - **Feedback.** `missed` → the soft wash (`flash.hit(now, now + DEFAULT_WRONG_FEEDBACK_MS,
-  { soft: true })`, with the damage-flash setting), no pulse, marker or cue. `wrong` with reason
+  { soft: true })`, with the damage-flash setting). `wrong` with reason
   `'late'` → the amber marker (`setEarlyMarker`) for `DEFAULT_WRONG_FEEDBACK_MS` (the engine records
-  nothing for it, so the session times it; a tick clears it). Nothing else new while playing; after
-  the attempt the corrections (missed / late marks) and the result card show what happened.
+  nothing for it, so the session times it; a tick clears it). `TimingDrift` takes the first matched
+  attack offset from each strict `input-complete` event (U107). It updates the cue above the
+  playhead after three consecutive drifting groups and clears it after two close to the beat,
+  a miss, or a phase change. The frame calls `setTimingCue` on the current renderer.
+  After the attempt the corrections (missed / late marks) and the result card show what happened.
   `lastResult.timing` = `{ groups, onTime, early, late, missed }` from `timingAccuracy(record)`.
 - **Lifecycle.** Pause interrupts (scored); Start afterwards is a fresh attempt from the passage
   start with a count-in. Seeks interrupt, also during the count-in. Speed, hands and range changes

@@ -60,6 +60,9 @@ link/editing menus are unchanged.
 The Practice view decides what a change means during a scored attempt (interrupt) for tempo,
 loop and hand changes: these controls only report them.
 
+When the Repeat outline reaches an end of the `ScoreOverview` track, that edge uses the
+track's radius. Its grip sits inside the curve, with the outline marking the boundary (U109).
+
 ## Tests
 
 `*.test.ts(x)` beside each module (happy-dom for components; `views/shared/testing.ts` has the
