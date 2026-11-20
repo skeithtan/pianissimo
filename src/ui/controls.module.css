@@ -194,7 +194,8 @@
   color: var(--fg);
   /* No large blurred shadow (U12, A11): the backdrop gives focus, a hairline gives the edge. */
   border: 1px solid var(--border);
-  width: min(var(--sheet-width, 640px), calc(100vw - 24px));
+  /* Size against the same available space that centers the dialog. */
+  width: min(var(--sheet-width, 640px), calc(100% - 24px));
   max-height: calc(100dvh - 32px);
   overflow: hidden;
   opacity: 1;

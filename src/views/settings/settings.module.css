@@ -4,7 +4,7 @@
 }
 @media (orientation: landscape) {
   .dialog {
-    --sheet-width: min(70vw, 1100px);
+    --sheet-width: min(70%, 1100px);
     /* Let the width rule set the gutter instead of the browser's dialog cap. */
     max-width: none;
   }
