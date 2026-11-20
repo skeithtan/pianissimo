@@ -100,7 +100,7 @@ import { REPEATED_MISTAKE_HISTORY, repeatedMistakes } from './mistakes'
 import { PassCapture, SNIPPET_PEDALS, SnippetPlayer, playedSnippet, writtenSnippet, type SnippetKind } from './snippets'
 import { countInPlan } from './countIn'
 import { metronomeOn, metronomeScope, type MetronomeScope } from './metronome'
-import { TimingDrift } from './timingDrift'
+import { PerformanceTiming, TimingDrift } from './timingDrift'
 import {
   fullSpeedLadderStart,
   LADDER_DEFAULT_TARGET,
@@ -218,6 +218,7 @@ interface LeadIn {
 interface PlayThrough {
   readonly transport: Transport
   readonly follower: PlayFollower
+  readonly timing: PerformanceTiming | null
   playing: boolean
   readonly outputKey: string
   /** Built to follow the microphone (DECISIONS P22): silent, and the piano's keys do not move it. */
@@ -334,9 +335,6 @@ export class PracticeSession {
   #rhythm: boolean
   /** The Keep time count-in in progress, else null. */
   #countIn: CountIn | null = null
-  /** The amber marker for a late slip (a pitch of a group just missed) shows until this time. */
-  #lateUntil = -Infinity
-  #lateShown = false
   /** Groups the music passed (Keep time) since the last frame: the soft wash. */
   #missedPending = 0
   /** The text of an interruption the session caused (the Keep time tolerance changed). */
@@ -458,9 +456,8 @@ export class PracticeSession {
   /** Snap onsets of the current hands for the strip (U19), rebuilt when the hands change. */
   #snaps: { hands: HandSelection; onsets: readonly Rational[] } | null = null
   /**
-   * Key feedback while nothing plays (DECISIONS U31): held keys judged against the current group
-   * by the session alone (the engine ignores presses outside running phases). Required pitches
-   * show as accepted, others as the red cursor tint; nothing is recorded, counted or advanced.
+   * Key feedback while nothing plays (DECISIONS U37): the session checks held keys against the
+   * current group. The score marks accepted notes, and the guide also marks wrong keys.
    */
   readonly #previewAccepted = new Set<number>()
   readonly #previewWrong = new Set<number>()
@@ -1472,7 +1469,14 @@ export class PracticeSession {
     })
     const g = timeline.groups[startGroup]
     if (g) transport.seek(g.position)
-    this.#play = { transport, follower, playing: false, outputKey: silent ? '' : this.#outputKey, mic }
+    this.#play = {
+      transport,
+      follower,
+      timing: mic ? null : new PerformanceTiming(),
+      playing: false,
+      outputKey: silent ? '' : this.#outputKey,
+      mic,
+    }
     this.#playResumable = false
     this.#playVersion = -1
   }
@@ -1481,6 +1485,7 @@ export class PracticeSession {
   #playFrom(now: number): void {
     const p = this.#play
     if (!p) return
+    p.timing?.reset()
     if (p.follower.state.finished) {
       p.follower.seek(0, now)
       p.transport.stop()
@@ -1515,6 +1520,7 @@ export class PracticeSession {
     const group = groupAtOrAfter(timeline, position)
     const g = timeline.groups[group]
     if (!g) return false
+    p.timing?.reset()
     // The follower first: a playing transport reports the gate at the new position at once.
     p.follower.seek(group, now)
     p.transport.seek(g.position)
@@ -1542,6 +1548,7 @@ export class PracticeSession {
       this.#engine.reconfigure({ reason, timeline: this.#timeline, transport: 'accompaniment' }, now)
       p.transport.setMultiplier(next.multiplier)
       p.follower.reconfigure(this.#timeline, now)
+      p.timing?.reset()
       // The microphone follower knows no speed: it follows the order of the notes (P16).
       this.#processPlay()
       this.#process(now)
@@ -1585,6 +1592,8 @@ export class PracticeSession {
         const events = p.follower.drainEvents()
         for (const ev of events) {
           if (ev.type === 'release') p.transport.releaseGate(ev.group)
+          else if (ev.type === 'accepted' && p.playing)
+            p.timing?.observe(p.follower.timeline.groups[ev.group]!, ev.time)
           else if (ev.type === 'wrong') {
             this.#wrongPending++
             this.#wrongReason = 'early'
@@ -1827,7 +1836,6 @@ export class PracticeSession {
     this.#lastResult = null
     this.#clearCorrections()
     this.#cue = null
-    this.#lateUntil = -Infinity
     this.#flash?.clear()
     if (persist) this.#deps.piece.save({ rhythm: on }, true)
     this.#lockState = ''
@@ -1855,6 +1863,7 @@ export class PracticeSession {
   #beginCountIn(now: number): void {
     this.#cancelCountIn(now)
     if (!this.#accomp || !hasTempo(this.#tempo)) return
+    this.#timingDrift.prepare(this.#engine.timeline.groups)
     const start = passageRange(this.#model, this.#sel.range).start
     const plan = countInPlan(this.#model, this.#tempo, start, this.#sel.multiplier)
     for (let k = 0; k < plan.beats; k++) this.#metronomeSink.click(now + k * plan.beatMs, k === 0)
@@ -2813,6 +2822,12 @@ export class PracticeSession {
     // Judged before the input: a press never changes the group or phase while nothing plays.
     const group = this.#previewGroupNow()
     this.#captureKey(ev)
+    if (this.#engine.transport === 'strict' && ev.kind === 'noteon' && ev.velocity > 0) {
+      const { phase, clockStartedAt } = this.#engine.state
+      if (phase === 'running' && clockStartedAt !== null) {
+        this.#timingDrift.attack(ev.note, ev.time, clockStartedAt, this.#toleranceMs(this.#settings))
+      }
+    }
     this.#engine.input(ev)
     if (group !== null) this.#previewInput(ev, group)
     else this.#clearPreview()
@@ -3078,24 +3093,17 @@ export class PracticeSession {
         } else if (ev.onsetOffsetMs !== undefined) {
           this.#timingDrift.observe(ev.onsetOffsetMs, this.#toleranceMs(this.#settings))
         } else {
-          this.#timingDrift.reset()
+          this.#timingDrift.miss()
         }
         break
       case 'missed':
-        // Silence ends the timing pattern. The missed group still gets its usual soft wash.
+        // A miss ends the scored trend and still gets its usual soft wash.
         this.#missedPending++
         this.#cue = null
-        this.#timingDrift.reset()
+        this.#timingDrift.miss()
         break
       case 'wrong':
-        // A re-attacked tie end is a gentle nudge: the amber marker only (`#frame`), no pulse,
-        // flash or cue. Widened: an engine without the reason never sends it.
-        if ((ev.reason as string) === 'tie-end') break
-        if ((ev.reason as string) === 'late') {
-          // A late slip (Keep time): the amber marker for a moment, nothing else (`#frame`).
-          this.#lateUntil = Math.max(now, this.#deps.clock()) + DEFAULT_WRONG_FEEDBACK_MS
-          break
-        }
+        if (ev.reason === 'tie-end' || ev.reason === 'late') break
         this.#wrongPending++
         this.#wrongReason = ev.reason === 'early' ? 'early' : 'wrong'
         // A chord slip (P24) belongs to the group just completed: no cue toward the current one.
@@ -3752,26 +3760,16 @@ export class PracticeSession {
     const versionChanged = s.version !== this.#lastVersion || force
     // Listen mode (both hands off, U9) shows no targets, even before Play.
     const quiet = this.#listen !== null || this.#sel.hands === 'none'
+    const timingEnabled = !quiet && this.#engine.transport === 'strict' && ACTIVE.includes(s.phase)
     strip?.setTimingCue?.(
-      !quiet && s.phase === 'running' && this.#engine.transport === 'strict' ? this.#timingDrift.direction : null,
+      timingEnabled && s.phase === 'running' ? this.#timingDrift.directionAt(now) : null,
+      timingEnabled,
     )
-    // A late slip (Keep time) tints the cursor amber for a moment; the engine records nothing.
-    const late = now < this.#lateUntil
-    const lateChanged = late !== this.#lateShown
-    this.#lateShown = late
-    if (versionChanged || previewChanged || lateChanged) {
+    if (versionChanged || previewChanged) {
       this.#lastVersion = s.version
       if (strip) {
         strip.setTargets(quiet ? [] : s.targetNotes)
         strip.setAccepted(quiet ? [] : this.#acceptedNotes(s))
-        // A right pitch too early, or a re-attacked tie end, tints the cursor amber instead of red
-        // (P3 revised). Widened: an engine without the 'tie-end' reason never reports it.
-        const reason = s.lastWrongReason as string | null
-        const soft = reason === 'early' || reason === 'tie-end'
-        // A previewed wrong key tints the cursor too, without a pulse or a flash (U31).
-        const wrong = (s.groupHasError && !soft) || this.#previewWrong.size > 0
-        strip.setWrongMarker(wrong && !quiet)
-        strip.setEarlyMarker?.(((s.groupHasError && soft) || late) && !quiet)
         strip.setOttavaEmphasis(quiet ? [] : s.ottavaWarning)
         if (!this.#listen && !this.#accomp) strip.setCursor(this.#cursorPosition())
       }
@@ -3779,13 +3777,8 @@ export class PracticeSession {
     if (this.#wrongPending > 0) {
       this.#wrongPending = 0
       this.#pulse++
-      // The red edge flash is optional (S5); the tint, marker and cues above are not.
-      if (this.#wrongReason === 'early') {
-        // Too early is a timing slip, not a wrong key: the soft flash only (P3 revised).
-        if (this.#settings.hints.damageFlash) this.#flash?.hit(now, s.wrongFeedbackUntil, { soft: true })
-      } else {
-        strip?.pulseWrong()
-        if (this.#settings.hints.damageFlash) this.#flash?.hit(now, s.wrongFeedbackUntil)
+      if (this.#settings.hints.damageFlash) {
+        this.#flash?.hit(now, s.wrongFeedbackUntil, this.#wrongReason === 'early' ? { soft: true } : undefined)
       }
     }
     if (this.#missedPending > 0) {
@@ -3793,10 +3786,8 @@ export class PracticeSession {
       // A group the music passed (Keep time): the gentle wash, no pulse, marker or cue.
       if (this.#settings.hints.damageFlash) this.#flash?.hit(now, now + DEFAULT_WRONG_FEEDBACK_MS, { soft: true })
     }
-    // The cue stays until its target is accepted or another wrong attack replaces it. A tie-end
-    // press shows nothing here: the amber marker is its whole feedback.
-    const showing =
-      !quiet && s.phase !== 'interrupted' && s.groupHasError && (s.lastWrongReason as string | null) !== 'tie-end'
+    // The cue stays until its target is accepted or another wrong attack replaces it.
+    const showing = !quiet && s.phase !== 'interrupted' && s.groupHasError && s.lastWrongReason !== 'tie-end'
     this.feedback.set({
       visible: showing,
       reason: s.lastWrongReason === 'early' ? 'early' : 'wrong',
@@ -3889,23 +3880,20 @@ export class PracticeSession {
   }
 
   /**
-   * The play-through frame (DECISIONS P12): the follower's group as targets and accepted marks,
-   * the gentle amber tint for a wrong press (never the red marker, a pulse or a cue), the
-   * transport position as the cursor, the guide with the follower's keys, the resume position.
+   * The play-through frame (DECISIONS P12): the follower's targets, accepted marks and keys,
+   * the timing cue, the cursor at the transport position, and the resume position.
    */
   #framePlay(now: number, force: boolean, p: PlayThrough): void {
     const strip = this.#strip
     const s = this.#engine.state
     const f = p.follower.state
     const changed = force || f.version !== this.#playVersion
+    strip?.setTimingCue?.(p.playing && p.timing ? p.timing.directionAt(now) : null, p.playing && p.timing !== null)
     if (changed) {
       this.#playVersion = f.version
       if (strip) {
-        strip.setTimingCue?.(null)
         strip.setTargets(f.targetNotes)
         strip.setAccepted(f.acceptedNotes)
-        strip.setWrongMarker(false)
-        strip.setEarlyMarker?.(f.groupHasError)
         strip.setOttavaEmphasis([])
       }
     }
@@ -3941,6 +3929,8 @@ export class PracticeSession {
     if (activity) at = Math.min(at, activity.bars[activity.bar]?.end ?? Infinity, activity.opening?.end ?? Infinity)
     const patience = this.#play?.follower.nextDeadline() ?? null
     if (patience !== null) at = Math.min(at, patience)
+    const playCueUntil = this.#play?.timing?.cueUntil
+    if (this.#play?.playing && playCueUntil !== undefined && playCueUntil > now) at = Math.min(at, playCueUntil)
     const hint = this.#engine.state.hint
     if (hint?.expiresAt != null) {
       const fadeStart = hint.expiresAt - this.#settings.hints.fadeMs
@@ -3954,8 +3944,6 @@ export class PracticeSession {
       const fadeStart = this.#reveal.until - this.#settings.hints.fadeMs
       if (fadeStart > now) at = Math.min(at, fadeStart)
     }
-    // The late-slip marker goes when its moment is over.
-    if (this.#lateUntil > now) at = Math.min(at, this.#lateUntil)
     if (at === this.#tickAt && this.#tickHandle !== null) return
     if (this.#tickHandle !== null) this.#deps.timers.clearTimeout(this.#tickHandle)
     this.#tickHandle = null

@@ -157,7 +157,7 @@ export class PageView {
   private readonly corrLayer: HTMLDivElement
   private readonly overlay: HTMLDivElement
   private readonly cursorEl: HTMLDivElement
-  private readonly timingCue = new TimingCue()
+  private readonly timingCue: TimingCue
   private readonly cursorBtn: HTMLButtonElement
   private readonly cursorGrip: HTMLDivElement
   private readonly readoutEl: HTMLDivElement
@@ -222,8 +222,6 @@ export class PageView {
   private browsing = false
   private browseEnabled = false
   private subdued: Hand | null = null
-  private wrongOn = false
-  private earlyOn = false
   private ottavaSpans: number[] = []
   private readonly ottavaBoxes = new Map<number, HTMLDivElement>()
   private readonly reminders = new Map<number, HTMLDivElement>()
@@ -366,7 +364,6 @@ export class PageView {
     // Without a handler (Study mode, U72) the button is never shown, so it is not in the DOM.
     this.cursorEl.append(bar, grip, this.readoutEl)
     if (opts.onCursorAction) this.cursorEl.append(this.cursorBtn)
-    this.cursorEl.append(this.timingCue.element)
     this.startHandle = this.button(
       'pn-loop-ctl pn-handle pn-handle-start',
       icon.left,
@@ -393,7 +390,7 @@ export class PageView {
       ret.addEventListener('click', () => this.returnToCurrent())
       this.root.append(ret)
     }
-    host.append(this.root)
+    this.timingCue = new TimingCue(host, this.root, layout)
 
     this.store = new PageSegmentStore(
       layout,
@@ -506,20 +503,8 @@ export class PageView {
     this.root.classList.toggle('pn-sub-R', hand === 'R')
   }
 
-  setWrongMarker(on: boolean): void {
-    if (on === this.wrongOn) return
-    this.wrongOn = on
-    this.schedule()
-  }
-
-  setEarlyMarker(on: boolean): void {
-    if (on === this.earlyOn) return
-    this.earlyOn = on
-    this.schedule()
-  }
-
-  setTimingCue(direction: TimingDirection | null): void {
-    if (this.timingCue.set(direction)) this.schedule()
+  setTimingCue(direction: TimingDirection | null, enabled = direction !== null): void {
+    if (this.timingCue.set(direction, enabled)) this.schedule()
   }
 
   /**
@@ -536,11 +521,6 @@ export class PageView {
     if (key === this.corrKey) return
     this.corrKey = key
     this.pendingCorrections = marks
-    this.schedule()
-  }
-
-  pulseWrong(): void {
-    this.wrongOn = true
     this.schedule()
   }
 
@@ -832,7 +812,7 @@ export class PageView {
     const s = this.scale
     // A follow scroll sets scrollY to its destination immediately, then the sheet's compositor
     // animation carries the visible music there. Keep respacing on that visible frame too.
-    const progress = this.glideAnim?.effect?.getComputedTiming().progress
+    const progress = this.glide ? this.glideAnim?.effect?.getComputedTiming().progress : null
     const remaining = progress == null ? 0 : 1 - progress
     const offset = this.glide ? (this.glide.to - this.glide.from) * remaining : 0
     const offsetX = this.glide ? (this.glide.toX - this.glide.fromX) * remaining : 0
@@ -855,7 +835,7 @@ export class PageView {
     this.resize?.disconnect()
     for (const off of this.cleanup) off()
     this.store.destroy()
-    this.root.remove()
+    this.timingCue.destroy()
   }
 
   // ---------------------------------------------------------------- state helpers
@@ -1098,8 +1078,6 @@ export class PageView {
     this.applyNotes()
     this.applyLabels()
     this.applyCursor(gx)
-    this.cursorEl.classList.toggle('pn-cursor-wrong', this.wrongOn)
-    this.cursorEl.classList.toggle('pn-cursor-early', this.earlyOn)
     this.applyLoop(gx)
     if (this.pendingCorrections) this.applyCorrections()
     const visY0 = toY(this.scrollY)
@@ -1186,8 +1164,10 @@ export class PageView {
       this.cursorEl.style.height = `${h}px`
       this.applied.cursorH = h
     }
-    const viewportY = sy - this.scrollY
-    this.timingCue.place(sx - this.scrollX, viewportY, viewportY + margin.top, this.hostW)
+    if (this.timingCue.visible) {
+      const frame = this.screenFrame()
+      this.timingCue.place(sx - gx + frame.dx, this.hostW, this.hostH, this.respace ? null : frame, this.cursor.system)
+    }
     this.placeActionButton(span.top, h, margin.top)
   }
 

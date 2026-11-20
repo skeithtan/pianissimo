@@ -34,7 +34,6 @@
   --pn-target: var(--color-target, #8b3a8f);
   --pn-target-soft: color-mix(in srgb, var(--pn-target) 20%, transparent);
   --pn-accepted: var(--color-accepted, #1f7a3f);
-  --pn-wrong: var(--danger, #c42b2b);
   --pn-alert: var(--danger, #c42b2b);
   /* The teacher's red pen (setCorrections). */
   --pn-correction: var(--danger, #c42b2b);
@@ -49,11 +48,8 @@
   --pn-handle-bg: var(--bg-elevated, #ffffff);
   --pn-handle-fg: var(--accent, #2c7a43);
   --pn-loop-ctl: var(--color-loop-control, rgb(255 255 255 / 0.92));
-  /* The cursor is an accent tint set per theme by --score-cursor (U85); the wrong and early tints
-     are about as strong, so a state change still reads. */
+  /* The default cursor color follows the score theme (U85). */
   --pn-cursor: var(--score-cursor, color-mix(in srgb, var(--accent, #59643b) 20%, transparent));
-  --pn-cursor-wrong: color-mix(in srgb, var(--pn-wrong) 32%, transparent);
-  --pn-cursor-early: color-mix(in srgb, var(--warning, #9a5b00) 34%, transparent);
   --pn-cursor-w: 24px;
   --pn-action-border: var(--border, color-mix(in srgb, var(--pn-ink) 18%, transparent));
   --pn-fast: var(--motion-fast, 120ms);
@@ -321,9 +317,8 @@
 }
 
 /* Cursor (R13, U85): a plain translucent bar drawn in screen space above the music (its own layer,
-   so it does not move while the score scrolls beneath it). No opaque part, border or shadow; an
-   accent tint, red while the current group has a wrong key, amber after a too-early press. Width
-   follows zoom; StripView sizes it to the staves plus 56 px at each end, which the mask fades out. */
+   so it does not move while the score scrolls beneath it). The tint follows the live timing cue.
+   Width follows zoom; StripView sizes it to the staves plus a faded margin at each end. */
 .pn-cursor {
   position: absolute;
   left: 0;
@@ -339,38 +334,70 @@
   height: 100%;
   left: calc(var(--pn-cursor-w) * var(--pn-zoom) / -2);
   width: calc(var(--pn-cursor-w) * var(--pn-zoom));
-  background: var(--pn-cursor);
+  background: var(--pn-cursor-timing, var(--pn-cursor));
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 96px, #000 calc(100% - 96px), transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 96px, #000 calc(100% - 96px), transparent);
-  transition: background-color var(--pn-medium) linear;
 }
 
-/* Wrong wins over early (same specificity, later rule). */
-.pn-cursor-early .pn-cursor-bar {
-  background: var(--pn-cursor-early);
+/* If there is no clear space next to the playhead, its badge can use the top margin. */
+:root {
+  --pn-timing-lane-height: 40px;
 }
 
-.pn-cursor-wrong .pn-cursor-bar {
-  background: var(--pn-cursor-wrong);
+.pn-score-viewport {
+  display: grid;
+  grid-template-rows: 0 minmax(0, 1fr);
+  height: 100%;
+  background: var(--score-paper, #fbfaf6);
+  isolation: isolate;
 }
 
-/* Fixed-size text belongs to the playhead, independent of the notation zoom. */
+.pn-score-viewport[data-timing-enabled] {
+  grid-template-rows: var(--pn-timing-lane-height) minmax(0, 1fr);
+}
+
+.pn-timing-layer {
+  grid-area: 2 / 1;
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pn-score-viewport > .pn-strip {
+  grid-area: 2 / 1;
+  z-index: 1;
+  background: transparent;
+}
+
+.pn-score-viewport[data-timing-direction='rushing'] {
+  --pn-timing-fill: linear-gradient(90deg, #154383, #2b69b6);
+  --pn-timing-cursor-color: var(--hand-control-left, #2563c9);
+}
+
+.pn-score-viewport[data-timing-direction='dragging'] {
+  --pn-timing-fill: linear-gradient(270deg, #713d04, #985807);
+  --pn-timing-cursor-color: var(--warning, #9a5b00);
+}
+
+.pn-score-viewport[data-timing-direction] {
+  --pn-cursor-timing: color-mix(in srgb, var(--pn-timing-cursor-color) 32%, transparent);
+}
+
 .pn-timing-cue {
+  --pn-timing-chevron-step: 16px;
   position: absolute;
   top: 0;
   left: 0;
   translate: -50% 0;
   box-sizing: border-box;
   display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  height: 32px;
-  border: 1px solid var(--pn-action-border);
+  align-items: stretch;
+  border: 1px solid var(--border, rgb(0 0 0 / 0.18));
   border-radius: 8px;
-  background: color-mix(in srgb, var(--pn-handle-bg) 88%, var(--pn-handle-fg));
-  color: var(--pn-handle-fg);
-  font: 650 var(--text-s, 14px) / 1 var(--font-ui, system-ui);
+  overflow: hidden;
+  background: var(--pn-timing-fill);
+  color: #fff;
+  font: 700 max(15px, var(--text-s, 14px)) / 1 var(--font-ui, system-ui);
   white-space: nowrap;
   pointer-events: none;
 }
@@ -379,13 +406,72 @@
   display: flex;
 }
 
-.pn-timing-cue[data-direction='dragging'] {
-  background: var(--warning-bg);
-  color: var(--warning);
+.pn-timing-label {
+  display: grid;
+  flex: 1;
+  place-items: center;
 }
 
-.pn-timing-cue[data-direction='dragging'] .pn-timing-arrow {
+.pn-timing-signal {
+  --pn-timing-chevron-mask: linear-gradient(to right, transparent, #000 20%, #000 80%, transparent);
+  position: relative;
+  flex: 0 0 calc(3 * var(--pn-timing-chevron-step));
+  overflow: hidden;
+  scale: -1 1;
+  -webkit-mask-image: var(--pn-timing-chevron-mask);
+  mask-image: var(--pn-timing-chevron-mask);
+}
+
+.pn-timing-cue[data-direction='dragging'] .pn-timing-signal {
   order: 1;
+  scale: 1;
+}
+
+/* A shift by one chevron width produces the same pattern at either end of the loop. */
+.pn-timing-chevrons {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: flex;
+  animation: pn-timing-flow 600ms linear infinite;
+}
+
+.pn-timing-chevron {
+  display: grid;
+  flex: none;
+  width: var(--pn-timing-chevron-step);
+  place-items: center;
+}
+
+.pn-timing-chevron::before {
+  content: '';
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border-top: 3px solid currentColor;
+  border-right: 3px solid currentColor;
+  rotate: 45deg;
+}
+
+@keyframes pn-timing-flow {
+  from { translate: calc(-1 * var(--pn-timing-chevron-step)) 0; }
+  to { translate: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pn-timing-signal {
+    --pn-timing-chevron-mask: none;
+  }
+
+  .pn-timing-chevrons {
+    position: static;
+    height: 100%;
+    justify-content: center;
+    animation: none;
+  }
+
+  .pn-timing-chevron:nth-child(n + 3) {
+    display: none;
+  }
 }
 
 /* Optional action on the cursor (StripView.setCursorAction): a flat circle centered on the bar. */
@@ -452,10 +538,6 @@
 
 .pn-cursor-draggable .pn-cursor-grip {
   pointer-events: auto;
-}
-
-.pn-cursor-dragging .pn-cursor-bar {
-  background: color-mix(in srgb, var(--pn-handle-fg) 18%, transparent);
 }
 
 .pn-cursor-dragging .pn-cursor-action {

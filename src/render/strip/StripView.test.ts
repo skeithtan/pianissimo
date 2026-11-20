@@ -338,19 +338,6 @@ describe('StripView overlays', () => {
     expect(host.querySelector('.pn-strip')!.classList.contains('pn-sub-L')).toBe(true)
   })
 
-  it('tints the cursor after a wrong key without adding text over the score', () => {
-    const { v } = view()
-    const cursor = host.querySelector('.pn-cursor')!
-    v.pulseWrong()
-    v.flushNow()
-    expect(cursor.classList.contains('pn-cursor-wrong')).toBe(true)
-    expect(host.querySelector('.pn-wrong')).toBeNull()
-    expect(host.textContent).not.toContain('Wrong key')
-    v.setWrongMarker(false)
-    v.flushNow()
-    expect(cursor.classList.contains('pn-cursor-wrong')).toBe(false)
-  })
-
   it('emphasizes ottava brackets and shows a reminder when the label is offscreen', () => {
     const { v } = view()
     v.setOttavaEmphasis([0])
@@ -814,7 +801,7 @@ describe('StripView continuous motion and cursor action', () => {
   })
 })
 
-describe('StripView cursor bar, early tint and loop wrap', () => {
+describe('StripView cursor bar and loop wrap', () => {
   it('sizes the cursor bar to the staves plus a faded margin, following zoom', () => {
     const { v } = view(40)
     const bar = host.querySelector<HTMLElement>('.pn-cursor-bar')!
@@ -826,21 +813,6 @@ describe('StripView cursor bar, early tint and loop wrap', () => {
     v.flushNow()
     expect(bar.style.top).toBe(`${-15 + (100 - 60) * 1.5 - 96}px`)
     expect(bar.style.height).toBe(`${(240 - 100) * 1.5 + 2 * 96}px`)
-  })
-
-  it('tints the cursor amber for a too-early press, the wrong tint alongside', () => {
-    const { v } = view(40)
-    const cursor = host.querySelector('.pn-cursor')!
-    v.setEarlyMarker(true)
-    v.flushNow()
-    expect(cursor.classList.contains('pn-cursor-early')).toBe(true)
-    v.setWrongMarker(true)
-    v.flushNow()
-    // Both set: the CSS lets the wrong tint win.
-    expect(cursor.classList.contains('pn-cursor-wrong')).toBe(true)
-    v.setEarlyMarker(false)
-    v.flushNow()
-    expect(cursor.classList.contains('pn-cursor-early')).toBe(false)
   })
 
   it('pans back to a near loop start with the quick wrap transition', () => {

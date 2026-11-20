@@ -57,8 +57,8 @@ export interface HintSettings {
   /** Label fade-out duration in ms (proposed 300). */
   readonly fadeMs: number
   /**
-   * The red edge flash on a wrong note (default on, DECISIONS S5). Off keeps every other
-   * cue: the red cursor tint, the wrong-key marker, octave and early cues, and hints.
+   * The red edge flash on a wrong note (default on, DECISIONS S5). Guide markings, cues and
+   * hints are controlled separately.
    */
   readonly damageFlash: boolean
 }

@@ -33,6 +33,8 @@ test.describe('practice', () => {
     await expect(page.getByTestId('ready')).toBeVisible()
     await page.waitForTimeout(400)
     await page.screenshot({ path: join(SHOT_DIR, `${browserName}-ready-light.png`) })
+    const playhead = page.locator('.pn-cursor-bar')
+    const defaultColor = await playhead.evaluate((bar) => getComputedStyle(bar).backgroundColor)
 
     // Wrong keys show the damage wash without text over the notation or any shake.
     await play(page, 70)
@@ -40,11 +42,13 @@ test.describe('practice', () => {
     await expect(page.getByText('Wrong key', { exact: true })).toHaveCount(0)
     const feedback = await page.evaluate(
       () =>
-        new Promise<{ seen: boolean; cursor: number[]; note: number[] }>((resolve) => {
+        new Promise<{ seen: boolean; cursor: number[]; note: number[]; colors: string[] }>((resolve) => {
           const el = document.querySelector<HTMLElement>('[data-testid="wrong-note-flash"]')!
           const cursor = document.querySelector('.pn-cursor')!
+          const bar = cursor.querySelector('.pn-cursor-bar')!
           const note = document.querySelector('.pn-target')!
           const positions = { cursor: [] as number[], note: [] as number[] }
+          const colors = new Set<string>()
           window.__midi.on(71)
           window.__midi.off(71)
           let seen = false
@@ -53,13 +57,15 @@ test.describe('practice', () => {
             if (Number(getComputedStyle(el).opacity) > 0.05) seen = true
             positions.cursor.push(cursor.getBoundingClientRect().x)
             positions.note.push(note.getBoundingClientRect().x)
-            if (performance.now() - t0 > 450) resolve({ seen, ...positions })
+            colors.add(getComputedStyle(bar).backgroundColor)
+            if (performance.now() - t0 > 450) resolve({ seen, ...positions, colors: [...colors] })
             else requestAnimationFrame(check)
           }
           requestAnimationFrame(check)
         }),
     )
     expect(feedback.seen).toBe(true)
+    expect(feedback.colors).toEqual([defaultColor])
     for (const positions of [feedback.cursor, feedback.note]) {
       expect(Math.max(...positions) - Math.min(...positions)).toBeLessThan(0.01)
     }

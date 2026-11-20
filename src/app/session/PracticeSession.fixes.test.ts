@@ -371,14 +371,14 @@ describe('lead-in', () => {
   it('paused key feedback in a lead-in judges the lead-in group', () => {
     const h = harness(melody, { range: loop })
     h.session.seek(0)
+    h.session.setKeyboardVisible(true)
     h.frames.flush()
     h.press(60)
-    expect(h.strip.wrongMarker).toBe(false)
     expect(h.strip.accepted).toEqual([0])
     h.release(60)
     h.press(67)
     expect(h.strip.accepted).toEqual([])
-    expect(h.strip.wrongMarker).toBe(true)
+    expect(h.session.guide.get().keys).toContainEqual(expect.objectContaining({ midi: 67, state: 'wrong' }))
   })
 })
 

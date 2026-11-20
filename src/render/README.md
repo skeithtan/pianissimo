@@ -29,9 +29,9 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   ease-out pan back to the loop start; past 2.5 viewports it lands 1.5 viewports short of the
   target without a transition, then pans the rest), `setTargets(notes)`, `setAccepted(notes)`,
   `setAutomatic(notes)`, `setPlaybackHighlights(notes)`, `setSubduedHand('L'|'R'|null)`,
-  `setWrongMarker(on)`, `pulseWrong()` (cursor tint only), `setEarlyMarker(on)` (amber tint for a
-  too-early press; the wrong tint wins), `setTimingCue('rushing'|'dragging'|null)` (above the
-  playhead in both layouts, independent of the notation scale), `setOttavaEmphasis(spans)`,
+  `setTimingCue('rushing'|'dragging'|null, enabled)`
+  (a gradient badge near the playhead, positioned with the prepared ink bounds, with looping
+  blue left chevrons or amber right chevrons and a matching playhead tint), `setOttavaEmphasis(spans)`,
   `setLabels(Map<note, text>)`, `setLabelOpacity(Map<note, 0..1>)` (every frame OK),
   `setLoop({fromOcc,toOcc,start?,end?}|null)` (a `PassageRange`; exact edges draw a note-level band),
   `setSnapPositions(onsets)` (the hands' exact onsets: loop edges and the dragged playhead snap to
@@ -165,8 +165,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
 - **Theme**: no colors in cached SVG; `--score-paper/--score-ink/--score-ink-muted`, `--danger`,
   `--color-loop`, `--color-target/accepted`, `--accent`, motion tokens with fallbacks; switching
   `data-theme` / `data-score-paper` recolors instantly without re-engraving.
-- **Feedback**: wrong-key state tints the cursor. No wrong-key text or badge is drawn over the
-  score while playing; the app supplies the screen damage indicator. Ottava emphasis stays available.
+- **Feedback**: the cursor is blue with Rushing, amber with Dragging, and uses the theme tint
+  whenever the cue is absent. The app supplies the optional mistake flash. Ottava emphasis stays available.
 - **Teacher corrections** (`setCorrections`): after an attempt, a hand-drawn red ring (`--danger`,
   2.5 px, a single pen stroke slightly more than once around with growing radius, rotated −3°)
   around each mark's noteheads — one ring per staff, union box + 10 px — and one text per mark
@@ -348,8 +348,6 @@ storage-backed `LayoutStore` (WP5) wiring; keyboard guide is WP3.
 - Measure numbers drawn by the app above each bar ("12", "12 (pass 2)"), raised past engraved
   marks where needed (`ADAPTER_VERSION` pn-3 invalidates layouts cached with estimated widths).
 - Unison twins in two voices share one label; microtones map by nearest pitch (relaxed).
-- Wrong-key cursor tint stays until the group completes (`setWrongMarker(false)`);
-  `pulseWrong()` per error, with no overlaid text.
 - Zoom is capped so both staves always fit the strip height.
 - The harness keeps a copy of the score-paper tokens (`tests/harness/theme.css`) until the
   shell's global.css lands; values are identical.

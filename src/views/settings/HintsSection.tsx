@@ -190,7 +190,7 @@ export function HintsSection() {
       <Group>
         <Toggle
           label="Red flash on a wrong note"
-          description="Flash the screen edges red when you play a wrong note. The red cursor tint and hints stay on."
+          description="Flash the screen edges red when you play a wrong note."
           checked={hints.damageFlash}
           onChange={(damageFlash) => updateSettings({ hints: { damageFlash } })}
         />

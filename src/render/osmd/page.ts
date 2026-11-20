@@ -26,6 +26,7 @@ import {
 } from '../labels/metrics'
 import { NUMBER_OFFSET_Y, placeMeasureNumbers } from '../labels/numbers'
 import { layoutKey } from '../cache'
+import { inkBounds } from '../geom'
 import { mapNotes } from '../mapping'
 import { DEFAULT_SEGMENT_WIDTH, partitionPage } from '../partition'
 import {
@@ -311,6 +312,7 @@ export async function preparePage(
         y0: stacked[k]!.y0,
         y1: stacked[k]!.y1,
         staves: shiftStaves(s.staves, stacked[k]!.dy),
+        inkBounds: inkBounds(width, s.staves, [s.obstacles, extras[k]!.slice(1)], stacked[k]!.dy),
       }))
       const pageOccurrencesOut = occurrences.map((o) => shiftOccurrence(o, dyOf(o.occ), systemOf(o.occ)))
       const notes = engravedNotes.map((n) => (n ? shiftNote(n, dyOf(n.occ), systemOf(n.occ)) : null))

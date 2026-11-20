@@ -10,6 +10,7 @@ import {
   loopWholePiece,
   openFooterMenu,
   openSeededPractice,
+  play,
   playAfterCountIn,
   seedPiece,
   type TimedGroup,
@@ -154,6 +155,41 @@ test.describe('Keep time', () => {
     await expect(page.getByTestId('attempt-result')).toHaveCount(0)
     await page.clock.runFor(4500)
     await expect(countIn).toHaveCount(0)
+  })
+
+  test('shows timing feedback for attacks about a second ahead and behind the playhead', async ({ page }) => {
+    const menu = await openFooterMenu(page)
+    await menu.getByRole('switch', { name: 'Keep time' }).click()
+    await page.keyboard.press('Escape')
+    await page.clock.install()
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    await expect(page.getByTestId('count-in')).toBeVisible()
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 150)))
+    const cue = page.getByTestId('timing-cue')
+    const playhead = page.locator('.pn-cursor-bar')
+    const defaultColor = await playhead.evaluate((bar) => getComputedStyle(bar).backgroundColor)
+    const pass = playAfterCountIn(page, [
+      { notes: [60, 48], atMs: 0 },
+      { notes: [62], atMs: 10 },
+      { notes: [64], atMs: 2990 },
+    ])
+    await page.clock.runFor(4200)
+    await expect(cue).toHaveAttribute('data-direction', 'rushing')
+    await expect(cue).toBeVisible()
+    await page.clock.runFor(3000)
+    await pass
+    await expect(cue).toHaveAttribute('data-direction', 'dragging')
+    await expect(cue).toBeVisible()
+    const draggingColor = await playhead.evaluate((bar) => getComputedStyle(bar).backgroundColor)
+    expect(draggingColor).not.toBe(defaultColor)
+    await play(page, 85)
+    await page.clock.runFor(50)
+    await expect(cue).toBeVisible()
+    await expect(playhead).toHaveCSS('background-color', draggingColor)
+    await page.clock.runFor(1200)
+    await expect(cue).toBeHidden()
+    await expect(playhead).toHaveCSS('background-color', defaultColor)
+    await page.clock.resume()
   })
 
   test('a count-in, then on-time and a late group are reported on the card and in Results', async ({ page }) => {

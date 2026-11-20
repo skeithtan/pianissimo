@@ -220,7 +220,7 @@ export class StripView {
   private readonly content: HTMLDivElement
   private readonly segLayer: HTMLDivElement
   private readonly cursorEl: HTMLDivElement
-  private readonly timingCue = new TimingCue()
+  private readonly timingCue: TimingCue
   private readonly cursorBar: HTMLDivElement
   private readonly cursorBtn: HTMLButtonElement
   private readonly cursorGrip: HTMLDivElement
@@ -284,8 +284,6 @@ export class StripView {
   private browseEnabled = false
   private subdued: Hand | null = null
 
-  private wrongOn = false
-  private earlyOn = false
   private ottavaSpans: number[] = []
   private readonly ottavaBoxes = new Map<number, HTMLDivElement>()
   private readonly reminders = new Map<number, HTMLDivElement>()
@@ -437,7 +435,6 @@ export class StripView {
     // Without a handler (Study mode, U72) the button is never shown, so it is not in the DOM.
     this.cursorEl.append(bar, grip, this.readoutEl)
     if (opts.onCursorAction) this.cursorEl.append(this.cursorBtn)
-    this.cursorEl.append(this.timingCue.element)
 
     this.startHandle = this.button(
       'pn-loop-ctl pn-handle pn-handle-start',
@@ -466,7 +463,7 @@ export class StripView {
       ret.addEventListener('click', () => this.returnToCurrent())
       this.root.append(ret)
     }
-    host.append(this.root)
+    this.timingCue = new TimingCue(host, this.root, layout)
 
     this.store = new SegmentStore(
       layout,
@@ -604,22 +601,8 @@ export class StripView {
     this.root.classList.toggle('pn-sub-R', hand === 'R')
   }
 
-  /** Wrong-key cursor tint; stays until the group completes (`false`). */
-  setWrongMarker(on: boolean): void {
-    if (on === this.wrongOn) return
-    this.wrongOn = on
-    this.schedule()
-  }
-
-  /** Too-early press (right pitch, too soon): amber cursor tint; the wrong tint wins over it. */
-  setEarlyMarker(on: boolean): void {
-    if (on === this.earlyOn) return
-    this.earlyOn = on
-    this.schedule()
-  }
-
-  setTimingCue(direction: TimingDirection | null): void {
-    if (this.timingCue.set(direction)) this.schedule()
+  setTimingCue(direction: TimingDirection | null, enabled = direction !== null): void {
+    if (this.timingCue.set(direction, enabled)) this.schedule()
   }
 
   /**
@@ -633,12 +616,6 @@ export class StripView {
     if (key === this.corrKey) return
     this.corrKey = key
     this.pendingCorrections = marks
-    this.schedule()
-  }
-
-  /** One wrong attack: retain the cursor tint; screen-level feedback is owned by the caller. */
-  pulseWrong(): void {
-    this.wrongOn = true
     this.schedule()
   }
 
@@ -983,7 +960,7 @@ export class StripView {
     this.resize?.disconnect()
     for (const off of this.cleanup) off()
     this.store.destroy()
-    this.root.remove()
+    this.timingCue.destroy()
   }
 
   // ---------------------------------------------------------------- state helpers
@@ -1303,9 +1280,10 @@ export class StripView {
       this.cursorEl.style.transform = `translate3d(${sx}px, 0, 0)`
       this.applied.cursorSx = sx
     }
-    this.applyCursorBar(sx)
+    if (this.timingCue.visible)
+      this.timingCue.place(sx, this.hostW, this.hostH, this.respace ? null : this.screenFrame())
+    this.applyCursorBar()
     this.placeActionButton()
-    this.applyWrong()
     this.applyLoop()
     if (this.pendingCorrections) this.applyCorrections()
     const stickyW = this.applySticky(view.x0)
@@ -1340,14 +1318,13 @@ export class StripView {
     this.applied.actionTop = top
   }
 
-  private applyCursorBar(cursorX: number): void {
+  private applyCursorBar(): void {
     const L = this.layout
     const first = L.staves[0]
     const last = L.staves[L.staves.length - 1]
     if (!first || !last) return
     const top = r2(this.ty + (first.top - L.top) * this.shown - CURSOR_MARGIN)
     const h = r2((last.bottom - first.top) * this.shown + 2 * CURSOR_MARGIN)
-    this.timingCue.place(cursorX, 0, top + CURSOR_MARGIN, this.hostW)
     if (top === this.applied.barTop && h === this.applied.barH) return
     this.cursorBar.style.top = `${top}px`
     this.cursorBar.style.height = `${h}px`
@@ -1529,11 +1506,6 @@ export class StripView {
   }
 
   // ---------------------------------------------------------------- overlays
-
-  private applyWrong(): void {
-    this.cursorEl.classList.toggle('pn-cursor-wrong', this.wrongOn)
-    this.cursorEl.classList.toggle('pn-cursor-early', this.earlyOn)
-  }
 
   private applyOttava(x0: number, x1: number): void {
     const L = this.layout

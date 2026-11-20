@@ -215,6 +215,9 @@
   pointer-events: none;
   z-index: 4;
 }
+.stage:has(> .stripHost :global(.pn-score-viewport)[data-timing-enabled]) > .banners {
+  top: calc(var(--space-2) + var(--pn-timing-lane-height));
+}
 .banner {
   pointer-events: auto;
   max-width: min(720px, 100%);

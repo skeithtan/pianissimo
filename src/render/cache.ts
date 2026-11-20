@@ -48,6 +48,8 @@ export function approxLayoutBytes(layout: PreparedLayout): number {
   let bytes = 0
   for (const s of layout.segments) bytes += s.svg.length
   for (const c of layout.contexts) for (const st of c.staves) bytes += st.glyph.svg.length
+  bytes += 16 * (layout.inkBounds?.top.length ?? 0)
+  for (const system of layout.systems ?? []) bytes += 16 * (system.inkBounds?.top.length ?? 0)
   return bytes + 64 * (layout.notes.length + layout.labels.length + layout.occurrences.length * 8)
 }
 

@@ -240,7 +240,7 @@ fade stay left of the cursor. Overlays are class/attribute writes batched in one
 Label text nodes exist only while opacity > 0; visible ones are reported via
 `onVisibleLabels`. Also: passage band with handles, tap selection and ✕ clear (U5), ottava
 emphasis + offscreen reminder, sticky clef/key/meter on staff lines with an opacity fade,
-wrong-key cursor tint (`pulseWrong()`), theme via `--score-*` tokens (U8). A change of label
+cursor timing tint (`setTimingCue`), theme via `--score-*` tokens (U8). A change of label
 room swaps the engraving with a glide (`shared/respace.ts`: the wider engraving cut into onset
 columns that move from the old view's places to the new view's, cursor note anchored; Practice
 keeps the old view until the new layout is ready). The glide follows the live view frame during
@@ -356,9 +356,11 @@ Play-through (P12): `setPlayThrough(on)` closes Repeat mode and pauses reading; 
 for both hands, the automatic part for one) and a `PlayFollower`. Human events then go to the
 follower instead of the engine (`#onMidi`), follower `release` events release transport gates,
 `onGateReached` → `follower.transportArrived`, and the frame draws the follower's group, the
-transport position, the amber tint for wrong presses and the guide. `ui.activity` is
+transport position, the timing cue and the guide. `ui.activity` is
 `'playing'`, `ui.playThrough` true, `startAction` `'play'`; the engine records nothing while the
 mode is on and resumes reading at the follower's group when it is switched off.
+For MIDI input, `PerformanceTiming` compares the first attacks of consecutive recognized
+groups to their written gap at the selected speed (U111).
 What it follows (P22): without a piano input the microphone, and play-through is then on and
 locked while a hand is selected (`#syncPlayMode`; `ui.playThroughLocked`); with one, the keys
 unless `settings.mic.follow` (`ui.follow`, the menu's Follow choice, U92). While the microphone
@@ -397,11 +399,13 @@ attempt itself clicks per `metronome.keepTime` (P20; `app/session/metronome.ts`:
 AudioContext synchronously inside the tap when it will click (iPadOS gesture rule); at the end it calls `engine.startRunning(t)` and
 `transport.play(t)` with one timestamp after releasing every gate, so the music never holds. The
 transport reports each arrival (`transportArrived`); the engine judges, closes missed groups and
-builds the record. The session renders gentle feedback (soft wash for `missed`, amber marker
-for `'late'`) and tracks sustained drift in `TimingDrift` (U107), using consecutive matched
-groups and resetting on a miss or phase change. The session sends the direction to
-`StripSink.setTimingCue` in the animation frame. Strip and Page share a screen-space cue
-anchored to their playheads. The result card's timing line comes from `timingAccuracy`.
+builds the record. The session can show a soft wash for a missed group and tracks drift in
+`TimingDrift` (U107, U111, U113). A pitch index prepared before the count-in supports matches up
+to one second from the playhead. The session sends the direction and enabled state to
+`StripSink.setTimingCue` in the animation frame. Strip and Page use the prepared score ink
+bounds to find room for the cue near their playheads (U120). The cursor shares the cue's color
+and returns to its standard tint when the cue clears (U119). The result card's timing line
+comes from `timingAccuracy`.
 The lazy Details view uses `buildTimingReview` on the completed record and its timeline.
 `ResultDetails` merges bars with timing deviations into the ranked correction excerpts by
 occurrence, putting timing-only bars afterward. `TimingBarPlot` uses the excerpt's engraving
@@ -530,9 +534,8 @@ plays), and any other key stops it before being handled as usual.
   the engine keeps the finished pass's wrong-key index by group (P26). It holds input
   completion briefly at those groups so a recurring extra key can invalidate the stroke
   before the cursor or accompaniment gate is released. The feedback store shows the retry cue.
-  While nothing
-  plays the session previews held keys against the current group (U37). Strip extras:
-  `wrapTo` (loop wrap pan), `setEarlyMarker` (amber tint), the cursor bar bounded to the staves.
+  While nothing plays, the session previews held keys against the current group (U37), using
+  accepted noteheads and the keyboard guide. The strip's `wrapTo` method pans at a loop wrap.
   After a completed pass the session starts the review (U97) by calling the optional
   `StripSink.setReview(true)` from its frame. `StripView` blends its
   playing frame into a review frame (`render/strip/review.ts`: the whole loop beside the fixed

@@ -16,7 +16,7 @@
 import { add, toNumber } from '../../core/music/rational'
 import { layoutKey } from '../cache'
 import { buildContexts } from '../context'
-import { round, roundBox, unionAll } from '../geom'
+import { inkBounds, round, roundBox, unionAll } from '../geom'
 import { layoutLabels, type LabelUnitInput } from '../labels/layout'
 import {
   type TextMeasurer,
@@ -68,8 +68,9 @@ export const OSMD_VERSION = '2.2.1'
  * pn-8: label rooms ('hints': tight spacing, hint callouts, R3 revised).
  * pn-9: labels in Inter Bold (wider boxes), SF Compact dropped (R14 revised).
  * pn-10: portrait note-name spacing reserves room before stacking labels (U65).
+ * pn-11: local ink bounds for the timing cue (U114).
  */
-export const ADAPTER_VERSION = 'pn-10'
+export const ADAPTER_VERSION = 'pn-11'
 export const RENDERER_NAME = 'osmd'
 export const RENDERER_VERSION = `${OSMD_VERSION}+${ADAPTER_VERSION}`
 
@@ -285,12 +286,12 @@ export class OsmdRenderer implements RendererAdapter {
           bbox: bboxOf,
         })
 
-        const extent = unionAll([
-          ex.content,
+        const extraInk = [
           ...labels.map((l) => l.box),
           ...occurrences.map((o) => o.labelBox),
           ...ottavas.geometry.filter((g): g is OttavaGeometry => g !== null).map((g) => g.box),
-        ])!
+        ]
+        const extent = unionAll([ex.content, ...extraInk])!
         const pad = 6
         const top = Math.floor(extent.y - pad)
         const height = Math.ceil(extent.y + extent.h + pad) - top
@@ -343,6 +344,7 @@ export class OsmdRenderer implements RendererAdapter {
           top,
           height,
           staves: ex.staves,
+          inkBounds: inkBounds(width, ex.staves, [ex.obstacles, extraInk]),
           occurrences,
           notes,
           labels,

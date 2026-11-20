@@ -129,6 +129,22 @@ describe('Play-through through the microphone', () => {
     expect(h.strip.targets).toEqual([2])
   })
 
+  it('follows fast and slow microphone performances without timing cues', async () => {
+    const { h, mic } = micHarness()
+    await playThrough(h)
+    mic().hear(0)
+    h.step(100)
+    mic().hear(0.25)
+    h.frames.flush()
+    expect(h.strip.targets).toEqual([2])
+    expect(h.strip.timingCue).toBeNull()
+    h.step(3000)
+    mic().hear(0.5)
+    h.frames.flush()
+    expect(h.strip.targets).toEqual([3])
+    expect(h.strip.timingCue).toBeNull()
+  })
+
   it('an estimate past several groups releases them all in order', async () => {
     const { h, mic } = micHarness()
     await playThrough(h)

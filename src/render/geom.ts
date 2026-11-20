@@ -1,5 +1,5 @@
 /** Small geometry helpers shared by extraction, label layout and the strip (layout px). */
-import type { Box } from './types'
+import type { Box, InkBounds, StaffGeometry } from './types'
 
 export const box = (x: number, y: number, w: number, h: number): Box => ({ x, y, w, h })
 
@@ -37,6 +37,36 @@ export function round(v: number, digits = 2): number {
 
 export function roundBox(b: Box, digits = 2): Box {
   return { x: round(b.x, digits), y: round(b.y, digits), w: round(b.w, digits), h: round(b.h, digits) }
+}
+
+export const INK_COLUMN_WIDTH = 24
+
+/** Include all ink beyond the staves so a screen-space badge can clear a local span of the score. */
+export function inkBounds(
+  width: number,
+  staves: readonly StaffGeometry[],
+  boxes: readonly (readonly Box[])[],
+  dy = 0,
+): InkBounds {
+  const columns = Math.ceil(width / INK_COLUMN_WIDTH)
+  const staffTop = staves[0]?.top ?? 0
+  const staffBottom = staves.at(-1)?.bottom ?? staffTop
+  const top = new Array<number>(columns).fill(Math.floor(staffTop + dy))
+  const bottom = new Array<number>(columns).fill(Math.ceil(staffBottom + dy))
+  for (const group of boxes) {
+    for (const ink of group) {
+      if (ink.y >= staffTop && ink.y + ink.h <= staffBottom) continue
+      const first = Math.max(0, Math.floor(ink.x / INK_COLUMN_WIDTH))
+      const last = Math.min(columns - 1, Math.floor((ink.x + ink.w) / INK_COLUMN_WIDTH))
+      const y0 = Math.floor(ink.y + dy)
+      const y1 = Math.ceil(ink.y + ink.h + dy)
+      for (let i = first; i <= last; i++) {
+        top[i] = Math.min(top[i]!, y0)
+        bottom[i] = Math.max(bottom[i]!, y1)
+      }
+    }
+  }
+  return { top, bottom }
 }
 
 /**

@@ -99,7 +99,7 @@ describe('PracticeSession: reading (both hands)', () => {
     expect(h.session.progress.get().occ).toBe(1)
   })
 
-  it('flashes once per frame on wrong keys and pulses the local marker', async () => {
+  it('flashes once per frame on wrong keys and clears feedback on completion', async () => {
     const h = harness(melody)
     await h.session.start()
     h.frames.flush()
@@ -108,11 +108,8 @@ describe('PracticeSession: reading (both hands)', () => {
     expect(h.flash.hits).toHaveLength(0) // nothing visual inside the input handler
     h.frames.flush()
     expect(h.flash.hits).toHaveLength(1)
-    expect(h.strip.pulses).toBe(1)
-    expect(h.strip.wrongMarker).toBe(true)
-    expect(h.session.feedback.get()).toMatchObject({ visible: true, reason: 'wrong' })
+    expect(h.session.feedback.get()).toMatchObject({ visible: true, reason: 'wrong', pulse: 1 })
     h.tap(60)
-    expect(h.strip.wrongMarker).toBe(false)
     expect(h.session.feedback.get().visible).toBe(false)
   })
 
@@ -788,7 +785,7 @@ describe('PracticeSession: one-hand accompaniment', () => {
     expect(h.backend.ons().map((c) => c.note)).toContain(43)
   })
 
-  it('a correct press long before its gate is "Too early": a soft flash and the amber marker', async () => {
+  it('shows a soft flash for an early press and a full flash for a wrong pitch', async () => {
     const h = harness(twoHands, { hands: 'right', range: { fromOcc: 0, toOcc: 0 } })
     await h.session.start()
     h.tap(60)
@@ -796,34 +793,29 @@ describe('PracticeSession: one-hand accompaniment', () => {
     h.tap(62) // gate is ~800 ms away
     expect(h.session.engine.state.lastWrongReason).toBe('early')
     expect(h.session.feedback.get()).toMatchObject({ visible: true, reason: 'early' })
-    expect(h.strip.pulses).toBe(0) // no local "Wrong key" marker for a right pitch played early
-    expect(h.strip.wrongMarker).toBe(false)
-    expect(h.strip.earlyMarker).toBe(true)
+    expect(h.strip.timingCue).toBeNull()
     expect(h.flash.hits).toHaveLength(1)
     expect(h.flash.hits[0]?.soft).toBe(true)
-    // A wrong pitch afterwards is the full feedback: red marker, full flash.
     h.tap(70)
-    expect(h.strip.earlyMarker).toBe(false)
-    expect(h.strip.wrongMarker).toBe(true)
+    expect(h.session.feedback.get()).toMatchObject({ visible: true, reason: 'wrong' })
     expect(h.flash.hits.at(-1)?.soft).toBe(false)
-    expect(h.strip.pulses).toBe(1)
   })
 
-  it('the early marker clears when the group completes and on restart', async () => {
+  it('clears early feedback when the group completes and on restart', async () => {
     const h = harness(twoHands, { hands: 'right', range: { fromOcc: 0, toOcc: 0 } })
     await h.session.start()
     h.tap(60)
     h.step(200)
     h.tap(62)
-    expect(h.strip.earlyMarker).toBe(true)
+    expect(h.session.feedback.get()).toMatchObject({ visible: true, reason: 'early' })
     h.play(62)
-    expect(h.strip.earlyMarker).toBe(false)
+    expect(h.session.feedback.get().visible).toBe(false)
     h.step(200)
     h.tap(64)
-    expect(h.strip.earlyMarker).toBe(true)
+    expect(h.session.feedback.get()).toMatchObject({ visible: true, reason: 'early' })
     h.session.restart()
     h.frames.flush()
-    expect(h.strip.earlyMarker).toBe(false)
+    expect(h.session.feedback.get().visible).toBe(false)
   })
 
   it('refuses graded one-hand practice on an unverified or echoing route', () => {
@@ -1842,7 +1834,6 @@ describe('PracticeSession: key feedback while nothing plays (U31) and the option
     expect(h.strip.targets).toEqual([0])
     h.press(60)
     expect(h.strip.accepted).toEqual([0])
-    expect(h.strip.wrongMarker).toBe(false)
     expect(h.session.engine.state).toMatchObject({
       phase: 'paused',
       groupIndex: 0,
@@ -1855,19 +1846,25 @@ describe('PracticeSession: key feedback while nothing plays (U31) and the option
     expect(h.attempts).toHaveLength(0)
   })
 
-  it('a wrong key while paused tints the cursor only: no flash, pulse, cue, hint or record', () => {
+  it('a wrong key while paused only marks the key in the guide', () => {
     const h = harness(melody)
+    h.session.setKeyboardVisible(true)
+    h.frames.flush()
+    const wrongKeys = () =>
+      h.session.guide
+        .get()
+        .keys.filter((key) => key.state === 'wrong')
+        .map((key) => key.midi)
     h.press(61, 63)
-    expect(h.strip.wrongMarker).toBe(true)
+    expect(wrongKeys()).toEqual([61, 63])
     expect(h.flash.hits).toHaveLength(0)
-    expect(h.strip.pulses).toBe(0)
     expect(h.session.feedback.get()).toMatchObject({ visible: false, cue: null, pulse: 0 })
     expect(h.session.engine.state.hint).toBeNull()
     expect(h.session.engine.state.groupHasError).toBe(false)
     h.release(61)
-    expect(h.strip.wrongMarker).toBe(true) // another wrong key is still held
+    expect(wrongKeys()).toEqual([63])
     h.release(63)
-    expect(h.strip.wrongMarker).toBe(false)
+    expect(wrongKeys()).toEqual([])
     expect(h.attempts).toHaveLength(0)
     expect(h.abandons).toHaveLength(0)
   })
@@ -1885,7 +1882,6 @@ describe('PracticeSession: key feedback while nothing plays (U31) and the option
     h.press(48)
     expect([...h.strip.accepted].sort()).toEqual([c4, c3].sort())
     h.press(60) // an accepted pitch again is still right
-    expect(h.strip.wrongMarker).toBe(false)
     h.release(48, 60)
     expect(h.strip.accepted).toEqual([c4]) // the engine's own acceptance stays
     expect(h.session.engine.state.groupIndex).toBe(0)
@@ -1894,22 +1890,26 @@ describe('PracticeSession: key feedback while nothing plays (U31) and the option
 
   it('Start, a seek and Listen clear the preview; held keys never become attacks', async () => {
     const h = harness(melody)
+    h.session.setKeyboardVisible(true)
+    h.frames.flush()
+    const isWrong = (midi: number) =>
+      h.session.guide.get().keys.some((key) => key.midi === midi && key.state === 'wrong')
     h.press(61)
-    expect(h.strip.wrongMarker).toBe(true)
+    expect(isWrong(61)).toBe(true)
     await h.session.start()
     h.frames.flush()
-    expect(h.strip.wrongMarker).toBe(false)
+    expect(isWrong(61)).toBe(false)
     expect(h.session.engine.state.wrongAttacks).toBe(0)
     h.release(61)
     h.session.pause()
     h.frames.flush()
 
     h.press(62) // group 0 wants C4: wrong
-    expect(h.strip.wrongMarker).toBe(true)
+    expect(isWrong(62)).toBe(true)
     h.session.seek(1)
     h.frames.flush()
     expect(h.strip.targets).toEqual([4])
-    expect(h.strip.wrongMarker).toBe(false)
+    expect(isWrong(62)).toBe(false)
     expect(h.strip.accepted).toEqual([])
     h.release(62)
 
@@ -1921,7 +1921,7 @@ describe('PracticeSession: key feedback while nothing plays (U31) and the option
     h.release(67)
     h.press(69)
     expect(h.strip.accepted).toEqual([])
-    expect(h.strip.wrongMarker).toBe(false)
+    expect(isWrong(69)).toBe(false)
   })
 
   it('drops preview keys whose release never reached the session (an overlay was open)', () => {
@@ -1949,7 +1949,7 @@ describe('PracticeSession: key feedback while nothing plays (U31) and the option
     expect(h.session.guide.get().keys).toContainEqual(expect.objectContaining({ midi: 60, state: 'target' }))
   })
 
-  it('with the red flash off, a wrong note keeps the tint, pulse and cue but never flashes', async () => {
+  it('with the red flash off, a wrong note still updates the practice feedback', async () => {
     const settings = testSettings({ hints: { ...DEFAULT_SETTINGS.hints, damageFlash: false } })
     const h = harness(melody, {}, { settings })
     await h.session.start()
@@ -1957,8 +1957,6 @@ describe('PracticeSession: key feedback while nothing plays (U31) and the option
     h.midi.on(61, h.clock.now)
     h.frames.flush()
     expect(h.flash.hits).toHaveLength(0)
-    expect(h.strip.pulses).toBe(1)
-    expect(h.strip.wrongMarker).toBe(true)
     expect(h.session.feedback.get()).toMatchObject({ visible: true, reason: 'wrong', pulse: 1 })
     expect(h.session.engine.state.wrongAttacks).toBe(1)
   })

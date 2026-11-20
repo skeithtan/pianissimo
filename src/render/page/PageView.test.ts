@@ -572,9 +572,6 @@ describe('PageView', () => {
     expect(head(1).classList.contains('pn-acc')).toBe(true)
     expect(root.querySelectorAll('.pn-halo')).toHaveLength(1)
     expect(root.querySelectorAll('.pn-ring')).toHaveLength(1)
-    v.setWrongMarker(true)
-    v.flushNow()
-    expect(root.querySelector('.pn-cursor')!.classList.contains('pn-cursor-wrong')).toBe(true)
   })
 
   it('shows labels and reports the visible ones', () => {

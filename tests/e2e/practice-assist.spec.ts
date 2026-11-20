@@ -134,15 +134,22 @@ test.describe('practice assistance and repeat', () => {
     await expect(guide.locator('[data-part="black-keys"] rect')).toHaveCount(36)
     const labels = guide.locator('[data-part="label"]')
     await expect(labels).toHaveText(['C3', 'C4'])
+    const playhead = page.locator('.pn-cursor-bar')
+    const defaultColor = await playhead.evaluate((bar: HTMLElement) => {
+      bar.style.transition = 'none'
+      return getComputedStyle(bar).backgroundColor
+    })
     // Live, also before Start: a held key lights up with its name, and is checked against the
     // group at the cursor (U37): D4 is not wanted, C4 is.
     await page.evaluate(() => window.__midi.on(62))
     await expect(guide.locator('[data-part="label"][data-midi="62"]')).toHaveText('D4')
     await expect(guide.locator('[data-part="bar"][data-midi="62"]')).toHaveAttribute('data-state', 'wrong')
+    await expect(playhead).toHaveCSS('background-color', defaultColor)
     await page.evaluate(() => window.__midi.off(62))
     await expect(labels).toHaveText(['C3', 'C4'])
     await page.evaluate(() => window.__midi.on(60))
     await expect(guide.locator('[data-part="bar"][data-midi="60"]')).toHaveAttribute('data-state', 'accepted')
+    await expect(playhead).toHaveCSS('background-color', defaultColor)
     await page.evaluate(() => window.__midi.off(60))
     await openFooterMenu(page)
     await expect(show).toBeChecked()

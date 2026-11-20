@@ -133,8 +133,8 @@ completed at least `LATE_MARK_MS` (350 ms) after the music reached the gate ("To
 without the newer optional fields (older records) give only the older classes. A mark's notes are
 the group's note indices whose onset lies inside the attempt's passage (`passageBounds`; a tie
 head before the loop start is never ringed; a mark with none left is dropped), handed to
-`strip.setCorrections?(marks)`; `ui.corrections` is their count. Live, a `wrong` event with reason
-`'tie-end'` only tints the cursor amber (like too early): no pulse, flash, red marker or cue.
+`strip.setCorrections?(marks)`; `ui.corrections` is their count. A `wrong` event with reason
+`'tie-end'` contributes only to the review.
 Interrupted or abandoned attempts draw none. They stay while the result card shows and clear
 (`#clearCorrections`) on Start, Restart, `dismissResult()`, a selection change, a seek and
 `dispose()`. A Repeat pass that starts over by itself keeps them through Ready and through wrong
@@ -198,16 +198,13 @@ Stores (subscribe from the view):
   records (`history.queueAttempt/queueAbandon`, O(1)) and schedules **one** animation frame.
   Nothing in the input path renders, writes storage or touches the DOM. Tested: a burst of
   five presses produces 0 `ui` emissions before the frame and ≤ 1 `progress` emission.
-- **Frame.** On engine `state.version` change: `setTargets / setAccepted / setWrongMarker /
-  setEarlyMarker? / setOttavaEmphasis`, the correction cue. Loop editing, browsing and the strip's
+- **Frame.** On engine `state.version` change: `setTargets / setAccepted / setOttavaEmphasis`
+  and the correction cue. Loop editing, browsing and the strip's
   cursor repeat button (`setCursorAction(visible)`, outside Repeat mode while paused or while the
   chrome is revealed) follow the state. The keyboard guide (`buildGuideKeys`: targets, held and wrong keys, and what playback
   sounds, named with the naming settings) is rebuilt on a version or playback-highlight change
-  while it is visible. Wrong attacks since the
-  last frame → `strip.pulseWrong()` and `flash.hit(now, wrongFeedbackUntil)`; a right pitch too
-  early → `flash.hit(now, until, { soft: true })` and the amber `setEarlyMarker?(true)` instead
-  (P3 revised; the marker follows `groupHasError`, so completion, advance, seek, restart, mode
-  changes and interruptions clear it).
+  while it is visible. Wrong attacks since the last frame trigger `flash.hit(now, wrongFeedbackUntil)`
+  when enabled. An early press of the right pitch uses `{ soft: true }` (P3).
   Labels: `engine.temporaryLabelOpacity(now)` merged with persistent opacity by max →
   `setLabelOpacity` only when either changed. Practice and Preview cursor = `transport.positionNow()`;
   playback highlights from `onEmit` events applied at their scheduled times. Frames keep
@@ -339,12 +336,16 @@ both hands, the other hand automatic with one; its click per `metronome.keepTime
   `transportArrived(i, now)` and calls `releaseGate(i)` again, a harmless no-op. `input-complete`
   never releases a gate in strict mode (it would move the music ahead).
 - **Feedback.** `missed` → the soft wash (`flash.hit(now, now + DEFAULT_WRONG_FEEDBACK_MS,
-  { soft: true })`, with the damage-flash setting). `wrong` with reason
-  `'late'` → the amber marker (`setEarlyMarker`) for `DEFAULT_WRONG_FEEDBACK_MS` (the engine records
-  nothing for it, so the session times it; a tick clears it). `TimingDrift` takes the first matched
-  attack offset from each strict `input-complete` event (U107). It updates the cue above the
-  playhead after three consecutive drifting groups and clears it after two close to the beat,
-  a miss, or a phase change. The frame calls `setTimingCue` on the current renderer.
+  { soft: true })`, with the damage-flash setting). `TimingDrift` takes the first matched
+  attack offset from each strict `input-complete` event (U107). Three consecutive drifting
+  groups show a cue. A feedback-only match to an onset within a second of the playhead or the
+  player's next written onset outside the tolerance shows it immediately (U111, U113).
+  The pitch index is prepared before the count-in. A miss clears the scored trend. The cue
+  clears after two attacks near the beat or a phase change, and an out-of-window cue expires
+  after 1.2 s. The frame calls `setTimingCue` with the direction and whether live timing is
+  enabled. The playhead uses blue or amber while the timing label is visible. The renderer
+  places the label near the playhead and falls back to the top
+  margin when surrounding notation leaves too little space (U120).
   After the attempt the corrections (missed / late marks) and the result card show what happened.
   `lastResult.timing` = `{ groups, onTime, early, late, missed }` from `timingAccuracy(record)`.
 - **Lifecycle.** Pause interrupts (scored); Start afterwards is a fresh attempt from the passage
@@ -376,8 +377,8 @@ scored one). Start builds `#play`: a gated transport over the whole piece
 `transport.releaseGate(g)` (re-entrant through a fast-forward, tolerated by `#processPlay`).
 While `#play` exists every human event goes to `follower.input` instead of the engine (the hint
 pedal → `revealAtCursor()`), the patience deadline joins `#scheduleTick`, and `#framePlay` draws
-the follower's group (targets, accepted marks, the amber tint for wrong presses, never the red
-marker, pulse or cue), the transport position, the guide and the resume position. Pause / Resume
+the follower's targets, accepted marks, the transport position, the guide and the resume position.
+Wrong presses trigger a soft edge flash when enabled. Pause / Resume
 freeze and re-anchor the patience clock; seeks keep playing from the first group at or after the
 position; browsing holds until the release (U95); speed applies live; new hands rebuild the transport at the same group;
 the range end leaves it idle at the end (the next Start begins at the start of the piece). The
@@ -409,6 +410,11 @@ the order of the notes, not time. While the microphone follows, MIDI notes never
 follower (`PlayThrough.mic`; the hint pedal still names notes). A microphone that stops by
 itself (`onLost`: unplugged, a failing worker) pauses play-through with the reason in
 `ui.micStatus` (`#onMicLost`); the next Start opens it again.
+
+**Live MIDI timing (U111).** `PerformanceTiming` compares the time between the first
+`accepted` MIDI attacks of consecutive groups with their written gap at the selected speed.
+The frame draws the cue, and the session's tick can clear it while playback waits at a gate.
+Starting, seeking, and changing speed reset the comparison.
 
 **No piano (P22).** `#playRequired` (no input and a hand selected) keeps play-through on and
 locked (`#syncPlayMode` after a selection or input change; `setPlayThrough(false)` is refused;

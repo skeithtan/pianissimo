@@ -37,7 +37,7 @@ export function patienceMs(timeline: Timeline, group: number): number {
 }
 
 export interface FollowerConfig {
-  /** Red/amber feedback duration per wrong press (default FOLLOW_WRONG_FEEDBACK_MS). */
+  /** Feedback duration per wrong press (default FOLLOW_WRONG_FEEDBACK_MS). */
   readonly wrongFeedbackMs?: number
   /** Group to start at (default 0). */
   readonly startGroup?: number
@@ -60,9 +60,9 @@ export interface FollowerState {
   readonly heldKeys: readonly number[]
   /** Held keys whose press was judged wrong (keyboard guide marks them while held). */
   readonly heldWrongKeys: readonly number[]
-  /** Show the gentle wrong tint while `now < wrongFeedbackUntil`. */
+  /** End of the gentle feedback window after a wrong press. */
   readonly wrongFeedbackUntil: number
-  /** A wrong press happened at the current group and it is not complete (cursor tint). */
+  /** A wrong press happened at the current group and it is still incomplete. */
   readonly groupHasError: boolean
   readonly paused: boolean
   readonly finished: boolean

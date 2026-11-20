@@ -196,18 +196,15 @@ test('labels fade by opacity on their own noteheads and are removed at zero', as
   expect(remaining).toBe(1)
 })
 
-test('wrong keys tint the cursor without text over notes; ottava emphasis holds steadily', async ({ page }) => {
+test('ottava emphasis holds steadily and clears', async ({ page }) => {
   await setup(page, 'ottava')
   await page.evaluate(() => {
     const s = window.harness.strip()!
     const l = window.harness.layout()!
     s.setCursor(l.occurrences[1]!.start, { smooth: false })
     s.setOttavaEmphasis([0])
-    s.pulseWrong()
     s.flushNow()
   })
-  await expect(page.locator('.pn-wrong')).toHaveCount(0)
-  await expect(page.locator('.pn-cursor')).toHaveClass(/pn-cursor-wrong/)
   await expect(page.locator('.pn-ott-box')).toHaveClass(/pn-on/)
   const alert = await page.evaluate(() => getComputedStyle(document.querySelector('.pn-ott-box')!).borderTopColor)
   // Fill and stroke fade in over --pn-fast: poll until the transition has settled.
@@ -221,17 +218,10 @@ test('wrong keys tint the cursor without text over notes; ottava emphasis holds 
   await expect.poll(async () => (await colors()).every((c) => c === alert)).toBe(true)
   await page.evaluate(() => {
     const s = window.harness.strip()!
-    s.pulseWrong()
-    s.flushNow()
-  })
-  await expect(page.locator('.pn-cursor')).toHaveClass(/pn-cursor-wrong/)
-  await page.evaluate(() => {
-    const s = window.harness.strip()!
-    s.setWrongMarker(false)
     s.setOttavaEmphasis([])
     s.flushNow()
   })
-  await expect(page.locator('.pn-cursor')).not.toHaveClass(/pn-cursor-wrong/)
+  await expect(page.locator('.pn-ott-box')).not.toHaveClass(/pn-on/)
 })
 
 test('mounted notation contains no script, foreignObject, handlers or external references', async ({ page }) => {

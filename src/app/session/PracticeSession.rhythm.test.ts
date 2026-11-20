@@ -166,7 +166,7 @@ describe('Keep time: count-in', () => {
     h.tap(61)
     expect(h.session.engine.state.phase).toBe('ready')
     expect(h.session.engine.state.wrongAttacks).toBe(0)
-    expect(h.strip.pulses).toBe(0)
+    expect(h.flash.hits).toHaveLength(0)
     at(h, RUN)
     expect(h.session.engine.state.phase).toBe('running')
   })
@@ -261,6 +261,76 @@ describe('Keep time: playing against the music', () => {
     expect(h.attempts[0]?.groups?.map((group) => group.onsetOffsetMs)).toEqual([undefined, 0, 0, 0])
   })
 
+  it('shows a large lead across missed groups and keeps the early attacks out of the score', async () => {
+    const h = open()
+    await begin(h)
+    playOnTime(h, [60])
+    at(h, RUN + 400)
+    h.tap(62)
+    expect(h.strip.timingCue).toBe('rushing')
+    at(h, RUN + 1151)
+    expect(h.session.engine.state.missedGroups).toBe(1)
+    expect(h.strip.timingCue).toBe('rushing')
+    playOnTime(h, [64, 65, 67, 69, 71, 72], [], RUN + 2000)
+    expect(h.attempts[0]).toMatchObject({ passed: false, missedGroups: 1 })
+    expect(h.strip.timingCue).toBeNull()
+  })
+
+  it('shows dragging for a note several beats behind and clears when the player stops', async () => {
+    const h = open()
+    await begin(h)
+    at(h, RUN + 1600)
+    h.tap(75)
+    expect(h.strip.timingCue).toBeNull()
+    h.tap(60)
+    expect(h.strip.timingCue).toBe('dragging')
+    at(h, RUN + 3800)
+    expect(h.strip.timingCue).toBeNull()
+    h.tap(62)
+    expect(h.strip.timingCue).toBe('dragging')
+    expect(h.session.engine.state.missedGroups).toBe(4)
+    at(h, RUN + 5001)
+    expect(h.strip.timingCue).toBeNull()
+  })
+
+  it.each([
+    { direction: 'rushing', playedAt: 250, note: 58, outside: 59 },
+    { direction: 'dragging', playedAt: 1250, note: 50, outside: 49 },
+  ])(
+    'shows $direction exactly one second off even across a run of fast notes',
+    async ({ direction, playedAt, note, outside }) => {
+      const score = buildScore({
+        notes: Array.from({ length: 24 }, (_, i) => ({ at: i / 8, midi: 48 + i, dur: 1 / 8 })),
+      })
+      const h = harness(score, {}, { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec) } })
+      await begin(h)
+      at(h, RUN + playedAt)
+      // At 125 ms per note, the expected onset is eight notes from the playhead.
+      h.tap(outside)
+      expect(h.strip.timingCue).toBeNull()
+      h.tap(note)
+      expect(h.strip.timingCue).toBe(direction)
+      expect(h.session.engine.state.lastOffsetMs).toBeNull()
+    },
+  )
+
+  it('does not read a late chord member as a new onset', async () => {
+    const score = buildScore({
+      notes: [
+        { at: 0, midi: 60 },
+        { at: 0, midi: 64 },
+        { at: 1, midi: 62 },
+      ],
+    })
+    const h = harness(score, {}, { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec) } })
+    await begin(h)
+    playOnTime(h, [60])
+    at(h, RUN + 450)
+    h.tap(64)
+    expect(h.session.engine.state.missedGroups).toBe(1)
+    expect(h.strip.timingCue).toBeNull()
+  })
+
   it('ignores a steady lead, resets on a miss, and clears when a fresh count-in begins', async () => {
     const h = open()
     await begin(h)
@@ -307,24 +377,19 @@ describe('Keep time: playing against the music', () => {
     expect(h.strip.cursor).toBeCloseTo(0.25, 3)
   })
 
-  it('a missed group gets the soft wash only; a late slip tints the cursor amber for a moment', async () => {
+  it('a missed group gets the soft wash and a late slip adds no wrong-note feedback', async () => {
     const h = open()
     await begin(h)
     // Group 0 closes at RUN + 150.
     at(h, RUN + 200)
     expect(h.session.engine.state.missedGroups).toBe(1)
     expect(h.flash.hits.at(-1)).toMatchObject({ now: RUN + 200, soft: true })
-    expect(h.strip.pulses).toBe(0)
-    expect(h.strip.wrongMarker).toBe(false)
     expect(h.session.feedback.get().visible).toBe(false)
     const hits = h.flash.hits.length
     h.tap(60)
     expect(h.session.engine.state.wrongAttacks).toBe(0)
-    expect(h.strip.earlyMarker).toBe(true)
-    expect(h.strip.pulses).toBe(0)
+    expect(h.session.feedback.get().visible).toBe(false)
     expect(h.flash.hits).toHaveLength(hits)
-    at(h, RUN + 800)
-    expect(h.strip.earlyMarker).toBe(false)
   })
 
   it('a clean attempt records the strict context, the tolerance and on-time offsets', async () => {

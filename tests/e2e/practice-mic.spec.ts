@@ -89,13 +89,15 @@ interface Snapshot {
   heard: number
   /** Pitches of the notes at the cursor (the group expected next), ascending. */
   targets: number[]
+  timingDirection: string | null
 }
 
-/** Both readings in one task of the page, so `heard` says when the cursor was where `targets` has it. */
+/** Capture elapsed time, the cursor's targets, and the cue in the same page evaluation. */
 function snapshot(page: Page, pitches: readonly number[]): Promise<Snapshot> {
   return page.evaluate(
     (pitches) => ({
       heard: window.__micStartedAt === undefined ? -1 : (performance.now() - window.__micStartedAt) / 1000,
+      timingDirection: document.querySelector('[data-testid="timing-cue"]')?.getAttribute('data-direction') ?? null,
       targets: [
         ...new Set(
           [...document.querySelectorAll('.pn-music .pn-target:not(.pn-acc)')].flatMap((el) =>
@@ -162,7 +164,9 @@ test('the cursor follows an acoustic piano through the microphone and waits whil
   expect(now.heard).toBeLessThan(times[3]!)
   expect(now.targets).toEqual(groups[3])
 
-  // And goes on with the player to the end of the piece.
+  // Resuming several seconds behind the written pace still just moves the cursor.
+  await expect.poll(async () => (await take()).targets, OFTEN).toEqual(groups[4])
+  expect(now.timingDirection).toBeNull()
   await expect.poll(async () => (await take()).targets, { timeout: 20_000 }).toEqual(groups[5])
   await expect(follow).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
   expect((await take()).heard).toBeGreaterThan(times[5]!)

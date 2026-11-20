@@ -97,6 +97,12 @@ export interface StaffGeometry {
   readonly bottom: number
 }
 
+/** Top and bottom ink y by horizontal column, in layout px. */
+export interface InkBounds {
+  readonly top: readonly number[]
+  readonly bottom: readonly number[]
+}
+
 export interface OccurrenceGeometry {
   readonly occ: number
   /** Left and right barline x. */
@@ -234,6 +240,7 @@ export interface SystemGeometry {
   readonly y1: number
   /** The system's staves (top and bottom staff lines in page y). */
   readonly staves: readonly StaffGeometry[]
+  readonly inkBounds?: InkBounds
 }
 
 export type LayoutMode = 'strip' | 'page'
@@ -286,6 +293,8 @@ export interface PreparedLayout {
   readonly top: number
   readonly height: number
   readonly staves: readonly StaffGeometry[]
+  /** Horizontal strip's ink bounds. A page stores them per system. */
+  readonly inkBounds?: InkBounds
   readonly occurrences: readonly OccurrenceGeometry[]
   /** By `PerformedNote.index`; null only when unmapped (see report). */
   readonly notes: readonly (NoteGeometry | null)[]

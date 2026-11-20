@@ -13,6 +13,8 @@ playback and seeing the notes, hints possible too".
 - **Follow my playing** moves the cursor with the learner's live playing (P12, U105). The Sheet music
   menu selects piano or microphone when available and the hands to follow. Listen and following
   share the cursor and stop each other. A following microphone mutes the click and accompaniment.
+  With a MIDI piano, Rushing or Dragging appears above the playhead when recognized notes
+  come substantially faster or slower than the written pace at the selected speed (U111).
 - **The score** as in Practice: the strip in landscape, the page in portrait (same `StripView` /
   `PageView`, same cached layouts, same zoom settings). No loop handles, no cursor repeat button
   (`SessionOptions.cursorAction: false`), no corrections. Follow marks the current notes.

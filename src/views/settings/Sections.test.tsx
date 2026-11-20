@@ -176,7 +176,7 @@ describe('Hints', () => {
     const panel = openTab(open(), 'Hints')
     const flash = toggle(panel, 'Red flash on a wrong note')
     expect(flash.checked).toBe(true)
-    expect(panel.textContent).toContain('The red cursor tint and hints stay on.')
+    expect(panel.textContent).toContain('Flash the screen edges red when you play a wrong note.')
     click(flash)
     expect(settings.value.hints.damageFlash).toBe(false)
     expect(toggle(panel, 'Red flash on a wrong note').checked).toBe(false)

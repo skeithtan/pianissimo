@@ -106,6 +106,8 @@ Correctness means sounding pitch, including octave. An active ottava marking is 
 
 The cursor never passes a required onset until its notes are correct. It is not forced forward by a metronome. Rests, note lengths, and expressive details remain part of the music and reference timing, but this mode does not enforce them as pitch gates.
 
+Use the theme's default cursor color whenever the live timing cue is absent. Use blue while **Rushing** is visible and amber while **Dragging** is visible. Apply the same rule in both score layouts.
+
 Every input event is consumed at most once. Clear the current group's accepted-attack set on advancement, seeking, restarting, changing hands, or interruption; resuming ordinary paused reading retains the same group's progress. Keep physical key state separate so a held key is never mistaken for a new attack. Reconnection requires fresh attacks. Application-generated playback events and any verified returned echoes never count as the pianist's input; they cannot advance a group, start the performance clock, trigger a hint pedal, or create an error.
 
 ## Mistake feedback and hints

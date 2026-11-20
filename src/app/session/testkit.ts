@@ -99,8 +99,6 @@ export class FakeStrip implements StripSink {
   automatic: readonly number[] = []
   playback: readonly number[] = []
   subdued: 'L' | 'R' | null = null
-  wrongMarker = false
-  pulses = 0
   ottava: readonly number[] = []
   texts: ReadonlyMap<number, string> = new Map()
   opacity: ReadonlyMap<number, number> = new Map()
@@ -126,16 +124,6 @@ export class FakeStrip implements StripSink {
   }
   setSubduedHand(hand: 'L' | 'R' | null): void {
     this.subdued = hand
-  }
-  setWrongMarker(on: boolean): void {
-    this.wrongMarker = on
-  }
-  pulseWrong(): void {
-    this.pulses++
-  }
-  earlyMarker = false
-  setEarlyMarker(on: boolean): void {
-    this.earlyMarker = on
   }
   timingCue: TimingDirection | null = null
   setTimingCue(direction: TimingDirection | null): void {

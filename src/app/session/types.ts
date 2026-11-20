@@ -32,15 +32,8 @@ export interface StripSink {
   setAutomatic(notes: readonly number[]): void
   setPlaybackHighlights(notes: readonly number[]): void
   setSubduedHand(hand: 'L' | 'R' | null): void
-  setWrongMarker(on: boolean): void
-  pulseWrong(): void
-  /**
-   * The amber cursor tint for a right pitch pressed too early (gentler than the red wrong-key
-   * marker, P3 revised). Optional: a strip without it shows nothing for early presses.
-   */
-  setEarlyMarker?(on: boolean): void
-  /** Live Keep time feedback above the playhead. */
-  setTimingCue?(direction: TimingDirection | null): void
+  /** Reserve space above the score while live timing feedback is enabled. */
+  setTimingCue?(direction: TimingDirection | null, enabled: boolean): void
   setOttavaEmphasis(spans: readonly number[]): void
   setLabels(texts: ReadonlyMap<number, string>): void
   setLabelOpacity(opacity: ReadonlyMap<number, number>): void
