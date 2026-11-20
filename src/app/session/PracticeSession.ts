@@ -167,15 +167,19 @@ interface CountIn {
   timer: unknown
 }
 
-/** The opening of a Keep time loop, still waiting to hear the learner. */
 interface RepeatOpening {
-  readonly start: number
+  readonly end: number
   readonly pitches: ReadonlySet<number>
-  deadline: number
-  firstBar: boolean
-  readonly secondBarEnd: number | null
+  readonly waitAnotherPass: boolean
+}
+
+/** Playable bar windows, measured from the count-in downbeat. */
+interface KeepTimeActivity {
+  readonly bars: readonly { readonly start: number; readonly end: number }[]
+  bar: number
   played: boolean
-  /** In a short loop the last scoring window may close before this check is due. */
+  opening: RepeatOpening | null
+  /** The final scoring window can close before the last playable bar ends. */
   completed: AttemptRecord | null
 }
 
@@ -341,7 +345,7 @@ export class PracticeSession {
   #awaitPrepared = false
   #pendingRepeat = false
   #secondOpeningBarOnWrap = false
-  #repeatOpening: RepeatOpening | null = null
+  #keepTimeActivity: KeepTimeActivity | null = null
   /** Repeat mode (U10): loop controls shown, Start = scored attempts over `#loop`, repeated. */
   #repeat = false
   /** The loop, remembered while Repeat mode is closed (saved as `lastPassage`). */
@@ -1885,7 +1889,7 @@ export class PracticeSession {
       return
     }
     this.#setCorrectionsVisible(false)
-    this.#watchRepeatOpening(at)
+    this.#watchKeepTimeActivity(at)
     this.#capture.begin(at)
     this.#engine.startRunning(at)
     for (let g = 0; g < this.#engine.timeline.groups.length; g++) t.releaseGate(g + this.#gateOffset)
@@ -1893,53 +1897,81 @@ export class PracticeSession {
     this.#process(this.#deps.clock())
   }
 
-  #watchRepeatOpening(start: number): void {
-    if (!this.#repeat) return
-    const firstBar = !this.#secondOpeningBarOnWrap
-    this.#secondOpeningBarOnWrap = false
+  #watchKeepTimeActivity(downbeat: number): void {
     const timeline = this.#engine.timeline
     const first = timeline.groups[0]?.occ
     if (first === undefined) return
-    // An accompaniment-only intro gives the learner nothing to play. Start checking with
-    // the bar containing their first required attack, including a partial bar at a loop edge.
-    const deadlineFor = (occ: number): number => {
-      const bar = this.#model.occurrences[occ]!
+    const secondBar = this.#secondOpeningBarOnWrap
+    this.#secondOpeningBarOnWrap = false
+    const openingOcc = secondBar ? first : Math.min(first + 1, timeline.range.toOcc)
+    const bars: { start: number; end: number }[] = []
+    let position = timeline.start
+    let time = downbeat
+    let openingEnd = downbeat
+    for (const measure of timeline.measures) {
+      const bar = this.#model.occurrences[measure.occ]!
       const barEnd = add(bar.start, bar.duration)
       const end = lt(barEnd, timeline.end) ? barEnd : timeline.end
-      return start + secondsBetween(timeline.tempo, timeline.start, end, timeline.multiplier) * 1000
+      const start = time
+      time += secondsBetween(timeline.tempo, position, end, timeline.multiplier) * 1000
+      position = end
+      if (measure.groups.length > 0) bars.push({ start, end: time })
+      if (measure.occ === openingOcc) openingEnd = time
     }
-    const second = firstBar && first < timeline.range.toOcc ? first + 1 : null
-    const pitches = new Set<number>()
-    for (const group of timeline.groups) {
-      if (group.occ > (second ?? first)) break
-      for (const pitch of group.pitches) pitches.add(pitch)
+    let opening: RepeatOpening | null = null
+    if (this.#repeat) {
+      const pitches = new Set<number>()
+      for (const group of timeline.groups) {
+        if (group.occ > openingOcc) break
+        for (const pitch of group.pitches) pitches.add(pitch)
+      }
+      opening = { end: openingEnd, pitches, waitAnotherPass: !secondBar && openingOcc === first }
     }
-    this.#repeatOpening = {
-      start,
-      pitches,
-      deadline: deadlineFor(first),
-      firstBar,
-      secondBarEnd: second === null ? null : deadlineFor(second),
-      played: false,
-      completed: null,
-    }
+    this.#keepTimeActivity = { bars, bar: 0, played: false, opening, completed: null }
   }
 
-  #checkRepeatOpening(now: number): void {
-    const opening = this.#repeatOpening
-    if (!opening || now < opening.deadline) return
-    if (opening.firstBar && opening.played) {
-      if (opening.secondBarEnd !== null) {
-        opening.firstBar = false
-        opening.deadline = opening.secondBarEnd
-        if (now < opening.deadline) return
-      } else {
-        // For a one-bar loop, the next traversal provides the second bar of playing.
-        this.#secondOpeningBarOnWrap = true
-        this.#releaseRepeatOpening()
+  #checkKeepTimeActivity(now: number): void {
+    const activity = this.#keepTimeActivity
+    if (!activity) return
+    let bar = activity.bars[activity.bar]
+    while (bar && now >= bar.end) {
+      if (!activity.played) {
+        this.#stopInactiveKeepTime()
         return
       }
+      activity.played = false
+      bar = activity.bars[++activity.bar]
     }
+    const opening = activity.opening
+    if (opening && now >= opening.end) {
+      if (!opening.waitAnotherPass) {
+        this.#stopInactiveKeepTime()
+        return
+      }
+      // For a one-bar loop, the next traversal provides the second bar of playing.
+      this.#secondOpeningBarOnWrap = true
+      activity.opening = null
+    }
+    this.#finishKeepTimeActivity(activity)
+  }
+
+  #keepTimePress(note: number, time: number): void {
+    const activity = this.#keepTimeActivity
+    if (!activity) return
+    const currentBar = activity.bars[activity.bar]
+    // A MIDI event at the barline belongs to the new bar, even if its timer has not fired yet.
+    if (currentBar && time >= currentBar.end) this.#checkKeepTimeActivity(time)
+    if (this.#keepTimeActivity !== activity) return
+    const bar = activity.bars[activity.bar]
+    if (bar && time >= bar.start) activity.played = true
+    const opening = activity.opening
+    if (opening && time >= activity.bars[0]!.start && time < opening.end && opening.pitches.has(note)) {
+      activity.opening = null
+    }
+    this.#finishKeepTimeActivity(activity)
+  }
+
+  #stopInactiveKeepTime(): void {
     this.#reviewReturnBy = null
     this.#setCorrectionsVisible(true)
     this.#discarding = true
@@ -1950,13 +1982,13 @@ export class PracticeSession {
     }
   }
 
-  #releaseRepeatOpening(): void {
-    const record = this.#repeatOpening?.completed
-    this.#repeatOpening = null
-    if (record) {
-      this.#onRecord(record)
-      this.#completedPending = true
-    }
+  #finishKeepTimeActivity(activity: KeepTimeActivity): void {
+    if (!activity.completed || activity.opening) return
+    const remaining = activity.bars.length - activity.bar
+    if (remaining > 1 || (remaining === 1 && !activity.played)) return
+    this.#keepTimeActivity = null
+    this.#onRecord(activity.completed)
+    this.#completedPending = true
   }
 
   /**
@@ -2759,16 +2791,10 @@ export class PracticeSession {
       this.#processPlay()
       return
     }
+    if (ev.kind === 'noteon' && ev.velocity > 0) this.#keepTimePress(ev.note, ev.time)
     // Judged before the input: a press never changes the group or phase while nothing plays.
     const group = this.#previewGroupNow()
     this.#captureKey(ev)
-    if (this.#engine.transport === 'strict' && ev.kind === 'noteon' && ev.velocity > 0) {
-      const opening = this.#repeatOpening
-      if (opening && ev.time >= opening.start && ev.time < (opening.secondBarEnd ?? opening.deadline)) {
-        if (ev.time < opening.deadline) opening.played = true
-        if (opening.played && opening.pitches.has(ev.note)) this.#releaseRepeatOpening()
-      }
-    }
     this.#engine.input(ev)
     if (group !== null) this.#previewInput(ev, group)
     else this.#clearPreview()
@@ -3068,8 +3094,11 @@ export class PracticeSession {
       case 'attempt-ended':
         // Play-through records nothing: the reading before it was recorded when it went on;
         // what the engine ends during play-through (and when it goes off) stays unrecorded.
-        if (this.#repeatOpening && ev.record.completion === 'completed') this.#repeatOpening.completed = ev.record
-        else if (!this.#discarding && !this.#playThrough) this.#onRecord(ev.record)
+        if (this.#discarding || this.#playThrough) break
+        if (this.#keepTimeActivity && ev.record.completion === 'completed') {
+          this.#keepTimeActivity.completed = ev.record
+          this.#finishKeepTimeActivity(this.#keepTimeActivity)
+        } else this.#onRecord(ev.record)
         break
       case 'abandon':
         if (this.#playThrough) break
@@ -3188,7 +3217,7 @@ export class PracticeSession {
       // Keep time: count in, then the clock and the music start together.
       else if (this.#engine.transport === 'strict' && this.#engine.mode === 'scored') this.#beginCountIn(t)
     } else if (phase === 'completed') {
-      if (this.#engine.mode === 'scored') this.#completedPending = this.#repeatOpening === null
+      if (this.#engine.mode === 'scored') this.#completedPending = this.#keepTimeActivity === null
       else if (this.#leadIn && !this.#leadIn.handedOver) {
         // From inside or after the loop the music plays on to the wrap (`#onAccompanimentEnd`).
         if (!this.#leadIn.wrap) this.#handOver(t)
@@ -3612,7 +3641,7 @@ export class PracticeSession {
   }
 
   #pauseTransports(): void {
-    this.#repeatOpening = null
+    this.#keepTimeActivity = null
     this.#secondOpeningBarOnWrap = false
     if (this.#accomp && this.#accomp.state === 'playing') this.#accomp.pause()
     this.#clearHighlights()
@@ -3890,7 +3919,8 @@ export class PracticeSession {
     if (this.#disposed) return
     const now = this.#deps.clock()
     let at = this.#engine.nextDeadline() ?? Infinity
-    if (this.#repeatOpening) at = Math.min(at, this.#repeatOpening.deadline)
+    const activity = this.#keepTimeActivity
+    if (activity) at = Math.min(at, activity.bars[activity.bar]?.end ?? Infinity, activity.opening?.end ?? Infinity)
     const patience = this.#play?.follower.nextDeadline() ?? null
     if (patience !== null) at = Math.min(at, patience)
     const hint = this.#engine.state.hint
@@ -3918,7 +3948,7 @@ export class PracticeSession {
         this.#tickHandle = null
         this.#tickAt = Infinity
         const t = Math.max(this.#deps.clock(), at)
-        this.#checkRepeatOpening(t)
+        this.#checkKeepTimeActivity(t)
         this.#engine.tick(t)
         if (this.#play) {
           this.#play.follower.tick(t)
@@ -4031,7 +4061,7 @@ export class PracticeSession {
     if (this.#playThrough) return this.#play?.playing ?? false
     if (this.#listen) return this.#listen.playing
     const phase = this.#engine.state.phase
-    if (this.#engine.mode === 'scored') return ACTIVE.includes(phase) || this.#repeatOpening !== null
+    if (this.#engine.mode === 'scored') return ACTIVE.includes(phase) || this.#keepTimeActivity !== null
     return phase === 'running' || this.#leadInTail()
   }
 

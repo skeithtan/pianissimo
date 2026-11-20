@@ -7,6 +7,7 @@
 import { expect, test } from '../browser-test'
 import {
   installFakeMidi,
+  loopWholePiece,
   openFooterMenu,
   openSeededPractice,
   playAfterCountIn,
@@ -128,6 +129,32 @@ test.describe('Keep time', () => {
       }
     })
   }
+
+  test('stops at the end of a silent bar after the player has started playing', async ({ page }) => {
+    await loopWholePiece(page)
+    const menu = await openFooterMenu(page)
+    await menu.getByRole('switch', { name: 'Keep time' }).click()
+    await page.keyboard.press('Escape')
+
+    await page.clock.install()
+    const start = page.getByRole('button', { name: 'Start', exact: true })
+    await start.click()
+    const countIn = page.getByTestId('count-in')
+    await expect(countIn).toBeVisible()
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 150)))
+    const pass = playAfterCountIn(page, bar1())
+    await page.clock.runFor(7200)
+    await pass
+    await page.clock.runFor(4100)
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+    await expect(page.getByTestId('attempt-result')).toHaveCount(0)
+
+    await page.clock.runFor(1200)
+    await expect(start).toBeVisible()
+    await expect(page.getByTestId('attempt-result')).toHaveCount(0)
+    await page.clock.runFor(4500)
+    await expect(countIn).toHaveCount(0)
+  })
 
   test('a count-in, then on-time and a late group are reported on the card and in Results', async ({ page }) => {
     await page.getByRole('button', { name: 'Repeat from here' }).click()

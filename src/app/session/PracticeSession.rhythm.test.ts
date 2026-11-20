@@ -497,6 +497,42 @@ describe('Keep time: modes', () => {
     expect(ui(h).countIn).toBeNull()
   })
 
+  it.each([false, true])('stops after a silent bar in the middle of Keep time (Repeat: %s)', async (repeat) => {
+    const model = buildScore({
+      notes: [60, 62, 64, 65].map((midi, bar) => ({ at: bar * 4, midi })),
+      bars: 4,
+    })
+    const h = harness(model, { range: repeat ? { fromOcc: 0, toOcc: 3 } : null }, { options: { rhythm: true } })
+    await begin(h)
+    playOnTime(h, [60])
+    // A wrong note still shows the learner is playing after the opening pitch check has passed.
+    playOnTime(h, [61], [], RUN + 4000)
+    at(h, RUN + 9000)
+    h.midi.cc(64, 127, RUN + 9000)
+    at(h, RUN + 11999)
+    expect(ui(h).playing).toBe(true)
+    at(h, RUN + 12000)
+    expect(ui(h)).toMatchObject({ playing: false, countIn: null, lastResult: null })
+    expect(h.attempts).toHaveLength(0)
+  })
+
+  it('plays through a written rest bar without expecting a key press', async () => {
+    const model = buildScore({
+      notes: [
+        { at: 0, midi: 60 },
+        { at: 8, midi: 62 },
+      ],
+      bars: 3,
+    })
+    const h = harness(model, {}, { options: { rhythm: true } })
+    await begin(h)
+    playOnTime(h, [60])
+    at(h, RUN + 8000)
+    expect(ui(h).playing).toBe(true)
+    h.tap(62)
+    expect(h.attempts.at(-1)).toMatchObject({ completion: 'completed', passed: true })
+  })
+
   it('clears the previous corrections at the downbeat of an automatic repeat', async () => {
     const h = open({ range: LOOP })
     await begin(h)

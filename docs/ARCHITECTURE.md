@@ -403,13 +403,15 @@ anchors for the onset plot under the score. A miss breaks the plot line and appe
 All affected bars are listed, and later excerpts wait until visible to build their notation.
 A pass within the near-beat window has a folded timing summary beneath the pass facts.
 
-For every Keep time loop pass (U112), including the first, the session checks for key presses
-by the first playable bar's end and for any written learner pitch by the second bar's end.
-The deadlines follow the actual score and clip to the loop's edges. The pitch check ignores scoring
-tolerance. One-bar loops get the second bar on the next traversal. The session holds any
-early completion while the check is pending so an automatic stop leaves the previous result
+During Keep time (U112), the session converts each playable bar in the selected passage into
+an activity window using the tempo map and the actual bar and loop boundaries. A fresh key
+press counts for the bar it lands in. A bar with no required attacks has no silence check.
+The shared session timer stops playback at any silent playable bar's end. Repeat also checks
+for any written learner pitch in the opening two bars without scoring tolerance. A one-bar loop
+gets its second bar on the next traversal. The session holds early scoring completion while
+an unresolved check could still stop playback, so an automatic stop leaves the previous result
 and does not add a pass to history. On the next downbeat the session hides the previous pass's
-score marks in both layouts. The same marks return with the review if the automatic repeat stops.
+score marks in both layouts. The same marks return with the previous review after a stop.
 
 Keep time is exclusive with play-through and disables Repeat lead-ins. The view adds a
 footer-menu switch with a badge on the Menu button, the `CountIn` overlay on the stage and
