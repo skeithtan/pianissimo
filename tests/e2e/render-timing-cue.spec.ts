@@ -4,7 +4,7 @@ import { openHarness } from './render-helpers'
 test.use({ reducedMotion: 'reduce' })
 
 for (const mode of ['strip', 'page'] as const) {
-  test(`the timing cue stays close to the playhead and clears high notes in the ${mode}`, async ({ page }) => {
+  test(`the timing cue stays at one height and follows the playhead horizontally in the ${mode}`, async ({ page }) => {
     await openHarness(page)
     const result = await page.evaluate(async (mode) => {
       await window.harness.prepare('changes', 3, { mode, pageWidth: 600 })
@@ -22,22 +22,32 @@ for (const mode of ['strip', 'page'] as const) {
       view.flushNow()
       const scoreTop = score.getBoundingClientRect().top
       const overlaps: number[] = []
-      let maxPlayheadGap = 0
-      for (const position of window.harness.onsets().slice(0, 16)) {
+      const cueTops = new Set<number>()
+      let maxHorizontalOffset = 0
+      let cueAboveScore = true
+      for (const position of window.harness.onsets()) {
         view.setCursor(position, { smooth: false })
         view.setTimingCue('rushing')
         view.flushNow()
         const badge = cue.getBoundingClientRect()
         const bar = playhead.getBoundingClientRect()
-        maxPlayheadGap = Math.max(maxPlayheadGap, bar.top - badge.bottom, badge.top - bar.bottom)
+        const stage = viewport.getBoundingClientRect()
+        const inset = badge.width / 2 + 8
+        const expectedX = Math.max(stage.left + inset, Math.min(bar.left + bar.width / 2, stage.right - inset))
+        maxHorizontalOffset = Math.max(maxHorizontalOffset, Math.abs(badge.left + badge.width / 2 - expectedX))
+        cueTops.add(badge.top)
+        cueAboveScore &&= badge.top >= stage.top && badge.bottom <= scoreTop
         const coversNote = [...document.querySelectorAll('.pn-music [data-n]')].some((head) => {
           const note = head.getBoundingClientRect()
+          // A page system can scroll above the score viewport and is clipped there.
+          const visibleTop = Math.max(note.top, scoreTop)
           return (
             note.width > 0 &&
+            note.bottom > visibleTop &&
             badge.left < note.right &&
             badge.right > note.left &&
             badge.top < note.bottom &&
-            badge.bottom > note.top
+            badge.bottom > visibleTop
           )
         })
         if (coversNote) overlaps.push(position)
@@ -53,6 +63,7 @@ for (const mode of ['strip', 'page'] as const) {
         getComputedStyle(signal).scale.startsWith('-1')
       view.setTimingCue('dragging')
       view.flushNow()
+      cueTops.add(cue.getBoundingClientRect().top)
       const draggingGradient = getComputedStyle(cue).backgroundImage
       const draggingCursor = getComputedStyle(playhead).backgroundColor
       const pointsRight =
@@ -63,13 +74,16 @@ for (const mode of ['strip', 'page'] as const) {
       const clearedCursor = getComputedStyle(playhead).backgroundColor
       view.setTimingCue('dragging')
       view.flushNow()
+      cueTops.add(cue.getBoundingClientRect().top)
       return {
         overlaps,
         scoreStayedPut: scoreTop === score.getBoundingClientRect().top,
+        cueAboveScore,
+        cueVerticalPositions: cueTops.size,
+        maxHorizontalOffset,
         size: { width: size.width, height: size.height },
         cornerRadius,
         borderless,
-        maxPlayheadGap,
         pointsLeft,
         pointsRight,
         gradientsDiffer:
@@ -92,6 +106,8 @@ for (const mode of ['strip', 'page'] as const) {
     expect(result).toMatchObject({
       overlaps: [],
       scoreStayedPut: true,
+      cueAboveScore: true,
+      cueVerticalPositions: 1,
       size: { width: 158, height: 36 },
       cornerRadius: '8px',
       borderless: true,
@@ -104,7 +120,7 @@ for (const mode of ['strip', 'page'] as const) {
       static: true,
       scoreHasNoVignette: true,
     })
-    expect(result.maxPlayheadGap).toBeLessThan(80)
+    expect(result.maxHorizontalOffset).toBeLessThan(2)
   })
 }
 

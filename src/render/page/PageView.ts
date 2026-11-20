@@ -384,7 +384,7 @@ export class PageView {
       ret.addEventListener('click', () => this.returnToCurrent())
       this.root.append(ret)
     }
-    this.timingCue = new TimingCue(host, this.root, layout)
+    this.timingCue = new TimingCue(host, this.root)
 
     this.store = new PageSegmentStore(
       layout,
@@ -1143,10 +1143,7 @@ export class PageView {
       this.cursorEl.style.height = `${h}px`
       this.applied.cursorH = h
     }
-    if (this.timingCue.visible) {
-      const frame = this.screenFrame()
-      this.timingCue.place(sx - gx + frame.dx, this.hostW, this.hostH, this.respace ? null : frame, this.cursor.system)
-    }
+    if (this.timingCue.visible) this.timingCue.place(sx - gx + this.screenFrame().dx, this.hostW)
     this.placeActionButton(span.top, h, margin.top)
   }
 

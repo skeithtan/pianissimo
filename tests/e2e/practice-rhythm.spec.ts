@@ -176,10 +176,12 @@ test.describe('Keep time', () => {
     await page.clock.runFor(4200)
     await expect(cue).toHaveAttribute('data-direction', 'rushing')
     await expect(cue).toBeVisible()
+    const rushingY = (await cue.boundingBox())!.y
     await page.clock.runFor(3000)
     await pass
     await expect(cue).toHaveAttribute('data-direction', 'dragging')
     await expect(cue).toBeVisible()
+    expect((await cue.boundingBox())!.y).toBe(rushingY)
     const draggingColor = await playhead.evaluate((bar) => getComputedStyle(bar).backgroundColor)
     expect(draggingColor).not.toBe(defaultColor)
     await play(page, 85)

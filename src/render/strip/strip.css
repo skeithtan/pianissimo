@@ -311,7 +311,7 @@
   mask-image: linear-gradient(to bottom, transparent, #000 96px, #000 calc(100% - 96px), transparent);
 }
 
-/* If there is no clear space next to the playhead, its badge can use the top margin. */
+/* A separate row keeps timing feedback at a fixed height and clear of the score. */
 :root {
   --pn-timing-lane-height: 40px;
 }
@@ -329,7 +329,7 @@
 }
 
 .pn-timing-layer {
-  grid-area: 2 / 1;
+  grid-area: 1 / 1;
   position: relative;
   z-index: 2;
   pointer-events: none;
@@ -361,9 +361,9 @@
   --pn-timing-chevron-step: 16px;
   --pn-timing-gradient-period: 160px;
   position: absolute;
-  top: 0;
+  top: 50%;
   left: 0;
-  translate: -50% 0;
+  translate: -50% -50%;
   box-sizing: border-box;
   display: none;
   align-items: stretch;

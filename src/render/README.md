@@ -29,8 +29,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   ease-out pan back to the loop start; past 2.5 viewports it lands 1.5 viewports short of the
   target without a transition, then pans the rest), `setTargets(notes)`, `setAccepted(notes)`,
   `setTimingCue('rushing'|'dragging'|null, enabled)`
-  (a gradient badge near the playhead, positioned with the prepared ink bounds, with looping
-  blue left chevrons or amber right chevrons and a matching playhead tint), `setOttavaEmphasis(spans)`,
+  (a gradient pill in a fixed row above the notation that follows the playhead horizontally,
+  with slate blue left chevrons or copper right chevrons and a matching playhead tint), `setOttavaEmphasis(spans)`,
   `setLabels(Map<note, text>)`, `setLabelOpacity(Map<note, 0..1>)` (every frame OK),
   `setLoop({fromOcc,toOcc,start?,end?}|null)` (a `PassageRange`; exact edges draw a note-level band),
   `setSnapPositions(onsets)` (the hands' exact onsets: loop edges and the dragged playhead snap to

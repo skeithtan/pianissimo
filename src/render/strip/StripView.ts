@@ -456,7 +456,7 @@ export class StripView {
       ret.addEventListener('click', () => this.returnToCurrent())
       this.root.append(ret)
     }
-    this.timingCue = new TimingCue(host, this.root, layout)
+    this.timingCue = new TimingCue(host, this.root)
 
     this.store = new SegmentStore(
       layout,
@@ -1255,8 +1255,7 @@ export class StripView {
       this.cursorEl.style.transform = `translate3d(${sx}px, 0, 0)`
       this.applied.cursorSx = sx
     }
-    if (this.timingCue.visible)
-      this.timingCue.place(sx, this.hostW, this.hostH, this.respace ? null : this.screenFrame())
+    if (this.timingCue.visible) this.timingCue.place(sx, this.hostW)
     this.applyCursorBar()
     this.placeActionButton()
     this.applyLoop()
