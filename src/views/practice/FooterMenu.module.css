@@ -64,7 +64,7 @@
   white-space: normal;
 }
 
-.scorePlaybackSlot {
+.revealSlot {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
@@ -72,11 +72,11 @@
     grid-template-rows var(--dur-fast) var(--ease-standard),
     opacity var(--dur-fast) var(--ease-standard);
 }
-.scorePlaybackSlot[data-open='true'] {
+.revealSlot[data-open='true'] {
   grid-template-rows: 1fr;
   opacity: 1;
 }
-.scorePlaybackClip {
+.revealClip {
   min-height: 0;
   overflow: hidden;
   /* Room for the focus outline beside the switch while the slot clips vertically. */
@@ -87,6 +87,11 @@
 .scorePlayback {
   margin-block: var(--space-1) var(--space-2);
   padding-block: var(--space-1);
+}
+
+.scorePlaybackVolume {
+  padding-block-end: var(--space-2);
+  font-size: var(--text-s);
 }
 
 .menuButton {
@@ -109,7 +114,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .scorePlaybackSlot {
+  .revealSlot {
     transition: none;
   }
   .popover {

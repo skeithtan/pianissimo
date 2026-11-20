@@ -633,10 +633,16 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     updateSettings(metronomePatch(ui.metronomeScope, on))
   }
 
-  const scorePlayback = appSettings.rhythm.scorePlayback
-  const onScorePlayback = (on: boolean) => {
-    if (on) env.primeAudio?.()
-    updateSettings({ rhythm: { scorePlayback: on } })
+  const scorePlayback = {
+    on: appSettings.rhythm.scorePlayback,
+    volume: appSettings.rhythm.scorePlaybackVolume,
+    onToggle(on: boolean) {
+      if (on) env.primeAudio?.()
+      updateSettings({ rhythm: { scorePlayback: on } })
+    },
+    onVolume(volume: number) {
+      updateSettings({ rhythm: { scorePlaybackVolume: volume } })
+    },
   }
 
   const onLabels = (mode: PersistentLabelMode) => {
@@ -931,7 +937,6 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           onLabels={onLabels}
           onRequestTempo={() => setTempoOpen(true)}
           scorePlayback={scorePlayback}
-          onScorePlayback={onScorePlayback}
           metronome={metronome}
           onMetronome={onMetronome}
         />
@@ -970,7 +975,6 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             onLabels={onLabels}
             hasTempo={source !== null}
             scorePlayback={scorePlayback}
-            onScorePlayback={onScorePlayback}
             metronome={metronome}
             onMetronome={onMetronome}
             showKeys={!sideways}

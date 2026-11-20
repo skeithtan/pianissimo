@@ -15,7 +15,7 @@ import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { PracticeSession, SessionUi } from '../../app/session'
 import type { PersistentLabelMode } from '../../core/model/settings'
-import { Segmented, Toggle } from '../../ui/controls'
+import { Segmented, Slider, Toggle } from '../../ui/controls'
 import { useFadePresence } from '../../ui/fade'
 import { Icon } from '../../ui/icons'
 import { usePopoverPlacement } from '../../ui/usePopoverPlacement'
@@ -47,8 +47,12 @@ export interface FooterMenuProps {
   readonly onLabels: (mode: PersistentLabelMode) => void
   /** The score (or the piece) has a numerical tempo: Keep time needs one. */
   readonly hasTempo: boolean
-  readonly scorePlayback: boolean
-  readonly onScorePlayback: (on: boolean) => void
+  readonly scorePlayback: {
+    readonly on: boolean
+    readonly volume: number
+    readonly onToggle: (on: boolean) => void
+    readonly onVolume: (volume: number) => void
+  }
   readonly metronome: MetronomeRow
   /** Turns the click on or off for the current mode (the screen primes audio, then edits the settings). */
   readonly onMetronome: (on: boolean) => void
@@ -59,6 +63,14 @@ export interface FooterMenuProps {
  * them does not cancel the run prepared ahead, so the switch can adopt it (`PracticeScreen`).
  */
 export const KEEPS_AHEAD = 'data-keeps-ahead'
+
+function MenuReveal({ open, children }: { readonly open: boolean; readonly children: ComponentChildren }) {
+  return (
+    <div class={menuStyles.revealSlot} data-open={open} inert={!open} aria-hidden={open ? undefined : true}>
+      <div class={menuStyles.revealClip}>{children}</div>
+    </div>
+  )
+}
 
 /**
  * The footer popover and phone sheet share these rows and supply their own classes. The phone
@@ -71,7 +83,6 @@ export function PracticeMenuItems({
   onLabels,
   hasTempo,
   scorePlayback,
-  onScorePlayback,
   metronome,
   onMetronome,
   showKeys = true,
@@ -80,15 +91,7 @@ export function PracticeMenuItems({
   toggleClass,
 }: Pick<
   FooterMenuProps,
-  | 'ui'
-  | 'session'
-  | 'labels'
-  | 'onLabels'
-  | 'hasTempo'
-  | 'scorePlayback'
-  | 'onScorePlayback'
-  | 'metronome'
-  | 'onMetronome'
+  'ui' | 'session' | 'labels' | 'onLabels' | 'hasTempo' | 'scorePlayback' | 'metronome' | 'onMetronome'
 > & {
   readonly showKeys?: boolean
   readonly rowClass: string | undefined
@@ -120,23 +123,30 @@ export function PracticeMenuItems({
           description={ui.pianoConnected ? KEEP_TIME_DESCRIPTION : `${KEEP_TIME_DESCRIPTION} Needs a connected piano.`}
           onChange={(on) => session.setRhythmMode(on)}
         />
-        <div
-          class={menuStyles.scorePlaybackSlot}
-          data-open={showScorePlayback}
-          inert={!showScorePlayback}
-          aria-hidden={showScorePlayback ? undefined : true}
-        >
-          <div class={menuStyles.scorePlaybackClip}>
-            <Toggle
-              class={`${toggleRow} ${menuStyles.scorePlayback}`}
-              label="Score playback"
-              description="Hear both hands while you play."
-              checked={scorePlayback}
-              disabled={ui.playing}
-              onChange={onScorePlayback}
-            />
-          </div>
-        </div>
+        <MenuReveal open={showScorePlayback}>
+          <Toggle
+            class={`${toggleRow} ${menuStyles.scorePlayback}`}
+            label="Score playback"
+            description="Hear both hands while you play."
+            checked={scorePlayback.on}
+            disabled={ui.playing}
+            onChange={scorePlayback.onToggle}
+          />
+          <MenuReveal open={scorePlayback.on}>
+            <div class={menuStyles.scorePlaybackVolume}>
+              <Slider
+                label="Playback volume"
+                value={Math.round(scorePlayback.volume * 100)}
+                min={0}
+                max={100}
+                step={1}
+                format={(value) => `${value}%`}
+                disabled={ui.playing}
+                onChange={(value) => scorePlayback.onVolume(value / 100)}
+              />
+            </div>
+          </MenuReveal>
+        </MenuReveal>
       </div>
       <Toggle
         class={toggleRow}
@@ -259,7 +269,6 @@ export function FooterMenu({
   onLabels,
   hasTempo,
   scorePlayback,
-  onScorePlayback,
   metronome,
   onMetronome,
 }: FooterMenuProps) {
@@ -282,7 +291,6 @@ export function FooterMenu({
         onLabels={onLabels}
         hasTempo={hasTempo}
         scorePlayback={scorePlayback}
-        onScorePlayback={onScorePlayback}
         metronome={metronome}
         onMetronome={onMetronome}
         rowClass={menuStyles.row}

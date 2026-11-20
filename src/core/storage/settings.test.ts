@@ -58,7 +58,7 @@ const custom: AppSettings = {
   },
   sound: { destination: 'browser', browserVolume: 0.25, monitorInput: true },
   metronome: { enabled: true, keepTime: false, volume: 0.1, outputId: 'usb-output' },
-  rhythm: { toleranceMs: 250, scorePlayback: true },
+  rhythm: { toleranceMs: 250, scorePlayback: true, scorePlaybackVolume: 0.45 },
   mic: { follow: true },
   view: { zoom: 1.75, pageZoom: 1.25, theme: 'dark', scorePaper: 'light' },
   suggestions: { enabled: false },
@@ -119,7 +119,7 @@ describe('normalizeSettings', () => {
   })
 
   it('reads the Keep time tolerance: clamped to 40–500 ms, whole ms, the default for anything else', () => {
-    expect(DEFAULT_SETTINGS.rhythm).toEqual({ toleranceMs: 150, scorePlayback: false })
+    expect(DEFAULT_SETTINGS.rhythm).toEqual({ toleranceMs: 150, scorePlayback: false, scorePlaybackVolume: 1 })
     expect(normalizeSettings({ rhythm: { toleranceMs: 80 } }).rhythm.toleranceMs).toBe(80)
     expect(normalizeSettings({ rhythm: { toleranceMs: 10 } }).rhythm.toleranceMs).toBe(40)
     expect(normalizeSettings({ rhythm: { toleranceMs: 9000 } }).rhythm.toleranceMs).toBe(500)
@@ -130,6 +130,8 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({ rhythm: 'loose' }).rhythm.toleranceMs).toBe(150)
     expect(normalizeSettings({ rhythm: { scorePlayback: true } }).rhythm.scorePlayback).toBe(true)
     expect(normalizeSettings({ rhythm: { scorePlayback: 'true' } }).rhythm.scorePlayback).toBe(false)
+    expect(normalizeSettings({ rhythm: { scorePlayback: true } }).rhythm.scorePlaybackVolume).toBe(1)
+    expect(normalizeSettings({ rhythm: { scorePlaybackVolume: 0 } }).rhythm.scorePlaybackVolume).toBe(0)
   })
 
   it('falls back per field for wrong types and unknown enum values', () => {

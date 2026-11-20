@@ -3594,6 +3594,7 @@ export class PracticeSession {
   #ensureAccompaniment(): void {
     if (this.#sel.hands === 'none' || !hasTempo(this.#tempo)) return
     const scorePlayback = this.#scorePlayback()
+    const scoreVolume = scorePlayback ? level(this.#settings.rhythm?.scorePlaybackVolume ?? 1) : 1
     if (scorePlayback && !accompanimentAllowed(this.#settings, this.#deps.midi.output(), this.#browserSoundPossible()))
       return
     const silent = this.#practiceSilent()
@@ -3603,7 +3604,7 @@ export class PracticeSession {
     // the lead-in's groups, then the loop's (engine group i = gate i + `#gateOffset`). One from
     // inside or after the loop has only its own gates: at its end the music wraps (`#wrapLeadIn`).
     const lead = this.#leadIn && !this.#leadIn.handedOver ? this.#leadIn : null
-    const key = `${performanceKey(this.#settings)}|${this.#outputKey}|${scorePlayback}${lead ? `|lead ${ratKey(lead.start)}` : ''}`
+    const key = `${performanceKey(this.#settings)}|${this.#outputKey}|${scorePlayback}|${scoreVolume}${lead ? `|lead ${ratKey(lead.start)}` : ''}`
     if (this.#accomp && this.#accompKey === key) return
     this.#disposeAccompaniment()
     const range = passageRange(this.#model, lead ? lead.span : this.#sel.range)
@@ -3615,15 +3616,16 @@ export class PracticeSession {
     const leadGroups = lead ? lead.timeline.groups.length : 0
     const route = this.#settings.route
     const sendPedals = route.automaticPedalsInHandPractice || (scorePlayback && this.#outputKind === 'browser')
-    const events = silent
-      ? []
-      : buildPerformance(this.#model, {
-          hands: scorePlayback ? 'none' : this.#sel.hands,
-          range,
-          accompanimentLevel: level(route.accompanimentLevel),
-          sendPedals,
-          reattackHeldAtStart: lead === null,
-        })
+    const events =
+      silent || scoreVolume === 0
+        ? []
+        : buildPerformance(this.#model, {
+            hands: scorePlayback ? 'none' : this.#sel.hands,
+            range,
+            accompanimentLevel: level(route.accompanimentLevel) * scoreVolume,
+            sendPedals,
+            reattackHeldAtStart: lead === null,
+          })
     const transport = createTransport({
       clock: this.#deps.clock,
       timers: this.#deps.timers,

@@ -434,6 +434,10 @@ active Keep time pass and releases its scheduled output. The engine adds `scoreP
 the comparison context for passes that use it. Result and per-measure keys append the playback
 mode only when it is present, preserving existing keys.
 
+The score playback volume slider reuses the Keep time reveal animation in both menu layouts.
+The session includes the saved score volume in the practice transport's cache key. On Start it
+scales the full score's note velocities relative to the route level and omits score events at 0%.
+
 Keep time is exclusive with play-through and disables Repeat lead-ins. The view adds a
 footer-menu switch with a badge on the Menu button, the `CountIn` overlay on the stage and
 the tolerance choice in Settings →

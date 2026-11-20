@@ -18,7 +18,7 @@ import type { PersistentLabelMode } from '../../core/model/settings'
 import { rat, type Rational } from '../../core/music/rational'
 import { HandToggles } from '../../ui/HandToggles'
 import { TempoControl } from '../../ui/TempoControl'
-import { FooterMenu, type MetronomeRow } from './FooterMenu'
+import { FooterMenu, type FooterMenuProps, type MetronomeRow } from './FooterMenu'
 import type { RecedeZone } from './recede'
 import styles from './practice.module.css'
 
@@ -72,8 +72,7 @@ export interface FooterProps {
   readonly labels: PersistentLabelMode
   readonly onLabels: (mode: PersistentLabelMode) => void
   readonly onRequestTempo: () => void
-  readonly scorePlayback: boolean
-  readonly onScorePlayback: (on: boolean) => void
+  readonly scorePlayback: FooterMenuProps['scorePlayback']
   /** The menu's Metronome row (U87) and its handler. */
   readonly metronome: MetronomeRow
   readonly onMetronome: (on: boolean) => void
@@ -90,7 +89,6 @@ export function Footer({
   onLabels,
   onRequestTempo,
   scorePlayback,
-  onScorePlayback,
   metronome,
   onMetronome,
 }: FooterProps) {
@@ -118,7 +116,6 @@ export function Footer({
           onLabels={onLabels}
           hasTempo={tempo !== null}
           scorePlayback={scorePlayback}
-          onScorePlayback={onScorePlayback}
           metronome={metronome}
           onMetronome={onMetronome}
         />

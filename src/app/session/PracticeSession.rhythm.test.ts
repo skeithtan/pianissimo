@@ -877,7 +877,9 @@ describe('Keep time: score playback', () => {
       { at: 1, midi: 50, hand: 'L' },
     ],
   })
-  const settings = testSettings({ rhythm: { ...DEFAULT_SETTINGS.rhythm, scorePlayback: true } })
+  const settingsAtVolume = (scorePlaybackVolume = 1) =>
+    testSettings({ rhythm: { ...DEFAULT_SETTINGS.rhythm, scorePlayback: true, scorePlaybackVolume } })
+  const settings = settingsAtVolume()
 
   it.each(['both', 'right'] as const)(
     'sounds both parts with %s selected and grades human input only',
@@ -917,6 +919,37 @@ describe('Keep time: score playback', () => {
     },
   )
 
+  it('applies saved volume on the next Start and keeps clicking at zero score volume', async () => {
+    const h = harness(
+      duet,
+      {},
+      { options: { rhythm: true }, settings, deps: { loadMetronome: recordingMetronome(rec) } },
+    )
+    await begin(h)
+    at(h, RUN)
+    const full = h.backend.ons().map(({ velocity }) => velocity)
+    expect(full).toHaveLength(2)
+
+    h.session.pause()
+    h.session.updateSettings(settingsAtVolume(0.5))
+    await begin(h)
+    at(h, RUN + 4000)
+    expect(
+      h.backend
+        .ons()
+        .slice(2)
+        .map(({ velocity }) => velocity),
+    ).toEqual(full.map((v) => Math.round(v / 2)))
+
+    h.session.pause()
+    h.session.updateSettings(settingsAtVolume(0))
+    await begin(h)
+    at(h, RUN + 8000)
+    expect(h.backend.ons()).toHaveLength(4)
+    expect(rec.clicks.some(({ time }) => time === RUN + 8000)).toBe(true)
+    expect(h.session.engine.state.phase).toBe('running')
+  })
+
   it('restores normal accompaniment after the switch is turned off and cancels the old score audio', async () => {
     const h = harness(duet, { hands: 'right' }, { options: { rhythm: true }, settings })
     await begin(h)
@@ -932,7 +965,7 @@ describe('Keep time: score playback', () => {
     expect(h.backend.ons().map(({ note }) => note)).toEqual([48, 60, 48])
   })
 
-  it('plays through Browser sound with an unverified piano output', async () => {
+  it('applies volume through Browser sound with an unverified piano output', async () => {
     const backend = new RecordingBackend(() => T0)
     const sound = { createBrowserAudio: () => backend } as unknown as BrowserAudioModule
     const h = harness(
@@ -941,7 +974,7 @@ describe('Keep time: score playback', () => {
       {
         options: { rhythm: true },
         settings: {
-          ...settings,
+          ...settingsAtVolume(0.5),
           route: { ...settings.route, outputVerified: false, echo: 'untested' },
           sound: { ...settings.sound, destination: 'browser' },
         },
@@ -950,7 +983,11 @@ describe('Keep time: score playback', () => {
     )
     await begin(h)
     at(h, RUN)
-    expect(backend.ons().map(({ note }) => note)).toEqual([48, 60])
+    const expected = [48, 60].map((pitch) => [
+      pitch,
+      Math.round(duet.notes.find((note) => note.midi === pitch)!.velocity / 2),
+    ])
+    expect(backend.ons().map(({ note, velocity }) => [note, velocity])).toEqual(expected)
     expect(h.backend.ons()).toEqual([])
   })
 

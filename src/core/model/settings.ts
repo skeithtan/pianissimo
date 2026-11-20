@@ -139,6 +139,8 @@ export interface RhythmSettings {
   readonly toleranceMs: number
   /** Play both scored parts during Keep time (default off). */
   readonly scorePlayback: boolean
+  /** 0..1 relative to the usual automatic playback level. */
+  readonly scorePlaybackVolume: number
 }
 
 export const MIN_RHYTHM_TOLERANCE_MS = 40
@@ -235,7 +237,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   sound: { destination: 'auto', browserVolume: 0.8, monitorInput: false },
   metronome: { enabled: false, keepTime: true, volume: 0.6, outputId: null },
-  rhythm: { toleranceMs: 150, scorePlayback: false },
+  rhythm: { toleranceMs: 150, scorePlayback: false, scorePlaybackVolume: 1 },
   mic: { follow: false },
   view: { zoom: 1, pageZoom: 1, theme: 'system', scorePaper: 'theme' },
   suggestions: { enabled: true },
