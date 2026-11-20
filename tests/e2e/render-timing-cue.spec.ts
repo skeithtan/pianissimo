@@ -4,7 +4,7 @@ import { openHarness } from './render-helpers'
 test.use({ reducedMotion: 'reduce' })
 
 for (const mode of ['strip', 'page'] as const) {
-  test(`the timing cue stays at one height and follows the playhead horizontally in the ${mode}`, async ({ page }) => {
+  test(`the timing cue stays close to the cursor at one height in the ${mode}`, async ({ page }) => {
     await openHarness(page)
     const result = await page.evaluate(async (mode) => {
       await window.harness.prepare('changes', 3, { mode, pageWidth: 600 })
@@ -24,7 +24,8 @@ for (const mode of ['strip', 'page'] as const) {
       const overlaps: number[] = []
       const cueTops = new Set<number>()
       let maxHorizontalOffset = 0
-      let cueAboveScore = true
+      let maxVerticalGap = 0
+      let cueInStage = true
       for (const position of window.harness.onsets()) {
         view.setCursor(position, { smooth: false })
         view.setTimingCue('rushing')
@@ -35,8 +36,9 @@ for (const mode of ['strip', 'page'] as const) {
         const inset = badge.width / 2 + 8
         const expectedX = Math.max(stage.left + inset, Math.min(bar.left + bar.width / 2, stage.right - inset))
         maxHorizontalOffset = Math.max(maxHorizontalOffset, Math.abs(badge.left + badge.width / 2 - expectedX))
+        maxVerticalGap = Math.max(maxVerticalGap, bar.top - badge.bottom)
         cueTops.add(badge.top)
-        cueAboveScore &&= badge.top >= stage.top && badge.bottom <= scoreTop
+        cueInStage &&= badge.top >= stage.top && badge.bottom <= stage.bottom
         const coversNote = [...document.querySelectorAll('.pn-music [data-n]')].some((head) => {
           const note = head.getBoundingClientRect()
           // A page system can scroll above the score viewport and is clipped there.
@@ -78,9 +80,10 @@ for (const mode of ['strip', 'page'] as const) {
       return {
         overlaps,
         scoreStayedPut: scoreTop === score.getBoundingClientRect().top,
-        cueAboveScore,
+        cueInStage,
         cueVerticalPositions: cueTops.size,
         maxHorizontalOffset,
+        maxVerticalGap,
         size: { width: size.width, height: size.height },
         cornerRadius,
         borderless,
@@ -106,7 +109,7 @@ for (const mode of ['strip', 'page'] as const) {
     expect(result).toMatchObject({
       overlaps: [],
       scoreStayedPut: true,
-      cueAboveScore: true,
+      cueInStage: true,
       cueVerticalPositions: 1,
       size: { width: 158, height: 36 },
       cornerRadius: '8px',
@@ -121,6 +124,7 @@ for (const mode of ['strip', 'page'] as const) {
       scoreHasNoVignette: true,
     })
     expect(result.maxHorizontalOffset).toBeLessThan(2)
+    expect(result.maxVerticalGap).toBeLessThan(64)
   })
 }
 

@@ -403,12 +403,13 @@ transport reports each arrival (`transportArrived`); the engine judges, closes m
 builds the record. The session can show a soft wash for a missed group and tracks drift in
 `TimingDrift` (U107, U111, U113). A pitch index prepared before the count-in supports matches up
 to one second from the playhead. The session sends the direction and enabled state to
-`StripSink.setTimingCue` in the animation frame. Strip and Page reserve the same 40 px row at
-the top of the stage while timing feedback is enabled (U122). The shared cue follows the
-viewport x-coordinate of the playhead, clamped at the edges. The row fixes its height through
-scrolling and system changes and keeps it clear of the notation. The cursor shares the cue's
-color and returns to its standard tint when the cue clears (U119). The result card's timing
-line comes from `timingAccuracy`.
+`StripSink.setTimingCue` in the animation frame. The shared cue follows the viewport
+x-coordinate of the playhead, clamped at the edges (U123). In the strip, the cue sits just
+above the full engraving or uses the reserved row when the engraving reaches the top edge.
+In page view, the cue holds in the row and the active system scrolls to 8 px into the score
+viewport. The page adds only the bottom room needed for the last system to reach that
+position. The cursor shares the cue's color and returns to its standard tint when the cue
+clears. The result card's timing line comes from `timingAccuracy`.
 The lazy Details view uses `buildTimingReview` on the completed record and its timeline.
 `ResultDetails` merges bars with timing deviations into the ranked correction excerpts by
 occurrence, putting timing-only bars afterward. `TimingBarPlot` uses the excerpt's engraving

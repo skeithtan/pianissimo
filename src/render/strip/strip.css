@@ -311,7 +311,7 @@
   mask-image: linear-gradient(to bottom, transparent, #000 96px, #000 calc(100% - 96px), transparent);
 }
 
-/* A separate row keeps timing feedback at a fixed height and clear of the score. */
+/* Page cues use the top row. A strip cue can sit lower when there is room above its music. */
 :root {
   --pn-timing-lane-height: 40px;
 }
@@ -329,7 +329,7 @@
 }
 
 .pn-timing-layer {
-  grid-area: 1 / 1;
+  grid-area: 2 / 1;
   position: relative;
   z-index: 2;
   pointer-events: none;
@@ -361,9 +361,9 @@
   --pn-timing-chevron-step: 16px;
   --pn-timing-gradient-period: 160px;
   position: absolute;
-  top: 50%;
+  top: 0;
   left: 0;
-  translate: -50% -50%;
+  translate: -50% 0;
   box-sizing: border-box;
   display: none;
   align-items: stretch;

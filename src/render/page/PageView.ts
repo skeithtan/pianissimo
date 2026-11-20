@@ -109,6 +109,8 @@ const TOUCH_EVENTS = typeof window !== 'undefined' && 'ontouchstart' in window
 const clampMagnify = (m: number): number => Math.max(1, Math.min(MAX_MAGNIFY, Number.isFinite(m) ? m : 1))
 /** Space above the first system (screen px). */
 export const PAGE_PAD_TOP = 16
+/** While timing is active, the current system reads just below the reserved cue row. */
+const PAGE_TIMING_INSET = 8
 /** The page's follow scroll (`--dur-slow`), ms. */
 const SCROLL_MS = 300
 /** `--ease-standard` (global.css); read from the theme when available. */
@@ -483,7 +485,10 @@ export class PageView {
   }
 
   setTimingCue(direction: TimingDirection | null, enabled = direction !== null): void {
-    if (this.timingCue.set(direction, enabled)) this.schedule()
+    const wasActive = this.timingCue.active
+    if (!this.timingCue.set(direction, enabled)) return
+    if (enabled !== wasActive) this.followRequest ??= 'smooth'
+    this.schedule()
   }
 
   /**
@@ -630,8 +635,7 @@ export class PageView {
 
   /**
    * Bar under a viewport point. With one argument (the strip's contract) the point is on the
-   * current system's line, or while browsing on the system at the resting line a quarter down
-   * the viewport.
+   * current system's line, or while browsing on the system at the page's reading position.
    */
   occAt(clientX: number, clientY?: number): number {
     const rect = this.sheet.getBoundingClientRect()
@@ -641,9 +645,7 @@ export class PageView {
     if (clientY !== undefined) y = (clientY - rect.top - PAGE_PAD_TOP) / this.scale + this.layout.top
     else if (this.browsing) {
       const sr = this.scroller.getBoundingClientRect()
-      y =
-        (sr.top + this.hostH * (this.opts.followOffset ?? 0.25) - rect.top - PAGE_PAD_TOP) / this.scale +
-        this.layout.top
+      y = (sr.top + this.hostH * this.followOffset() - rect.top - PAGE_PAD_TOP) / this.scale + this.layout.top
       y += 1
     } else {
       const span = this.geo.staffSpan(this.cursor.system)
@@ -964,7 +966,18 @@ export class PageView {
   }
 
   private sheetHeight(): number {
-    return Math.ceil(PAGE_PAD_TOP + this.layout.height * this.scale + Math.max(PAGE_PAD_TOP, this.hostH * 0.5))
+    const content = PAGE_PAD_TOP + this.layout.height * this.scale
+    const normalHeight = content + Math.max(PAGE_PAD_TOP, this.hostH * 0.5)
+    const lastSystem = this.geo.systems.at(-1)
+    if (!this.timingCue.active || !lastSystem) return Math.ceil(normalHeight)
+    // Keep the last system reachable at the same reading position as the other systems.
+    const lastSystemY = PAGE_PAD_TOP + (lastSystem.y0 - this.layout.top) * this.scale
+    return Math.ceil(Math.max(normalHeight, lastSystemY + this.hostH - PAGE_TIMING_INSET))
+  }
+
+  private followOffset(): number {
+    if (this.timingCue.active && this.hostH > 0) return PAGE_TIMING_INSET / this.hostH
+    return this.opts.followOffset ?? 0.25
   }
 
   private schedule(): void {
@@ -1017,7 +1030,7 @@ export class PageView {
         padTop: PAGE_PAD_TOP,
         viewport: this.hostH,
         max: sheetH - this.hostH,
-        offset: this.opts.followOffset ?? 0.25,
+        offset: this.followOffset(),
       })
       const animate = this.lastSystem >= 0 && request !== 'instant' && !this.reducedMotion
       const targetX = changed || requestX ? this.followScrollX(true) : this.scrollX

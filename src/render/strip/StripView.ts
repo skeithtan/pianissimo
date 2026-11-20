@@ -1255,7 +1255,8 @@ export class StripView {
       this.cursorEl.style.transform = `translate3d(${sx}px, 0, 0)`
       this.applied.cursorSx = sx
     }
-    if (this.timingCue.visible) this.timingCue.place(sx, this.hostW)
+    // The full engraving's top stays put as individual notes scroll under the cursor.
+    if (this.timingCue.visible) this.timingCue.place(sx, this.hostW, this.ty)
     this.applyCursorBar()
     this.placeActionButton()
     this.applyLoop()

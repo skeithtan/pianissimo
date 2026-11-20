@@ -140,6 +140,9 @@ test.describe('Keep time', () => {
         await expect(cue).toContainText(example.label)
         // Chromium can round a fully visible cue's intersection ratio just below 1.
         await expect(cue).toBeInViewport({ ratio: 0.999 })
+        const badge = (await cue.boundingBox())!
+        const playhead = (await page.locator('.pn-cursor-bar').boundingBox())!
+        expect(playhead.y - (badge.y + badge.height)).toBeLessThan(64)
       } else {
         await expect(cue).toBeHidden()
       }

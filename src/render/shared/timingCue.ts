@@ -3,8 +3,10 @@ import type { TimingDirection } from '../../core/model/practice'
 const WIDTH = 158
 const HEIGHT = 36
 const EDGE = 8
+const GAP = 8
+const RESERVED_ROW_Y = -HEIGHT - 2
 
-/** A badge in a fixed row above the score that tracks the playhead horizontally. */
+/** A badge above the music that tracks the playhead horizontally. */
 export class TimingCue {
   private readonly frame: HTMLDivElement
   private readonly bubble: HTMLDivElement
@@ -12,6 +14,7 @@ export class TimingCue {
   private enabled = false
   private direction: TimingDirection | null = null
   private x = NaN
+  private y = NaN
 
   constructor(host: HTMLElement, score: HTMLElement) {
     const doc = host.ownerDocument
@@ -69,12 +72,18 @@ export class TimingCue {
     return this.direction !== null
   }
 
-  place(cursorX: number, width: number): void {
+  get active(): boolean {
+    return this.enabled
+  }
+
+  place(cursorX: number, width: number, scoreTop = 0): void {
     const inset = Math.min(WIDTH / 2 + EDGE, width / 2)
     const x = Math.round(Math.max(inset, Math.min(cursorX, width - inset)))
-    if (x === this.x) return
+    const y = Math.max(RESERVED_ROW_Y, Math.floor(scoreTop) - HEIGHT - GAP)
+    if (x === this.x && y === this.y) return
     this.x = x
-    this.bubble.style.transform = `translate3d(${x}px, 0, 0)`
+    this.y = y
+    this.bubble.style.transform = `translate3d(${x}px, ${y}px, 0)`
   }
 
   destroy(): void {
