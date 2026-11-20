@@ -6,7 +6,14 @@
 import { join } from 'node:path'
 import { expect, test, type Page } from '../browser-test'
 import { importFixture } from '../unit/import/fixtures'
-import { SHOT_DIR, installFakeMidi, openSeededPractice, playWhenDue, seedPiece } from './practice-helpers'
+import {
+  SHOT_DIR,
+  installFakeMidi,
+  openFooterMenu,
+  openSeededPractice,
+  playWhenDue,
+  seedPiece,
+} from './practice-helpers'
 
 /** Performed-note index of a pitch in the first bar of the Two Hands fixture (the strip's `data-n`). */
 async function noteIndex(midi: number): Promise<number> {
@@ -28,6 +35,32 @@ test.describe('note-level practice', () => {
     await installFakeMidi(page)
     await seedPiece(page)
     await openSeededPractice(page)
+  })
+
+  test('Keep time stops a silent first pass at the end of a partial bar', async ({ page }) => {
+    await page.getByRole('button', { name: 'Repeat from here' }).click()
+    await page.getByRole('button', { name: /Passage end/ }).press('ArrowLeft')
+    const end = page.getByTestId('repeat-controls').getByRole('group', { name: 'Loop end' })
+    await expect(end).toContainText(/Bar 1, beat/)
+
+    const menu = await openFooterMenu(page)
+    await menu.getByRole('switch', { name: 'Keep time' }).click()
+    await page.keyboard.press('Escape')
+
+    await page.clock.install()
+    const start = page.getByRole('button', { name: 'Start', exact: true })
+    await start.click()
+    const countIn = page.getByTestId('count-in')
+    await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 4')
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 150)))
+    await page.clock.runFor(4100)
+    await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'running')
+
+    await page.clock.runFor(3000)
+    await expect(start).toBeVisible()
+    await expect(page.getByTestId('attempt-result')).toHaveCount(0)
+    await page.clock.runFor(4500)
+    await expect(countIn).toHaveCount(0)
   })
 
   for (const action of ['pause', 'browse'] as const) {

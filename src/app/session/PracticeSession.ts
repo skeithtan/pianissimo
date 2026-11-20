@@ -167,7 +167,7 @@ interface CountIn {
   timer: unknown
 }
 
-/** The opening of an automatic Keep time repeat, still waiting to hear the learner. */
+/** The opening of a Keep time loop, still waiting to hear the learner. */
 interface RepeatOpening {
   readonly start: number
   readonly pitches: ReadonlySet<number>
@@ -340,7 +340,7 @@ export class PracticeSession {
   #readingStarted = false
   #awaitPrepared = false
   #pendingRepeat = false
-  #nextRepeatOpening: 'first' | 'second' | null = null
+  #secondOpeningBarOnWrap = false
   #repeatOpening: RepeatOpening | null = null
   /** Repeat mode (U10): loop controls shown, Start = scored attempts over `#loop`, repeated. */
   #repeat = false
@@ -688,7 +688,7 @@ export class PracticeSession {
       // A new run: the Repeat reset or ladder step that waited for the last pass's music is
       // taken over here, so nothing stale fires at the loop end.
       this.#pendingRepeat = false
-      this.#nextRepeatOpening = null
+      this.#secondOpeningBarOnWrap = false
       if (!this.#newRunAtLadderSpeed()) {
         const kind = this.#scoredKind()
         if (this.#engine.mode !== 'scored' || this.#engine.transport !== kind.transport) {
@@ -1894,9 +1894,9 @@ export class PracticeSession {
   }
 
   #watchRepeatOpening(start: number): void {
-    const opening = this.#nextRepeatOpening
-    this.#nextRepeatOpening = null
-    if (!opening) return
+    if (!this.#repeat) return
+    const firstBar = !this.#secondOpeningBarOnWrap
+    this.#secondOpeningBarOnWrap = false
     const timeline = this.#engine.timeline
     const first = timeline.groups[0]?.occ
     if (first === undefined) return
@@ -1908,7 +1908,7 @@ export class PracticeSession {
       const end = lt(barEnd, timeline.end) ? barEnd : timeline.end
       return start + secondsBetween(timeline.tempo, timeline.start, end, timeline.multiplier) * 1000
     }
-    const second = opening === 'first' && first < timeline.range.toOcc ? first + 1 : null
+    const second = firstBar && first < timeline.range.toOcc ? first + 1 : null
     const pitches = new Set<number>()
     for (const group of timeline.groups) {
       if (group.occ > (second ?? first)) break
@@ -1918,7 +1918,7 @@ export class PracticeSession {
       start,
       pitches,
       deadline: deadlineFor(first),
-      firstBar: opening === 'first',
+      firstBar,
       secondBarEnd: second === null ? null : deadlineFor(second),
       played: false,
       completed: null,
@@ -1935,7 +1935,7 @@ export class PracticeSession {
         if (now < opening.deadline) return
       } else {
         // For a one-bar loop, the next traversal provides the second bar of playing.
-        this.#nextRepeatOpening = 'second'
+        this.#secondOpeningBarOnWrap = true
         this.#releaseRepeatOpening()
         return
       }
@@ -3310,17 +3310,16 @@ export class PracticeSession {
 
   #repeatReset(now: number): void {
     const speed = this.#ladderNext
-    const opening = this.#nextRepeatOpening === 'second' ? 'second' : 'first'
     if (speed !== null && this.#repeat) {
+      const secondBar = this.#secondOpeningBarOnWrap
       this.#ladderStep(speed)
-      if (this.#engine.transport === 'strict') this.#nextRepeatOpening = opening
+      this.#secondOpeningBarOnWrap = secondBar
       return
     }
     this.#pendingRepeat = false
     this.#accomp?.stop()
     this.#clearHighlights()
     this.#engine.restart(now, { continueRepeat: true })
-    if (this.#engine.transport === 'strict') this.#nextRepeatOpening = opening
     this.#prepareAttempt(now)
     // Back to the loop start: the strip pans there quickly instead of scrolling backward.
     this.#strip?.wrapTo?.(this.#cursorPosition())
@@ -3614,7 +3613,7 @@ export class PracticeSession {
 
   #pauseTransports(): void {
     this.#repeatOpening = null
-    this.#nextRepeatOpening = null
+    this.#secondOpeningBarOnWrap = false
     if (this.#accomp && this.#accomp.state === 'playing') this.#accomp.pause()
     this.#clearHighlights()
   }

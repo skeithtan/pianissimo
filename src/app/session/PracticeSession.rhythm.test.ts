@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildScore } from '../../core/engine/testkit'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
+import { rat } from '../../core/music/rational'
 import { FakeAudioContext } from '../../core/playback/fakeWebAudio'
 import type { MetronomeModule } from '../../core/playback'
 import { existingAudioContext, resetSharedAudioContext, sharedAudioContext } from '../../core/playback/webaudio/context'
@@ -469,14 +470,42 @@ describe('Keep time: modes', () => {
     expect(ui(h).lastResult?.streak).toBe(2)
   })
 
+  it.each([
+    { name: 'a full bar', range: { fromOcc: 0, toOcc: 1 }, barMs: 4000 },
+    { name: 'a mid-bar start', range: { fromOcc: 0, toOcc: 1, start: rat(1, 2) }, barMs: 2000 },
+    { name: 'a loop cut at both ends', range: { ...LOOP, start: rat(1, 2), end: rat(3, 4) }, barMs: 1000 },
+    { name: 'a pickup', range: { fromOcc: 0, toOcc: 1 }, barMs: 1000, pickup: true },
+  ])('stops the first pass at the end of $name when no key is pressed', async ({ range, barMs, pickup }) => {
+    const model = pickup
+      ? buildScore({
+          notes: [
+            { at: 0, midi: 60 },
+            { at: 1, midi: 62 },
+          ],
+          bars: [1, 4],
+        })
+      : melody
+    const h = harness(model, { range }, { options: { rhythm: true } })
+    await begin(h)
+
+    at(h, RUN + barMs - 1)
+    expect(ui(h)).toMatchObject({ playing: true, countIn: null, lastResult: null })
+    at(h, RUN + barMs)
+    expect(ui(h)).toMatchObject({ playing: false, countIn: null, lastResult: null })
+    at(h, RUN + 12_000)
+    expect(h.attempts).toHaveLength(0)
+    expect(ui(h).countIn).toBeNull()
+  })
+
   it('clears the previous corrections at the downbeat of an automatic repeat', async () => {
     const h = open({ range: LOOP })
     await begin(h)
+    playOnTime(h, [60])
     const nextRun = RUN + 8000
     at(h, nextRun - 1)
     const previous = ui(h).lastResult
-    expect(ui(h)).toMatchObject({ countIn: 1, corrections: 4 })
-    expect(h.strip.corrections).toHaveLength(4)
+    expect(ui(h)).toMatchObject({ countIn: 1, corrections: 3 })
+    expect(h.strip.corrections).toHaveLength(3)
 
     at(h, nextRun)
     h.tap(61)
@@ -535,19 +564,16 @@ describe('Keep time: modes', () => {
     expect(ui(h)).toMatchObject({ playing: true, countIn: 4 })
   })
 
-  it('gives wrong pitches a second bar before stopping an automatic repeat', async () => {
+  it('gives wrong pitches a second bar before stopping the first pass', async () => {
     const h = open({ range: { fromOcc: 0, toOcc: 1 } })
     await begin(h)
-    playOnTime(h, [60, 62, 64, 65, 67, 69, 71, 72])
-    const result = ui(h).lastResult
-    const nextRun = RUN + 12000
 
-    playOnTime(h, [61, 63, 66, 68, 70, 73, 75, 76], [], nextRun)
-    at(h, nextRun + 7999)
+    playOnTime(h, [61, 63, 66, 68, 70, 73, 75, 76])
+    at(h, RUN + 7999)
     expect(ui(h).playing).toBe(true)
-    at(h, nextRun + 8000)
-    expect(ui(h)).toMatchObject({ playing: false, countIn: null, lastResult: result, reviewing: true })
-    expect(h.attempts).toHaveLength(1)
+    at(h, RUN + 8000)
+    expect(ui(h)).toMatchObject({ playing: false, countIn: null, lastResult: null })
+    expect(h.attempts).toHaveLength(0)
   })
 
   it('keeps running when a written pitch is played off beat in the second bar', async () => {

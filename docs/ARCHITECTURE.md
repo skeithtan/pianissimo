@@ -403,8 +403,9 @@ anchors for the onset plot under the score. A miss breaks the plot line and appe
 All affected bars are listed, and later excerpts wait until visible to build their notation.
 A pass within the near-beat window has a folded timing summary beneath the pass facts.
 
-For automatic repeats (U112), the session checks for key presses by the first playable bar's
-end and for any written learner pitch by the second bar's end. The pitch check ignores scoring
+For every Keep time loop pass (U112), including the first, the session checks for key presses
+by the first playable bar's end and for any written learner pitch by the second bar's end.
+The deadlines follow the actual score and clip to the loop's edges. The pitch check ignores scoring
 tolerance. One-bar loops get the second bar on the next traversal. The session holds any
 early completion while the check is pending so an automatic stop leaves the previous result
 and does not add a pass to history. On the next downbeat the session hides the previous pass's

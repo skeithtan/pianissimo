@@ -25,6 +25,7 @@ import {
   openFooterMenu,
   openSeededPractice,
   play,
+  playAfterCountIn,
   playWhenDue,
   seedPiece,
 } from './practice-helpers'
@@ -333,7 +334,8 @@ test.describe('the review after a completed pass (U97)', () => {
     const countIn = page.getByTestId('count-in')
     const before = await stripScale(page)
     await page.getByRole('button', { name: 'Start', exact: true }).click()
-    await expect(page.getByTestId('attempt-result')).toContainText('6 missed', { timeout: 20_000 })
+    await playAfterCountIn(page, [{ notes: [60, 48], atMs: 0 }])
+    await expect(page.getByTestId('attempt-result')).toContainText('5 missed', { timeout: 20_000 })
     await expect(countIn).toHaveAttribute('aria-label', 'Count-in: 3')
     await expect(strip).toHaveClass(/pn-review/)
     await expect(corrections).not.toHaveCount(0)
@@ -349,7 +351,7 @@ test.describe('the review after a completed pass (U97)', () => {
     expect(await stripScale(page)).toBeCloseTo(before, 4)
 
     await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
-    await expect(page.getByTestId('attempt-result')).toContainText('6 missed')
+    await expect(page.getByTestId('attempt-result')).toContainText('5 missed')
     await expect(strip).toHaveClass(/pn-review/)
     await expect(corrections).not.toHaveCount(0)
     await expect(countIn).toHaveCount(0)
