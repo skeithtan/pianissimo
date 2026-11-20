@@ -13,7 +13,6 @@ interface ScoreColors {
   label: string
   target: string
   accepted: string
-  playback: string
 }
 
 async function inkOf(page: Page): Promise<ScoreColors> {
@@ -24,11 +23,10 @@ async function inkOf(page: Page): Promise<ScoreColors> {
     return {
       head: getComputedStyle(head).fill,
       staffLine: getComputedStyle(staffLine).stroke,
-      paper: getComputedStyle(document.querySelector('.pn-strip')!).backgroundColor,
+      paper: getComputedStyle(document.querySelector('.pn-score-viewport')!).backgroundColor,
       label: label ? getComputedStyle(label).fill : '',
       target: getComputedStyle(document.querySelector('.pn-music .pn-target path')!).fill,
       accepted: getComputedStyle(document.querySelector('.pn-music .pn-acc path')!).fill,
-      playback: getComputedStyle(document.querySelector('.pn-music .pn-play path')!).fill,
     }
   })
 }
@@ -47,7 +45,6 @@ test('notation ink, paper and labels follow explicit and system themes without r
     const s = window.harness.strip()!
     s.setTargets([3, 4])
     s.setAccepted([1])
-    s.setPlaybackHighlights([2])
     s.setLoop({ fromOcc: 2, toOcc: 2 })
     s.flushNow()
   })
@@ -84,7 +81,6 @@ test('notation ink, paper and labels follow explicit and system themes without r
   expect(dark.label).not.toBe(light.label)
   expect(dark.target).not.toBe(light.target)
   expect(dark.accepted).not.toBe(light.accepted)
-  expect(dark.playback).not.toBe(light.playback)
   // Pinned paper uses the light semantic inks as well as light ordinary notes and All labels.
   expect(pinned).toEqual(pinnedLight)
 

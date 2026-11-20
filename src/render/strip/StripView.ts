@@ -9,8 +9,7 @@
  *   (its own layer: while the music scrolls it does not move at all), as tall as the staves plus a
  *   margin that fades out; position → x glides across barlines and is smoothed while following a
  *   continuously moving transport (R12). A loop wrap pans back quickly (`wrapTo`).
- * - All live updates (targets, accepted, wrong marker, automatic part, playback, subdued hand,
- *   ottava emphasis, labels and their opacity) are attribute/class/style writes on mounted nodes,
+ * - Live updates to learner notes, ottava emphasis and label opacity write to mounted nodes,
  *   batched in one requestAnimationFrame and O(changed notes). Nothing is re-engraved.
  * - Pinch/ctrl-wheel zoom is a CSS scale (R2); drag inspection while browsing is enabled;
  *   passage selection with handles (snapping to note onsets, U21), tap selection and a clear
@@ -19,7 +18,6 @@
  *   previous view's columns, the cursor note staying under the fixed line (`respaceFrom`).
  */
 import type { TimingDirection } from '../../core/model/practice'
-import type { Hand } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import { canvasMeasurer, estimateMeasurer, loadLabelFont, type TextMeasurer } from '../labels/metrics'
 import {
@@ -147,13 +145,9 @@ export interface StripStats {
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const TARGET = 1
 const ACCEPTED = 2
-const AUTO = 4
-const PLAY = 8
 const FLAG_CLASSES: readonly [number, string][] = [
   [TARGET, 'pn-target'],
   [ACCEPTED, 'pn-acc'],
-  [AUTO, 'pn-auto'],
-  [PLAY, 'pn-play'],
 ]
 const TAP_SLOP = 8
 /** Wheel / trackpad browsing has no finger to lift: this long without a wheel event is the release (U95). */
@@ -282,7 +276,6 @@ export class StripView {
   private browsing = false
   private browseTx = 0
   private browseEnabled = false
-  private subdued: Hand | null = null
 
   private ottavaSpans: number[] = []
   private readonly ottavaBoxes = new Map<number, HTMLDivElement>()
@@ -581,24 +574,6 @@ export class StripView {
   /** Notes already played correctly in the current group (kept until the group advances). */
   setAccepted(notes: readonly number[]): void {
     this.setFlag(ACCEPTED, notes)
-  }
-
-  /** Notes the app plays (automatic part), drawn in the automatic-part color. */
-  setAutomatic(notes: readonly number[]): void {
-    this.setFlag(AUTO, notes)
-  }
-
-  /** Notes sounding in reference playback / Listen. */
-  setPlaybackHighlights(notes: readonly number[]): void {
-    this.setFlag(PLAY, notes)
-  }
-
-  /** Subdues the unselected hand's notation and labels (hand practice). */
-  setSubduedHand(hand: Hand | null): void {
-    if (hand === this.subdued) return
-    this.subdued = hand
-    this.root.classList.toggle('pn-sub-L', hand === 'L')
-    this.root.classList.toggle('pn-sub-R', hand === 'R')
   }
 
   setTimingCue(direction: TimingDirection | null, enabled = direction !== null): void {
@@ -1357,15 +1332,14 @@ export class StripView {
   }
 
   /**
-   * Note classes on `seg`'s notehead for `n` (the owner's or a copy's); the halo / ring / play
-   * mark (`this.marks`, one per note) only in the owning segment.
+   * Note classes on the owner's or a copy's notehead, with the halo or ring in the owning segment.
    */
   private paintNote(seg: MountedSegment, n: number): void {
     const f = this.flags[n]!
     const head = seg.heads.get(n)
     if (head) for (const [bit, cls] of FLAG_CLASSES) head.classList.toggle(cls, (f & bit) !== 0)
     if (!this.owns(seg, n)) return
-    const markCls = f & ACCEPTED ? 'pn-ring' : f & TARGET ? 'pn-halo' : f & PLAY ? 'pn-playmark' : ''
+    const markCls = f & ACCEPTED ? 'pn-ring' : f & TARGET ? 'pn-halo' : ''
     let mark = this.marks.get(n)
     if (!markCls) {
       if (mark) {

@@ -327,17 +327,6 @@ describe('StripView overlays', () => {
     expect(host.querySelectorAll('.pn-ring').length).toBe(0)
   })
 
-  it('marks automatic and playback notes and subdues a hand', () => {
-    const { v } = view()
-    v.setAutomatic([1, 3])
-    v.setPlaybackHighlights([3])
-    v.setSubduedHand('L')
-    v.flushNow()
-    expect(host.querySelector('[data-n="3"]')!.classList.contains('pn-play')).toBe(true)
-    expect(host.querySelector('[data-n="1"]')!.classList.contains('pn-auto')).toBe(true)
-    expect(host.querySelector('.pn-strip')!.classList.contains('pn-sub-L')).toBe(true)
-  })
-
   it('emphasizes ottava brackets and shows a reminder when the label is offscreen', () => {
     const { v } = view()
     v.setOttavaEmphasis([0])

@@ -427,7 +427,7 @@ export class PracticeSession {
   #labelsDirty = true
   #emitQueue: { time: number; ev: NoteOnEvent | NoteOffEvent }[] = []
   readonly #sounding = new Map<number, readonly number[]>()
-  #highlightsDirty = false
+  #soundingDirty = false
   #lastResumeSave = -Infinity
   #processing = false
   /** Records ending while this is set are dropped: the learner browsed away from them (U41). */
@@ -750,7 +750,7 @@ export class PracticeSession {
       if (this.#listen.playing) {
         this.#listen.transport.pause()
         this.#listen.playing = false
-        this.#clearHighlights()
+        this.#clearSounding()
       }
       this.#process(now)
       return
@@ -788,7 +788,7 @@ export class PracticeSession {
     if (this.#listen) {
       const range = passageRange(this.#model, this.#sel.range)
       this.#listen.transport.seek(range.start)
-      this.#clearHighlights()
+      this.#clearSounding()
       this.#process(now)
       return
     }
@@ -885,7 +885,7 @@ export class PracticeSession {
     if (this.#listen) {
       this.#listen.transport.seek(position)
       this.#lastSeek = { position }
-      this.#clearHighlights()
+      this.#clearSounding()
       this.#process(now)
       return true
     }
@@ -937,7 +937,7 @@ export class PracticeSession {
     if (g) this.#lastSeek = { position: g.position }
     if (this.#accomp && g) {
       this.#accomp.seek(g.position)
-      this.#clearHighlights()
+      this.#clearSounding()
     }
     this.#saveResume(now, true)
     this.#process(now)
@@ -1089,7 +1089,7 @@ export class PracticeSession {
     }
     this.#readingStarted = false
     this.#endLeadIn()
-    this.#clearHighlights()
+    this.#clearSounding()
     this.#flash?.clear()
     this.#engine.reconfigure(
       { reason: 'mode-change', mode: 'scored', timeline: this.#timeline, transport: 'accompaniment' },
@@ -1508,7 +1508,7 @@ export class PracticeSession {
     p.follower.pause(now)
     p.playing = false
     this.#mic?.pause()
-    this.#clearHighlights()
+    this.#clearSounding()
     this.#saveResume(now, true)
   }
 
@@ -1526,7 +1526,7 @@ export class PracticeSession {
     p.transport.seek(g.position)
     this.#mic?.reset(g.position)
     this.#lastSeek = { position: g.position }
-    this.#clearHighlights()
+    this.#clearSounding()
     this.#processPlay()
     this.#saveResume(now, true)
     this.#process(now)
@@ -1617,7 +1617,7 @@ export class PracticeSession {
     p.transport.stop()
     p.transport.seek(this.#timeline.end)
     p.playing = false
-    this.#clearHighlights()
+    this.#clearSounding()
     this.#saveResume(now, true, null)
     this.#process(now)
   }
@@ -1633,7 +1633,7 @@ export class PracticeSession {
     p.transport.stop()
     p.transport.dispose()
     this.#disposeMic()
-    this.#clearHighlights()
+    this.#clearSounding()
     this.#lastVersion = -1
     if (!keepPosition) return
     const now = this.#deps.clock()
@@ -3043,7 +3043,7 @@ export class PracticeSession {
     this.#accomp?.stopSound()
     this.#listen?.transport.stopSound()
     this.#play?.transport.stopSound()
-    this.#clearHighlights()
+    this.#clearSounding()
   }
 
   // ── Engine events ─────────────────────────────────────────────────────────────────────
@@ -3373,7 +3373,7 @@ export class PracticeSession {
     }
     this.#pendingRepeat = false
     this.#accomp?.stop()
-    this.#clearHighlights()
+    this.#clearSounding()
     this.#engine.restart(now, { continueRepeat: true })
     this.#prepareAttempt(now)
     // Back to the loop start: the strip pans there quickly instead of scrolling backward.
@@ -3388,7 +3388,7 @@ export class PracticeSession {
   #ladderStep(speed: number): void {
     this.#pendingRepeat = false
     this.#accomp?.stop()
-    this.#clearHighlights()
+    this.#clearSounding()
     this.#select({ hands: this.#sel.hands, multiplier: speed }, this.#loop, true, true, true)
     this.#strip?.wrapTo?.(this.#cursorPosition())
   }
@@ -3418,7 +3418,7 @@ export class PracticeSession {
     } else {
       this.#accomp?.stop()
       this.#accomp?.seek(this.#timeline.end)
-      this.#clearHighlights()
+      this.#clearSounding()
     }
     this.#process(now)
   }
@@ -3434,7 +3434,7 @@ export class PracticeSession {
       l.transport.stop()
       l.playing = false
     }
-    this.#clearHighlights()
+    this.#clearSounding()
     this.#process(now)
   }
 
@@ -3448,7 +3448,7 @@ export class PracticeSession {
     // Every new attempt starts at the loop start, on the loop's own transport.
     this.#endLeadIn()
     this.#accomp?.stop()
-    this.#clearHighlights()
+    this.#clearSounding()
     this.#flash?.clear()
     this.#awaitPrepared = true
     this.#tryPrepared(now)
@@ -3670,7 +3670,7 @@ export class PracticeSession {
     this.#keepTimeActivity = null
     this.#secondOpeningBarOnWrap = false
     if (this.#accomp && this.#accomp.state === 'playing') this.#accomp.pause()
-    this.#clearHighlights()
+    this.#clearSounding()
   }
 
   #stopListening(): void {
@@ -3685,7 +3685,7 @@ export class PracticeSession {
     this.#listen = null
     l.transport.stop()
     l.transport.dispose()
-    this.#clearHighlights()
+    this.#clearSounding()
   }
 
   #disposeAccompaniment(): void {
@@ -3723,11 +3723,11 @@ export class PracticeSession {
     this.#scheduleFrame()
   }
 
-  #clearHighlights(): void {
+  #clearSounding(): void {
     this.#emitQueue = []
     if (this.#sounding.size) {
       this.#sounding.clear()
-      this.#highlightsDirty = true
+      this.#soundingDirty = true
       this.#scheduleFrame()
     }
   }
@@ -3800,10 +3800,10 @@ export class PracticeSession {
     // The notes follow musical time in Listen and practice, holding at an unreleased gate.
     if ((this.#listen || this.#accomp) && strip) strip.setCursor(this.#cursorPosition(), { smooth: false })
 
-    this.#dueHighlights(now)
+    this.#applyDueNotes(now)
     // The keyboard guide follows the group, the held keys and what playback sounds (U15).
-    if (s.keyboardVisible && (versionChanged || previewChanged || this.#highlightsDirty)) this.#updateGuide(quiet)
-    this.#flushHighlights(strip)
+    if (s.keyboardVisible && (versionChanged || previewChanged || this.#soundingDirty)) this.#updateGuide(quiet)
+    this.#soundingDirty = false
 
     this.progress.set(this.#computeProgress())
     if (this.#engine.mode === 'reading' && s.phase === 'running' && now - this.#lastResumeSave >= RESUME_SAVE_MS) {
@@ -3858,8 +3858,8 @@ export class PracticeSession {
     return tempChanging || revealFading
   }
 
-  /** Playback highlights of the automatic part / Preview that are due by `now`. */
-  #dueHighlights(now: number): void {
+  /** Playback events due by now update the keyboard guide. */
+  #applyDueNotes(now: number): void {
     if (this.#emitQueue.length === 0) return
     const due = this.#emitQueue.filter((e) => e.time <= now)
     if (due.length === 0) return
@@ -3868,15 +3868,7 @@ export class PracticeSession {
       if (ev.kind === 'on') this.#sounding.set(ev.voice, ev.notes)
       else this.#sounding.delete(ev.voice)
     }
-    this.#highlightsDirty = true
-  }
-
-  #flushHighlights(strip: StripSink | null): void {
-    if (!this.#highlightsDirty || !strip) return
-    this.#highlightsDirty = false
-    const notes: number[] = []
-    for (const ns of this.#sounding.values()) notes.push(...ns)
-    strip.setPlaybackHighlights(notes)
+    this.#soundingDirty = true
   }
 
   /**
@@ -3904,9 +3896,9 @@ export class PracticeSession {
     this.feedback.set({ visible: false, reason: 'early', pulse: this.#pulse, cue: null })
     const labelsChanging = this.#frameLabels(now, strip, s)
     strip?.setCursor(p.transport.positionNow(), { smooth: false })
-    this.#dueHighlights(now)
-    if (s.keyboardVisible && (changed || this.#highlightsDirty)) this.#updateGuide(false, f)
-    this.#flushHighlights(strip)
+    this.#applyDueNotes(now)
+    if (s.keyboardVisible && (changed || this.#soundingDirty)) this.#updateGuide(false, f)
+    this.#soundingDirty = false
     this.progress.set(this.#computeProgress())
     if (p.playing && now - this.#lastResumeSave >= RESUME_SAVE_MS) this.#saveResume(now, false)
     this.#syncLock()
@@ -4318,14 +4310,6 @@ export class PracticeSession {
     if (!strip) return
     strip.setSnapPositions(this.snapOnsets)
     strip.setLoop(this.#sel.range)
-    const hands = this.#sel.hands
-    strip.setSubduedHand(hands === 'right' ? 'L' : hands === 'left' ? 'R' : null)
-    const auto: number[] = []
-    if (hands === 'right' || hands === 'left') {
-      for (const a of this.#timeline.automatic) auto.push(...a.notes)
-      for (const a of this.#leadIn?.timeline.automatic ?? []) auto.push(...a.notes)
-    }
-    strip.setAutomatic(auto)
     this.#lastVersion = -1
   }
 

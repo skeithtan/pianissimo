@@ -28,7 +28,6 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   `setCursor(posWholeNotes, {smooth})`, `wrapTo(posWholeNotes)` (loop wrap: a quick 320 ms
   ease-out pan back to the loop start; past 2.5 viewports it lands 1.5 viewports short of the
   target without a transition, then pans the rest), `setTargets(notes)`, `setAccepted(notes)`,
-  `setAutomatic(notes)`, `setPlaybackHighlights(notes)`, `setSubduedHand('L'|'R'|null)`,
   `setTimingCue('rushing'|'dragging'|null, enabled)`
   (a gradient badge near the playhead, positioned with the prepared ink bounds, with looping
   blue left chevrons or amber right chevrons and a matching playhead tint), `setOttavaEmphasis(spans)`,
@@ -167,6 +166,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   `data-theme` / `data-score-paper` recolors instantly without re-engraving.
 - **Feedback**: the cursor is blue with Rushing, amber with Dragging, and uses the theme tint
   whenever the cue is absent. The app supplies the optional mistake flash. Ottava emphasis stays available.
+- **Notehead color**: purple shows the current learner targets and green shows accepted notes.
+  Notes played by the app use normal ink. Listen follows playback with the cursor.
 - **Teacher corrections** (`setCorrections`): after an attempt, a hand-drawn red ring (`--danger`,
   2.5 px, a single pen stroke slightly more than once around with growing radius, rotated −3°)
   around each mark's noteheads — one ring per staff, union box + 10 px — and one text per mark
@@ -322,8 +323,8 @@ Done: OSMD adapter via dynamic import; single horizontal staffline (incl. long s
 graphic mapping with report (0 unmapped on the reference piece, all importer fixtures, both 500-bar scores);
 ottava bracket mapping; clef/key/meter change positions + sticky edge; segmentation with crossing
 marks; bounded mounting + LRU + counters; serializable layout + cache interface + key + validation;
-StripView fixed cursor/scroll/zoom/drag-browse/return; targets, accepted, automatic, playback,
-subdued hand; wrong marker; ottava emphasis + offscreen reminder; collision-aware labels with
+StripView fixed cursor/scroll/zoom/drag-browse/return; learner targets and accepted notes;
+ottava emphasis + offscreen reminder; collision-aware labels with
 reserved space, per-note opacity, visible-label reporting; loop band/handles/tap selection/clear;
 SVG sanitization; dark mode; harness + Playwright (Chromium + WebKit) + Vitest.
 

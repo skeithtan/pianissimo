@@ -240,8 +240,8 @@ fade stay left of the cursor. Overlays are class/attribute writes batched in one
 Label text nodes exist only while opacity > 0; visible ones are reported via
 `onVisibleLabels`. Also: passage band with handles, tap selection and ✕ clear (U5), ottava
 emphasis + offscreen reminder, sticky clef/key/meter on staff lines with an opacity fade,
-cursor timing tint (`setTimingCue`), theme via `--score-*` tokens (U8). A change of label
-room swaps the engraving with a glide (`shared/respace.ts`: the wider engraving cut into onset
+cursor timing tint (`setTimingCue`), theme via `--score-*` tokens (U8). Learner targets and accepted notes set the notehead color (U121).
+A change of label room swaps the engraving with a glide (`shared/respace.ts`: the wider engraving cut into onset
 columns that move from the old view's places to the new view's, cursor note anchored; Practice
 keeps the old view until the new layout is ready). The glide follows the live view frame during
 playback. Rapid reversals await `whenRespaced()` before replacing the view, with stale requests
@@ -324,7 +324,7 @@ Library refreshes its list when Settings close (L7).
 practice. Each human MIDI event → `MidiOutputBackend.humanInput` → `engine.input` → engine events
 drained (`input-complete` → `transport.releaseGate`, records → `storage.history.queue*`). Visual
 changes wait for one rAF frame (strip targets, accepted notes, wrong marker, ottava emphasis,
-cursor, flash, label opacity = max(temporary, persistent), playback highlights, keyboard guide).
+cursor, flash, label opacity = max(temporary, persistent), and keyboard guide).
 The view subscribes to four stores: `ui` (coarse), `progress`, `feedback`, `guide` (each at most
 once per frame). All practice uses a gated musical transport (P9), silent for both hands and
 playing the automatic part for one hand. It runs from Ready, holds at missing learner attacks,

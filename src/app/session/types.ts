@@ -29,9 +29,6 @@ export interface StripSink {
   setCursor(position: number, opts?: { smooth?: boolean }): void
   setTargets(notes: readonly number[]): void
   setAccepted(notes: readonly number[]): void
-  setAutomatic(notes: readonly number[]): void
-  setPlaybackHighlights(notes: readonly number[]): void
-  setSubduedHand(hand: 'L' | 'R' | null): void
   /** Reserve space above the score while live timing feedback is enabled. */
   setTimingCue?(direction: TimingDirection | null, enabled: boolean): void
   setOttavaEmphasis(spans: readonly number[]): void

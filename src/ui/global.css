@@ -96,13 +96,12 @@
   --color-accepted: #2f7d32;
 
   /* Notation and keyboard colors. Hands keep the same mid-tone in both themes (white letters on
-     them stay legible); target, auto part and accepted lighten in dark mode. */
+     them stay legible); target and accepted notes lighten in dark mode. */
   --color-right-hand: #0b7a76;
   --color-left-hand: #2563c9;
   /* The enabled hand controls brighten in dark mode; badges and notation keep their colors. */
   --hand-control-left: var(--color-left-hand);
   --hand-control-right: var(--color-right-hand);
-  --color-auto-part: #8f6b00;
   --color-target: #8b3a8f;
   --color-wrong: var(--danger);
   --color-ottava-alert: var(--danger);
@@ -150,7 +149,6 @@
     --warning: #ffc266;
     --warning-bg: #3a2a0e;
     --color-target: #d58ad9;
-    --color-auto-part: #d9b44a;
     --accent: #d2dab4;
     --accent-fill: #c9d5a1;
     --accent-fg: #2a321d;
@@ -192,7 +190,6 @@
   --warning: #ffc266;
   --warning-bg: #3a2a0e;
   --color-target: #d58ad9;
-  --color-auto-part: #d9b44a;
   --accent: #d2dab4;
   --accent-fill: #c9d5a1;
   --accent-fg: #2a321d;
@@ -322,7 +319,6 @@ a {
 :root[data-score-paper='light'] .pn-strip {
   --color-target: #8b3a8f;
   --color-accepted: #2f7d32;
-  --color-auto-part: #8f6b00;
   --danger: #d4201a;
   --warning: #9a5b00;
   --color-loop: #59643b;

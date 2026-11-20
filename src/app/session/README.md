@@ -207,8 +207,8 @@ Stores (subscribe from the view):
   when enabled. An early press of the right pitch uses `{ soft: true }` (P3).
   Labels: `engine.temporaryLabelOpacity(now)` merged with persistent opacity by max →
   `setLabelOpacity` only when either changed. Practice and Preview cursor = `transport.positionNow()`;
-  playback highlights from `onEmit` events applied at their scheduled times. Frames keep
-  running only while something animates (hint fades, persistent fades, moving transport, highlights).
+  sounding keys from `onEmit` events update the keyboard guide at their scheduled times.
+  Frames run for label fades, a moving transport, and pending guide events.
   A practice gate stops the flow until all required pitches have been played; accepted early
   presses never move the score ahead of musical time. Wrong-octave attacks choose the nearest
   missing pitch of the same pitch class (equal distances favor the lower pitch) → an octave cue.

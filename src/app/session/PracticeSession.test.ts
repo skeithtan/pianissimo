@@ -761,8 +761,7 @@ describe('PracticeSession: scored attempts', () => {
 describe('PracticeSession: one-hand accompaniment', () => {
   it('plays the other hand, waits at the learner gate and releases it on completion', async () => {
     const h = harness(twoHands, { hands: 'right', range: { fromOcc: 0, toOcc: 0 } })
-    expect(h.strip.subdued).toBe('L')
-    expect(h.strip.automatic.length).toBe(2)
+    expect(h.strip.targets).toEqual([twoHands.notes.findIndex((note) => note.midi === 60)])
     await h.session.start()
     h.frames.flush()
     expect(h.session.engine.state.phase).toBe('ready')

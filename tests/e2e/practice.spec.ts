@@ -182,17 +182,30 @@ test.describe('practice', () => {
     await page.screenshot({ path: join(SHOT_DIR, `${browserName}-portrait-dark.png`) })
   })
 
-  test('MIDI-only practice never fetches the piano sample bank', async ({ page }) => {
+  test('one-hand MIDI practice highlights only the learner’s notes and uses no piano samples', async ({ page }) => {
     const samples: string[] = []
     page.on('request', (r) => {
       if (r.url().includes('/samples/')) samples.push(r.url())
     })
     await seedPiece(page)
     await openSeededPractice(page)
-    await page.getByRole('button', { name: 'Left hand' }).click() // left hand off → right hand + accompaniment
+    const {
+      package: { model },
+    } = await importFixture('two-hands.musicxml')
+    const noteIndex = (midi: number) => String(model.notes.findIndex((note) => note.midi === midi))
+    const target = page.locator('.pn-music .pn-target')
+    const bass = page.locator(`.pn-music [data-n="${noteIndex(48)}"] path`).first()
+    const scoreInk = await bass.evaluate((head) => getComputedStyle(head.closest('.pn-strip')!).color)
+    await page.getByRole('button', { name: 'Left hand' }).click()
+    await expect(target).toHaveCount(1)
+    await expect(target).toHaveAttribute('data-n', noteIndex(60))
+    await expect(bass).toHaveCSS('fill', scoreInk)
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await playWhenDue(page, 60)
-    await page.waitForTimeout(500)
+    await waitForOnset(page, 62)
+    await expect(target).toHaveCount(1)
+    await expect(target).toHaveAttribute('data-n', noteIndex(62))
+    await expect(bass).toHaveCSS('fill', scoreInk)
     expect(samples).toEqual([])
     const sent = await page.evaluate(() => window.__midi.sent.length)
     expect(sent).toBeGreaterThan(0) // the accompaniment played through MIDI

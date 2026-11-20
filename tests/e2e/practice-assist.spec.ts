@@ -224,9 +224,8 @@ test.describe('practice assistance and repeat', () => {
     expect(attempts[0]).toMatchObject({ wrongAttacks: 2, completion: 'completed' })
   })
 
-  test('Listen (both hands off) plays the piece through the MIDI output without grading the keys you press', async ({
-    page,
-  }) => {
+  test('Listen on the page plays MIDI with the score in its normal ink', async ({ page }) => {
+    await page.setViewportSize({ width: 820, height: 1180 })
     const samples: string[] = []
     page.on('request', (r) => {
       if (r.url().includes('/samples/')) samples.push(r.url())
@@ -239,6 +238,9 @@ test.describe('practice assistance and repeat', () => {
     await page.getByRole('button', { name: 'Left hand' }).click()
     await page.getByRole('button', { name: 'Right hand' }).click()
     await expect(page.getByRole('radiogroup', { name: 'Hear' })).toHaveCount(0)
+    await expect(page.getByTestId('strip-host')).toHaveAttribute('data-mode', 'page')
+    const heads = page.locator('.pn-music [data-n] path')
+    const scoreInk = await heads.first().evaluate((head) => getComputedStyle(head.closest('.pn-strip')!).color)
     await page.getByRole('button', { name: 'Listen', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
     await expect
@@ -247,6 +249,15 @@ test.describe('practice assistance and repeat', () => {
       )
       .toBeGreaterThan(0)
     expect(await page.evaluate(() => window.__midi.sent.length)).toBeGreaterThan(sentBefore)
+    const colors = await heads.evaluateAll(
+      (elements) =>
+        new Promise<string[]>((resolve) => {
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => resolve(elements.map((head) => getComputedStyle(head).fill))),
+          )
+        }),
+    )
+    expect(new Set(colors)).toEqual(new Set([scoreInk]))
 
     // Keys pressed while listening are not graded: no error feedback, no attempt, no result.
     await play(page, 70)

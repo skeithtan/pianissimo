@@ -24,7 +24,6 @@
  *   screen and glides the notes in from the previous view's columns (`respaceFrom`).
  */
 import type { TimingDirection } from '../../core/model/practice'
-import type { Hand } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import { toNumber } from '../../core/music/rational'
 import { canvasMeasurer, estimateMeasurer, loadLabelFont, type TextMeasurer } from '../labels/metrics'
@@ -100,13 +99,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
 // Note flags and their classes: COPIED from StripView (same values and class names).
 const TARGET = 1
 const ACCEPTED = 2
-const AUTO = 4
-const PLAY = 8
 const FLAG_CLASSES: readonly [number, string][] = [
   [TARGET, 'pn-target'],
   [ACCEPTED, 'pn-acc'],
-  [AUTO, 'pn-auto'],
-  [PLAY, 'pn-play'],
 ]
 const TAP_SLOP = 8
 /** Touch events exist (iOS, Android): touch pinches of an image-zoomed page come from them. */
@@ -221,7 +216,6 @@ export class PageView {
   }
   private browsing = false
   private browseEnabled = false
-  private subdued: Hand | null = null
   private ottavaSpans: number[] = []
   private readonly ottavaBoxes = new Map<number, HTMLDivElement>()
   private readonly reminders = new Map<number, HTMLDivElement>()
@@ -486,21 +480,6 @@ export class PageView {
 
   setAccepted(notes: readonly number[]): void {
     this.setFlag(ACCEPTED, notes)
-  }
-
-  setAutomatic(notes: readonly number[]): void {
-    this.setFlag(AUTO, notes)
-  }
-
-  setPlaybackHighlights(notes: readonly number[]): void {
-    this.setFlag(PLAY, notes)
-  }
-
-  setSubduedHand(hand: Hand | null): void {
-    if (hand === this.subdued) return
-    this.subdued = hand
-    this.root.classList.toggle('pn-sub-L', hand === 'L')
-    this.root.classList.toggle('pn-sub-R', hand === 'R')
   }
 
   setTimingCue(direction: TimingDirection | null, enabled = direction !== null): void {
@@ -1204,7 +1183,7 @@ export class PageView {
     const f = this.flags[n]!
     const head = seg.heads.get(n)
     if (head) for (const [bit, cls] of FLAG_CLASSES) head.classList.toggle(cls, (f & bit) !== 0)
-    const markCls = f & ACCEPTED ? 'pn-ring' : f & TARGET ? 'pn-halo' : f & PLAY ? 'pn-playmark' : ''
+    const markCls = f & ACCEPTED ? 'pn-ring' : f & TARGET ? 'pn-halo' : ''
     let mark = this.marks.get(n)
     if (!markCls) {
       if (mark) {

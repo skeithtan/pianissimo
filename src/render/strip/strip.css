@@ -37,8 +37,6 @@
   --pn-alert: var(--danger, #c42b2b);
   /* The teacher's red pen (setCorrections). */
   --pn-correction: var(--danger, #c42b2b);
-  --pn-auto: var(--pn-ink-muted);
-  --pn-play: var(--color-playback, var(--color-auto-part, #b0477f));
   --pn-label: var(--score-label, var(--pn-ink));
   --pn-staff-opacity: var(--score-staff-opacity, 1);
   /* --color-loop is the solid loop hue (also the overview's loop outline); the band over the
@@ -154,18 +152,9 @@
   transition: fill var(--pn-fast) linear;
 }
 
-/* Following playback (Listen): highlights switch at their onsets; a fade per note would repaint
-   the notation every frame while the music scrolls (PF3). */
+/* Apply learner note colors immediately while the score follows musical time (PF3). */
 .pn-follow .pn-music [data-n] path {
   transition: none;
-}
-
-.pn-music .pn-auto path {
-  fill: var(--pn-auto);
-}
-
-.pn-music .pn-play path {
-  fill: var(--pn-play);
 }
 
 .pn-music .pn-target path {
@@ -187,18 +176,6 @@
   fill: color-mix(in srgb, var(--pn-accepted) 14%, transparent);
   stroke: var(--pn-accepted);
   stroke-width: 1.8;
-}
-
-.pn-playmark {
-  fill: color-mix(in srgb, var(--pn-play) 18%, transparent);
-}
-
-/* Unselected hand: everything drawn for its notes (heads, stems, beams, ties) in muted ink. */
-.pn-sub-L .pn-music [data-h='L'],
-.pn-sub-R .pn-music [data-h='R'] {
-  color: var(--pn-ink-muted);
-  fill: var(--pn-ink-muted);
-  opacity: 0.75;
 }
 
 [data-o] {
@@ -302,11 +279,6 @@
   position: absolute;
   inset: 0;
   transform-origin: 0 0;
-}
-
-.pn-sub-L .pn-label[data-h='L'],
-.pn-sub-R .pn-label[data-h='R'] {
-  fill: var(--pn-ink-muted);
 }
 
 .pn-mnum {
