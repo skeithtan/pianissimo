@@ -48,7 +48,7 @@ export function useRecordingDialog() {
   }
   function controls(onOpen: () => void, inHeader = true) {
     return (
-      <div class={styles.control}>
+      <div class={styles.control} data-recording-control>
         <span class={styles.slot} ref={inHeader && Panel ? setControlsHost : null} />
         <button
           class={`${pill.pill} ${pill.action} ${styles.record}`}

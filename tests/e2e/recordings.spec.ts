@@ -183,7 +183,8 @@ test('Practice keeps Stop within reach on a narrow phone and through rotation wh
   await expect(page.getByTestId('practice-bar').getByRole('button', { name: 'Menu' })).toBeInViewport({ ratio: 1 })
   await page.getByRole('button', { name: 'Start', exact: true }).click()
   await play(page, 60, 48)
-  await expect(page.getByRole('timer')).toHaveText(/0:0[2-9]/)
+  await expect(page.locator('[data-activity]')).toHaveAttribute('data-recede', 'true')
+  await expect(page.locator('footer').getByRole('button', { name: 'Stop recording' })).toBeVisible()
   await checkTransport(page)
   await page.screenshot({ path: info.outputPath('recording-practice-small.png') })
   await page.setViewportSize({ width: 844, height: 390 })
@@ -195,3 +196,41 @@ test('Practice keeps Stop within reach on a narrow phone and through rotation wh
   await page.getByRole('button', { name: 'Stop recording' }).click()
   await expect(page.getByRole('dialog', { name: 'Recordings' }).getByText('Best take', { exact: true })).toBeVisible()
 })
+
+for (const viewport of [
+  { width: 1024, height: 768 },
+  { width: 844, height: 390 },
+]) {
+  test(`recording controls stay usable in the focused header at ${viewport.width} px`, async ({ page }, info) => {
+    await page.setViewportSize(viewport)
+    await installFakeMidi(page)
+    await installPianoAudio(page)
+    await seedPiece(page)
+    await openSeededPractice(page)
+    const header = page.locator('header, [data-testid="practice-bar"]')
+    await header.getByRole('button', { name: 'Record performance' }).click()
+    await page.getByRole('button', { name: 'Enable audio input' }).click()
+    await page.getByRole('button', { name: 'Start recording' }).click()
+    await page.getByRole('button', { name: 'Start', exact: true }).click()
+    await play(page, 60, 48)
+    await expect(page.locator('[data-activity]')).toHaveAttribute('data-recede', 'true')
+    await expect(header.getByRole('button', { name: 'Back to Library' })).toBeHidden()
+    await checkTransport(page)
+    if (viewport.height > 520) {
+      await expect(header.getByRole('button', { name: /MIDI status: Connected/ })).toBeInViewport({ ratio: 1 })
+      await expect(page.getByTestId('footer-tools-slot')).toHaveAttribute('inert', '')
+    }
+    const stop = header.getByRole('button', { name: 'Stop recording' })
+    expect(
+      await stop.evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+      }),
+    ).toBe(true)
+    await page.screenshot({ path: info.outputPath('recording-focus.png') })
+    await stop.click()
+    await expect(
+      page.getByRole('dialog', { name: 'Recordings' }).getByRole('link', { name: 'Download MIDI and WAV (.zip)' }),
+    ).toBeVisible()
+  })
+}

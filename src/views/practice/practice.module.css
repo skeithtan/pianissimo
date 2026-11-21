@@ -45,12 +45,18 @@
     transform var(--dur-slow) var(--ease-standard),
     opacity var(--dur-base) var(--ease-standard);
 }
-.screen[data-recede='true'] .headerSlot {
+.screen[data-recede='true']:where(:not([data-recording-header])) .headerSlot {
   grid-template-rows: 0fr;
 }
-.screen[data-recede='true'] .headerClip > * {
+.screen[data-recede='true']:where(:not([data-recording-header])) .headerClip > * {
   transform: translateY(-100%);
   opacity: 0;
+}
+/* The status pills keep their positions and touch targets while the other header controls recede. */
+.screen[data-recede='true'][data-recording-header] .titleBlock,
+.screen[data-recede='true'][data-recording-header] .headerTools > .iconButton,
+.screen[data-recede='true'][data-recording-header] .bar > :not([data-recording-control], .overviewInline) {
+  visibility: hidden;
 }
 .header {
   display: flex;

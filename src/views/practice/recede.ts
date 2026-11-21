@@ -2,6 +2,7 @@
  * While practice or Listen plays, the header and footer tools collapse out of view, while
  * hand toggles and the Repeat panel recede (DECISIONS U13/U60). The overview and playback
  * button stay visible, except on a phone, whose whole top bar collapses like the header (U93).
+ * Recording keeps its transport and the adjacent connection pill available in focus mode.
  * Chrome returns when playing stops
  * (pause, interruption, end), and for a few seconds after a pointer moves over or touches it,
  * or while keyboard focus or an open tool dialog is inside it. CSS uses `data-recede` and

@@ -337,7 +337,8 @@ Record performance captures the selected piano's incoming MIDI and a user-visibl
 in the same take. Prefer the piano's USB audio input when identifiable. Show its name and an
 input meter before starting. Both score views have a red Record control in the header. During
 a take, a red light and elapsed time sit beside Stop, clear of the score timeline. These controls
-use the header on wider screens and a footer on portrait phones. The ZIP
+use the header on wider screens and a footer on portrait phones. Focus mode keeps Stop and the
+recording timer visible and tappable. The adjacent piano connection pill stays visible too. The ZIP
 filename includes the date, time, and UTC offset when capture started. Stop saves both files
 together on this device. Download offers one ZIP with a Standard MIDI File and a PCM WAV.
 

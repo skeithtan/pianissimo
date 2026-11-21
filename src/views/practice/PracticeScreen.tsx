@@ -341,7 +341,10 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     if (ui.playing || !phone) setMenuOpen(false)
   }, [ui.playing, phone])
   // Focus mode waits for the review to end (U102), even when Repeat at Ready counts as playing.
-  const recede = useRecede(ui.playing && !ui.reviewing && !recorder.isOpen, env.timers)
+  const recede = useRecede(ui.playing && !ui.reviewing, env.timers)
+  // Portrait phones keep Stop in their footer. Other layouts keep the status pills in the header.
+  const recordingInHeader = recorder.isOpen && (!phone || sideways)
+  const headerInert = recede.receded && !recordingInHeader
   // An upright phone gives the Repeat controls a row of their own that folds away while playing;
   // elsewhere they float over the score (U14, U80, revised 15 November 2026). Their options open
   // in a sheet on a phone, which closes when playback starts, like the menu.
@@ -782,6 +785,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       data-activity={ui.activity}
       data-phase={ui.phase ?? ''}
       data-recede={recede.receded ? 'true' : undefined}
+      data-recording-header={recordingInHeader || undefined}
       data-compact={phone ? 'true' : undefined}
       data-sideways={sideways ? 'true' : undefined}
     >
@@ -791,7 +795,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         // back without seeking. The connection status is in the menu.
         <div class={styles.headerSlot} data-testid="practice-bar-slot">
           <div class={styles.headerClip}>
-            <div class={styles.bar} data-testid="practice-bar" inert={recede.receded} {...recede.zone}>
+            <div class={styles.bar} data-testid="practice-bar" inert={headerInert} {...recede.zone}>
               {back}
               {sideways ? (
                 <>
@@ -826,7 +830,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       ) : (
         <div class={styles.headerSlot} data-testid="practice-header-slot">
           <div class={styles.headerClip}>
-            <header class={styles.header} inert={recede.receded} {...recede.zone}>
+            <header class={styles.header} inert={headerInert} {...recede.zone}>
               <div class={styles.titleBlock}>
                 {back}
                 {titleText}
