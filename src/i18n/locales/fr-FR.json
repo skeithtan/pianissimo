@@ -1535,5 +1535,9 @@
   "1537": "Cette prise est en mémoire. Téléchargez-la ou réessayez de la sauvegarder avant de fermer la page.",
   "1538": "{0} correctes · {1} manquantes · {2} en trop",
   "1539": "Indicateurs d’avance et de retard",
-  "1540": "Afficher une indication et changer la couleur du curseur quand vous jouez en avance ou en retard sur le temps."
+  "1540": "Afficher une indication et changer la couleur du curseur quand vous jouez en avance ou en retard sur le temps.",
+  "1541": "Enregistrer",
+  "1542": "Enregistrement en cours",
+  "1543": "Arrêter l’enregistrement",
+  "1544": "Arrêter"
 }

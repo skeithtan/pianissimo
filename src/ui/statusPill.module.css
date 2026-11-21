@@ -1,0 +1,42 @@
+/* Connection and recording status share one silhouette and tint strength. Each sets --tone. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--tone) 35%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 9%, transparent);
+  color: var(--fg);
+  font-size: var(--text-s);
+  font-weight: 600;
+  transition:
+    background var(--dur-base) var(--ease-standard),
+    border-color var(--dur-base) var(--ease-standard);
+}
+
+.action {
+  position: relative;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.action::after {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto;
+  height: max(100%, var(--touch));
+  transform: translateY(-50%);
+}
+
+.action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+}
+
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tone);
+  transition: background var(--dur-base) var(--ease-standard);
+}

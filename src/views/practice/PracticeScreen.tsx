@@ -341,7 +341,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     if (ui.playing || !phone) setMenuOpen(false)
   }, [ui.playing, phone])
   // Focus mode waits for the review to end (U102), even when Repeat at Ready counts as playing.
-  const recede = useRecede(ui.playing && !ui.reviewing, env.timers)
+  const recede = useRecede(ui.playing && !ui.reviewing && !recorder.isOpen, env.timers)
   // An upright phone gives the Repeat controls a row of their own that folds away while playing;
   // elsewhere they float over the score (U14, U80, revised 15 November 2026). Their options open
   // in a sheet on a phone, which closes when playback starts, like the menu.
@@ -802,6 +802,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
                 titleText
               )}
               {hands}
+              {recorder.controls(openRecorder, sideways)}
               <button
                 type="button"
                 class={`${styles.iconButton} ${styles.menuButton} ${styles.recedes}`}
@@ -831,6 +832,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
                 {titleText}
               </div>
               <div class={styles.headerTools}>
+                {recorder.controls(openRecorder)}
                 <ConnectionChip compact="narrow" />
                 <button
                   type="button"
@@ -945,7 +947,10 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       <GuidePanel session={session} fadeMs={appSettings.hints.fadeMs} naming={appSettings.naming} />
 
       {phone ? (
-        <div class={styles.safeBottom} />
+        <>
+          {sideways ? null : recorder.phoneFooter}
+          <div class={styles.safeBottom} />
+        </>
       ) : (
         <Footer
           onRecord={openRecorder}

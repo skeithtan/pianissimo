@@ -335,7 +335,10 @@ Because the app waits for every required pitch, a completed attempt cannot conta
 
 Record performance captures the selected piano's incoming MIDI and a user-visible audio input
 in the same take. Prefer the piano's USB audio input when identifiable. Show its name and an
-input meter before starting. The score stays visible while recording. Stop saves both files
+input meter before starting. Both score views have a red Record control in the header. During
+a take, a red light and elapsed time sit beside Stop, clear of the score timeline. These controls
+use the header on wider screens and a footer on portrait phones. The ZIP
+filename includes the date, time, and UTC offset when capture started. Stop saves both files
 together on this device. Download offers one ZIP with a Standard MIDI File and a PCM WAV.
 
 Recordings in the Library keeps takes available for listening, comparison, download, and

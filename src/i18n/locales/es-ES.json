@@ -1535,5 +1535,9 @@
   "1537": "Esta toma está en memoria. Descárgala o vuelve a guardarla antes de cerrar la página.",
   "1538": "{0} correctas · {1} omitidas · {2} de más",
   "1539": "Indicadores de adelanto y retraso",
-  "1540": "Muestra una indicación y cambia el color del cursor cuando te adelantas o te retrasas respecto al pulso."
+  "1540": "Muestra una indicación y cambia el color del cursor cuando te adelantas o te retrasas respecto al pulso.",
+  "1541": "Grabar",
+  "1542": "Grabando",
+  "1543": "Detener la grabación",
+  "1544": "Detener"
 }

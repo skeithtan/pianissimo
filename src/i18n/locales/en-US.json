@@ -1535,5 +1535,9 @@
   "1537": "This take is in memory. Download it or retry saving before closing the page.",
   "1538": "{0} matched · {1} missed · {2} extra",
   "1539": "Rushing and Dragging indicators",
-  "1540": "Show a timing label and change the cursor color when you play ahead of or behind the beat."
+  "1540": "Show a timing label and change the cursor color when you play ahead of or behind the beat.",
+  "1541": "Record",
+  "1542": "Recording",
+  "1543": "Stop recording",
+  "1544": "Stop"
 }

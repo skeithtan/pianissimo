@@ -177,7 +177,9 @@ velocity are preserved in the MIDI file. They do not affect this pitch score.
 
 IndexedDB v3 stores take metadata separately from its MIDI bytes and WAV blocks. Save and delete cover both
 stores in one transaction. History reads metadata for ranking and fetches media for the open
-take. A download packages both files in one ZIP. Full backups include both stores and merge
+take. A download packages both files in one ZIP. Its filename uses the capture start (`createdAt`)
+and the stored local offset (`startUtcOffsetMinutes`). Older takes use UTC. The header, or a footer on portrait phones, hosts
+the live timer and Stop control while the recorder keeps ownership of both input streams. Full backups include both stores and merge
 immutable recordings by ID. Deleting a score leaves its recorded performances available in
 Library → Recordings.
 

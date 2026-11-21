@@ -13,6 +13,7 @@ it('keeps recording metadata and both files together through backup, restore, de
     passage: 'Whole piece',
     hands: 'both',
     createdAt: 12,
+    startUtcOffsetMinutes: -210,
     durationMs: 40,
     input: 'Piano',
     score: { expected: 1, matched: 1, played: 1 },

@@ -1,0 +1,85 @@
+.control {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.slot { display: inline-flex; }
+
+.slot:empty,
+.slot:not(:empty) + .record {
+  display: none;
+}
+
+.record,
+.transport {
+  --tone: var(--danger);
+  flex: none;
+}
+
+.record {
+  justify-content: center;
+  min-width: 44px;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) 0 var(--space-3);
+}
+
+.readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stop {
+  align-self: stretch;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0 999px 999px 0;
+  font: inherit;
+  background: transparent;
+  color: inherit;
+}
+
+.stop::before {
+  content: '';
+  position: absolute;
+  inset: 7px auto 7px 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--tone) 35%, var(--border));
+}
+
+.record:focus-visible,
+.stop:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.stop:disabled { opacity: .55; cursor: default; }
+
+:global([data-compact='true']) .record .label,
+:global([data-sideways='true']) .stop .label { display: none; }
+:global([data-compact='true']) .record { padding: 0; }
+:global([data-sideways='true']) .readout { padding: 0 8px; gap: 5px; font-size: .8125rem; }
+:global([data-sideways='true']) .stop { padding: 0; }
+
+/* Portrait phone headers already hold the playback and navigation controls. Give the take
+   its own row only while it is active. The existing safe-area inset stays below it. */
+.phoneFooter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch);
+  padding: 7px var(--space-3);
+  border-top: 1px solid var(--border);
+  background: var(--practice-surface);
+}
+.phoneFooter:empty,
+:global([data-compact]):has(> .phoneFooter:not(:empty)) .control {
+  display: none;
+}

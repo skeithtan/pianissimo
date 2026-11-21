@@ -7,6 +7,7 @@ import { msg } from '../../i18n/messages'
 import { connectionStatus, type ConnectionState, type ConnectionStatus } from '../../app/state'
 import { getFeatures } from '../../app/features'
 import { openConnection } from '../../app/navigation'
+import pill from '../../ui/statusPill.module.css'
 import styles from './ConnectionChip.module.css'
 
 type Tone = 'neutral' | 'busy' | 'good' | 'warn'
@@ -47,7 +48,7 @@ export function ConnectionChip({ onOpen = openConnection, compact }: ConnectionC
   return (
     <button
       type="button"
-      class={compact === 'narrow' ? `${styles.chip} ${styles.narrow}` : styles.chip}
+      class={[pill.pill, pill.action, styles.chip, compact === 'narrow' && styles.narrow].filter(Boolean).join(' ')}
       data-tone={TONE[status.state]}
       data-state={status.state}
       title={
@@ -58,7 +59,7 @@ export function ConnectionChip({ onOpen = openConnection, compact }: ConnectionC
       aria-label={msg('MIDI status: {0}. Open connection setup', label)}
       onClick={onOpen}
     >
-      <span class={styles.dot} aria-hidden="true" />
+      <span class={pill.dot} data-status-dot aria-hidden="true" />
       <span class={styles.text}>{label}</span>
     </button>
   )

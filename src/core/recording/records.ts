@@ -8,6 +8,8 @@ export interface RecordingInfo {
   readonly passage: string
   readonly hands: 'both' | 'left' | 'right'
   readonly createdAt: number
+  /** Minutes east of UTC when capture started. Earlier recordings were named in UTC. */
+  readonly startUtcOffsetMinutes?: number
   readonly durationMs: number
   readonly input: string
   readonly score: NoteScore

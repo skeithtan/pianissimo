@@ -1,13 +1,22 @@
 import type { RecordingFiles, RecordingInfo } from '../../core/recording/records'
 import { Zip, ZipPassThrough } from 'fflate'
 
-export function recordingName(info: RecordingInfo): string {
+export function recordingName(info: Pick<RecordingInfo, 'createdAt' | 'title' | 'startUtcOffsetMinutes'>): string {
   const title =
     info.title
       .replace(/[^\p{L}\p{N} ._-]/gu, ' ')
       .trim()
       .slice(0, 80) || 'Pianissimo'
-  return title + ' ' + new Date(info.createdAt).toISOString().replace(/[:.]/g, '-')
+  const offset = info.startUtcOffsetMinutes ?? 0
+  const local = new Date(info.createdAt + offset * 60_000)
+    .toISOString()
+    .slice(0, -1)
+    .replace('T', ' ')
+    .replaceAll(':', '-')
+  const twoDigits = (value: number) => String(value).padStart(2, '0')
+  const absolute = Math.abs(offset)
+  const zone = 'UTC' + (offset < 0 ? '-' : '+') + twoDigits(Math.floor(absolute / 60)) + twoDigits(absolute % 60)
+  return title + ' - ' + local + ' ' + zone
 }
 
 /** Store both files in a single ZIP. Read large WAV files in blocks on mobile. */

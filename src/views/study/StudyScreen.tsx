@@ -429,6 +429,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             >
               <Icon name={following ? 'pause' : 'flow'} size={22} />
             </button>
+            {recorder.controls(openRecorder, sideways)}
             <button
               type="button"
               class={styles.iconButton}
@@ -442,15 +443,18 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            class={styles.iconButton}
-            aria-label={msg('Settings')}
-            title={msg('Settings')}
-            onClick={openSettings}
-          >
-            <Icon name="settings" size={22} />
-          </button>
+          <div class={styles.headerTools}>
+            {recorder.controls(openRecorder)}
+            <button
+              type="button"
+              class={styles.iconButton}
+              aria-label={msg('Settings')}
+              title={msg('Settings')}
+              onClick={openSettings}
+            >
+              <Icon name="settings" size={22} />
+            </button>
+          </div>
         )}
       </header>
 
@@ -474,7 +478,10 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
       <GuidePanel session={session} fadeMs={appSettings.hints.fadeMs} naming={appSettings.naming} />
 
       {phone ? (
-        <div class={styles.safeBottom} />
+        <>
+          {sideways ? null : recorder.phoneFooter}
+          <div class={styles.safeBottom} />
+        </>
       ) : (
         <FooterBar
           start={speed('up')}

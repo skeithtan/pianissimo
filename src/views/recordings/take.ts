@@ -42,6 +42,7 @@ export function beginTake(target: TakeTarget, input: PerformanceInput, onLost: (
   const midi = env.midi()
   const id = crypto.randomUUID()
   const createdAt = Date.now()
+  const startUtcOffsetMinutes = -new Date(createdAt).getTimezoneOffset()
   input.start()
   const start = env.clock()
   const off = midi.subscribe((e) => {
@@ -78,6 +79,7 @@ export function beginTake(target: TakeTarget, input: PerformanceInput, onLost: (
         hands,
         input: input.label,
         createdAt,
+        startUtcOffsetMinutes,
         durationMs: Math.max(0, end - start),
         score: result,
         interrupted: interrupted || audio.size <= 44,

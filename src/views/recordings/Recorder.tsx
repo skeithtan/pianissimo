@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
+import { createPortal } from 'preact/compat'
+import { Icon } from '../../ui/icons'
+import pill from '../../ui/statusPill.module.css'
+import control from './recordingControl.module.css'
 import { Button, Sheet } from '../../ui/controls'
 import { msg } from '../../i18n/messages'
 import { openConnection } from '../../app/navigation'
@@ -9,7 +13,15 @@ import { RecordingHistory, handName } from './History'
 import { beginTake, type TakeTarget } from './take'
 import styles from './recordings.module.css'
 
-export function Recorder({ target, onClose }: { target: TakeTarget; onClose: () => void }) {
+export function Recorder({
+  target,
+  onClose,
+  controlsHost,
+}: {
+  target: TakeTarget
+  onClose: () => void
+  controlsHost: HTMLElement | null
+}) {
   const [phase, setPhase] = useState<'setup' | 'opening' | 'ready' | 'recording' | 'saving' | 'history'>('setup')
   const [savedId, setSavedId] = useState<string>()
   const [error, setError] = useState('')
@@ -135,21 +147,45 @@ export function Recorder({ target, onClose }: { target: TakeTarget; onClose: () 
     return (
       <RecordingHistory initialId={savedId} storage={target.env.storage} pieceId={target.pieceId} onClose={onClose} />
     )
-  if (phase === 'recording' || phase === 'saving')
-    return (
-      <div class={styles.stop}>
-        <Button variant="primary" disabled={phase === 'saving'} onClick={() => void finish(false)}>
-          {phase === 'saving' ? msg('Saving recording…') : msg('Stop recording · {0} s', seconds)}
-        </Button>
-      </div>
+  if (phase === 'recording' || phase === 'saving') {
+    if (!controlsHost) return null
+    const savingTake = phase === 'saving'
+    return createPortal(
+      <span
+        class={`${pill.pill} ${control.transport}`}
+        role="group"
+        aria-label={savingTake ? msg('Saving recording…') : msg('Recording')}
+      >
+        <span class={control.readout}>
+          <span class={pill.dot} aria-hidden="true" />
+          <span role="timer">
+            {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
+          </span>
+        </span>
+        <button
+          type="button"
+          class={`${pill.action} ${control.stop}`}
+          disabled={savingTake}
+          aria-label={msg('Stop recording')}
+          title={msg('Stop recording')}
+          onClick={() => void finish(false)}
+        >
+          <Icon name="stop" size={17} />
+          <span class={control.label}>{savingTake ? msg('Saving…') : msg('Stop')}</span>
+        </button>
+      </span>,
+      controlsHost,
     )
+  }
   return (
     <Sheet open title={msg('Record performance')} onClose={onClose}>
-      <div class={styles.detail}>
-        <strong>{target.title}</strong>
-        <p>
-          {describePassage(target.model, target.range, target.hands)} · {handName(target.hands)}
-        </p>
+      <div class={styles.setup}>
+        <div class={styles.piece}>
+          <strong>{target.title}</strong>
+          <p>
+            {describePassage(target.model, target.range, target.hands)} · {handName(target.hands)}
+          </p>
+        </div>
         {connection.state !== 'connected' && (
           <div>
             <p role="status">{msg('Connect and select a MIDI piano to record a performance.')}</p>
@@ -163,34 +199,39 @@ export function Recorder({ target, onClose }: { target: TakeTarget; onClose: () 
             </Button>
           </div>
         )}
-        <p>{msg('Select the piano’s USB audio input to record its own sound. Check the level by playing a note.')}</p>
-        {phase === 'ready' && input && (
-          <>
-            <label>
-              {msg('Audio input')}
-              <select
-                aria-label={msg('Audio input')}
-                value={input.deviceId}
-                onChange={(e) => void open(e.currentTarget.value)}
-              >
-                {!input.devices.some((d) => d.deviceId === input.deviceId) && (
-                  <option value={input.deviceId}>{input.label}</option>
-                )}
-                {input.devices.map((d, i) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label || msg('Input {0}', i + 1)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <meter ref={meter} min={0} max={1} value={0} aria-label={msg('Audio level')} />
-          </>
-        )}
+        <div class={styles.source}>
+          <p>{msg('Select the piano’s USB audio input to record its own sound. Check the level by playing a note.')}</p>
+          {phase === 'ready' && input && (
+            <>
+              <label>
+                {msg('Audio input')}
+                <select
+                  aria-label={msg('Audio input')}
+                  value={input.deviceId}
+                  onChange={(e) => void open(e.currentTarget.value)}
+                >
+                  {!input.devices.some((d) => d.deviceId === input.deviceId) && (
+                    <option value={input.deviceId}>{input.label}</option>
+                  )}
+                  {input.devices.map((d, i) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label || msg('Input {0}', i + 1)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <meter ref={meter} min={0} max={1} value={0} aria-label={msg('Audio level')} />
+            </>
+          )}
+        </div>
         {error && <p role="alert">{error}</p>}
         <div class={styles.actions}>
           {phase === 'ready' ? (
             <Button variant="primary" disabled={connection.state !== 'connected'} onClick={start}>
-              {msg('Start recording')}
+              <span class={styles.startContent}>
+                <span class={pill.dot} aria-hidden="true" />
+                {msg('Start recording')}
+              </span>
             </Button>
           ) : (
             <Button
@@ -202,6 +243,7 @@ export function Recorder({ target, onClose }: { target: TakeTarget; onClose: () 
             </Button>
           )}
           <Button
+            variant="ghost"
             onClick={() => {
               release()
               setPhase('history')

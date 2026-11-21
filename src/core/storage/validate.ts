@@ -285,12 +285,14 @@ export function sourceMetaProblem(v: unknown): string | null {
 export function recordingProblem(v: unknown): string | null {
   if (!isObj(v)) return msg('is not an object')
   const score = v['score']
+  const offset = v['startUtcOffsetMinutes']
   return firstBad([
     ['id', isStr(v['id']) && v['id'].length > 0],
     ['recording', ['pieceId', 'title', 'context', 'input', 'passage'].every((key) => isStr(v[key]))],
     ['hands', isOneOf(v['hands'], ['both', 'left', 'right'])],
     ['durationMs', isNum(v['durationMs']) && v['durationMs'] >= 0],
     ['createdAt', isNum(v['createdAt']) && !Number.isNaN(new Date(v['createdAt']).getTime())],
+    ['startUtcOffsetMinutes', offset === undefined || (isInt(offset) && Math.abs(offset) <= 14 * 60)],
     ['interrupted', isBool(v['interrupted'])],
     [
       'score',

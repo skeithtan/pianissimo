@@ -11,4 +11,14 @@
 .summary span { display:grid; min-width:0; overflow-wrap:anywhere; }
 .summary span:last-child { text-align: end; flex-shrink: 0; }
 .summary small { color: var(--fg-muted); }
-.stop { position:fixed; z-index:9; right:max(1rem, env(safe-area-inset-right)); top:max(3.6rem, env(safe-area-inset-top)); }
+
+.setup { display: grid; gap: var(--space-4); }
+.setup p { margin: 0; line-height: 1.45; }
+.piece { display: grid; gap: var(--space-1); }
+.piece strong { font-size: 1.125rem; letter-spacing: -.02em; }
+.piece p, .source p { color: var(--fg-muted); font-size: var(--text-s); }
+.source { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-m); }
+.source label { display: grid; gap: var(--space-1); font-size: var(--text-s); font-weight: 600; }
+.source select { width: 100%; min-height: 44px; padding-inline: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-m); font: inherit; color: var(--fg); background: var(--bg-raised); }
+.source meter { width: 100%; }
+.startContent { --tone: var(--danger); display: inline-flex; align-items: center; gap: var(--space-2); }
