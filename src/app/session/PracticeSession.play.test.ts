@@ -112,6 +112,22 @@ describe('Play-through mode', () => {
     expect(h.attempts).toEqual([])
   })
 
+  it('changes the live timing display while continuing to follow the piano', async () => {
+    const h = harness(melody)
+    await playThrough(h)
+    h.tap(60)
+    h.step(400)
+    h.tap(62)
+    expect(h.strip.timingCue).toBe('rushing')
+    h.session.updateSettings(testSettings({ hints: { ...DEFAULT_SETTINGS.hints, showTimingCues: false } }))
+    h.frames.flush()
+    expect(h.strip.timingCue).toBeNull()
+    expect(h.session.ui.get().playing).toBe(true)
+    h.session.updateSettings(testSettings())
+    h.frames.flush()
+    expect(h.strip.timingCue).toBe('rushing')
+  })
+
   it('clears the cue while held at a gate and starts a fresh comparison after a speed change', async () => {
     const h = harness(melody)
     await playThrough(h)

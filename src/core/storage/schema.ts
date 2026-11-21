@@ -1,3 +1,4 @@
+import type { RecordingInfo } from '../recording/records'
 import { openDB } from 'idb'
 import type { DBSchema, IDBPDatabase, StoreNames } from 'idb'
 import type { BarRecord } from '../history/types'
@@ -8,7 +9,7 @@ import type { AbandonRecord, LayoutMeta, LayoutPayload, PieceRecord, SuggestionS
 
 export const DEFAULT_DB_NAME = 'pianissimo'
 /** IndexedDB schema version. Bump together with a branch in `upgrade`. */
-export const DB_VERSION = 2
+export const DB_VERSION = 3
 /** Single settings record key. */
 export const SETTINGS_KEY = 'app'
 /** Installation-local state: deletion and backup contents never reset it. */
@@ -19,6 +20,8 @@ export const LIBRARY_EXPANSION_KEY = 'library-expansion-2026'
 export type BarStoreKey = [pieceId: string, barKey: string]
 
 export interface PianissimoDB extends DBSchema {
+  recordings: { key: string; value: RecordingInfo }
+  recordingFiles: { key: string; value: { midi: ArrayBuffer; audio: ArrayBuffer[] } }
   libraryState: { key: string; value: 'pending' | 'complete' }
   pieces: { key: string; value: PieceRecord; indexes: { lastOpenedAt: number; scoreVersionId: string } }
   /** Original source files, keyed by score version id. */
@@ -47,6 +50,8 @@ export const EXPORTED_STORES = [
   'measureHistory',
   'suggestionState',
   'abandonEvents',
+  'recordings',
+  'recordingFiles',
 ] as const satisfies readonly StoreName[]
 
 /**
@@ -73,6 +78,10 @@ export function openPianissimoDb(name: string = DEFAULT_DB_NAME): Promise<Db> {
         const meta = db.createObjectStore('layoutMeta', { keyPath: 'key' })
         meta.createIndex('scoreVersionId', 'scoreVersionId')
         meta.createIndex('lastUsedAt', 'lastUsedAt')
+      }
+      if (oldVersion < 3) {
+        db.createObjectStore('recordings', { keyPath: 'id' })
+        db.createObjectStore('recordingFiles')
       }
       if (oldVersion < 2) {
         const state = db.createObjectStore('libraryState')

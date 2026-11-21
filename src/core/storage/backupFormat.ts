@@ -7,6 +7,7 @@ export const BACKUP_FORMAT_VERSION = 1
 export const BACKUP_EXTENSION = '.pianissimo.zip'
 
 export interface BackupCounts {
+  readonly recordings?: number
   readonly pieces: number
   readonly packages: number
   readonly sources: number

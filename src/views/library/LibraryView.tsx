@@ -1,3 +1,4 @@
+import { useRecordingDialog } from '../recordings/useRecordingDialog'
 import { msg } from '../../i18n/messages'
 /**
  * Library and Import (spec "Main user journey" 1–2, "MusicXML score import", "Storage and
@@ -8,7 +9,7 @@ import { msg } from '../../i18n/messages'
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import { openPractice, settingsOpen } from '../../app/navigation'
 import { pushNotice } from '../../app/state'
-import { Notice } from '../../ui/controls'
+import { Button, Notice } from '../../ui/controls'
 import { LibraryDepsContext, defaultLibraryDeps, useLibraryDeps, type LibraryDeps } from './deps'
 import { FileButton, SCORE_ACCEPT } from './FileButton'
 import { ImportFlow } from './importFlow'
@@ -47,6 +48,7 @@ function LibraryPage() {
   // Release the import worker if the view goes away mid-import.
   useEffect(() => () => flow?.close(), [flow])
 
+  const recorder = useRecordingDialog()
   const state = model.state.value
   const pieces = state.status === 'ready' ? state.pieces : []
   const continuing = continuingPiece(pieces)
@@ -80,8 +82,9 @@ function LibraryPage() {
     <div class={styles.page}>
       <header class={styles.header}>
         <h1>{msg('Library')}</h1>
-        {pieces.length > 0 ? (
-          <div>
+        <div class={styles.libraryActions}>
+          <Button onClick={() => void recorder.open(deps.getStorage)}>{msg('Recordings')}</Button>
+          {pieces.length > 0 ? (
             <FileButton
               variant="secondary"
               icon="plus"
@@ -91,8 +94,8 @@ function LibraryPage() {
             >
               {msg('Add score')}
             </FileButton>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </header>
 
       {state.status === 'loading' ? <p class={styles.loading}>{msg('Opening your library…')}</p> : null}
@@ -110,6 +113,7 @@ function LibraryPage() {
         </ul>
       ) : null}
 
+      {recorder.dialog}
       <ImportSheet
         flow={flow}
         pieces={pieces}

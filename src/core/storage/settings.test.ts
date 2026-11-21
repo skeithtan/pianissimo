@@ -30,7 +30,7 @@ const custom: AppSettings = {
     },
     tiedContinuations: true,
   },
-  hints: { autoThreshold: null, lifetime: 'until-correct', fadeMs: 150, damageFlash: false },
+  hints: { autoThreshold: null, lifetime: 'until-correct', fadeMs: 150, damageFlash: false, showTimingCues: false },
   pedal: {
     hintPedal: {
       channel: 2,
@@ -186,7 +186,13 @@ describe('normalizeSettings', () => {
       expect(normalizeSettings({}).hints.damageFlash).toBe(true)
       const before = { ...custom, hints: { autoThreshold: 3, lifetime: 20, fadeMs: 300 } }
       const loaded = normalizeSettings(before)
-      expect(loaded.hints).toEqual({ autoThreshold: 3, lifetime: 20, fadeMs: 300, damageFlash: true })
+      expect(loaded.hints).toEqual({
+        autoThreshold: 3,
+        lifetime: 20,
+        fadeMs: 300,
+        damageFlash: true,
+        showTimingCues: true,
+      })
       expect(loaded.version).toBe(SETTINGS_VERSION)
     })
 

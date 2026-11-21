@@ -312,9 +312,12 @@ describe('StudyView (U72)', () => {
     expect(footerMenuButton().getAttribute('aria-expanded')).toBe('true')
     expect(
       [...menu.children].map(
-        (row) => row.textContent?.trim().match(/^(Note names|Play through|Keep time|Metronome|Show keys)/)?.[0],
+        (row) =>
+          row.textContent
+            ?.trim()
+            .match(/^(Note names|Play through|Keep time|Metronome|Show keys|Record performance)/)?.[0],
       ),
-    ).toEqual(['Note names', 'Metronome', 'Show keys'])
+    ).toEqual(['Note names', 'Metronome', 'Show keys', 'Record performance'])
     expect(menu.querySelectorAll('input[role="switch"]')).toHaveLength(2)
     expect(menu.contains(document.activeElement)).toBe(true)
     // Playback does not close it: Study never recedes.

@@ -166,6 +166,21 @@ off); tie continuations only with `labels.tiedContinuations` (default off, U69).
 Settings helpers: `validateRule`, `describeRule`, `sampleRule`, `parseSpelling` /
 `formatSpelling`, `clefDisplayName`. Full API in `src/core/naming/README.md`.
 
+### Performance recordings
+
+Practice and Sheet music load `views/recordings` on demand. The recorder subscribes to the
+selected MIDI input and opens a separate, unmonitored Web Audio capture graph. Its worklet
+transfers interleaved 16-bit PCM blocks. Stop writes a standard MIDI track and WAV header and
+sends the played attacks to a worker for comparison with the selected practice timeline.
+`core/recording` owns the file encoders and ordered, chord-aware note matching. Timing and
+velocity are preserved in the MIDI file. They do not affect this pitch score.
+
+IndexedDB v3 stores take metadata separately from its MIDI bytes and WAV blocks. Save and delete cover both
+stores in one transaction. History reads metadata for ranking and fetches media for the open
+take. A download packages both files in one ZIP. Full backups include both stores and merge
+immutable recordings by ID. Deleting a score leaves its recorded performances available in
+Library → Recordings.
+
 ### core/midi and core/playback
 core/midi: `MidiAdapter` (main thread) runs `onmidimessage` → `MidiDecoder` (monotonic `seq`,
 Note On velocity 0 = release, real-time bytes skipped) → `PhysicalState` (held keys per
@@ -372,6 +387,7 @@ mode is on and resumes reading at the follower's group when it is switched off.
 For MIDI input, `PerformanceTiming` compares the first attacks of consecutive recognized
 groups to their written gap at the selected speed (U111). Both score layouts show the same
 transient cue as Keep time.
+`hints.showTimingCues` gates the live direction and reserved row in both session frame paths. The renderer derives the label and cursor tint from that direction. Older settings default to enabled.
 Ordinary Practice and gated Repeat use the same comparison on the first accepted pitch of
 each group (U129). A correct pitch rejected as early shows Rushing immediately. The session
 clears the cue on a phase change or new traversal and schedules its expiry even while the

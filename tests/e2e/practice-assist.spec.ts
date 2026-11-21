@@ -46,7 +46,9 @@ test.describe('practice assistance and repeat', () => {
 
   test('automatic hints show temporary note names that fade out on their own', async ({ page }) => {
     // A short hint lifetime and a visible fade keep the test quick without fixed sleeps.
-    await seedPiece(page, { hints: { autoThreshold: 1, lifetime: 1, fadeMs: 600, damageFlash: true } })
+    await seedPiece(page, {
+      hints: { autoThreshold: 1, lifetime: 1, fadeMs: 600, damageFlash: true, showTimingCues: true },
+    })
     await openSeededPractice(page)
     await startWholePiece(page)
     await expect(labels(page)).toHaveCount(0)
@@ -79,7 +81,9 @@ test.describe('practice assistance and repeat', () => {
   test('two wrong attacks at a group reveal the names automatically, and a correct answer fades them', async ({
     page,
   }) => {
-    await seedPiece(page, { hints: { autoThreshold: 2, lifetime: 'until-correct', fadeMs: 200, damageFlash: true } })
+    await seedPiece(page, {
+      hints: { autoThreshold: 2, lifetime: 'until-correct', fadeMs: 200, damageFlash: true, showTimingCues: true },
+    })
     await openSeededPractice(page)
     await startWholePiece(page)
     await play(page, 70)

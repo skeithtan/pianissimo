@@ -33,6 +33,8 @@ describe('schema', () => {
       'measureHistory',
       'packages',
       'pieces',
+      'recordingFiles',
+      'recordings',
       'settings',
       'sources',
       'suggestionState',

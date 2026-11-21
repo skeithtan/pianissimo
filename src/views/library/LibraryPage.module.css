@@ -82,3 +82,5 @@
     padding: var(--space-6) 0;
   }
 }
+
+.libraryActions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; }

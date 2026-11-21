@@ -11,7 +11,7 @@ import { msg } from '../../i18n/messages'
 import { useEffect, useState } from 'preact/hooks'
 import { closeSettings, settingsOpen } from '../../app/navigation'
 import { getFeatures, type FeatureReport } from '../../app/features'
-import { pushNotice } from '../../app/state'
+import { flushSettings, pushNotice } from '../../app/state'
 import { Sheet } from '../../ui/controls'
 import { AboutSection } from './AboutSection'
 import { BackupSection } from './BackupSection'
@@ -141,6 +141,7 @@ function dropStagedLabelEdits(): void {
 export function requestCloseSettings(): void {
   if (!settingsOpen.peek()) return
   dropStagedLabelEdits()
+  void flushSettings()
   closeSettings()
 }
 

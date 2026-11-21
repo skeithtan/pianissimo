@@ -1,3 +1,4 @@
+import type { RecordingInfo } from '../recording/records'
 import { msg } from '../../i18n/messages'
 /**
  * Export and restore (spec "Storage and recovery": provide export and restore so browser
@@ -52,6 +53,7 @@ import {
   isStr,
   packageProblem,
   pieceProblem,
+  recordingProblem,
   sourceMetaProblem,
   suggestionStateProblem,
 } from './validate'
@@ -145,6 +147,19 @@ export async function exportBackup(db: Db, options: ExportOptions = {}): Promise
   }
   await zip.addJson(FILE.sources, sourceMetas)
 
+  const recordings: RecordingInfo[] = []
+  for (const info of await db.getAll('recordings')) {
+    const files = await db.get('recordingFiles', info.id)
+    if (!files) continue
+    const path = 'recordings/' + entryName(info.id)
+    await zip.add(path + '.mid', new Uint8Array(files.midi), false)
+    for (const [i, block] of files.audio.entries()) {
+      await zip.add(path + '.wav.' + i, new Uint8Array(block), false)
+    }
+    recordings.push(info)
+  }
+  if (recordings.length) await zip.addJson('recordings.json', recordings)
+
   const manifest: BackupManifest = {
     format: BACKUP_FORMAT,
     formatVersion: BACKUP_FORMAT_VERSION,
@@ -152,6 +167,7 @@ export async function exportBackup(db: Db, options: ExportOptions = {}): Promise
     createdAt: now,
     dbVersion: DB_VERSION,
     counts: {
+      ...(recordings.length ? { recordings: recordings.length } : {}),
       pieces: pieces.length,
       packages,
       sources: sourceMetas.length,
@@ -209,6 +225,7 @@ interface SourceMeta {
 }
 
 interface ParsedBackup {
+  readonly recordings: RecordingInfo[]
   readonly zip: ZipReader
   readonly manifest: BackupManifest
   readonly settings: unknown
@@ -300,8 +317,27 @@ async function readBackup(bytes: Uint8Array): Promise<ParsedBackup> {
   const abandons = list<AbandonRecord>(zip, FILE.abandons, abandonProblem, problems)
   const sources = list<SourceMeta>(zip, FILE.sources, sourceMetaProblem, problems)
 
+  const recordings = zip.has('recordings.json')
+    ? list<RecordingInfo>(zip, 'recordings.json', recordingProblem, problems)
+    : []
+  const ids = new Set<string>()
+  for (const info of recordings) {
+    if (recordingProblem(info)) continue
+    const path = 'recordings/' + entryName(info.id)
+    const parts = zip.names(path + '.wav.')
+    if (
+      ids.has(info.id) ||
+      !zip.has(path + '.mid') ||
+      !parts.length ||
+      !parts.every((_, i) => zip.has(path + '.wav.' + i))
+    ) {
+      problems.push(msg('{0}: {1} has no data in the backup', 'recordings.json', info.title))
+    }
+    ids.add(info.id)
+  }
   const counts = manifest.counts
   const mismatches: Array<[string, number, number]> = [
+    ['recordings', recordings.length, counts.recordings ?? 0],
     ['pieces', pieces.length, counts.pieces],
     ['attempts', attempts.length, counts.attempts],
     [msg('measure histories'), bars.length, counts.measureHistory],
@@ -374,7 +410,7 @@ async function readBackup(bytes: Uint8Array): Promise<ParsedBackup> {
       problems.slice(0, MAX_PROBLEMS),
     )
   }
-  return { zip, manifest, settings, pieces, attempts, bars, suggestionStates, abandons, packages, sources }
+  return { zip, manifest, recordings, settings, pieces, attempts, bars, suggestionStates, abandons, packages, sources }
 }
 
 const CHUNK = 200
@@ -488,6 +524,8 @@ export async function restoreBackup(db: Db, bytes: Uint8Array, options: RestoreO
       'layoutCache',
       'layoutMeta',
       'libraryState',
+      'recordings',
+      'recordingFiles',
     ],
     'readwrite',
   )
@@ -539,6 +577,20 @@ export async function restoreBackup(db: Db, bytes: Uint8Array, options: RestoreO
       }
       stores.sources.added += 1
       await tx.objectStore('sources').put(record, meta.scoreVersionId)
+    }
+
+    for (const info of backup.recordings) {
+      if (await tx.objectStore('recordings').getKey(info.id)) continue
+      const path = 'recordings/' + entryName(info.id)
+      const audio = backup.zip.names(path + '.wav.').map((_, i) => new Uint8Array(backup.zip.read(path + '.wav.' + i)))
+      await tx.objectStore('recordingFiles').put(
+        {
+          audio: audio.map((part) => part.buffer),
+          midi: new Uint8Array(backup.zip.read(path + '.mid')).buffer,
+        },
+        info.id,
+      )
+      await tx.objectStore('recordings').add(info)
     }
 
     const restorable = backup.pieces.filter((p) => {

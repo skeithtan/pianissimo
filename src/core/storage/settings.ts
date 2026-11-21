@@ -201,6 +201,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
           : num(hints['lifetime'], typeof d.hints.lifetime === 'number' ? d.hints.lifetime : 30, 0.1),
       fadeMs: num(hints['fadeMs'], d.hints.fadeMs, 0, 10_000),
       damageFlash: bool(hints['damageFlash'], d.hints.damageFlash),
+      showTimingCues: bool(hints['showTimingCues'], d.hints.showTimingCues),
     },
     pedal: {
       hintPedal: 'hintPedal' in pedal ? hintPedal(pedal['hintPedal'], d.pedal.hintPedal) : d.pedal.hintPedal,

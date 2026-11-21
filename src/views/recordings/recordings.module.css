@@ -1,0 +1,14 @@
+.detail { display: grid; gap: .75rem; min-width: 0; }
+.detail p { margin: 0; }
+.detail audio, .detail meter, .detail select { width: 100%; max-width: 100%; }
+.detail label { display: grid; gap: .35rem; }
+.detail select { min-height: 44px; font: inherit; color: var(--fg); background: var(--bg-raised); }
+.actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.actions a { display: inline-flex; align-items: center; min-height: 44px; padding-inline: .5rem; color: var(--fg); text-decoration: underline; }
+.list { list-style: none; padding: 0; margin: 0; }
+.take { padding: .6rem 0; border-top: 1px solid var(--border); }
+.summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; padding: .5rem 0; min-height: 48px; text-align: start; color: var(--fg); background: transparent; border: 0; font: inherit; cursor: pointer; }
+.summary span { display:grid; min-width:0; overflow-wrap:anywhere; }
+.summary span:last-child { text-align: end; flex-shrink: 0; }
+.summary small { color: var(--fg-muted); }
+.stop { position:fixed; z-index:9; right:max(1rem, env(safe-area-inset-right)); top:max(3.6rem, env(safe-area-inset-top)); }

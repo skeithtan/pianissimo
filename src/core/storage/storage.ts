@@ -1,3 +1,5 @@
+import type { RecordingInfo, RecordingFiles } from '../recording/records'
+import { runTx } from './tx'
 import { deleteDB } from 'idb'
 import { summarizeByContext } from '../history/results'
 import type { ContextResults } from '../history/results'
@@ -64,6 +66,11 @@ export interface PianissimoStorage {
   // Settings
   loadSettings(): Promise<AppSettings>
   saveSettings(settings: AppSettings): Promise<AppSettings>
+
+  listRecordings(): Promise<RecordingInfo[]>
+  getRecordingFiles(id: string): Promise<RecordingFiles | undefined>
+  saveRecording(info: RecordingInfo, files: RecordingFiles): Promise<void>
+  deleteRecording(id: string): Promise<void>
 
   // Results
   addAttempts(records: readonly AttemptRecord[]): Promise<void>
@@ -178,6 +185,37 @@ export async function openStorage(
     setSuggestionsDisabled: (pieceId, disabled) => history.setSuggestionsDisabled(pieceId, disabled),
     clearPracticeHistory: (pieceId, clearOptions) => history.clearHistory(pieceId, clearOptions),
 
+    listRecordings: () => db.getAll('recordings'),
+    async getRecordingFiles(id) {
+      const files = await db.get('recordingFiles', id)
+      if (!files) return undefined
+      return {
+        midi: new Blob([files.midi], { type: 'audio/midi' }),
+        audio: new Blob(files.audio, { type: 'audio/wav' }),
+      }
+    },
+    async saveRecording(info, files) {
+      // WebKit can capture and play a Blob in a session that rejects storing Blobs in IndexedDB.
+      // Read binary blocks before opening the transaction so the transaction cannot auto-commit.
+      const midi = await files.midi.arrayBuffer()
+      const audio: ArrayBuffer[] = []
+      const blockSize = 4 * 1024 * 1024
+      for (let offset = 0; offset < files.audio.size; offset += blockSize) {
+        audio.push(await files.audio.slice(offset, offset + blockSize).arrayBuffer())
+      }
+      const tx = db.transaction(['recordings', 'recordingFiles'], 'readwrite')
+      await runTx(tx, async () => {
+        await tx.objectStore('recordings').put(info)
+        await tx.objectStore('recordingFiles').put({ midi, audio }, info.id)
+      })
+    },
+    async deleteRecording(id) {
+      const tx = db.transaction(['recordings', 'recordingFiles'], 'readwrite')
+      await runTx(tx, async () => {
+        await tx.objectStore('recordings').delete(id)
+        await tx.objectStore('recordingFiles').delete(id)
+      })
+    },
     getLayout: (key) => layouts.get(key),
     putLayout: (key, scoreVersionId, value, approxBytes) => layouts.put(key, scoreVersionId, value, approxBytes),
     clearLayouts: (scoreVersionId) => layouts.clear(scoreVersionId),

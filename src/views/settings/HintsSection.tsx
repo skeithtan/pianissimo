@@ -202,6 +202,17 @@ export function HintsSection() {
         />
       </Group>
 
+      <Group>
+        <Toggle
+          label={msg('Rushing and Dragging indicators')}
+          description={msg(
+            'Show a timing label and change the cursor color when you play ahead of or behind the beat.',
+          )}
+          checked={hints.showTimingCues}
+          onChange={(showTimingCues) => updateSettings({ hints: { showTimingCues } })}
+        />
+      </Group>
+
       <KeepTimeGroup />
     </>
   )

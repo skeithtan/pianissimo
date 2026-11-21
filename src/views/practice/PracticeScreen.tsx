@@ -1,3 +1,4 @@
+import { useRecordingDialog } from '../recordings/useRecordingDialog'
 import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * The practice screen (spec "Practice screen"; DECISIONS U1–U14): a header that blends into the
@@ -259,6 +260,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     return created
   })
   const ui = useStore(session.ui)
+  const recorder = useRecordingDialog()
   const appSettings = settings.value
   const [prep, setPrep] = useState<Prep>({ state: 'preparing', fraction: 0 })
   const [tempoOpen, setTempoOpen] = useState(false)
@@ -623,6 +625,19 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     void session.start()
   }, [autoStart, prep.state, ui.startEnabled, session, onAutoStart])
 
+  const openRecorder = () => {
+    if (recorder.isOpen) return
+    if (session.ui.get().playing) session.pause()
+    setMenuOpen(false)
+    void recorder.open(env.storage, {
+      pieceId: piece.id,
+      title: piece.title,
+      model,
+      env,
+      hands: ui.hands === 'none' ? 'both' : ui.hands,
+      range: ui.repeat ? ui.range : null,
+    })
+  }
   const tempo = model.tempo
   const startPos = passageBounds(model, ui.range).start
   const source = hasTempo(tempo) ? effectiveTempoAt(tempo, startPos, 1) : null
@@ -933,6 +948,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         <div class={styles.safeBottom} />
       ) : (
         <Footer
+          onRecord={openRecorder}
+          recordingOpen={recorder.isOpen}
           ui={ui}
           session={session}
           zone={recede.zone}
@@ -975,6 +992,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             />
           </div>
           <PracticeMenuItems
+            onRecord={openRecorder}
             ui={ui}
             session={session}
             labels={appSettings.labels.mode}
@@ -1012,6 +1030,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       </Sheet>
 
       <WrongNoteFlash onReady={(handle) => session.attachFlash(handle)} />
+      {recorder.dialog}
       <TempoSheet
         open={tempoOpen}
         onClose={() => setTempoOpen(false)}

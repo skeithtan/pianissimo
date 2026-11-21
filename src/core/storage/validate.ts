@@ -281,3 +281,26 @@ export function sourceMetaProblem(v: unknown): string | null {
     ['bytesSha256', v['bytesSha256'] === undefined || isStr(v['bytesSha256'])],
   ])
 }
+
+export function recordingProblem(v: unknown): string | null {
+  if (!isObj(v)) return msg('is not an object')
+  const score = v['score']
+  return firstBad([
+    ['id', isStr(v['id']) && v['id'].length > 0],
+    ['recording', ['pieceId', 'title', 'context', 'input', 'passage'].every((key) => isStr(v[key]))],
+    ['hands', isOneOf(v['hands'], ['both', 'left', 'right'])],
+    ['durationMs', isNum(v['durationMs']) && v['durationMs'] >= 0],
+    ['createdAt', isNum(v['createdAt']) && !Number.isNaN(new Date(v['createdAt']).getTime())],
+    ['interrupted', isBool(v['interrupted'])],
+    [
+      'score',
+      isObj(score) &&
+        isInt(score['expected']) &&
+        score['expected'] > 0 &&
+        isInt(score['played']) &&
+        isInt(score['matched']) &&
+        score['matched'] >= 0 &&
+        score['matched'] <= Math.min(score['expected'], score['played']),
+    ],
+  ])
+}

@@ -3886,7 +3886,7 @@ export class PracticeSession {
     const versionChanged = s.version !== this.#lastVersion || force
     // Listen mode (both hands off, U9) shows no targets, even before Play.
     const quiet = this.#listen !== null || this.#sel.hands === 'none'
-    const timingEnabled = !quiet && ACTIVE.includes(s.phase)
+    const timingEnabled = this.#settings.hints.showTimingCues && !quiet && ACTIVE.includes(s.phase)
     const timing = this.#engine.transport === 'strict' ? this.#timingDrift : this.#practiceTiming
     strip?.setTimingCue?.(timingEnabled && s.phase === 'running' ? timing.directionAt(now) : null, timingEnabled)
     if (versionChanged || previewChanged) {
@@ -4004,7 +4004,8 @@ export class PracticeSession {
     const s = this.#engine.state
     const f = p.follower.state
     const changed = force || f.version !== this.#playVersion
-    strip?.setTimingCue?.(p.playing && p.timing ? p.timing.directionAt(now) : null, p.playing && p.timing !== null)
+    const timing = this.#settings.hints.showTimingCues && p.playing ? p.timing : null
+    strip?.setTimingCue?.(timing?.directionAt(now) ?? null, timing !== null)
     if (changed) {
       this.#playVersion = f.version
       if (strip) {

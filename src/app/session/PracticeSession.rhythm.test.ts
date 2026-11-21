@@ -250,6 +250,17 @@ describe('Keep time: playing against the music', () => {
     },
   )
 
+  it('scores timing deviations when the live indicators are hidden', async () => {
+    const h = open({}, { settings: testSettings({ hints: { ...DEFAULT_SETTINGS.hints, showTimingCues: false } }) })
+    await begin(h)
+    playOnTime(h, [60, 62, 64], [3, 54, 101])
+    expect(h.strip.timingCue).toBeNull()
+    h.session.updateSettings(testSettings())
+    h.frames.flush()
+    expect(h.strip.timingCue).toBe('dragging')
+    expect(h.session.engine.state.phase).toBe('running')
+  })
+
   it('uses the first matched attack of a chord for the live cue, with completion still scored', async () => {
     const chords = buildScore({
       notes: [0, 1, 2, 3].flatMap((at) => [

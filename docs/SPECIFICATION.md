@@ -118,6 +118,8 @@ Correctness means sounding pitch, including octave. An active ottava marking is 
 
 The cursor never passes a required onset until its notes are correct. It is not forced forward by a metronome. Rests, note lengths, and expressive details remain part of the music and reference timing, but this mode does not enforce them as pitch gates.
 
+Settings → Hints has one **Rushing and Dragging indicators** switch, on by default. Turning it off hides the live timing label, its reserved row, and the matching cursor tint in Practice, Keep time, and MIDI following. Timing measurements and results continue.
+
 Use the theme's default cursor color whenever the live timing cue is absent. Use slate blue while **Rushing** is visible and copper while **Dragging** is visible. Show the cue as a borderless rectangular pill close above the active staff, clear of notation and aligned horizontally with the score cursor. In the strip, set the height from the full engraving’s top. In page view, scroll the active system to a consistent reading position just below the cue. Keep the cue at one height through note and direction changes. Sweep a single gradient behind the label and the chevrons in the direction the chevrons move. Keep both static when Reduced Motion is enabled.
 
 Every input event is consumed at most once. Clear the current group's accepted-attack set on advancement, seeking, restarting, changing hands, or interruption; resuming ordinary paused reading retains the same group's progress. Keep physical key state separate so a held key is never mistaken for a new attack. Reconnection requires fresh attacks. Application-generated playback events and any verified returned echoes never count as the pianist's input; they cannot advance a group, start the performance clock, trigger a hint pedal, or create an error.
@@ -328,6 +330,19 @@ A faster result is not automatically better. Rushing can cancel a hesitation in 
 Assisted and unassisted attempts must remain distinguishable. Compare results only for the same score version, selected passage occurrences, hands, tempo map and speed, reference-roll realization policy, accompaniment/transport mode, and matching rules. Show best clean unassisted performance separately from assisted practice. Incomplete attempts retain diagnostics but do not enter completion rankings.
 
 Because the app waits for every required pitch, a completed attempt cannot contain an omitted required note. Do not invent a “missed notes” metric for this mode.
+
+## Performance recordings
+
+Record performance captures the selected piano's incoming MIDI and a user-visible audio input
+in the same take. Prefer the piano's USB audio input when identifiable. Show its name and an
+input meter before starting. The score stays visible while recording. Stop saves both files
+together on this device. Download offers one ZIP with a Standard MIDI File and a PCM WAV.
+
+Recordings in the Library keeps takes available for listening, comparison, download, and
+confirmed deletion. Each take shows a note accuracy percentage and counts of matched, missing,
+and extra attacks for its selected hands and passage. Mark the highest score among comparable
+takes, including ties. Interrupted takes retain both files and their score. Include recordings
+in the full backup and restore.
 
 ## Listening and hand practice
 

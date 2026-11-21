@@ -1199,9 +1199,9 @@ describe('PracticeView', () => {
       expect(dialog.getAttribute('aria-modal')).toBeNull()
       expect(
         [...dialog.children].map(
-          (row) => row.textContent?.trim().match(/^(Note names|Keep time|Metronome|Show keys)/)?.[0],
+          (row) => row.textContent?.trim().match(/^(Note names|Keep time|Metronome|Show keys|Record performance)/)?.[0],
         ),
-      ).toEqual(['Note names', 'Keep time', 'Metronome', 'Show keys'])
+      ).toEqual(['Note names', 'Keep time', 'Metronome', 'Show keys', 'Record performance'])
       expect(byLabel(dialog, 'Faster by 5 percent')).toBeNull()
       expect(byLabel(dialog, 'Note names on the score')).not.toBeNull()
       expect(accessibleMenuSwitches(dialog)).toHaveLength(3)
@@ -1552,6 +1552,7 @@ describe('PracticeView', () => {
       expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
       const switches = accessibleMenuSwitches(menu).map(switchName)
       expect(switches).toEqual(['Keep time', 'Metronome', 'Show keys'])
+      expect(menu.textContent).toContain('Record performance')
       expect(menu.textContent).toContain('Connected · Test piano')
       expect(byLabel(menu, 'Settings')).not.toBeNull()
       // Show keys opens the guide slot from the sheet.

@@ -1,3 +1,4 @@
+import { useRecordingDialog } from '../recordings/useRecordingDialog'
 import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * Sheet music (DECISIONS U72, U105, U106): the score, playback and ungraded live following. A
@@ -114,6 +115,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
       ),
   )
   const ui = useStore(session.ui)
+  const recorder = useRecordingDialog()
   const appSettings = settings.value
   const [prep, setPrep] = useState<Prep>({ state: 'preparing', fraction: 0 })
   const [tempoOpen, setTempoOpen] = useState(false)
@@ -273,6 +275,19 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
     [session],
   )
 
+  const openRecorder = () => {
+    if (recorder.isOpen) return
+    if (session.ui.get().playing) session.pause()
+    setMenuOpen(false)
+    void recorder.open(env.storage, {
+      pieceId: piece.id,
+      title: piece.title,
+      model,
+      env,
+      hands: followHands,
+      range: null,
+    })
+  }
   const tempo = model.tempo
   const startPos = passageBounds(model, null).start
   const source = hasTempo(tempo) ? effectiveTempoAt(tempo, startPos, 1) : null
@@ -464,7 +479,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
         <FooterBar
           start={speed('up')}
           end={
-            <FooterMenuPopover label={msg('Sheet music menu')}>
+            <FooterMenuPopover closed={recorder.isOpen} label={msg('Sheet music menu')}>
               <div class={footerMenuClasses.row}>
                 <span class={footerMenuClasses.label} aria-hidden="true">
                   {msg('Note names')}
@@ -501,6 +516,9 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
                 checked={ui.keyboardVisible}
                 onChange={(on) => session.setKeyboardVisible(on)}
               />
+              <Button disabled={recorder.isOpen} onClick={openRecorder}>
+                {msg('Record performance')}
+              </Button>
             </FooterMenuPopover>
           }
           center={
@@ -578,6 +596,9 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             />
           )}
           <div class={styles.menuActions}>
+            <Button disabled={recorder.isOpen} onClick={openRecorder}>
+              {msg('Record performance')}
+            </Button>
             <Button
               icon="settings"
               onClick={() => {
@@ -591,6 +612,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
         </div>
       </Sheet>
 
+      {recorder.dialog}
       <TempoSheet
         open={tempoOpen}
         onClose={() => setTempoOpen(false)}

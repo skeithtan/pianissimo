@@ -69,10 +69,12 @@ record is dropped alone. Scheduling is injectable for tests. Ordinary-reading at
 the measure histories but their records are not stored unless `keepReadingAttempts` is set;
 Preview records nothing.
 
-## Database "pianissimo", version 2
+## Database "pianissimo", version 3
 
 | Store | Key | Value / indexes |
 | --- | --- | --- |
+| `recordings` | `id` | Recording metadata and note counts. |
+| `recordingFiles` | recording ID | MIDI bytes and WAV blocks in the same record. |
 | `pieces` | `id` | `PieceRecord`; indexes `lastOpenedAt`, `scoreVersionId` |
 | `sources` | `scoreVersionId` | `SourceFileRecord` (original bytes) |
 | `packages` | `scoreVersionId` | `ScorePackage` |

@@ -1,0 +1,216 @@
+import { useEffect, useRef, useState } from 'preact/hooks'
+import { Button, Sheet } from '../../ui/controls'
+import { msg } from '../../i18n/messages'
+import { openConnection } from '../../app/navigation'
+import { connectionStatus, pushNotice } from '../../app/state'
+import { openPerformanceInput, type PerformanceInput } from '../../app/audio/performanceInput'
+import { describePassage } from '../../core/model/passage'
+import { RecordingHistory, handName } from './History'
+import { beginTake, type TakeTarget } from './take'
+import styles from './recordings.module.css'
+
+export function Recorder({ target, onClose }: { target: TakeTarget; onClose: () => void }) {
+  const [phase, setPhase] = useState<'setup' | 'opening' | 'ready' | 'recording' | 'saving' | 'history'>('setup')
+  const [savedId, setSavedId] = useState<string>()
+  const [error, setError] = useState('')
+  const [input, setInput] = useState<PerformanceInput | null>(null)
+  const [seconds, setSeconds] = useState(0)
+  const meter = useRef<HTMLMeterElement>(null)
+  const owned = useRef<PerformanceInput | null>(null)
+  const request = useRef<AbortController | null>(null)
+  const recording = useRef<ReturnType<typeof beginTake> | null>(null)
+  const saving = useRef(false)
+  const mounted = useRef(true)
+  const connection = connectionStatus.value
+  async function finish(interrupted: boolean) {
+    const take = recording.current
+    if (!take) return
+    recording.current = null
+    request.current = null
+    saving.current = true
+    owned.current = null
+    if (mounted.current) {
+      setPhase('saving')
+      setInput(null)
+    }
+    try {
+      const saved = await take.stop(interrupted)
+      if (mounted.current) setSavedId(saved.info.id)
+    } catch {
+      pushNotice({
+        kind: 'warning',
+        text: msg('Recording could not be saved. Open Recordings to download it or retry.'),
+      })
+    } finally {
+      saving.current = false
+      if (mounted.current) setPhase('history')
+    }
+  }
+  function release() {
+    request.current?.abort()
+    request.current = null
+    owned.current?.close()
+    owned.current = null
+  }
+  function lost() {
+    if (recording.current) {
+      void finish(true)
+      return
+    }
+    if (saving.current || (!owned.current && !request.current)) return
+    release()
+    if (mounted.current) {
+      setInput(null)
+      setError(msg('Audio input was interrupted.'))
+      setPhase('setup')
+    }
+  }
+  useEffect(() => {
+    mounted.current = true
+    const hidden = () => {
+      if (document.hidden) lost()
+    }
+    const leaving = () => {
+      if (recording.current) void finish(true)
+    }
+    document.addEventListener('visibilitychange', hidden)
+    window.addEventListener('pagehide', leaving)
+    return () => {
+      mounted.current = false
+      document.removeEventListener('visibilitychange', hidden)
+      window.removeEventListener('pagehide', leaving)
+      if (recording.current) void finish(true)
+      if (!saving.current) release()
+    }
+  }, [])
+  useEffect(() => {
+    if (phase !== 'ready' || !input) return
+    const t = setInterval(() => {
+      if (meter.current) meter.current.value = input.level()
+    }, 90)
+    return () => clearInterval(t)
+  }, [phase, input])
+  useEffect(() => {
+    if (phase !== 'recording') return
+    const start = performance.now()
+    const t = setInterval(() => setSeconds(Math.floor((performance.now() - start) / 1000)), 500)
+    return () => clearInterval(t)
+  }, [phase])
+  async function open(id = '', preferPiano = false) {
+    release()
+    const controller = new AbortController()
+    request.current = controller
+    setError('')
+    setPhase('opening')
+    setInput(null)
+    try {
+      const preferred = preferPiano && connection.state === 'connected' ? connection.inputName : undefined
+      const next = await openPerformanceInput(id, lost, controller.signal, preferred)
+      if (controller.signal.aborted) {
+        next.close()
+        return
+      }
+      owned.current = next
+      setInput(next)
+      setPhase('ready')
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        request.current = null
+        setError(e instanceof Error ? e.message : String(e))
+        setPhase('setup')
+      }
+    }
+  }
+  function start() {
+    if (!owned.current || recording.current) return
+    try {
+      recording.current = beginTake(target, owned.current, lost)
+      setSeconds(0)
+      setPhase('recording')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+  if (phase === 'history')
+    return (
+      <RecordingHistory initialId={savedId} storage={target.env.storage} pieceId={target.pieceId} onClose={onClose} />
+    )
+  if (phase === 'recording' || phase === 'saving')
+    return (
+      <div class={styles.stop}>
+        <Button variant="primary" disabled={phase === 'saving'} onClick={() => void finish(false)}>
+          {phase === 'saving' ? msg('Saving recording…') : msg('Stop recording · {0} s', seconds)}
+        </Button>
+      </div>
+    )
+  return (
+    <Sheet open title={msg('Record performance')} onClose={onClose}>
+      <div class={styles.detail}>
+        <strong>{target.title}</strong>
+        <p>
+          {describePassage(target.model, target.range, target.hands)} · {handName(target.hands)}
+        </p>
+        {connection.state !== 'connected' && (
+          <div>
+            <p role="status">{msg('Connect and select a MIDI piano to record a performance.')}</p>
+            <Button
+              onClick={() => {
+                onClose()
+                openConnection()
+              }}
+            >
+              {msg('Connection')}
+            </Button>
+          </div>
+        )}
+        <p>{msg('Select the piano’s USB audio input to record its own sound. Check the level by playing a note.')}</p>
+        {phase === 'ready' && input && (
+          <>
+            <label>
+              {msg('Audio input')}
+              <select
+                aria-label={msg('Audio input')}
+                value={input.deviceId}
+                onChange={(e) => void open(e.currentTarget.value)}
+              >
+                {!input.devices.some((d) => d.deviceId === input.deviceId) && (
+                  <option value={input.deviceId}>{input.label}</option>
+                )}
+                {input.devices.map((d, i) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || msg('Input {0}', i + 1)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <meter ref={meter} min={0} max={1} value={0} aria-label={msg('Audio level')} />
+          </>
+        )}
+        {error && <p role="alert">{error}</p>}
+        <div class={styles.actions}>
+          {phase === 'ready' ? (
+            <Button variant="primary" disabled={connection.state !== 'connected'} onClick={start}>
+              {msg('Start recording')}
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              disabled={phase === 'opening' || connection.state !== 'connected'}
+              onClick={() => void open('', true)}
+            >
+              {phase === 'opening' ? msg('Opening audio input…') : msg('Enable audio input')}
+            </Button>
+          )}
+          <Button
+            onClick={() => {
+              release()
+              setPhase('history')
+            }}
+          >
+            {msg('Recordings')}
+          </Button>
+        </div>
+      </div>
+    </Sheet>
+  )
+}

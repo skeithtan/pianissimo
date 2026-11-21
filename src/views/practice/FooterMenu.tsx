@@ -16,7 +16,7 @@ import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { PracticeSession, SessionUi } from '../../app/session'
 import type { PersistentLabelMode } from '../../core/model/settings'
-import { Segmented, Slider, Toggle } from '../../ui/controls'
+import { Button, Segmented, Slider, Toggle } from '../../ui/controls'
 import { useFadePresence } from '../../ui/fade'
 import { Icon } from '../../ui/icons'
 import { usePopoverPlacement } from '../../ui/usePopoverPlacement'
@@ -41,6 +41,8 @@ export interface MetronomeRow {
 }
 
 export interface FooterMenuProps {
+  readonly onRecord?: (() => void) | undefined
+  readonly recordingOpen?: boolean | undefined
   readonly ui: SessionUi
   readonly session: PracticeSession
   readonly receded: boolean
@@ -78,6 +80,7 @@ function MenuReveal({ open, children }: { readonly open: boolean; readonly child
  * sheet hides Show keys in landscape, where there is no keyboard guide (U80).
  */
 export function PracticeMenuItems({
+  onRecord,
   ui,
   session,
   labels,
@@ -94,6 +97,7 @@ export function PracticeMenuItems({
   FooterMenuProps,
   'ui' | 'session' | 'labels' | 'onLabels' | 'hasTempo' | 'scorePlayback' | 'metronome' | 'onMetronome'
 > & {
+  readonly onRecord?: (() => void) | undefined
   readonly showKeys?: boolean
   readonly rowClass: string | undefined
   readonly labelClass: string | undefined
@@ -167,6 +171,7 @@ export function PracticeMenuItems({
           onChange={(on) => session.setKeyboardVisible(on)}
         />
       ) : null}
+      {onRecord && <Button onClick={onRecord}>{msg('Record performance')}</Button>}
     </>
   )
 }
@@ -265,6 +270,8 @@ export function FooterMenuPopover({ label, closed = false, badge, children }: Fo
 }
 
 export function FooterMenu({
+  onRecord,
+  recordingOpen,
   ui,
   session,
   receded,
@@ -278,7 +285,7 @@ export function FooterMenu({
   return (
     <FooterMenuPopover
       label={msg('Practice menu')}
-      closed={ui.playing || receded}
+      closed={ui.playing || receded || !!recordingOpen}
       badge={
         ui.rhythm ? (
           <span class={menuStyles.badge} data-testid="keep-time-badge" aria-hidden="true">
@@ -288,6 +295,7 @@ export function FooterMenu({
       }
     >
       <PracticeMenuItems
+        onRecord={onRecord}
         ui={ui}
         session={session}
         labels={labels}

@@ -43,7 +43,7 @@ const CUSTOM_SETTINGS: AppSettings = {
     },
     tiedContinuations: true,
   },
-  hints: { autoThreshold: 3, lifetime: 'until-correct', fadeMs: 250, damageFlash: false },
+  hints: { autoThreshold: 3, lifetime: 'until-correct', fadeMs: 250, damageFlash: false, showTimingCues: false },
   suggestions: { enabled: false },
   route: {
     ...DEFAULT_SETTINGS.route,

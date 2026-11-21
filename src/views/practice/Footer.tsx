@@ -63,6 +63,8 @@ export function FooterBar({ start, end, center, zone, receded = false }: FooterB
 }
 
 export interface FooterProps {
+  readonly onRecord?: (() => void) | undefined
+  readonly recordingOpen?: boolean | undefined
   readonly ui: SessionUi
   readonly session: PracticeSession
   readonly zone: RecedeZone
@@ -80,6 +82,8 @@ export interface FooterProps {
 }
 
 export function Footer({
+  onRecord,
+  recordingOpen,
   ui,
   session,
   zone,
@@ -110,6 +114,8 @@ export function Footer({
       }
       end={
         <FooterMenu
+          onRecord={onRecord}
+          recordingOpen={recordingOpen}
           ui={ui}
           session={session}
           receded={receded}
