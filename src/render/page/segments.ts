@@ -6,6 +6,7 @@
  * measure number. Keep the two in step until they are deduplicated.
  */
 import { SEAM } from '../partition'
+import { relabelBars, setBarLabel } from '../shared/scoreLanguage'
 import type { PreparedLayout, SegmentData } from '../types'
 import type { MountedSegment, SegmentHooks } from '../strip/segments'
 
@@ -76,8 +77,11 @@ export class PageSegmentStore {
 
   private attach(i: number): void {
     let seg = this.detached.get(i)
-    if (seg) this.detached.delete(i)
-    else seg = this.build(i)
+    if (seg) {
+      this.detached.delete(i)
+      // The interface language may have changed while it was detached.
+      relabelBars(seg.over)
+    } else seg = this.build(i)
     this.container.append(seg.el)
     this.mounted.set(i, seg)
     this.hooks.attached(seg)
@@ -118,7 +122,7 @@ export class PageSegmentStore {
       t.setAttribute('class', 'pn-mnum')
       t.setAttribute('x', String(occ.labelBox.x + 1))
       t.setAttribute('y', String(occ.labelBox.y + 10))
-      t.textContent = occ.label
+      setBarLabel(t, occ)
       numbers.append(t)
     }
     const labels = doc.createElementNS(SVG_NS, 'g')

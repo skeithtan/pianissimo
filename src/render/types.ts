@@ -97,12 +97,6 @@ export interface StaffGeometry {
   readonly bottom: number
 }
 
-/** Top and bottom ink y by horizontal column, in layout px. */
-export interface InkBounds {
-  readonly top: readonly number[]
-  readonly bottom: readonly number[]
-}
-
 export interface OccurrenceGeometry {
   readonly occ: number
   /** Left and right barline x. */
@@ -116,8 +110,14 @@ export interface OccurrenceGeometry {
    * and last `[duration, x1]`. Positions between anchors interpolate linearly.
    */
   readonly anchors: readonly (readonly [number, number])[]
-  /** App-drawn measure number text (M5): "12" or "12 (pass 2)". */
+  /** App-drawn measure number text (M5): "12" or "12 (pass 2)", in the language it was prepared in. */
   readonly label: string
+  /**
+   * The bar number and pass behind a default `label`, so views format it in the current language
+   * (`barLabel`). Absent in layouts cached before them and with a custom `measureLabel`.
+   */
+  readonly number?: string
+  readonly pass?: number
   readonly labelBox: Box
   /** Page mode only: the system (line) holding this bar. */
   readonly system?: number
@@ -242,7 +242,6 @@ export interface SystemGeometry {
   readonly y1: number
   /** The system's staves (top and bottom staff lines in page y). */
   readonly staves: readonly StaffGeometry[]
-  readonly inkBounds?: InkBounds
 }
 
 export type LayoutMode = 'strip' | 'page'
@@ -295,8 +294,6 @@ export interface PreparedLayout {
   readonly top: number
   readonly height: number
   readonly staves: readonly StaffGeometry[]
-  /** Horizontal strip's ink bounds. A page stores them per system. */
-  readonly inkBounds?: InkBounds
   readonly occurrences: readonly OccurrenceGeometry[]
   /** By `PerformedNote.index`; null only when unmapped (see report). */
   readonly notes: readonly (NoteGeometry | null)[]
@@ -350,7 +347,7 @@ export interface PrepareOptions {
   /**
    * Page mode: the canvas never grows past this width (layout px; at least `pageWidth`). A bar
    * alone on its system that would need more keeps its stacked and callout labels instead, and
-   * no further engraving is spent on it (a phone, R17). Absent: the canvas may grow to three
+   * no further engraving is spent on it (every portrait page, R17). Absent: the canvas may grow to three
    * times `pageWidth`.
    */
   readonly pageMaxWidth?: number

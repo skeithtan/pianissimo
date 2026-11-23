@@ -24,7 +24,18 @@ import { Icon } from '../../ui/icons'
 import { prefersReducedMotion } from '../../ui/motion'
 import { formatSpeedPercent } from '../../ui/speed'
 import { passFacts, timingText, wrongText } from './format'
+import {
+  QUICK_FOLD_MS,
+  joinMotion,
+  panelOpening,
+  screenOpening,
+  startMotion,
+  steerMotion,
+  type MotionStep,
+} from './resultMotion'
 import styles from './practice.module.css'
+
+export { QUICK_FOLD_MS } from './resultMotion'
 
 /** The result card fades and rises in, fades and sinks out (CSS `.result[data-phase]` mirrors it). */
 export const RESULT_FADE_MS = 220
@@ -154,16 +165,26 @@ export const DETAILS_MARGIN = 16
 export const DETAILS_MAX_HEIGHT = 880
 /** Shared duration of the result opening and its reverse. */
 export const DETAILS_FOLD_MS = 420
+/** The opening's easing (`--ease-standard`). */
+const OPEN_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)'
 /** A newly completed loop briefly reveals more of its preview before settling. */
 const RESULT_PREVIEW_MS = 960
 const RESULT_SWIPE_PX = 40
 const RESULT_TAP_SLOP_PX = 10
 
+/** The opening under way: its animations, and how to stop following the panel's contents. */
+interface ResultMotion {
+  readonly opening: ResultOpening
+  readonly animations: Animation[]
+  readonly unfollow: () => void
+}
+
 interface ResultOpening {
   readonly id: string
   readonly phone: boolean
+  /** The pill's rectangle and corner radius when it was tapped: the opening starts from them. */
   readonly bounds: DOMRect
-  readonly previewHeight: number
+  readonly radius: number
 }
 
 /**
@@ -209,23 +230,30 @@ export function AttemptResult(p: AttemptResultProps) {
   const expandedId = p.onExpandedChange ? (p.expandedId ?? null) : ownId
   const setExpandedId = p.onExpandedChange ?? setOwnId
   const expanded = !!r && expandedId === r.id && !!p.details
-  // The next pass is under way: the details fold (the pill stays, dimmed).
+  // The next pass is under way: the details fold, quickly (the pill stays, dimmed).
+  const [quickFold, setQuickFold] = useState(false)
   useEffect(() => {
-    if (r && ui.resultDimmed && expandedId === r.id) setExpandedId(null)
+    if (r && ui.resultDimmed && expandedId === r.id) {
+      setQuickFold(true)
+      setExpandedId(null)
+    }
   }, [r?.id, ui.resultDimmed])
-  // The details unfold and fold like an accordion: they stay mounted while folding.
-  const unfold = useFadePresence(expanded, DETAILS_FOLD_MS)
+  useEffect(() => {
+    if (expanded) setQuickFold(false)
+  }, [expanded])
+  const foldMs = quickFold ? QUICK_FOLD_MS : DETAILS_FOLD_MS
+  // The details unfold and fold: they stay mounted while folding.
+  const unfold = useFadePresence(expanded, foldMs)
   const presence = useFadePresence(!!r || unfold.mounted, ui.resultExit === 'played' ? RESULT_SLIDE_MS : RESULT_FADE_MS)
   const root = useRef<HTMLDivElement>(null)
   const toggleButton = useRef<HTMLButtonElement>(null)
   const phone = !!p.phone
   const [opening, setOpening] = useState<ResultOpening | null>(null)
-  const [panelSize, setPanelSize] = useState<{ maxHeight: number; rowHeight: number } | null>(null)
-  // Measure at full width before animating so a long result line cannot resize the dock.
+  const [maxHeight, setMaxHeight] = useState<number | null>(null)
+  // The room above the pill, measured once the card is laid out expanded (before the opening starts).
   useLayoutEffect(() => {
     const card = root.current
-    if (expanded && unfold.mounted && !phone && card)
-      setPanelSize({ maxHeight: availableHeight(card), rowHeight: card.getBoundingClientRect().height })
+    if (expanded && unfold.mounted && !phone && card) setMaxHeight(availableHeight(card))
   }, [expanded, unfold.mounted, phone])
 
   useEffect(() => {
@@ -252,17 +280,14 @@ export function AttemptResult(p: AttemptResultProps) {
     }
     const pill = root.current
     const bounds = pill?.getBoundingClientRect()
+    const row = pill?.querySelector(`.${styles.result}`)
+    const radius = row ? parseFloat(getComputedStyle(row).borderBottomLeftRadius) : NaN
     setOpening(
       bounds && bounds.width > 0 && !prefersReducedMotion()
-        ? {
-            id: r.id,
-            phone,
-            bounds,
-            previewHeight: pill?.querySelector(`.${styles.resultPreview}`)?.getBoundingClientRect().height ?? 0,
-          }
+        ? { id: r.id, phone, bounds, radius: Number.isFinite(radius) ? radius : 22 }
         : null,
     )
-    setPanelSize(null)
+    setMaxHeight(null)
     setIntroId(null)
     setExpandedId(r.id)
   }
@@ -285,9 +310,11 @@ export function AttemptResult(p: AttemptResultProps) {
       showAgain={!ui.repeat || shown.targetReached}
       expanded={expanded}
       intro={!!r && introId === r.id && !expanded && !ui.resultDimmed}
-      opening={shown.id === opening?.id && opening.phone === phone && (phone || panelSize) ? opening : null}
-      maxHeight={panelSize?.maxHeight ?? DETAILS_MAX_HEIGHT}
-      openingRowHeight={panelSize?.rowHeight ?? 0}
+      opening={shown.id === opening?.id && opening.phone === phone ? opening : null}
+      // The tablet card's height is known: its opening can be laid out and started.
+      measured={phone || maxHeight !== null}
+      maxHeight={maxHeight ?? DETAILS_MAX_HEIGHT}
+      foldMs={foldMs}
       rootRef={root}
       toggleRef={toggleButton}
       phone={phone}
@@ -313,6 +340,46 @@ function availableHeight(card: HTMLElement | null): number {
   const stageTop = stage?.getBoundingClientRect().top ?? 0
   const room = top - stageTop - DETAILS_MARGIN
   return Math.max(120, Math.min(DETAILS_MAX_HEIGHT, Math.round(room)))
+}
+
+/**
+ * The details can replace their loading line while the card opens: what appears in `panel` then joins
+ * the running motion at its point, so it never shows ahead of the clip. Returns how to stop.
+ */
+function followContents(panel: Element | null, steps: readonly MotionStep[], animations: Animation[]): () => void {
+  const contents = panel ? Array.from(panel.children) : []
+  const keyframes = steps.find((step) => contents.includes(step.target))?.keyframes
+  if (!panel || !keyframes || typeof MutationObserver === 'undefined') return () => undefined
+  const observer = new MutationObserver((records) => {
+    for (const record of records)
+      for (const node of Array.from(record.addedNodes)) {
+        const reference = animations[0]
+        if (!(node instanceof Element) || !reference) continue
+        const joined = joinMotion(node, keyframes, reference, DETAILS_FOLD_MS, OPEN_EASING)
+        if (joined) animations.push(joined)
+      }
+  })
+  observer.observe(panel, { childList: true })
+  return () => observer.disconnect()
+}
+
+/**
+ * How far inside the panel's sides its contents begin: the smallest distance from either side of
+ * `section` to the padded edge of any of `content` (0 for none, or for content without padding).
+ */
+function paddedInset(section: Element, content: readonly Element[]): number {
+  const box = section.getBoundingClientRect()
+  let inset = Infinity
+  for (const el of content) {
+    const r = el.getBoundingClientRect()
+    const style = getComputedStyle(el)
+    inset = Math.min(
+      inset,
+      r.left + parseFloat(style.paddingLeft) - box.left,
+      box.right - r.right + parseFloat(style.paddingRight),
+    )
+  }
+  return Number.isFinite(inset) ? Math.max(0, inset) : 0
 }
 
 const FOCUSABLE =
@@ -359,9 +426,10 @@ function ResultCard({
   expanded,
   intro,
   opening,
+  measured,
   unfold,
   maxHeight,
-  openingRowHeight,
+  foldMs,
   rootRef,
   toggleRef,
   phone,
@@ -386,11 +454,15 @@ function ResultCard({
   showAgain: boolean
   expanded: boolean
   intro: boolean
+  /** Where the pill was when it was tapped (null: no motion, as with reduced motion). */
   opening: ResultOpening | null
+  /** The expanded layout is final (the tablet card's height is set): the opening may start. */
+  measured: boolean
   /** The details while unfolded or folding (their fade phase), else null. */
   unfold: FadePhase | null
   maxHeight: number
-  openingRowHeight: number
+  /** How long the current fold takes (a quick one when the next pass starts). */
+  foldMs: number
   rootRef: RefObject<HTMLDivElement | null>
   toggleRef: RefObject<HTMLButtonElement | null>
   /** Phone-size screen: the expanded result is full screen with its own header. */
@@ -409,19 +481,69 @@ function ResultCard({
   const full = phone && expanded
   const wasFull = useRef(false)
   const open = unfold !== null
-  const start = opening?.bounds
-  // Reverse the actual opening motion, including its current position on a quick second tap.
+  const row = useRef<HTMLDivElement>(null)
+  const outline = useRef<HTMLDivElement>(null)
+  const motion = useRef<ResultMotion | null>(null)
+  // The pill grows into the card once the expanded layout is final; a fold (or a quick second tap)
+  // plays the same motion from wherever it is (U130), faster when the next pass starts.
   useLayoutEffect(() => {
     const card = rootRef.current
-    if (!card || !open) return
     const closing = unfold === 'leaving'
-    for (const element of [card, card.querySelector(`.${styles.result}`), panel.current]) {
-      for (const animation of element?.getAnimations?.() ?? []) {
-        const reversing = animation.playbackRate < 0
-        if ('animationName' in animation && closing !== reversing) animation.reverse()
-      }
+    if (motion.current && (!open || motion.current.opening !== opening)) {
+      motion.current.unfollow()
+      for (const animation of motion.current.animations) animation.cancel()
+      motion.current = null
     }
-  }, [unfold, start])
+    if (!card || !open) return
+    if (!motion.current && opening && measured && !closing) {
+      const steps = openingSteps(card, opening)
+      const animations = startMotion(steps, DETAILS_FOLD_MS, OPEN_EASING)
+      motion.current = { opening, animations, unfollow: followContents(panel.current, steps, animations) }
+    }
+    if (motion.current) {
+      steerMotion(motion.current.animations, closing, DETAILS_FOLD_MS / foldMs)
+      return
+    }
+    // No pill to grow from (reduced motion): the details' own unfold, reversed from where it is.
+    for (const animation of panel.current?.getAnimations?.() ?? []) {
+      const reversing = animation.playbackRate < 0
+      if ('animationName' in animation && closing !== reversing) animation.reverse()
+    }
+  }, [unfold, opening, measured, foldMs])
+  useEffect(() => () => motion.current?.unfollow(), [])
+  const openingSteps = (card: HTMLElement, from: ResultOpening): MotionStep[] => {
+    const section = panel.current
+    if (!section) return []
+    // The contents (a phone's header and the details, or their loading line) fade in once the
+    // growing clip is clear of their padding. Measured once, here.
+    const content = Array.from(section.children)
+    const inset = paddedInset(section, content)
+    if (from.phone)
+      return screenOpening(section, from.bounds, section.getBoundingClientRect(), from.radius, content, inset)
+    const summary = row.current?.querySelector(`.${styles.resultSummary}`) ?? null
+    const starts = [`.${styles.resultBadge}`, `.${styles.resultText}`].map((q) => summary?.querySelector(q))
+    const box = (row.current ?? card).getBoundingClientRect()
+    const panelTop = section.getBoundingClientRect().top
+    // The outline spans the expanded card, from the panel's top to the row's bottom.
+    if (outline.current) outline.current.style.top = `${panelTop - box.top}px`
+    return panelOpening(
+      {
+        card,
+        panel: section,
+        content,
+        row: row.current,
+        summary,
+        start: starts.filter((el): el is Element => !!el),
+        end: summary?.querySelector(`.${styles.resultActions}`) ?? null,
+        outline: Array.from(outline.current?.children ?? []),
+      },
+      from.bounds,
+      box,
+      panelTop,
+      { height: window.innerHeight },
+      inset,
+    )
+  }
   useLayoutEffect(() => {
     if (full && open) {
       hide.current?.focus({ preventScroll: true })
@@ -452,12 +574,21 @@ function ResultCard({
     }
   }, [full])
   const gesture = useRef<{ pointerId: number; x: number; y: number } | null>(null)
-  const skipClick = useRef(false)
+  // After a drag, the click a mouse sends on release must not also toggle; a touch drag sends none,
+  // so the flag lasts only until the next task and covers only the element the drag started on.
+  const skipClick = useRef<Element | null>(null)
+  const skipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearSkip = () => {
+    if (skipTimer.current !== null) clearTimeout(skipTimer.current)
+    skipTimer.current = null
+    skipClick.current = null
+  }
+  useEffect(() => clearSkip, [])
   // The phone header takes swipes while the details below it scroll normally.
   const swipe = {
     onPointerDown(event: PointerEvent) {
       if (event.button !== 0 || !event.isPrimary || gesture.current) return
-      skipClick.current = false
+      clearSkip()
       const target = event.target as Element
       const button = target.closest('button')
       if (button && button !== toggleRef.current) return
@@ -471,7 +602,11 @@ function ResultCard({
       gesture.current = null
       const dx = Math.abs(event.clientX - start.x)
       const dy = event.clientY - start.y
-      skipClick.current = Math.max(dx, Math.abs(dy)) >= RESULT_TAP_SLOP_PX
+      if (Math.max(dx, Math.abs(dy)) >= RESULT_TAP_SLOP_PX && event.currentTarget instanceof Element) {
+        clearSkip()
+        skipClick.current = event.currentTarget
+        skipTimer.current = setTimeout(clearSkip, 0)
+      }
       if (Math.abs(dy) < RESULT_SWIPE_PX || Math.abs(dy) <= dx * 1.2) return
       if (dy > 0) onDismiss()
       else if (!expanded && hasDetails) {
@@ -479,11 +614,15 @@ function ResultCard({
         onToggle()
       }
     },
+    // Capture lost before the release (the element went away): no click follows this drag.
     onLostPointerCapture(event: PointerEvent) {
-      if (gesture.current?.pointerId === event.pointerId) gesture.current = null
+      if (gesture.current?.pointerId !== event.pointerId) return
+      gesture.current = null
+      clearSkip()
     },
     onPointerCancel(event: PointerEvent) {
       if (gesture.current?.pointerId === event.pointerId) gesture.current = null
+      clearSkip()
     },
   }
   const timing = r.timing ? timingText(r.timing) : null
@@ -498,11 +637,7 @@ function ResultCard({
         {timing}
       </span>
     ) : null,
-    r.streak > 1 ? (
-      <span key="streak">
-        {r.streak} {msg('clean in a row')}
-      </span>
-    ) : null,
+    r.streak > 1 ? <span key="streak">{msg('{0} clean in a row', r.streak)}</span> : null,
     ladder ? (
       <span key="ladder" data-testid="ladder-result">
         {ladder}
@@ -521,7 +656,7 @@ function ResultCard({
       data-expanded={open || undefined}
       data-preview={hasPreview || undefined}
       data-intro={(intro && hasPreview && !open) || undefined}
-      data-opening={(open && !!start) || undefined}
+      data-opening={(open && !!opening) || undefined}
       data-layout={phone ? 'screen' : 'panel'}
       data-dimmed={dimmed || undefined}
       data-exit={exit ?? undefined}
@@ -529,22 +664,12 @@ function ResultCard({
         '--result-open-duration': `${DETAILS_FOLD_MS}ms`,
         '--result-details-max': `${maxHeight}px`,
         '--result-preview-duration': `${RESULT_PREVIEW_MS}ms`,
-        ...(opening && start
-          ? {
-              '--result-from-width': `${start.width}px`,
-              '--result-from-preview': `${opening.previewHeight}px`,
-              '--result-open-row-height': `${openingRowHeight}px`,
-              '--result-from-top': `${start.top}px`,
-              '--result-from-right': `${start.right}px`,
-              '--result-from-bottom': `${start.bottom}px`,
-              '--result-from-left': `${start.left}px`,
-            }
-          : {}),
       }}
       // Dimmed, the first tap only brings the pill back: its controls do not act on it.
       onClickCapture={(event) => {
-        if (skipClick.current && event.detail > 0) {
-          skipClick.current = false
+        const dragged = skipClick.current
+        if (dragged && event.detail > 0 && event.target instanceof Node && dragged.contains(event.target)) {
+          clearSkip()
           event.preventDefault()
           event.stopPropagation()
           return
@@ -618,7 +743,16 @@ function ResultCard({
           {details}
         </section>
       ) : null}
+      {open && opening && !phone ? (
+        // The edges the growing card's clips cut, drawn while it grows (`resultMotion.ts`).
+        <div ref={outline} class={styles.resultOutline} aria-hidden="true">
+          {(['tl', 'tr', 'bl', 'br', 'l', 'r'] as const).map((edge) => (
+            <span key={edge} data-edge={edge} />
+          ))}
+        </div>
+      ) : null}
       <div
+        ref={row}
         class={styles.result}
         role="status"
         inert={full || phase === 'leaving' || undefined}

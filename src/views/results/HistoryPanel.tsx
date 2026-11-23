@@ -183,9 +183,7 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
         <div class={styles.bestCard} data-row="streak">
           <h3>{msg('Practice streak')}</h3>
           <p class={styles.bestValue}>{history.streak.current}</p>
-          <p class={styles.muted}>
-            {msg('Best')} {history.streak.best} {msg('in this setting')}
-          </p>
+          <p class={styles.muted}>{msg('Best {0} in this setting', history.streak.best)}</p>
         </div>
       </div>
 
@@ -205,7 +203,7 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
       />
       <Group
         title={msg('Unassisted, with wrong notes')}
-        note="Newest first. Not ranked."
+        note={msg('Newest first. Not ranked.')}
         kind="errors"
         attempts={history.unassistedWithErrors}
         selectedId={selectedId}
@@ -214,7 +212,7 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
       />
       <Group
         title={msg('Assisted practice')}
-        note="Note names or the keyboard guide were shown. Kept apart from your clean results and never ranked."
+        note={msg('Note names or the keyboard guide were shown. Kept apart from your clean results and never ranked.')}
         kind="assisted"
         attempts={history.assisted}
         selectedId={selectedId}
@@ -223,7 +221,9 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
       />
       <Group
         title={msg('Incomplete attempts')}
-        note="Diagnostics only: paused, interrupted or stopped attempts are not ranked and have no completion time."
+        note={msg(
+          'Diagnostics only: paused, interrupted or stopped attempts are not ranked and have no completion time.',
+        )}
         kind="incomplete"
         attempts={history.incomplete}
         selectedId={selectedId}

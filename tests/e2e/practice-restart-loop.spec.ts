@@ -166,3 +166,89 @@ test.describe('Repeat playback and results', () => {
     await waitForOnset(page, 60, 48)
   })
 })
+
+/**
+ * Restart loop never sits on the result pill or on Return to current position, whatever the width
+ * and the language (P11): a phone on its side, a narrow tablet upright, a phone upright, in
+ * English, French and Japanese (the device language, switched in place).
+ */
+test('Restart loop clears the result pill and Return to current position at every width', async ({ page }) => {
+  test.setTimeout(200_000)
+  await page.setViewportSize({ width: 1180, height: 820 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await installFakeMidi(page)
+  await seedPiece(page)
+  await page.getByRole('button', { name: /^(?:Practice|Continue practice) Two Hands$/ }).click()
+  await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
+  await page.getByRole('button', { name: 'Repeat from here' }).click()
+  await page.getByRole('button', { name: 'Start', exact: true }).click()
+  await playWhenDue(page, 60, 48)
+  await play(page, 30)
+  await playWhenDue(page, 62)
+  await playWhenDue(page, 64)
+  await playWhenDue(page, 65)
+  const result = page.getByTestId('attempt-result')
+  await expect(result).toBeVisible()
+  await waitForOnset(page, 60, 48)
+  await page.keyboard.press('Tab')
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  const restart = page.locator('[data-repeat-bounds] .pn-score-action:not(.pn-return)')
+  await expect(restart).toBeVisible()
+  const speak = (languages: string[]) =>
+    page.evaluate((languages) => {
+      Object.defineProperty(navigator, 'languages', { configurable: true, value: languages })
+      window.dispatchEvent(new Event('languagechange'))
+    }, languages)
+  const problems: string[] = []
+  for (const size of [
+    { width: 852, height: 393 },
+    { width: 760, height: 1024 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(size)
+    await page.waitForTimeout(1500)
+    for (const languages of [['en-US'], ['fr-FR'], ['ja-JP'], ['es-ES'], ['fil-PH']]) {
+      await speak(languages)
+      await expect(page.locator('html')).toHaveAttribute('lang', languages[0]!)
+      await page.waitForTimeout(300)
+      // Browse a little, so Return to current position shows too.
+      await page
+        .locator('.pn-strip')
+        .first()
+        .evaluate((el) => el.classList.add('pn-browsing'))
+      await page.waitForTimeout(250)
+      const found = await page.evaluate(() => {
+        const box = (el: Element | null) => (el ? el.getBoundingClientRect() : null)
+        const restart = box(document.querySelector('[data-repeat-bounds] .pn-score-action:not(.pn-return)'))!
+        const pill = box(document.querySelector('[data-testid="attempt-result"] [data-expandable]'))
+        const back = box(document.querySelector('.pn-browsing .pn-return'))
+        const out: string[] = []
+        const overlap = (a: DOMRect, b: DOMRect) =>
+          a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
+        if (restart.left < 0 || restart.right > innerWidth) out.push('restart off screen')
+        if (pill && overlap(restart, pill)) out.push('restart over the result pill')
+        if (back && overlap(restart, back)) out.push('restart over Return to current position')
+        return out
+      })
+      if (process.env['P11_SHOTS'])
+        await page.screenshot({ path: `${process.env['P11_SHOTS']}/${size.width}x${size.height}-${languages[0]}.png` })
+      await page
+        .locator('.pn-strip')
+        .first()
+        .evaluate((el) => el.classList.remove('pn-browsing'))
+      for (const p of found) problems.push(`${size.width}×${size.height} ${languages[0]}: ${p}`)
+      // A pill as wide as it can be (a long note line, a Keep time line): Restart loop moves up.
+      if (size.height < 520) {
+        await result.evaluate((el) => (el.style.minWidth = '620px'))
+        await expect
+          .poll(async () => {
+            const [button, pill] = await Promise.all([restart.boundingBox(), result.boundingBox()])
+            return button!.y + button!.height <= pill!.y
+          })
+          .toBe(true)
+        await result.evaluate((el) => (el.style.minWidth = ''))
+      }
+    }
+  }
+  expect(problems).toEqual([])
+})

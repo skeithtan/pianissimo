@@ -8,6 +8,8 @@ import { FakeAccess, FakeInput, FakeOutput, fakeNavigator } from '../../core/mid
 import type { MidiNavigatorLike } from '../../core/midi/webmidi'
 import { NO_MIDDLE_PEDAL_EXPLANATION } from '../../core/midi/hintPedal'
 import { $, $$, byLabel, byText, click, flush, mount, type, type Mounted } from '../shared/testing'
+import { untranslatedText, usePseudoCatalog } from '../shared/catalogTesting'
+import { msg } from '../../i18n/messages'
 import { ALL_FEATURES } from '../settings/testkit'
 import { detectFeatures } from '../../app/features'
 import { ConnectionSetup } from './ConnectionView'
@@ -435,6 +437,62 @@ describe('Route memory and exit', () => {
     }
     expect($(rig.root, 'nav[aria-label="Setup steps"]')).toBeNull()
     expect($(rig.root, '[role="radiogroup"][aria-label="Connection type"]')).toBeNull()
+  })
+})
+
+describe('translation coverage', () => {
+  // Device names and makers, MIDI abbreviations and note names are literal data.
+  const literal = ['Digital Piano', 'Fake', /\bCC\b/u, /\b[A-G][♯♭]?-?\d\b/u]
+
+  it('shows no text that bypasses the catalogs in any step', async () => {
+    const restore = usePseudoCatalog()
+    try {
+      const rig = await open()
+      expect(untranslatedText(rig.root, literal)).toEqual([])
+      click(byLabel(rig.root, msg('Allow MIDI access')))
+      await settle()
+      click(radioFor(section(rig.root, 'piano'), 'Digital Piano'))
+      click(radioFor(section(rig.root, 'playback'), 'Digital Piano'))
+      await settle()
+      await rig.play([0x90, 60, 100])
+      await rig.play([0xb0, 64, 127])
+      await rig.play([0xb0, 67, 40])
+      expect(untranslatedText(rig.root, literal)).toEqual([])
+
+      click(byLabel(rig.root, msg('Play test notes')))
+      expect(untranslatedText(rig.root, literal)).toEqual([])
+      click(byLabel(rig.root, msg('No sound')))
+      expect(untranslatedText(rig.root, literal)).toEqual([])
+      await act(async () => {
+        rig.clock.fire()
+        await Promise.resolve()
+      })
+      await settle()
+      click(byLabel(rig.root, msg('Play test notes')))
+      click(byLabel(rig.root, msg('Yes, I heard them')))
+      await act(async () => {
+        rig.clock.fire()
+        await Promise.resolve()
+      })
+      await settle()
+      expect(untranslatedText(rig.root, literal)).toEqual([])
+
+      const pedal = () => section(rig.root, 'pedal')
+      click(byLabel(pedal(), msg('Set hint pedal')))
+      await settle()
+      expect(untranslatedText(rig.root, literal)).toEqual([])
+      await rig.play([0xb0, 67, 127])
+      await rig.play([0xb0, 67, 0])
+      expect(pedal().textContent).toContain(msg('Detected:'))
+      expect(untranslatedText(rig.root, literal)).toEqual([])
+      await rig.play([0xb0, 67, 127])
+      await rig.play([0xb0, 67, 0])
+      expect(untranslatedText(rig.root, literal)).toEqual([])
+      click(byLabel(pedal(), msg('Save hint pedal')))
+      expect(untranslatedText(rig.root, literal)).toEqual([])
+    } finally {
+      restore()
+    }
   })
 })
 

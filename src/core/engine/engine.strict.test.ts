@@ -856,3 +856,93 @@ describe('Strict transport: assistance and lifecycle', () => {
     expect(d.of('wrong').filter((w) => w.reason === 'late')).toEqual([])
   })
 })
+
+describe('Strict transport: the first downbeat played in the count-in (countInPress)', () => {
+  /** Ready, a press at `time` (key state only), then the count-in's end and the hand-back. */
+  function early(time: number, notes: readonly number[], spec: ScoreSpec = SCALE): Session {
+    const s = session(spec)
+    s.d.now = time
+    s.d.tap(...notes)
+    expect(s.d.state).toMatchObject({ phase: 'ready', wrongAttacks: 0, acceptedPitches: [] })
+    s.go()
+    for (const note of notes) s.d.engine.countInPress(note, time)
+    s.d.flush()
+    return s
+  }
+
+  it.each([15, 1])('a first note %i ms early is accepted with its own negative offset', (ms) => {
+    const { d, at } = early(START - ms, [C4])
+    expect(d.state).toMatchObject({ groupIndex: 1, lastOffsetMs: -ms, missedGroups: 0, wrongAttacks: 0 })
+    expect(d.of('input-complete')[0]).toMatchObject({ group: 0, time: START - ms, onsetOffsetMs: -ms })
+    at(START + 1000)
+    d.tap(D4)
+    at(START + 2000)
+    d.tap(E4)
+    at(START + 3000)
+    d.tap(F4)
+    at(START + 4000)
+    d.tap(G4)
+    expect(d.records()[0]).toMatchObject({ completion: 'completed', passed: true, missedGroups: 0 })
+    expect(d.records()[0]!.groups![0]!.offsetMs).toBe(-ms)
+  })
+
+  it('a chord on the first downbeat 10 ms early is one group with all its pitches accepted', () => {
+    const chord: ScoreSpec = {
+      notes: [
+        { at: 0, midi: C4 },
+        { at: 0, midi: E4 },
+        { at: 0, midi: G4 },
+        { at: 1, midi: D4 },
+      ],
+    }
+    const { d } = early(START - 10, [C4, E4, G4], chord)
+    expect(d.of('accepted').map((a) => [a.group, a.pitch])).toEqual([
+      [0, C4],
+      [0, E4],
+      [0, G4],
+    ])
+    expect(d.state).toMatchObject({ groupIndex: 1, lastOffsetMs: -10, wrongAttacks: 0 })
+  })
+
+  it('a wrong key 10 ms before the first downbeat is a wrong attack of the first group, as before a later onset', () => {
+    const { d, at } = early(START - 10, [B3])
+    expect(d.of('wrong')).toEqual([expect.objectContaining({ group: 0, pitch: B3, reason: 'pitch' })])
+    d.tap(C4)
+    at(START + 1000)
+    d.tap(D4)
+    // The same slip 10 ms before onset 2, with group 2 current, gets the same treatment.
+    at(START + 1990)
+    d.tap(B3)
+    expect(d.of('wrong').at(-1)).toMatchObject({ group: 2, pitch: B3, reason: 'pitch' })
+    at(START + 2000)
+    d.tap(E4)
+    at(START + 3000)
+    d.tap(F4)
+    at(START + 4000)
+    d.tap(G4)
+    const groups = d.records()[0]!.groups!
+    expect(groups[0]).toMatchObject({ wrongPitches: [B3], wrongAttacks: 1 })
+    expect(groups[2]).toMatchObject({ wrongPitches: [B3], wrongAttacks: 1 })
+    expect(d.records()[0]!.wrongAttacks).toBe(2)
+  })
+
+  it('a right pitch handed back more than the tolerance before the first arrival is an early press', () => {
+    const { d } = early(START - 200, [C4])
+    expect(d.of('wrong')).toEqual([expect.objectContaining({ group: 0, pitch: C4, reason: 'early' })])
+    expect(d.state.groupIndex).toBe(0)
+  })
+
+  it('is a no-op while Ready and outside strict transport', () => {
+    const s = session()
+    s.d.engine.countInPress(C4, START - 10)
+    expect(s.d.state).toMatchObject({ phase: 'ready', groupIndex: 0, acceptedPitches: [] })
+    const model = buildScore(SCALE)
+    const t = buildTimeline(model, { hands: 'right', range: null, multiplier: 1 })
+    const gated = new EngineDriver(t, { mode: 'scored', pieceId: 'p', prepared: true }, 1000)
+    gated.engine.countInPress(C4, 990)
+    expect(gated.state).toMatchObject({ phase: 'ready', acceptedPitches: [] })
+    gated.now = 1010
+    gated.tap(C4)
+    expect(gated.state).toMatchObject({ phase: 'running', clockStartedAt: 1010, inputComplete: true })
+  })
+})

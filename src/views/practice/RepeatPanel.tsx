@@ -291,6 +291,9 @@ function GoalPopover(
         <div
           ref={panel}
           class={`${styles.goalPopover} ${fit?.side === 'up' ? styles.goalPopoverUp : ''}`}
+          // WebKit focuses no switch or button it clicks: the press focuses the popover, so Escape
+          // still reaches it.
+          tabIndex={-1}
           role="dialog"
           aria-label={msg('Repeat options')}
           style={{

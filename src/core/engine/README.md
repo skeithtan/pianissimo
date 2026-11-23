@@ -41,6 +41,7 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `seek(group, now)` | Scored: interrupts. Reading: new traversal at `group`. |
 | `transportArrived(group, now?)` | Transport reached gate `group` (accompaniment and strict; ignored in free). |
 | `startRunning(now)` | Strict transport only: the count-in ended; Ready → Running and the attempt clock starts at `now`. A no-op in any other transport or phase. |
+| `countInPress(note, time)` | Strict transport, Running: a press made while Ready in the count-in's last stretch, judged at its own `time` as a press at that moment of the pass (the session picks the presses and calls this in time order once the transport plays). A no-op in any other transport or phase. |
 | `reconfigure({reason, timeline?, mode?, transport?, rhythm?, startGroup?, runningStart?}, now)` | Hands/range/tempo/speed/mode change. Pass `runningStart: true` at a lead-in hand-over (the transport keeps playing into the loop). |
 | `updateSettings(patch, now)` | Hint settings, label snapshot (a changed mode/rule interrupts an active scored attempt), hint pedal, pass tolerance, `transportEta`, `rhythm` (a changed tolerance interrupts an active strict attempt). |
 | `state` | Readonly snapshot, reused until `version` changes. |
@@ -154,11 +155,15 @@ onset group is judged against its scheduled time, the transport's arrival at its
 1. **Clock.** Presses in Ready only update physical key state (no clock, no judging, no wrong
    attack). The session calls `startRunning(now)` at the end of its count-in: Ready → Running,
    `clockStartedAt = now`, event `clock-started`. The first group is judged like every other
-   (the never-late rule of E15 is gated-only, so its `lateMs` is measured too).
-2. **Current group i.** A press of a missing pitch before gate i arrives and more than
-   `toleranceMs` before it (by `transportEta`; unknown counts as too far) is a `'early'` wrong
-   attack (E12 semantics: soft feedback, counts, not toward auto hints). Within the tolerance
-   before arrival, or any time after arrival while the group is open, it is accepted.
+   (the never-late rule of E15 is gated-only, so its `lateMs` is measured too). A press made in
+   Ready up to the tolerance before the downbeat (or after it, before the count-in's end reached
+   the session) is handed back by the session with `countInPress(note, time)` and judged at its
+   own time, so an early first downbeat counts as an early press of any later group does.
+2. **Current group i.** A press of a missing pitch more than `toleranceMs` before gate i's
+   arrival (before arrival by `transportEta`, unknown counting as too far; after it, a press
+   stamped earlier, such as a count-in press) is a `'early'` wrong attack (E12 semantics: soft
+   feedback, counts, not toward auto hints). Within the tolerance before arrival, or any time
+   after arrival while the group is open, it is accepted.
 3. **Offsets.** When the group completes, `offsetMs` = completion − scheduled arrival in whole
    ms (before arrival the scheduled time is completion + ETA, so it is negative). `lateMs` stays
    ≥ 0 as before. `state.lastOffsetMs` holds the latest completion offset.

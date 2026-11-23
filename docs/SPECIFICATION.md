@@ -128,7 +128,7 @@ Every input event is consumed at most once. Clear the current group's accepted-a
 
 A wrong physical key press counts as one wrong-note attack. Holding the key, releasing it, or letting it ring under sustain does not add errors. Several wrong keys in a chord count separately.
 
-Make errors unmistakable: a broad red border or translucent red screen wash for approximately 300 ms, plus a clear error symbol and “Wrong key” status at the current position. Keep the notation readable. Repeated errors extend the feedback instead of producing rapid flashing. The local score marker clears on correct completion of the group. The keyboard guide may continue to identify an offending key while it is physically held, but its release is not an advancement gate. Color must be accompanied by text or shape.
+Make errors unmistakable: a broad red border or translucent red screen wash for approximately 300 ms. The player can turn it off. No error symbol is drawn at the cursor. Keep the notation readable. Repeated errors extend the feedback instead of producing rapid flashing. The keyboard guide may continue to identify an offending key while it is physically held, but its release is not an advancement gate. Corrections shown after a pass use text or shape as well as color.
 
 Whenever a graded wrong key-down occurs under an active ottava marking, immediately emphasize the marking and its visible bracket or dashed span in red with a bold outline or other shape cue. This applies to every wrong note, whether it is in the wrong octave or is an unrelated pitch. Highlight on the first error, independently of the automatic note-name hint threshold. Support one- and two-octave shifts in both directions, including 8va, 8vb, 15ma, 15mb, and equivalent notation styles.
 
@@ -335,8 +335,8 @@ Because the app waits for every required pitch, a completed attempt cannot conta
 
 Record performance captures the selected piano's incoming MIDI and a user-visible audio input
 in the same take. Prefer the piano's USB audio input when identifiable. Show its name and an
-input meter before starting. Both score views have a red Record control in the header. During
-a take, a red light and elapsed time sit beside Stop, clear of the score timeline. These controls
+input meter before starting. Start a take from the menu of either score view, with a button that
+carries a red record circle. The header shows recording controls only during a take. During a take, a red light and elapsed time sit beside Stop, clear of the score timeline. These controls
 use the header on wider screens and a footer on portrait phones. Focus mode keeps Stop and the
 recording timer visible and tappable. The adjacent piano connection pill stays visible too. The ZIP
 filename includes the date, time, and UTC offset when capture started. Stop saves both files
@@ -345,8 +345,9 @@ together on this device. Download offers one ZIP with a Standard MIDI File and a
 Recordings in the Library keeps takes available for listening, comparison, download, and
 confirmed deletion. Each take shows a note accuracy percentage and counts of matched, missing,
 and extra attacks for its selected hands and passage. Mark the highest score among comparable
-takes, including ties. Interrupted takes retain both files and their score. Include recordings
-in the full backup and restore.
+takes, including ties. Interrupted takes retain both files and their score. A take shows a notice
+at 20 minutes and stops, saved, at 60. Include recordings in the full backup and restore by default,
+with a switch that shows their size and leaves them out.
 
 ## Listening and hand practice
 

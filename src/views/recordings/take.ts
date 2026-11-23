@@ -1,12 +1,12 @@
 import type { PracticeEnv } from '../practice/env'
-import type { PerformanceInput } from '../../app/audio/performanceInput'
+import { RecordingError, type PerformanceInput } from '../../app/audio/performanceInput'
 import type { MidiInputEvent } from '../../core/midi/types'
 import { buildTimeline } from '../../core/engine/timeline'
 import { handAssignmentId, passageKey, type PassageRange } from '../../core/model/practice'
-import { describePassage } from '../../core/model/passage'
 import type { ScoreModel } from '../../core/model/score'
 import { midiFile, type NoteScore } from '../../core/recording/performance'
 import type { RecordingInfo } from '../../core/recording/records'
+import { passageFields } from './passageLabel'
 import { unsaved, type SavedTake } from './unsaved'
 import { msg } from '../../i18n/messages'
 
@@ -36,7 +36,7 @@ function score(groups: readonly (readonly number[])[], played: number[]): Promis
 export function beginTake(target: TakeTarget, input: PerformanceInput, onLost: () => void) {
   const { model, hands, range, env } = target
   const timeline = buildTimeline(model, { hands, range, multiplier: 1, reattackHeldAtStart: false })
-  if (!timeline.groups.length) throw new Error(msg('This passage has no notes for the selected hands.'))
+  if (!timeline.groups.length) throw new RecordingError(msg('This passage has no notes for the selected hands.'))
   const groups = timeline.groups.map((g) => g.pitches)
   const events: MidiInputEvent[] = []
   const midi = env.midi()
@@ -75,7 +75,7 @@ export function beginTake(target: TakeTarget, input: PerformanceInput, onLost: (
           hands,
           passageKey(timeline.range),
         ]),
-        passage: describePassage(model, range, hands),
+        ...passageFields(model, range, hands),
         hands,
         input: input.label,
         createdAt,

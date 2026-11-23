@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import en from '../../i18n/locales/en-US.json'
+import fr from '../../i18n/locales/fr-FR.json'
+import { percentage, readMessagesWith } from '../../i18n/messages'
 import type { AttemptRecord, GroupOutcome } from '../model/practice'
 import { COMPLETION_TIME_DEFINITION, buildScorecard, formatSeconds } from './scorecard'
 import { attemptRecord, comparisonContext, noAssistance } from './testkit'
@@ -179,6 +182,19 @@ describe('rhythm mode scorecard', () => {
       'streak',
     ])
     expect(row(card, 'on-time')?.value).toBe('8 of 10 (80%)')
+    // Every language formats the percentage its own way.
+    const source: Readonly<Record<string, string>> = en
+    readMessagesWith(() => ({
+      language: 'fr-FR',
+      strings: Object.fromEntries(Object.entries(fr).map(([id, value]) => [source[id]!, value])),
+    }))
+    try {
+      const french = buildScorecard(strict(groups, { missedGroups: 1, passed: false }))
+      expect(row(french, 'on-time')?.value).toBe(`8 sur 10 (${percentage(0.8)})`)
+      expect(percentage(0.8)).not.toBe('80%')
+    } finally {
+      readMessagesWith(() => ({ language: 'en-US', strings: {} }))
+    }
     expect(row(card, 'early')?.value).toBe('1')
     expect(row(card, 'late')?.value).toBe('0')
     expect(row(card, 'missed')?.value).toBe('1')

@@ -555,6 +555,37 @@ describe('transport: pause, stop, seek and cleanup (spec "MIDI output recovery")
     expect(second.time).toBeGreaterThanOrEqual(2500)
     expect(second.at).toBeLessThanOrEqual(second.time)
   })
+
+  it('shiftMs reports how far a late start and every stall moved musical time later', () => {
+    const s = setup({ notes: quarters([48, 50, 52, 53]) })
+    // A count-in timer 300 ms late: the music is anchored 100 ms (the lookahead) in the past.
+    s.clock.now = 1300
+    s.t.play(1000)
+    expect(s.t.shiftMs).toBe(200)
+    s.clock.advanceTo(1500)
+    // A 1 s main-thread stall: the next wake-up comes about 975 ms late.
+    s.clock.now += 1000
+    s.clock.advance(0)
+    expect(s.t.shiftMs).toBeGreaterThan(1150)
+    const shift = s.t.shiftMs
+    // The second quarter is due at its written time plus the whole shift.
+    s.clock.advanceTo(10_000)
+    expect(s.backend.ons()[1]!.time).toBe(1000 + 1000 + shift)
+    s.t.stop()
+    expect(s.t.shiftMs).toBe(0)
+    s.t.play()
+    expect(s.t.shiftMs).toBe(0)
+  })
+
+  it('shiftMs is 0 for an on-time start and negative for one before its anchor', () => {
+    const s = setup({ notes: quarters([48, 50]) })
+    s.clock.now = 1000
+    s.t.play(980)
+    expect(s.t.shiftMs).toBe(0)
+    s.t.pause()
+    s.t.play(1200)
+    expect(s.t.shiftMs).toBe(-200)
+  })
 })
 
 describe('transport: live tempo changes (spec "Tempo changes during use")', () => {

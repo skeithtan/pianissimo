@@ -10,8 +10,8 @@ import { msg, messageLanguage } from '../../i18n/messages'
  * On a phone-size screen (`usePhone`, U74) the header carries both transport actions and a
  * menu button. Other controls are in the untitled menu sheet, so the score and keyboard guide get the
  * height. A phone on its side (`usePhoneLandscape`, U80) goes further: the overview sits in the
- * header in place of the title, there is no keyboard guide and no Show keys, and in portrait the
- * page is engraved to the stage's width and fitted to it (R17).
+ * header in place of the title, and there is no keyboard guide and no Show keys. In portrait, on
+ * every device, the page is engraved to the stage's width and fitted to it (R17).
  *
  * It runs a `PracticeSession` with no history and no piece writes, so
  * a phone with no piano and no Web MIDI plays the piece through browser sound (S3, S4) and the
@@ -133,11 +133,13 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
   const recentLayouts = useMemo(() => new MemoryLayoutCache(RECENT_LAYOUT_BYTES), [session])
   const mode = useOrientation() === 'portrait' ? 'page' : 'strip'
   const stageWidth = useStageWidth(host)
-  // A phone's page opens fitted to the stage's width, never scrolling sideways (R17), and a
-  // pinch magnifies it like a photo without re-engraving (U83), so it is always engraved at
-  // zoom 1: a page zoom saved before U83 (or on a wider screen) does not apply.
-  const fit = phone && mode === 'page'
-  const pageZoom = fit ? 1 : appSettings.view.pageZoom
+  // Every page is capped at the width it was engraved for and fitted to the stage, so the whole
+  // system shows and the page never scrolls sideways (R17). A phone's page pinches like a photo
+  // without re-engraving (U83), so it is always engraved at zoom 1: a page zoom saved before U83
+  // (or on a wider screen) does not apply there.
+  const fit = mode === 'page'
+  const phonePage = phone && mode === 'page'
+  const pageZoom = phonePage ? 1 : appSettings.view.pageZoom
   const pageWidth = mode === 'page' && stageWidth > 0 ? pageWidthFor(stageWidth, pageZoom) : 0
 
   // Session lifetime: settings, label hook, page visibility, orientation, cleanup.
@@ -218,17 +220,17 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
         const snapshot = respace ? (old?.respaceSnapshot?.(layout) ?? null) : null
         old?.destroy()
         // Turned sideways (or a wider stage): the next phone page starts fitted again.
-        if (!fit) magnifyRef.current = 1
+        if (!phonePage) magnifyRef.current = 1
         const strip = env.createStrip(
           el,
           layout,
           {
-            initialZoom: mode === 'page' ? (fit ? 1 : settings.peek().view.pageZoom) : settings.peek().view.zoom,
+            initialZoom: mode === 'page' ? (phonePage ? 1 : settings.peek().view.pageZoom) : settings.peek().view.zoom,
             fitWidth: fit,
             // A phone's page zooms like a photo (U83); a re-engraved page keeps the magnification,
             // a rotation or a new visit starts fitted again.
-            imageZoom: fit,
-            initialMagnify: fit ? magnifyRef.current : 1,
+            imageZoom: phonePage,
+            initialMagnify: phonePage ? magnifyRef.current : 1,
             onMagnify: (m) => {
               magnifyRef.current = m
             },
@@ -262,7 +264,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
       live = false
       ctrl.abort()
     }
-  }, [session, maxChars, mode, pageWidth, room, fit])
+  }, [session, maxChars, mode, pageWidth, room, fit, phonePage])
 
   // Leaving Study (or another piece's session): the view goes with it.
   useEffect(
@@ -523,7 +525,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
                 checked={ui.keyboardVisible}
                 onChange={(on) => session.setKeyboardVisible(on)}
               />
-              <Button disabled={recorder.isOpen} onClick={openRecorder}>
+              <Button icon="record" disabled={recorder.isOpen} onClick={openRecorder}>
                 {msg('Record performance')}
               </Button>
             </FooterMenuPopover>
@@ -603,7 +605,7 @@ export function StudyScreen({ env, piece, pkg, onTempoSaved }: StudyScreenProps)
             />
           )}
           <div class={styles.menuActions}>
-            <Button disabled={recorder.isOpen} onClick={openRecorder}>
+            <Button icon="record" disabled={recorder.isOpen} onClick={openRecorder}>
               {msg('Record performance')}
             </Button>
             <Button

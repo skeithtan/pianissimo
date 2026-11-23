@@ -114,6 +114,13 @@ export interface Transport {
    * playing, beyond the range end, or behind an unreleased gate before `position`.
    */
   msUntilPosition(position: Rational, atTime: number): number | null
+  /**
+   * Real milliseconds musical time now runs behind the `at` of the last `play(at)`: a start
+   * clamped to the lookahead (a late timer) plus every stall since (`stallMs`), negative when it
+   * started before `at`. 0 after `play()` without `at`, `seek` or `stop`. Gate holds are not
+   * counted (a strict transport has every gate released before it plays). Read-only, O(1).
+   */
+  readonly shiftMs: number
   setMetronomeEnabled(enabled: boolean): void
   /** Stop scheduling without output cleanup (destination lost); play() resumes later. */
   interrupt(): void
@@ -193,6 +200,8 @@ class MusicalTransport implements Transport {
   private generation = 0
   private timer: unknown = null
   private expectedWake: number | null = null
+  /** See `shiftMs`. */
+  private shift = 0
   private inTick = false
   private again = false
   private clicksOn: boolean
@@ -290,11 +299,16 @@ class MusicalTransport implements Transport {
     return this.m
   }
 
+  get shiftMs(): number {
+    return this.shift
+  }
+
   play(at?: number): void {
     if (this.disposed || this.stateValue === 'playing') return
     if (this.stateValue === 'ended') this.moveTo(this.rangeStart)
     const now = this.clock()
     const t0 = at === undefined ? now : Math.min(now, Math.max(at, now - this.lookahead))
+    this.shift = at === undefined ? 0 : t0 - at
     this.pieces = [{ ms: t0, sec: this.pausedSec, m: this.m }]
     this.stateValue = 'playing'
     this.generation++
@@ -317,6 +331,7 @@ class MusicalTransport implements Transport {
     this.halt()
     const ok = !wasPlaying || this.cleanupOutput(now)
     this.moveTo(this.rangeStart)
+    this.shift = 0
     if (ok) this.stateValue = 'stopped'
   }
 
@@ -328,6 +343,7 @@ class MusicalTransport implements Transport {
     this.halt()
     const ok = !wasPlaying || this.cleanupOutput(now)
     this.moveTo(pos)
+    this.shift = 0
     if (wasPlaying && ok) {
       this.pieces = [{ ms: now, sec: this.pausedSec, m: this.m }]
       this.stateValue = 'playing'
@@ -578,6 +594,7 @@ class MusicalTransport implements Transport {
     if (fromTimer && this.expectedWake !== null && now - this.expectedWake > this.stallMs) {
       const late = now - this.expectedWake
       this.pieces = this.pieces.map((p) => ({ ...p, ms: p.ms + late }))
+      this.shift += late
     }
     this.expectedWake = null
     const gen = this.generation

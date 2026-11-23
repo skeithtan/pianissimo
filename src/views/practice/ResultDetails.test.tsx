@@ -10,7 +10,12 @@ import {
 } from '../../app/session'
 import { buildTimeline } from '../../core/engine'
 import { buildScore } from '../../core/engine/testkit'
+import type { Language } from '../../core/model/language'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
+import en from '../../i18n/locales/en-US.json'
+import fr from '../../i18n/locales/fr-FR.json'
+import ja from '../../i18n/locales/ja-JP.json'
+import { readMessagesWith } from '../../i18n/messages'
 import { $, $$, byText, click, mount, type Mounted } from '../shared/testing'
 import { ResultDetails, verdict } from './ResultDetails'
 import { passFacts } from './format'
@@ -19,7 +24,15 @@ let view: Mounted | null = null
 afterEach(() => {
   view?.unmount()
   view = null
+  readMessagesWith(() => ({ language: 'en-US', strings: {} }))
 })
+
+/** Reads a translated catalog as the app does (keyed by the English source). */
+function speak(language: Language, catalog: Record<string, string>): void {
+  const source = en as Record<string, string>
+  const strings = Object.fromEntries(Object.entries(catalog).map(([id, text]) => [source[id]!, text]))
+  readMessagesWith(() => ({ language, strings }))
+}
 
 // Bar 1: C D E F♯; bar 2: G.
 const model = buildScore({
@@ -199,5 +212,25 @@ describe('ResultDetails (U99)', () => {
       'On time 6 of 8 · 1 early · 1 late',
     ])
     expect(passFacts({ ...RESULT, targetReached: true }, 3)).toContain('Goal reached: 3 clean in a row')
+  })
+
+  it('words each sentence whole in other languages (P5)', () => {
+    speak('fr-FR', fr)
+    expect(verdict({ ...RESULT, wrongAttacks: 1 })).toBe('Essai non réussi\u00a0: 1 fausse note.')
+    expect(verdict({ ...RESULT, wrongAttacks: 3 })).toBe('Essai non réussi\u00a0: 3 fausses notes.')
+    speak('ja-JP', ja)
+    const five = mistake(1, 0, 'replaced', {
+      presses: [61, 63, 64, 65, 66].map((pitch) => ({
+        pitch,
+        kind: 'accidental' as const,
+        expectedPitch: 62,
+        expectedNote: note(1),
+        passes: 1,
+      })),
+    })
+    render([five])
+    const excerpt = $(view!.container, '[data-testid="result-excerpt"]')!
+    expect(excerpt.querySelector('figcaption')?.textContent).toContain('第1小節')
+    expect(excerpt.textContent).toContain('この位置でさらにミスタッチ2回')
   })
 })

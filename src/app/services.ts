@@ -64,6 +64,10 @@ export const HISTORY_QUOTA_NOTICE =
 export const HISTORY_SAVE_FAILED_NOTICE =
   'Practice results could not be saved. Recent attempts may be missing from results and suggestions.'
 
+/** Shown while a database upgrade waits for another tab that keeps the older version open. */
+export const DATABASE_BLOCKED_NOTICE =
+  'Pianissimo is also open in another tab or window with an older version. Close it so this one can open your library.'
+
 /**
  * History-writer hooks that tell the player when practice records are lost: the writer drops a
  * batch after `MAX_FLUSH_FAILURES` failed flushes (and a malformed record alone) and reports it
@@ -94,12 +98,31 @@ export function historyFailureNotices(
  * while the bundled scores are still downloading and importing. */
 function getDatabase(): Promise<PianissimoStorage> {
   if (!databasePromise) {
-    const options: StorageOptions = { appVersion: APP_VERSION, history: historyFailureNotices() }
+    // The notice stays until the open goes on (the other tab closed) or fails.
+    let blockedNotice: number | null = null
+    const unblocked = () => {
+      if (blockedNotice !== null) dismissNotice(blockedNotice)
+      blockedNotice = null
+    }
+    const options: StorageOptions = {
+      appVersion: APP_VERSION,
+      history: historyFailureNotices(),
+      onBlocked: () => {
+        blockedNotice = pushNotice({ kind: 'warning', text: DATABASE_BLOCKED_NOTICE, timeoutMs: null })
+      },
+    }
     const open = env.openStorage ?? ((o: StorageOptions) => openStorage(undefined, o))
-    const pending = open(options).then((storage) => {
-      storage.history.attachLifecycle()
-      return storage
-    })
+    const pending = open(options).then(
+      (storage) => {
+        unblocked()
+        storage.history.attachLifecycle()
+        return storage
+      },
+      (error: unknown) => {
+        unblocked()
+        throw error
+      },
+    )
     databasePromise = pending
     pending.catch(() => {
       if (databasePromise === pending) databasePromise = null

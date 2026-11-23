@@ -10,7 +10,9 @@ import { connectionStatus, pushNotice } from '../../app/state'
 import { openPerformanceInput, type PerformanceInput } from '../../app/audio/performanceInput'
 import { describePassage } from '../../core/model/passage'
 import { RecordingHistory, handName } from './History'
+import { recorderErrorText } from './errors'
 import { beginTake, type TakeTarget } from './take'
+import { TAKE_LIMIT_MS, TAKE_WARNING_MS, startTakeClock } from './takeClock'
 import styles from './recordings.module.css'
 
 export function Recorder({
@@ -104,9 +106,37 @@ export function Recorder({
   }, [phase, input])
   useEffect(() => {
     if (phase !== 'recording') return
-    const start = performance.now()
-    const t = setInterval(() => setSeconds(Math.floor((performance.now() - start) / 1000)), 500)
-    return () => clearInterval(t)
+    return startTakeClock(
+      () => performance.now(),
+      (run, ms) => {
+        const t = setInterval(run, ms)
+        return () => clearInterval(t)
+      },
+      {
+        tick: setSeconds,
+        warn: () =>
+          pushNotice({
+            kind: 'info',
+            text: msg(
+              'This take has been recording for {0} minutes. Recording stops automatically at {1} minutes.',
+              TAKE_WARNING_MS / 60_000,
+              TAKE_LIMIT_MS / 60_000,
+            ),
+            timeoutMs: 10_000,
+          }),
+        limit: () => {
+          pushNotice({
+            kind: 'warning',
+            text: msg(
+              'Recording stopped automatically at {0} minutes, the longest a take can be. The take is being saved.',
+              TAKE_LIMIT_MS / 60_000,
+            ),
+            timeoutMs: null,
+          })
+          void finish(false)
+        },
+      },
+    )
   }, [phase])
   async function open(id = '', preferPiano = false) {
     release()
@@ -128,7 +158,7 @@ export function Recorder({
     } catch (e) {
       if (!controller.signal.aborted) {
         request.current = null
-        setError(e instanceof Error ? e.message : String(e))
+        setError(recorderErrorText(e, 'open'))
         setPhase('setup')
       }
     }
@@ -140,12 +170,18 @@ export function Recorder({
       setSeconds(0)
       setPhase('recording')
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(recorderErrorText(e, 'start'))
     }
   }
   if (phase === 'history')
     return (
-      <RecordingHistory initialId={savedId} storage={target.env.storage} pieceId={target.pieceId} onClose={onClose} />
+      <RecordingHistory
+        initialId={savedId}
+        storage={target.env.storage}
+        pieceId={target.pieceId}
+        model={target.model}
+        onClose={onClose}
+      />
     )
   if (phase === 'recording' || phase === 'saving') {
     if (!controlsHost) return null

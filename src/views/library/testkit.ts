@@ -120,7 +120,7 @@ export interface TestDeps extends LibraryDeps {
   readonly storage: PianissimoStorage
   readonly client: FakeImportClient
   readonly manager: FakeStorageManager
-  readonly downloads: { bytes: Uint8Array; fileName: string }[]
+  readonly downloads: { bytes: Blob; fileName: string }[]
   flushes: number
   reloads: number
   clock: number

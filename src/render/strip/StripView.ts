@@ -43,6 +43,7 @@ import {
 import type { LabelBox, PreparedLayout } from '../types'
 import { clampRange, sameRange, tapSelect, type LoopRange } from './loop'
 import { CursorPath } from './cursorPath'
+import { cubicBezier, parseEasing, type Easing } from './glide'
 import {
   clampTranslate,
   occAtPosition,
@@ -165,6 +166,10 @@ const WRAP_PAN_VIEWPORTS = 2.5
 const WRAP_LEAD_VIEWPORTS = 1.5
 /** The wrap pan's duration (strip.css `--pn-wrap-ms`); the wrap state ends a little after it. */
 const WRAP_MS = 320
+/** The wrap pan's easing (strip.css `.pn-wrap`). */
+const WRAP_EASE = cubicBezier(0.22, 1, 0.36, 1)
+/** A seek's glide (strip.css `--pn-scroll-ms`). */
+const SCROLL_MS = 180
 /** Below this band width on screen (px) the loop's ✕ is drawn small (U14). */
 const CLEAR_SMALL_PX = 150
 /** Cursor bar margin beyond the top and bottom staves, faded by its mask (screen px). */
@@ -261,6 +266,17 @@ export class StripView {
    */
   private wrap: { phase: 'lead' | 'pan'; from: number; to: number } | null = null
   private wrapTimer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * A glide drawn frame by frame (`glideTx`) from the translate `from`, starting at `t0`, toward
+   * the live target (`tx`). `wrap`: a wrap's pan, which keeps its timing while the transport moves on.
+   */
+  private glide: { from: number; t0: number; dur: number; ease: Easing; wrap: boolean } | null = null
+  /** The last glide left to a CSS transition: where it is on screen is estimated from it. */
+  private cssGlide: { from: number; to: number; t0: number; dur: number; ease: Easing } | null = null
+  /** The translate the last frame aimed at. */
+  private glideTarget = NaN
+  /** A seek's easing (strip.css `--pn-ease`, read once). */
+  private readonly scrollEase: Easing
   /** Loop controls fading out (U14): hidden on `animationend`, or by this fallback timer. */
   private ctlLeaveTimer: ReturnType<typeof setTimeout> | null = null
   private readonly reducedMotion =
@@ -450,7 +466,14 @@ export class StripView {
       this.root.append(ret)
     }
     this.cleanup.push(bindScoreLanguage(this.root, opts))
-    this.timingCue = new TimingCue(host, this.root)
+    this.timingCue = new TimingCue(host, this.root, bar)
+    let ease = ''
+    try {
+      ease = getComputedStyle(this.root).getPropertyValue('--pn-ease')
+    } catch {
+      // No computed style (tests): the fallback below.
+    }
+    this.scrollEase = parseEasing(ease, [0.2, 0.8, 0.2, 1])
 
     this.store = new SegmentStore(
       layout,
@@ -841,11 +864,10 @@ export class StripView {
   flushNow(): void {
     if (this.frame) cancelAnimationFrame(this.frame)
     this.frame = 0
-    const instant = this.instant
     this.flush()
     // Commit styles while the no-transition class is set, so a later frame removing it cannot
     // animate this synchronous jump.
-    if (instant) void getComputedStyle(this.content).transform
+    if (this.root.classList.contains('pn-instant')) void getComputedStyle(this.content).transform
   }
 
   // ---------------------------------------------------------------- respacing (R3 revised)
@@ -1195,23 +1217,26 @@ export class StripView {
     // zoom is driven frame by frame here, so it never runs under a CSS transition.
     const far = !review && !Number.isNaN(prevTx) && Math.abs(this.tx - prevTx) > this.hostW * FAR_JUMP_VIEWPORTS
     const instant = wrap ? wrap.phase === 'lead' : this.instant || far || animating
-    this.root.classList.toggle('pn-instant', instant)
     this.instant = false
     if (wrap?.phase === 'pan' && !this.wrapTimer) {
       this.root.classList.add('pn-wrap')
       this.wrapTimer = setTimeout(() => this.endWrap(), WRAP_MS + 80)
     }
+    // The translate drawn this frame: the target, or a step of a glide driven here.
+    const tx = this.glideTx(instant || review !== null, wrap?.phase === 'pan', performance.now())
+    const glide = this.glide
+    this.root.classList.toggle('pn-instant', instant || glide !== null)
 
-    const moved = this.tx !== prevTx || scale !== prevScale || this.ty !== this.applied.ty
+    const moved = tx !== prevTx || scale !== prevScale || this.ty !== this.applied.ty
     if (moved) {
-      this.content.style.transform = `translate3d(${r2(this.tx)}px, ${r2(this.ty)}px, 0) scale(${scale})`
+      this.content.style.transform = `translate3d(${r2(tx)}px, ${r2(this.ty)}px, 0) scale(${scale})`
       if (this.ty !== this.applied.ty || scale !== prevScale) {
         this.stickyStaff.style.setProperty(
           '--pn-staff-transform',
           `translate3d(0, ${r2(this.ty)}px, 0) scale(${scale})`,
         )
       }
-      this.applied.tx = this.tx
+      this.applied.tx = tx
       this.applied.ty = this.ty
       this.applied.scale = scale
     }
@@ -1222,13 +1247,19 @@ export class StripView {
 
     // Mount for both the old and the new view so a smooth scroll never reveals a gap; during a
     // wrap, for the whole range its pan sweeps (already while the lead lands).
-    const view = visibleRange(this.tx, scale, this.hostW)
-    const old =
-      Number.isNaN(prevTx) || instant
+    const view = visibleRange(tx, scale, this.hostW)
+    const old = glide
+      ? visibleRange(glide.from, scale, this.hostW)
+      : Number.isNaN(prevTx) || instant
         ? view
         : visibleRange(prevTx, Number.isNaN(prevScale) ? scale : prevScale, this.hostW)
     let vx0 = Math.min(view.x0, old.x0)
     let vx1 = Math.max(view.x1, old.x1)
+    if (glide) {
+      const end = visibleRange(this.tx, scale, this.hostW)
+      vx0 = Math.min(vx0, end.x0)
+      vx1 = Math.max(vx1, end.x1)
+    }
     if (reviewView) {
       vx0 = Math.min(vx0, reviewView.x0)
       vx1 = Math.max(vx1, reviewView.x1)
@@ -1254,13 +1285,14 @@ export class StripView {
       this.cursorEl.style.transform = `translate3d(${sx}px, 0, 0)`
       this.applied.cursorSx = sx
     }
-    // The full engraving's top stays put as individual notes scroll under the cursor.
-    if (this.timingCue.visible) this.timingCue.place(sx, this.hostW, this.ty)
+    // The full engraving's top stays put as individual notes scroll under the cursor. Placed while
+    // hidden too, so the next cue appears in place.
+    this.timingCue.place(sx, this.hostW, this.ty)
     this.applyCursorBar()
     this.placeActionButton()
     this.applyLoop()
     if (this.pendingCorrections) this.applyCorrections()
-    const stickyW = this.applySticky(view.x0)
+    const stickyW = this.applySticky(tx, view.x0)
     this.applyOttava(view.x0 + stickyW, view.x1)
     if (moved || this.labelsChanged) this.reportVisibleLabels(view.x0 + stickyW, view.x1)
     this.labelsChanged = false
@@ -1268,7 +1300,54 @@ export class StripView {
       // The lead is in place (committed when the browser renders this frame): pan next frame.
       wrap.phase = 'pan'
       this.schedule()
-    } else if (!done || animating) this.schedule()
+    } else if (!done || animating || glide) this.schedule()
+  }
+
+  /**
+   * The content translate to draw this frame. A CSS transition interpolates the translate linearly
+   * between its ends, but the pinned opening is clamped at the edge (U125): a glide whose ends pin
+   * it differently is drawn here frame by frame instead (no transition), so the music, the pinned
+   * block and the masks share one translate on every frame. Other glides stay CSS transitions.
+   * `wrapPan`: a wrap's pan, which keeps its timing while the transport moves its target on.
+   */
+  private glideTx(instant: boolean, wrapPan: boolean, now: number): number {
+    const to = this.tx
+    const prev = this.applied.tx
+    if (instant || this.reducedMotion || Number.isNaN(prev)) {
+      this.glide = this.cssGlide = null
+      this.glideTarget = to
+      return to
+    }
+    let g = this.glide
+    if (to !== this.glideTarget && !(g?.wrap && wrapPan)) {
+      // A new target: glide from what is on screen now (a running CSS glide's place is estimated).
+      const css = this.cssGlide
+      const from =
+        !g && css && now < css.t0 + css.dur ? css.from + (css.to - css.from) * css.ease((now - css.t0) / css.dur) : prev
+      const dur = wrapPan ? WRAP_MS : SCROLL_MS
+      const ease = wrapPan ? WRAP_EASE : this.scrollEase
+      g =
+        from !== to && this.pinOffset(from) !== this.pinOffset(to) ? { from, t0: now, dur, ease, wrap: wrapPan } : null
+      this.glide = g
+      this.cssGlide = g || from === to ? null : { from, to, t0: now, dur, ease }
+    }
+    this.glideTarget = to
+    if (!g) return to
+    const k = (now - g.t0) / g.dur
+    if (k < 1) return g.from + (to - g.from) * g.ease(k)
+    // Landed: drawn at the target without a transition, released on the next frame.
+    if (prev === to) this.glide = null
+    return to
+  }
+
+  /** The pinned opening's screen x at content translate `tx` (0 at the edge, or nothing to pin). */
+  private pinOffset(tx: number): number {
+    const changes = this.layout.contextChanges
+    const openingX = changes[0]?.openingX
+    if (openingX === undefined) return 0
+    const next = changes[1]
+    if (next && next.x <= visibleRange(tx, this.shown, this.hostW).x0) return 0
+    return Math.max(0, tx + openingX * this.shown)
   }
 
   /**
@@ -1653,8 +1732,8 @@ export class StripView {
     }, 400)
   }
 
-  /** Sticky clef/key/meter; returns the screen-covered width in layout px. */
-  private applySticky(viewX0: number): number {
+  /** Sticky clef/key/meter at content translate `tx`; returns the screen-covered width in layout px. */
+  private applySticky(tx: number, viewX0: number): number {
     const L = this.layout
     const changes = L.contextChanges
     const first = changes[0]
@@ -1695,7 +1774,7 @@ export class StripView {
     }
     // Start at the engraved position and glide to the edge with the score. The same glyphs
     // remain visible as the score moves underneath them, including when browsing backward.
-    const offset = lo === 0 && first.openingX !== undefined ? Math.max(0, this.tx + first.openingX * this.shown) : 0
+    const offset = this.pinOffset(tx)
     const transform = `translate3d(${r2(offset)}px, ${r2(this.ty)}px, 0) scale(${this.shown})`
     if (transform !== this.stickyTransform) {
       this.stickyTransform = transform
@@ -1707,6 +1786,8 @@ export class StripView {
     if (this.stickyMask !== mask) {
       this.stickyMask = mask
       const staffMask = on ? `linear-gradient(to right, #000 ${width}px, transparent ${end}px)` : ''
+      // The replacement staff lines span the pinned block plus its fade, never the whole strip.
+      this.stickyStaff.style.width = on ? `${end}px` : ''
       for (const [el, image] of [
         [this.stage, mask],
         [this.stickyStaff, staffMask],
@@ -1718,8 +1799,9 @@ export class StripView {
         el.style.webkitMaskSize = el.style.maskSize
       }
     }
-    // Slide both masks in over the last few pixels of travel. The replacement lines fill
-    // only the portion of the moving staff hidden by the stage mask.
+    // Slide both masks in over the last few pixels of travel (per frame during a driven glide, never
+    // a transition). The replacement lines fill only the portion of the moving staff hidden by the
+    // stage mask.
     const shift = r2(-end * Math.min(1, offset / (CONTEXT_FADE * this.shown)))
     if (shift !== this.stickyShift) {
       this.stickyShift = shift

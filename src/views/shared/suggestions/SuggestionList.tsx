@@ -183,7 +183,7 @@ function ImprovedItem({ suggestion: s, headingLevel }: { suggestion: Suggestion;
           {barsTitle(s.bars)}
           <span class={styles.improvedContext}>
             {' '}
-            · {handsText(s.hands)} {msg('at')} {speedText(s.multiplier)}
+            · {msg('{0} at {1}', handsText(s.hands), speedText(s.multiplier))}
           </span>
         </Heading>
         <p>{s.evidence}</p>
@@ -198,17 +198,18 @@ export function SuggestionList({
   disabled = false,
   compact = false,
   headingLevel = 2,
-  title = 'Suggested practice',
+  title: titleText,
   showHeading = true,
   hideEmpty = false,
   onPractice,
   onDismiss,
   onDisableSuggestions,
   onEnableSuggestions,
-  disableLabel = 'Turn off suggestions',
+  disableLabel,
   renderPreview,
 }: SuggestionListProps) {
   const titleId = useId()
+  const title = titleText ?? msg('Suggested practice')
   const cardLevel = headingLevel + (showHeading ? 1 : 0)
   const showCount = !disabled && suggestions.length > 0
   return (
@@ -272,10 +273,7 @@ export function SuggestionList({
         <details class={styles.improved} open={improved.length <= 3}>
           <summary>
             <Icon name="check" size={16} />
-            <span>
-              {msg('Improved (')}
-              {improved.length})
-            </span>
+            <span>{msg('Improved ({0})', improved.length)}</span>
           </summary>
           <ul class={styles.improvedList}>
             {improved.map((s) => (
@@ -288,7 +286,7 @@ export function SuggestionList({
       {!disabled && onDisableSuggestions ? (
         <div class={styles.footer}>
           <Button variant="ghost" onClick={onDisableSuggestions}>
-            {disableLabel}
+            {disableLabel ?? msg('Turn off suggestions')}
           </Button>
         </div>
       ) : null}

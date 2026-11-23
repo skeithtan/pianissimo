@@ -1,4 +1,4 @@
-import { msg } from '../../i18n/messages'
+import { msg, percentage } from '../../i18n/messages'
 /**
  * Step 2, playback to the piano (spec "MIDI input, output, and pedal controls"): list outputs
  * separately, choose one and the piano's receive channel, then Play test notes followed by
@@ -36,7 +36,7 @@ const realClock: EchoClock = {
 
 type TestState = 'idle' | 'asking' | 'heard' | 'silent' | 'failed'
 
-const percent = (v: number): string => `${Math.round(v * 100)}%`
+const percent = (v: number): string => percentage(Math.round(v * 100) / 100)
 
 export function PlaybackStep({
   index,
@@ -136,7 +136,7 @@ export function PlaybackStep({
           selected={snap.output}
           rememberedName={route.outputName}
           onSelect={(id) => service.selectOutput(id)}
-          none="No output (both-hands practice only)"
+          none={msg('No output (both-hands practice only)')}
         />
       )}
       {granted && snap.outputs.length === 0 ? (

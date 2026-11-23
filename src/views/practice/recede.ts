@@ -1,9 +1,9 @@
 /**
- * While practice or Listen plays, the header and footer tools collapse out of view, while
- * hand toggles and the Repeat panel recede (DECISIONS U13/U60). The overview and playback
- * button stay visible, except on a phone, whose whole top bar collapses like the header (U93).
- * Recording keeps its transport and the adjacent connection pill available in focus mode.
- * Chrome returns when playing stops
+ * While practice or Listen plays, the footer tools dim (or, in a narrow upright window, collapse),
+ * while hand toggles and the Repeat panel recede (DECISIONS U13/U60). The header of a tablet or
+ * desktop stays; a phone's whole top bar collapses (U93). The overview and playback button stay
+ * visible, except in that phone bar. Recording keeps its transport and the adjacent connection
+ * pill available in focus mode. Chrome returns when playing stops
  * (pause, interruption, end), and for a few seconds after a pointer moves over or touches it,
  * or while keyboard focus or an open tool dialog is inside it. CSS uses `data-recede` and
  * motion tokens, shortening transitions with reduced motion. Score feedback never recedes.

@@ -11,7 +11,9 @@ import type { PianissimoStorage } from '../../core/storage'
 import type { PreparedLayout, RespaceSnapshot } from '../../render'
 import { ManualClock } from '../../core/playback/testkit'
 import { importFixture } from '../../../tests/unit/import/fixtures'
-import { $, $$, byLabel, byText, click, mount, press, type Mounted } from '../shared/testing'
+import { $, $$, byLabel, byText, click, hasRecordIcon, mount, press, type Mounted } from '../shared/testing'
+import { untranslatedText, usePseudoCatalog } from '../shared/catalogTesting'
+import { msg } from '../../i18n/messages'
 import type { PracticeEnv, PracticeStripOptions, StripHandle } from '../practice/env'
 import { StudyViewWith } from './StudyView'
 import { PHONE_LANDSCAPE_QUERY, PHONE_QUERY } from '../shared/usePhone'
@@ -56,7 +58,7 @@ interface Rig {
   strips: TestStrip[]
   rooms: (string | undefined)[]
   modes: (string | undefined)[]
-  /** `pageMaxWidth` of every preparation (R17: a phone's page is capped at its width). */
+  /** `pageMaxWidth` of every preparation (R17: every page is capped at its width). */
   caps: (number | undefined)[]
   pieceId: string
 }
@@ -132,6 +134,16 @@ afterEach(() => {
 function onPhone(): void {
   vi.stubGlobal('matchMedia', (q: string) => ({
     matches: q === PHONE_QUERY || q === '(orientation: portrait)',
+    media: q,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }))
+}
+
+/** A tablet held upright: only the portrait query matches. */
+function onTabletPortrait(): void {
+  vi.stubGlobal('matchMedia', (q: string) => ({
+    matches: q === '(orientation: portrait)',
     media: q,
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
@@ -318,6 +330,7 @@ describe('StudyView (U72)', () => {
             .match(/^(Note names|Play through|Keep time|Metronome|Show keys|Record performance)/)?.[0],
       ),
     ).toEqual(['Note names', 'Metronome', 'Show keys', 'Record performance'])
+    expect(hasRecordIcon(byLabel(menu, 'Record performance'))).toBe(true)
     expect(menu.querySelectorAll('input[role="switch"]')).toHaveLength(2)
     expect(menu.contains(document.activeElement)).toBe(true)
     // Playback does not close it: Study never recedes.
@@ -399,6 +412,17 @@ describe('StudyView (U72)', () => {
     expect(settingsOpen.value).toBe(false)
   })
 
+  it('a tablet held upright caps the page and fits it to the stage, with no image zoom (R17)', async () => {
+    onTabletPortrait()
+    const r = await rig()
+    await openPiece(r)
+    expect(r.modes).toEqual(['page'])
+    expect(r.caps[0]).toBeGreaterThan(0)
+    expect(r.strips[0]!.options.fitWidth).toBe(true)
+    expect(r.strips[0]!.options.imageZoom).toBe(false)
+    expect(r.strips[0]!.options.initialMagnify).toBe(1)
+  })
+
   describe('on a phone-size screen (U74)', () => {
     it('puts Listen, Follow my playing, and Menu in the phone header', async () => {
       onPhone()
@@ -427,6 +451,7 @@ describe('StudyView (U72)', () => {
       expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
       expect(menu.textContent).toContain('Speed')
       expect(menu.textContent).toContain('Show keys')
+      expect(hasRecordIcon(byLabel(menu, 'Record performance'))).toBe(true)
       expect(byLabel(menu, 'Settings')).not.toBeNull()
       expect(byLabel(menu, 'Name the notes at the cursor')).toBeNull()
       expect(byLabel(menu, 'Go to the start')).toBeNull()
@@ -495,6 +520,9 @@ describe('StudyView (U72)', () => {
       expect(r.modes).toEqual(['page'])
       expect(r.caps[0]).toBeGreaterThan(0)
       expect(r.strips[0]!.options.fitWidth).toBe(true)
+      // A phone's page magnifies like a photo (U83), engraved at zoom 1.
+      expect(r.strips[0]!.options.imageZoom).toBe(true)
+      expect(r.strips[0]!.options.initialZoom).toBe(1)
     })
 
     it('on its side puts the overview in the header, with no keyboard guide and no Show keys (U80)', async () => {
@@ -534,5 +562,46 @@ describe('StudyView (U72)', () => {
       expect(settingsOpen.value).toBe(true)
       expect(byLabel(root, 'Menu')?.getAttribute('aria-expanded')).toBe('false')
     })
+  })
+})
+
+describe('translation coverage', () => {
+  // The piece title, the composer and note names are literal data.
+  const literal = ['Two Hands', 'Pianissimo fixtures', /\b[A-G][♯♭]?-?\d\b/u]
+
+  it('shows no text that bypasses the catalogs', async () => {
+    const restore = usePseudoCatalog()
+    try {
+      const r = await rig()
+      view = mount(<StudyViewWith env={r.env} />)
+      await settle(r)
+      expect(untranslatedText(view.container, literal)).toEqual([])
+      view.unmount()
+
+      studyRequest.value = { pieceId: 'gone' }
+      view = mount(<StudyViewWith env={r.env} />)
+      await settle(r)
+      expect(untranslatedText(view.container, literal)).toEqual([])
+      view.unmount()
+
+      await openPiece(r)
+      expect(untranslatedText(view!.container, literal)).toEqual([])
+      click(byLabel($(view!.container, 'footer')!, msg('Menu')))
+      expect(untranslatedText(document.body, literal)).toEqual([])
+    } finally {
+      restore()
+    }
+  })
+
+  it('on a phone shows no text that bypasses the catalogs', async () => {
+    const restore = usePseudoCatalog()
+    try {
+      onPhone()
+      const r = await rig()
+      await openPiece(r)
+      expect(untranslatedText(view!.container, literal)).toEqual([])
+    } finally {
+      restore()
+    }
   })
 })

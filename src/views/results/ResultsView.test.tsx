@@ -10,6 +10,7 @@ import type { PianissimoStorage } from '../../core/storage'
 import { attemptFor, importPiece, openFresh } from '../../core/storage/testkit'
 import { sessionDismissals } from '../shared/suggestions'
 import { $, $$, byText, click, mount, type Mounted } from '../shared/testing'
+import { untranslatedText, usePseudoCatalog } from '../shared/catalogTesting'
 import { ResultsView } from './ResultsView'
 
 const settle = (ms = 40) =>
@@ -174,5 +175,26 @@ describe('<ResultsView>', () => {
     expect($(root, '[data-state="no-attempts"]')).not.toBeNull()
     click(byText(root, 'Open Practice', 'button span')?.closest('button'))
     expect(practiceRequest.value).toEqual({ pieceId: piece.id })
+  })
+})
+
+describe('translation coverage', () => {
+  it('shows no text that bypasses the catalogs without a request, for a missing piece or without attempts', async () => {
+    const restore = usePseudoCatalog()
+    try {
+      let root = await open()
+      expect(untranslatedText(root)).toEqual([])
+      view!.unmount()
+      resultsRequest.value = { pieceId: 'nope' }
+      root = await open()
+      expect(untranslatedText(root)).toEqual([])
+      view!.unmount()
+      const { piece } = await importPiece(storage, 'v1')
+      resultsRequest.value = { pieceId: piece.id }
+      root = await open()
+      expect(untranslatedText(root, [piece.title, piece.composer ?? ''].filter(Boolean))).toEqual([])
+    } finally {
+      restore()
+    }
   })
 })

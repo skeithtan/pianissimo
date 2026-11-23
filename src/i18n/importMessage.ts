@@ -161,8 +161,33 @@ export function importMessage(text: string, depth = 0): string {
     for (const i of nested) if (args[i]) args[i] = importMessage(args[i]!, depth + 1)
     return msg(source, ...args)
   }
-  // Unsupported-region descriptions optionally include the original notation in parentheses.
+  // Unsupported-region descriptions optionally list details in parentheses, separated by commas:
+  // importer phrases, score text followed by a reason, or MusicXML tokens (kept as written).
   const suffix = text.indexOf(' (')
-  if (suffix > 0 && text.endsWith(')')) return msg(text.slice(0, suffix)) + text.slice(suffix)
+  if (suffix > 0 && text.endsWith(')')) {
+    const details = text
+      .slice(suffix + 2, -1)
+      .split(', ')
+      .map((detail) => regionDetail(detail, depth + 1))
+    return `${msg(text.slice(0, suffix))} (${details.join(', ')})`
+  }
   return text
+}
+
+/** Why a repeat instruction is not followed, after the instruction's own text ("D.S. al Coda: no segno before it"). */
+const reasons = [
+  'D.C. and D.S. in one bar',
+  'no segno before it',
+  'no Fine after the jump target',
+  'no To Coda between the jump target and the jump',
+  'no coda sign after the To Coda',
+  'inside a repeated section',
+]
+
+function regionDetail(detail: string, depth: number): string {
+  const known = importMessage(detail, depth)
+  if (known !== detail) return known
+  for (const reason of reasons)
+    if (detail.endsWith(`: ${reason}`)) return msg('{0}: {1}', detail.slice(0, -reason.length - 2), msg(reason))
+  return detail
 }

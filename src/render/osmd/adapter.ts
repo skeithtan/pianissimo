@@ -17,7 +17,7 @@ import { msg } from '../../i18n/messages'
 import { add, toNumber } from '../../core/music/rational'
 import { layoutKey } from '../cache'
 import { buildContexts } from '../context'
-import { inkBounds, round, roundBox, unionAll } from '../geom'
+import { round, roundBox, unionAll } from '../geom'
 import { layoutLabels, type LabelUnitInput } from '../labels/layout'
 import {
   type TextMeasurer,
@@ -70,6 +70,7 @@ export const OSMD_VERSION = '2.2.1'
  * pn-9: labels in Inter Bold (wider boxes), SF Compact dropped (R14 revised).
  * pn-10: portrait note-name spacing reserves room before stacking labels (U65).
  * pn-11: local ink bounds for the timing cue (U114).
+ * pn-12: opening clef, key and meter tagged for the strip's pinned layer (U125).
  */
 export const ADAPTER_VERSION = 'pn-12'
 export const RENDERER_NAME = 'osmd'
@@ -355,7 +356,6 @@ export class OsmdRenderer implements RendererAdapter {
           top,
           height,
           staves: ex.staves,
-          inkBounds: inkBounds(width, ex.staves, [ex.obstacles, extraInk]),
           occurrences,
           notes,
           labels,
@@ -432,6 +432,8 @@ function occurrenceGeometry(
 ): OccurrenceGeometry[] {
   const measures: readonly RawMeasure[] = ex.measures
   const texts = input.occurrences.map((o) => measureLabel(o.number, o.pass))
+  // The default text is formatted again where it is drawn, in the language of the moment.
+  const localized = measureLabel === defaultMeasureLabel
   const numberBoxes = placeMeasureNumbers(
     input.occurrences.map((_, i) => ({ x0: measures[i]!.x0, w: numberWidth(texts[i]!) })),
     ex.obstacles,
@@ -452,6 +454,7 @@ function occurrenceGeometry(
       duration,
       anchors,
       label: text,
+      ...(localized ? { number: o.number, pass: o.pass } : {}),
       labelBox,
     }
   })

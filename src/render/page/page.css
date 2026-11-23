@@ -12,6 +12,9 @@
   cursor: default;
 }
 
+/* `contain` keeps a scroll from chaining to the app while keeping the page's own rubber band
+   (only `none` turns that off, in WebKit too). The page cancels no one-finger touch, so the
+   learner's scroll is native: momentum and bounce included. */
 .pn-page-scroll {
   position: absolute;
   inset: 0;
@@ -21,7 +24,20 @@
   touch-action: pan-x pan-y;
 }
 
-/* A caller can lock browsing while the score is unavailable for interaction. */
+/* A fitted page (PageView `fitWidth`, not magnified): the sheet is the scroller's own width and
+   clips anything drawn past its sides, so there is nothing to scroll sideways, and a finger can
+   neither drag nor bounce the page sideways. */
+.pn-page-fit .pn-page-scroll {
+  overflow-x: hidden;
+  touch-action: pan-y;
+}
+
+.pn-page-fit .pn-page-sheet {
+  overflow-x: clip;
+}
+
+/* A caller can lock browsing while the score is unavailable for interaction (after the fitted
+   rule: a locked scroller takes no touch at all). */
 .pn-page-scroll.pn-page-locked {
   overflow: hidden;
   touch-action: none;

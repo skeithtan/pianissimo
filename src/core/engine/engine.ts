@@ -507,7 +507,9 @@ export class PracticeEngine {
    */
   #tooEarly(gi: number, time: number): boolean {
     if (this.#strict) {
-      if (this.#transportGate >= gi) return false
+      // A reached gate: only a press stamped before its arrival can be early (a count-in press, a
+      // late delivery), judged as it would have been then.
+      if (this.#transportGate >= gi) return (this.#arrivedAt.get(gi) ?? -Infinity) - time > this.#rhythm!.toleranceMs
       const eta = this.#transportEta?.(gi, time) ?? null
       return eta === null || eta > this.#rhythm!.toleranceMs
     }
@@ -855,6 +857,22 @@ export class PracticeEngine {
     this.#startClock(now)
     this.#setPhase('running', now)
     this.#runDue(this.#lastNow, true)
+    this.#touch()
+  }
+
+  /**
+   * Strict transport, Running: a key pressed while Ready in the count-in's last stretch (from the
+   * first downbeat minus the tolerance, or after the downbeat but before the count-in's end reached
+   * the session), judged now at its own time exactly as a press at that moment of the pass: the same
+   * acceptance window, signed offset and wrong-key treatment. Its key state was taken in Ready
+   * (`input`). The session chooses the presses and calls this in time order once the transport
+   * plays (so the first gate's arrival or ETA is known). A no-op in any other transport or phase.
+   */
+  countInPress(note: number, time: number): void {
+    if (!this.#strict || this.#phase !== 'running' || this.#group === null) return
+    this.#runDue(time, false)
+    if (this.#phase === 'running' && this.#group !== null) this.#attack(note, time)
+    this.#runDue(time, false)
     this.#touch()
   }
 

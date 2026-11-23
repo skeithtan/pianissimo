@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
+import { signal } from '@preact/signals'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readMessagesWith, type Messages } from '../../i18n/messages'
 import { rat } from '../../core/music/rational'
 import {
   PREPARED_LAYOUT_FORMAT,
@@ -462,6 +464,117 @@ describe('PageView', () => {
     }
   })
 
+  describe('resizes while a follow glide is pending (cue row)', () => {
+    let notify!: () => void
+    beforeEach(() => {
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(callback: () => void) {
+            notify = callback
+          }
+          observe(): void {}
+          disconnect(): void {}
+        },
+      )
+    })
+    afterEach(() => vi.unstubAllGlobals())
+
+    const resize = (root: HTMLElement, size: { width?: number; height?: number }) => {
+      const rect = root.getBoundingClientRect()
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({ ...rect, ...size })
+      notify()
+    }
+    const mockGlide = (root: HTMLElement) => {
+      const animate = vi.fn(() => ({ cancel: vi.fn() }))
+      Object.defineProperty(root.querySelector('.pn-page-sheet')!, 'animate', { configurable: true, value: animate })
+      return animate
+    }
+
+    it('glides to the new resting place when the cue row opens mid-piece', () => {
+      const { v, root } = view()
+      v.setCursor(9, { smooth: false })
+      v.flushNow()
+      const before = scroller(root).scrollTop
+      const animate = mockGlide(root)
+      // The row opens: a smooth follow request, then the page loses 40 px of height before the frame.
+      v.setTimingCue(null, true)
+      resize(root, { height: VIEW_H - 40 })
+      v.flushNow()
+      expect(animate).toHaveBeenCalledOnce()
+      expect(scroller(root).scrollTop).not.toBe(before)
+      expect(root.classList.contains('pn-instant')).toBe(false)
+    })
+
+    it('keeps a rewind glide when the cue row closes in the same frame', () => {
+      const { v, root } = view(48)
+      v.setTimingCue(null, true)
+      v.setCursor(40, { smooth: false })
+      v.flushNow()
+      expect(scroller(root).scrollTop).toBeGreaterThan(VIEW_H)
+      const animate = mockGlide(root)
+      v.setTimingCue(null, false)
+      v.wrapTo(0, { rewind: true })
+      resize(root, { height: VIEW_H + 40 })
+      v.flushNow()
+      expect(animate).toHaveBeenCalledOnce()
+      expect(scroller(root).scrollTop).toBe(0)
+      expect(v.currentSystem()).toBe(0)
+    })
+
+    it('glides after a height change alone; a new width still relayouts at once', () => {
+      const { v, root } = view()
+      v.setCursor(9, { smooth: false })
+      v.flushNow()
+      const animate = mockGlide(root)
+      resize(root, { height: VIEW_H + 200 })
+      v.flushNow()
+      expect(animate).toHaveBeenCalledOnce()
+      resize(root, { width: VIEW_W - 100, height: VIEW_H })
+      // Relaid out in the observer itself, before the frame is painted, without a glide.
+      expect(root.classList.contains('pn-instant')).toBe(true)
+      v.flushNow()
+      expect(animate).toHaveBeenCalledOnce()
+    })
+  })
+
+  it('draws a later pass in the current language, also in a system kept detached meanwhile', () => {
+    const messages = signal<Messages>({ language: 'en-US', strings: {} })
+    readMessagesWith(() => messages.value)
+    try {
+      const base = testPageLayout(48)
+      const layout: PreparedLayout = {
+        ...base,
+        occurrences: base.occurrences.map((o) =>
+          o.occ === 4 ? { ...o, label: '5 (pass 2)', number: '5', pass: 2 } : o,
+        ),
+      }
+      const v = new PageView(host, layout, { cacheSegments: 40 })
+      views.push(v)
+      v.flushNow()
+      const number = () => [...host.querySelectorAll('.pn-mnum')].find((t) => t.textContent?.startsWith('5'))
+      expect(number()?.textContent).toBe('5 (pass 2)')
+      messages.value = { language: 'fr-FR', strings: { '{0} (pass {1})': '{0} (passage {1})' } }
+      expect(number()?.textContent).toBe('5 (passage 2)')
+      v.setCursor(40, { smooth: false })
+      v.flushNow()
+      // Once the follow glide is over, the opening systems are released.
+      const now = performance.now()
+      vi.spyOn(performance, 'now').mockReturnValue(now + 1000)
+      v.setCursor(40.5, { smooth: false })
+      v.flushNow()
+      expect(number()).toBeUndefined()
+      messages.value = { language: 'en-US', strings: {} }
+      const parsed = v.stats().parsedSegments
+      v.setCursor(4, { smooth: false })
+      v.flushNow()
+      expect(v.stats().parsedSegments).toBe(parsed)
+      expect(number()?.textContent).toBe('5 (pass 2)')
+    } finally {
+      readMessagesWith(() => ({ language: 'en-US', strings: {} }))
+    }
+  })
+
   it('does not follow while the learner browses, and returns on request', () => {
     const browse: boolean[] = []
     const { v, root } = view(24, { onBrowse: (b) => browse.push(b) })
@@ -687,7 +800,9 @@ describe('PageView', () => {
     const fit = (400 - 32) / 740
     expect(v.zoom()).toBeCloseTo(fit, 5)
     expect(root.classList.contains('pn-page-wide')).toBe(false)
-    expect(root.querySelector<HTMLElement>('.pn-page-sheet')!.style.width).toBe('400px')
+    // The sheet is the scroller's own width (CSS), clipped, with sideways scrolling off.
+    expect(root.classList.contains('pn-page-fit')).toBe(true)
+    expect(root.querySelector<HTMLElement>('.pn-page-sheet')!.style.width).toBe('')
     // Zooming in past the fit changes nothing on screen but is reported: the owner re-prepares
     // a narrower page, which is what the gesture means.
     v.setZoom(2)
@@ -1015,6 +1130,41 @@ describe('PageView fixes', () => {
     expect(root.classList.contains('pn-browsing')).toBe(true)
     expect(changes).toHaveLength(1)
     expect((changes[0] as { toOcc: number }).toOcc).toBeGreaterThan(9)
+  })
+
+  it('keeps scrolling for a held handle after two frames less than a pixel of scrolling apart', () => {
+    let due: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => due.push(cb))
+    vi.stubGlobal('cancelAnimationFrame', () => undefined)
+    const frame = (now: number) => {
+      const callbacks = due
+      due = []
+      for (const cb of callbacks) cb(now)
+    }
+    try {
+      const { v, root } = view(24)
+      v.setBrowseEnabled(true)
+      v.setLoop({ fromOcc: 0, toOcc: 1 })
+      v.flushNow()
+      const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+      const p = (type: string, y: number) =>
+        end.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: GX + 370, clientY: y, bubbles: true }))
+      p('pointerdown', 146)
+      p('pointermove', VIEW_H - 1)
+      frame(1000)
+      const first = scroller(root).scrollTop
+      expect(first).toBeGreaterThan(0)
+      frame(1001) // WebKit can run two frames a millisecond apart.
+      expect(scroller(root).scrollTop).toBe(first)
+      frame(1017)
+      // The millisecond is not lost: 17 ms of scrolling since the first step.
+      expect(scroller(root).scrollTop - first).toBeGreaterThan(first)
+      const second = scroller(root).scrollTop
+      frame(1033)
+      expect(scroller(root).scrollTop).toBeGreaterThan(second)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it.each(['pointercancel', 'lostpointercapture'])('does not commit a loop edit after %s', (cancel) => {
@@ -1445,5 +1595,486 @@ describe('PageView with a page wider than the viewport', () => {
     expect(sc.scrollLeft).toBe(0)
     pointer('pointerup', width - 1)
     expect(onLoopChange).toHaveBeenCalledExactlyOnceWith({ fromOcc: 0, toOcc: 4 })
+  })
+})
+
+/** The test host's rect at `width` × `height`. */
+function hostRect(width: number, height = VIEW_H): DOMRect {
+  return { x: 0, y: 0, left: 0, top: 0, width, height, right: width, bottom: height, toJSON: () => ({}) } as DOMRect
+}
+const setHost = (width: number, height = VIEW_H) =>
+  vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(hostRect(width, height))
+
+/** A ResizeObserver whose notification the test sends. */
+function stubResizeObserver(): () => void {
+  let notify: () => void = () => undefined
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: () => void) {
+        notify = callback
+      }
+      observe(): void {}
+      disconnect(): void {}
+    },
+  )
+  return () => notify()
+}
+
+/** The content's translate x (the left gutter) and scale, as last written. */
+function contentFrame(root: HTMLElement): { gx: number; scale: number } {
+  const t = root.querySelector<HTMLElement>('.pn-page-content')!.style.transform
+  const m = /translate3d\((-?[\d.]+)px, -?[\d.]+px, 0\) scale\(([\d.e-]+)\)/.exec(t)
+  return { gx: Number(m?.[1]), scale: Number(m?.[2]) }
+}
+
+/** The page (740 px) shown whole between the side gutters of a `width` host, with no sideways scroll. */
+function expectFitted(v: PageView, root: HTMLElement, width: number): void {
+  const s = v.zoom()
+  expect(s).toBeLessThanOrEqual((width - 32) / 740 + 1e-9)
+  expect(root.classList.contains('pn-page-fit')).toBe(true)
+  expect(root.classList.contains('pn-page-wide')).toBe(false)
+  expect(root.querySelector<HTMLElement>('.pn-page-sheet')!.style.width).toBe('')
+  expect(scroller(root).scrollLeft).toBe(0)
+  const { gx, scale } = contentFrame(root)
+  expect(scale).toBeCloseTo(s, 9)
+  expect(gx).toBeGreaterThanOrEqual(16 - 0.01)
+  expect(gx + 740 * scale).toBeLessThanOrEqual(width - 16 + 0.01)
+}
+
+const ctrlWheel = (el: HTMLElement, deltaY: number) => {
+  // happy-dom's WheelEvent drops the modifier and pointer fields: set them on the event.
+  const wheel = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true })
+  Object.defineProperties(wheel, { ctrlKey: { value: true }, clientX: { value: 200 }, clientY: { value: 200 } })
+  el.dispatchEvent(wheel)
+}
+
+describe('PageView fitted to its host (`fitWidth`): never wider than the host', () => {
+  const NARROW = 400
+  const fit = (NARROW - 32) / 740
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it.each([0.3, 1, 2.5])('opens a layout wider than the host fitted, at any zoom (%s)', (initialZoom) => {
+    setHost(NARROW)
+    const { v, root } = view(24, { fitWidth: true, initialZoom, minZoom: 0.25 })
+    expect(v.zoom()).toBeCloseTo(Math.min(initialZoom, fit), 9)
+    expectFitted(v, root, NARROW)
+  })
+
+  it('keeps the zoom of a layout narrower than the host, centered', () => {
+    const { v, root } = view(24, { fitWidth: true, initialZoom: 0.8 })
+    expect(v.zoom()).toBe(0.8)
+    expectFitted(v, root, VIEW_W)
+    expect(contentFrame(root).gx).toBeCloseTo((VIEW_W - 740 * 0.8) / 2, 5)
+  })
+
+  it('a ctrl-wheel zoom-in past the fit adds up and is reported; the page stays fitted', () => {
+    vi.useFakeTimers()
+    setHost(NARROW)
+    const zooms: number[] = []
+    const { v, root } = view(24, { fitWidth: true, minZoom: 0.2, onZoomChange: (z) => zooms.push(z) })
+    const sc = scroller(root)
+    ctrlWheel(sc, -100)
+    v.flushNow()
+    expectFitted(v, root, NARROW)
+    ctrlWheel(sc, -100)
+    v.flushNow()
+    expectFitted(v, root, NARROW)
+    expect(v.zoom()).toBeCloseTo(fit, 9)
+    vi.advanceTimersByTime(260)
+    // Two steps of e^0.4 from the zoom asked for (1), not from the fitted scale shown.
+    expect(zooms).toHaveLength(1)
+    expect(zooms[0]).toBeCloseTo(Math.exp(0.8), 5)
+    // Zooming out shrinks the page at once, from the scale shown.
+    ctrlWheel(sc, 100)
+    v.flushNow()
+    expect(v.zoom()).toBeCloseTo(fit * Math.exp(-0.4), 9)
+    expectFitted(v, root, NARROW)
+  })
+
+  it('a pinch out past the fit is reported without widening the page; a pinch in shrinks it at once', () => {
+    vi.useFakeTimers()
+    setHost(NARROW)
+    const zooms: number[] = []
+    const { v, root } = view(24, { fitWidth: true, minZoom: 0.2, onZoomChange: (z) => zooms.push(z) })
+    const sc = scroller(root)
+    const pointer = (type: string, id: number, x: number) =>
+      sc.dispatchEvent(
+        new PointerEvent(type, { pointerId: id, pointerType: 'touch', clientX: x, clientY: 200, bubbles: true }),
+      )
+    pointer('pointerdown', 1, 100)
+    pointer('pointerdown', 2, 200)
+    pointer('pointermove', 2, 300)
+    v.flushNow()
+    expectFitted(v, root, NARROW)
+    vi.advanceTimersByTime(260)
+    expect(zooms).toEqual([2])
+    pointer('pointermove', 2, 150)
+    v.flushNow()
+    expect(v.zoom()).toBeCloseTo(fit / 2, 9)
+    expectFitted(v, root, NARROW)
+    pointer('pointerup', 2, 150)
+    pointer('pointerup', 1, 100)
+  })
+
+  it('setZoom above the fit shows the fit; below it shows at once', () => {
+    setHost(NARROW)
+    const { v, root } = view(24, { fitWidth: true, minZoom: 0.25 })
+    v.setZoom(2.5)
+    v.flushNow()
+    expect(v.zoom()).toBeCloseTo(fit, 9)
+    expectFitted(v, root, NARROW)
+    v.setZoom(0.3)
+    v.flushNow()
+    expect(v.zoom()).toBe(0.3)
+    expectFitted(v, root, NARROW)
+  })
+
+  it('a host resize refits the page before the frame is painted, and a wider host shows the zoom again', () => {
+    const notify = stubResizeObserver()
+    const { v, root } = view(24, { fitWidth: true })
+    expect(v.zoom()).toBe(1)
+    setHost(NARROW)
+    notify()
+    // No frame in between: the observer itself relaid the page out.
+    expect(v.zoom()).toBeCloseTo(fit, 9)
+    expectFitted(v, root, NARROW)
+    setHost(VIEW_W)
+    notify()
+    expect(v.zoom()).toBe(1)
+    expectFitted(v, root, VIEW_W)
+  })
+
+  it('never scrolls sideways: playback, a mouse drag and a stray offset all leave scrollLeft at 0', () => {
+    setHost(NARROW)
+    const onBrowse = vi.fn()
+    const { v, root } = view(24, { fitWidth: true, onBrowse })
+    v.setBrowseEnabled(true)
+    const sc = scroller(root)
+    for (let p = 0; p < 5; p += 0.125) {
+      v.setCursor(p, { smooth: false })
+      v.flushNow()
+      expect(sc.scrollLeft).toBe(0)
+      const x = cursorXY(root)[0]
+      expect(x).toBeGreaterThanOrEqual(16)
+      expect(x).toBeLessThanOrEqual(NARROW - 16)
+    }
+    const pointer = (type: string, x: number) =>
+      sc.dispatchEvent(
+        new PointerEvent(type, { pointerId: 9, pointerType: 'mouse', clientX: x, clientY: 240, bubbles: true }),
+      )
+    pointer('pointerdown', 300)
+    pointer('pointermove', 100)
+    pointer('pointerup', 100)
+    v.flushNow()
+    expect(sc.scrollLeft).toBe(0)
+    expect(onBrowse).not.toHaveBeenCalled()
+    // An offset the page never asked for is put back.
+    sc.scrollLeft = 50
+    sc.dispatchEvent(new Event('scroll'))
+    v.flushNow()
+    expect(sc.scrollLeft).toBe(0)
+    expectFitted(v, root, NARROW)
+  })
+
+  it('an image-zoom magnification may pan sideways; back at 1× the page is fitted again', () => {
+    setHost(NARROW)
+    const { v, root } = view(24, { fitWidth: true, imageZoom: true })
+    v.setZoom(fit * 2)
+    v.flushNow()
+    expect(root.classList.contains('pn-page-fit')).toBe(false)
+    expect(root.querySelector<HTMLElement>('.pn-page-sheet')!.style.width).toBe(`${Math.ceil(740 * fit * 2)}px`)
+    v.setZoom(fit)
+    v.flushNow()
+    expectFitted(v, root, NARROW)
+  })
+
+  it('drags the playhead and a loop edge at the fitted scale, wrapping at the page edge without panning', () => {
+    setHost(NARROW)
+    const seeks: unknown[] = []
+    const changes: unknown[] = []
+    const { v, layout, root } = view(24, {
+      fitWidth: true,
+      onCursorSeek: (p) => void seeks.push(p),
+      onLoopChange: (r) => changes.push(r),
+    })
+    const s = v.zoom()
+    const geo = new PageGeometry(layout)
+    const screenX = (x: number) => 16 + x * s
+    v.setSnapPositions(Array.from({ length: 48 }, (_, i) => rat(i, 2)))
+    v.setCursorDraggable(true)
+    v.setBrowseEnabled(true)
+    const sc = scroller(root)
+    const grip = root.querySelector('.pn-cursor-grip')!
+    const pointer = (el: Element, type: string, x: number, y: number) =>
+      el.dispatchEvent(new PointerEvent(type, { pointerId: 3, clientX: x, clientY: y, bubbles: true }))
+    pointer(grip, 'pointerdown', screenX(geo.cursorAt(0).x), 100)
+    pointer(sc, 'pointermove', screenX(geo.cursorAt(2).x), 100)
+    pointer(sc, 'pointerup', screenX(geo.cursorAt(2).x), 100)
+    expect(seeks).toEqual([rat(4, 2)])
+    expect(sc.scrollLeft).toBe(0)
+
+    v.setLoop({ fromOcc: 0, toOcc: 1 })
+    v.flushNow()
+    const end = root.querySelector<HTMLElement>('.pn-handle-end')!
+    const y = PAGE_PAD_TOP + 130 * s
+    pointer(end, 'pointerdown', screenX(370), y)
+    pointer(end, 'pointermove', screenX(550), y)
+    pointer(end, 'pointerup', screenX(550), y)
+    expect(changes).toEqual([{ fromOcc: 0, toOcc: 2 }])
+    v.flushNow()
+    pointer(end, 'pointerdown', screenX(550), y)
+    pointer(end, 'pointermove', NARROW - 1, y)
+    pointer(end, 'pointerup', NARROW - 1, y)
+    expect((changes.at(-1) as { toOcc: number }).toOcc).toBeGreaterThanOrEqual(4)
+    expect(sc.scrollTop).toBeGreaterThan(0)
+    expect(sc.scrollLeft).toBe(0)
+  })
+
+  it('places the timing cue at the cursor and returns to the current position at the fitted scale', () => {
+    setHost(NARROW)
+    const { v, layout, root } = view(24, { fitWidth: true })
+    const s = v.zoom()
+    v.setBrowseEnabled(true)
+    v.setCursor(2, { smooth: false })
+    v.setTimingCue('rushing')
+    v.flushNow()
+    const cue = host.querySelector<HTMLElement>('[data-testid="timing-cue"]')!
+    const x = 16 + new PageGeometry(layout).cursorAt(2).x * s
+    expect(cue.style.transform).toContain(`translate3d(${Math.round(x)}px`)
+    v.setTimingCue(null, false)
+    const sc = scroller(root)
+    sc.scrollTop = 1200
+    sc.dispatchEvent(new Event('scroll'))
+    v.setCursor(9)
+    v.flushNow()
+    expect(sc.scrollTop).toBe(1200)
+    v.returnToCurrent()
+    v.flushNow()
+    const sheetH = Number.parseFloat(root.querySelector<HTMLElement>('.pn-page-sheet')!.style.height)
+    expect(sc.scrollTop).toBe(
+      new PageGeometry(layout).followScroll(2, {
+        scale: s,
+        padTop: PAGE_PAD_TOP,
+        viewport: VIEW_H,
+        max: sheetH - VIEW_H,
+      }),
+    )
+    expect(sc.scrollLeft).toBe(0)
+  })
+
+  it('hands off a spacing change from a wide view at the fitted scale without scrolling sideways', () => {
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
+    let progress = 0
+    Object.defineProperty(Element.prototype, 'animate', {
+      configurable: true,
+      value: () => ({ cancel: vi.fn(), effect: { getComputedTiming: () => ({ progress }) } }),
+    })
+    try {
+      setHost(NARROW)
+      const { v, layout, root } = view(24, { fitWidth: true })
+      const s = v.zoom()
+      v.setCursor(2, { smooth: false })
+      v.flushNow()
+      const mark = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      const prevFrame = { scale: 1, dx: -150, dy: PAGE_PAD_TOP }
+      v.respaceFrom({ layout, frame: prevFrame, pieces: new Map([[0, [{ el: mark, chain: [], x0: 380, x1: 400 }]]]) })
+      const sc = scroller(root)
+      const geo = new PageGeometry(layout)
+      const from = prevFrame.dx + geo.cursorAt(2).x
+      const to = 16 + geo.cursorAt(2).x * s
+      expect(sc.scrollLeft).toBe(0)
+      expect(cursorXY(root)[0]).toBeCloseTo(from, 1)
+      progress = 0.5
+      v.flushNow()
+      expect(cursorXY(root)[0]).toBeCloseTo((from + to) / 2, 1)
+      progress = 1
+      v.flushNow()
+      expect(cursorXY(root)[0]).toBeCloseTo(to, 1)
+      expectFitted(v, root, NARROW)
+    } finally {
+      if (original) Object.defineProperty(Element.prototype, 'animate', original)
+      else Reflect.deleteProperty(Element.prototype, 'animate')
+    }
+  })
+})
+
+/**
+ * Records the view's writes to the scroller's position; `native` moves it as the browser would
+ * (a learner's scroll), unrecorded.
+ */
+function spyScrollWrites(sc: HTMLElement): { writes: string[]; native: (top: number, left?: number) => void } {
+  const writes: string[] = []
+  const setters = new Map<string, (v: number) => void>()
+  for (const key of ['scrollTop', 'scrollLeft'] as const) {
+    let proto: object | null = sc
+    let d: PropertyDescriptor | undefined
+    while (proto && !(d = Object.getOwnPropertyDescriptor(proto, key))) proto = Object.getPrototypeOf(proto)
+    const desc = d!
+    setters.set(key, (v) => desc.set!.call(sc, v))
+    Object.defineProperty(sc, key, {
+      configurable: true,
+      get: () => desc.get!.call(sc),
+      set: (v: number) => {
+        writes.push(key)
+        desc.set!.call(sc, v)
+      },
+    })
+  }
+  const native = (top: number, left?: number) => {
+    setters.get('scrollTop')!(top)
+    if (left !== undefined) setters.get('scrollLeft')!(left)
+    sc.dispatchEvent(new Event('scroll'))
+  }
+  return { writes, native }
+}
+
+/** A touch event with `fingers` touches left on the screen. */
+function touch(el: Element, type: string, fingers: number): void {
+  const e = new Event(type, { bubbles: true })
+  Object.defineProperty(e, 'touches', { value: Array.from({ length: fingers }, () => ({})) })
+  el.dispatchEvent(e)
+}
+
+describe('PageView leaves a scroll the learner drives alone until it settles (momentum, bounce)', () => {
+  it('writes no scroll position through a touch scroll, its momentum and a bounce past both ends', () => {
+    setHost(400)
+    const { v, root } = view(24)
+    v.setBrowseEnabled(true)
+    v.flushNow()
+    const sc = scroller(root)
+    const { writes, native } = spyScrollWrites(sc)
+    let p = 0
+    const frame = (top: number, left: number) => {
+      native(top, left)
+      // Playback goes on meanwhile, crossing systems.
+      v.setCursor((p += 1), { smooth: false })
+      v.flushNow()
+      expect(writes).toEqual([])
+    }
+    touch(sc, 'touchstart', 1)
+    frame(40, 30)
+    frame(120, 90)
+    touch(sc, 'touchend', 0)
+    // Momentum, then iOS reports positions outside [0, max] while the page bounces.
+    frame(400, 250)
+    frame(700, 380)
+    frame(760, 345)
+    frame(780, -25)
+    frame(790, -12)
+    expect(v.isBrowsing()).toBe(true)
+    // Settled: the offset outside the page is put back, once.
+    sc.dispatchEvent(new Event('scrollend'))
+    v.flushNow()
+    expect(writes).toEqual(['scrollLeft'])
+    expect(sc.scrollLeft).toBe(0)
+    v.flushNow()
+    expect(writes).toEqual(['scrollLeft'])
+  })
+
+  it.each(['touch', 'wheel'])(
+    'holds a follow during a %s nudge too small to browse, then scrolls once it settles',
+    (input) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
+      const { v, root } = view(24, { fitWidth: true })
+      v.setBrowseEnabled(true)
+      v.setCursor(3.75, { smooth: false })
+      v.flushNow()
+      const sc = scroller(root)
+      const { writes, native } = spyScrollWrites(sc)
+      if (input === 'touch') touch(sc, 'touchstart', 1)
+      else sc.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true, cancelable: true }))
+      native(1)
+      // Playback reaches the next system: its follow scroll waits.
+      v.setCursor(4, { smooth: false })
+      v.flushNow()
+      expect(v.isBrowsing()).toBe(false)
+      expect(v.currentSystem()).toBe(1)
+      if (input === 'touch') touch(sc, 'touchend', 0)
+      v.flushNow()
+      vi.advanceTimersByTime(199)
+      v.flushNow()
+      expect(writes).toEqual([])
+      vi.advanceTimersByTime(2)
+      v.flushNow()
+      expect(writes).toEqual(['scrollTop'])
+      expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 300 - VIEW_H / 4)
+      v.flushNow()
+      expect(writes).toEqual(['scrollTop'])
+    },
+  )
+
+  it('a tap settles at once: a seek made meanwhile scrolls in the next frame', () => {
+    const { v, root } = view(24, { fitWidth: true })
+    v.setBrowseEnabled(true)
+    const sc = scroller(root)
+    const { writes } = spyScrollWrites(sc)
+    touch(sc, 'touchstart', 1)
+    v.setCursor(9)
+    v.flushNow()
+    expect(writes).toEqual([])
+    touch(sc, 'touchend', 0)
+    v.flushNow()
+    expect(writes).toEqual(['scrollTop'])
+    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 600 - VIEW_H / 4)
+  })
+
+  it('keeps the sheet size and the scroller unlocked until the scroll settles', () => {
+    const browse: boolean[] = []
+    const { v, root } = view(24, { fitWidth: true, onBrowse: (b) => browse.push(b) })
+    v.setBrowseEnabled(true)
+    const sc = scroller(root)
+    const sheet = root.querySelector<HTMLElement>('.pn-page-sheet')!
+    const { writes, native } = spyScrollWrites(sc)
+    touch(sc, 'touchstart', 1)
+    native(400)
+    const height = sheet.style.height
+    // The cue row opens (a taller sheet) and browsing is disabled, mid-scroll.
+    v.setTimingCue(null, true)
+    v.setBrowseEnabled(false)
+    v.flushNow()
+    expect(sheet.style.height).toBe(height)
+    expect(sc.classList.contains('pn-page-locked')).toBe(false)
+    expect(v.isBrowsing()).toBe(true)
+    touch(sc, 'touchend', 0)
+    expect(writes).toEqual([])
+    sc.dispatchEvent(new Event('scrollend'))
+    v.flushNow()
+    expect(sheet.style.height).not.toBe(height)
+    expect(sc.classList.contains('pn-page-locked')).toBe(true)
+    expect(browse).toEqual([true, false])
+    expect(writes).toEqual(['scrollTop'])
+  })
+
+  it('Return to current position ends a scroll still gliding and scrolls at once', () => {
+    const { v, root } = view(24, { fitWidth: true })
+    v.setBrowseEnabled(true)
+    v.setCursor(9)
+    v.flushNow()
+    const sc = scroller(root)
+    const { writes, native } = spyScrollWrites(sc)
+    touch(sc, 'touchstart', 1)
+    native(1200)
+    touch(sc, 'touchend', 0)
+    native(1300)
+    v.flushNow()
+    expect(writes).toEqual([])
+    v.returnToCurrent()
+    v.flushNow()
+    expect(writes).toEqual(['scrollTop'])
+    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 600 - VIEW_H / 4)
+  })
+
+  it('a ctrl-wheel zoom is not a scroll: the page refits and follows at once', () => {
+    const { v, root } = view(24, { fitWidth: true })
+    v.setCursor(9)
+    v.flushNow()
+    const sc = scroller(root)
+    const before = sc.scrollTop
+    ctrlWheel(sc, 100)
+    v.flushNow()
+    expect(v.zoom()).toBeLessThan(1)
+    expect(sc.scrollTop).not.toBe(before)
   })
 })

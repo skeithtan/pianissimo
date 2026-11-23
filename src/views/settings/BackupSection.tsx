@@ -7,9 +7,11 @@ import { msg } from '../../i18n/messages'
  */
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import { pushNotice } from '../../app/state'
-import { Button, Notice } from '../../ui/controls'
+import { BackupError } from '../../core/storage/errors'
+import { Button, Notice, Toggle } from '../../ui/controls'
 import { useLibraryDeps } from '../library/deps'
 import { BACKUP_ACCEPT, FileButton } from '../library/FileButton'
+import { formatBytes } from '../library/format'
 import { StorageStatusLine } from '../library/ImportSheet'
 import { describeRestore, LibraryModel, type RestoreOutcome } from '../library/libraryModel'
 import { Group, Help } from './parts'
@@ -19,6 +21,7 @@ export function BackupSection() {
   const deps = useLibraryDeps()
   const model = useMemo(() => new LibraryModel(deps), [deps])
   const [exporting, setExporting] = useState(false)
+  const [includeRecordings, setIncludeRecordings] = useState(true)
   const [pending, setPending] = useState<File | null>(null)
   const [restoring, setRestoring] = useState(false)
   const [outcome, setOutcome] = useState<RestoreOutcome | null>(null)
@@ -26,19 +29,25 @@ export function BackupSection() {
   useEffect(() => {
     void model.refresh()
     void model.refreshStorageStatus()
+    void model.refreshRecordings()
   }, [model])
 
   const disabled = model.state.value.status === 'unavailable'
+  const recordings = model.recordings.value
 
   const runExport = async () => {
     setExporting(true)
     try {
-      const name = await model.exportBackup()
+      const name = await model.exportBackup({ includeRecordings })
       pushNotice({ kind: 'success', text: msg('Backup saved as {0}.', name) })
     } catch (e) {
       pushNotice({
         kind: 'error',
-        text: msg('The backup could not be created: {0}', e instanceof Error ? e.message : String(e)),
+        // A refused backup (too large to restore) explains itself and what to do.
+        text:
+          e instanceof BackupError
+            ? e.message
+            : msg('The backup could not be created: {0}', e instanceof Error ? e.message : String(e)),
       })
     } finally {
       setExporting(false)
@@ -67,6 +76,19 @@ export function BackupSection() {
             'Your scores, results and settings live only in this browser. Export a backup to keep a copy or to move your library between your computer and your iPad.',
           )}
         </Help>
+        {recordings && recordings.count > 0 ? (
+          <Toggle
+            label={msg('Include recordings')}
+            checked={includeRecordings}
+            disabled={disabled || exporting}
+            onChange={setIncludeRecordings}
+            description={
+              recordings.count === 1
+                ? msg('1 recording on this device ({0}).', formatBytes(recordings.bytes))
+                : msg('{0} recordings on this device ({1}).', recordings.count, formatBytes(recordings.bytes))
+            }
+          />
+        ) : null}
         <div class={styles.backupActions}>
           <Button icon="download" disabled={disabled || exporting} onClick={() => void runExport()}>
             {exporting ? msg('Preparing backup…') : msg('Export backup')}
@@ -80,7 +102,7 @@ export function BackupSection() {
           <>
             <Help>
               {msg(
-                "Pieces, results and practice history from the backup are added to this device. Nothing here is deleted, and where both have the same piece the more recent one is kept. Settings are replaced by the backup's, except this device's piano connection.",
+                "Pieces, results and practice history from the backup are added to this device. Nothing here is deleted, and where both have the same piece the more recent one is kept. Settings are replaced by the backup's, except this device's piano connection and metronome output.",
               )}
             </Help>
             <div class={styles.backupActions}>

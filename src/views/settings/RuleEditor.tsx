@@ -158,7 +158,7 @@ function Sample({ clef, rule }: { clef: ClefKey; rule: ClefLabelRule }) {
           >
             <span aria-hidden="true">{p.labeled ? '●' : '○'}</span>
             <span>{p.text}</span>
-            <span class="visually-hidden">{p.labeled ? msg('labeled') : msg(' not labeled')}</span>
+            <span class="visually-hidden"> {p.labeled ? msg('labeled') : msg('not labeled')}</span>
           </li>
         ))}
       </ol>

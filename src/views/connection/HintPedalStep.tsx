@@ -228,8 +228,7 @@ function FlowPanel({
       {mapping && phase !== 'listening' ? (
         <>
           <p class={styles.summary}>
-            {detected ? 'Detected: ' : 'Testing: '}
-            <strong>{name}</strong>
+            {detected ? msg('Detected:') : msg('Testing:')} <strong>{name}</strong>
             {mapping.channel === null ? '' : `, ${channelLabel(mapping.channel)}`}
             {detected ? msg(' — values {0}–{1}', mapping.observedMin, mapping.observedMax) : ''}.
           </p>
@@ -238,7 +237,7 @@ function FlowPanel({
             value={value}
             threshold={mapping.threshold}
             inverted={mapping.inverted}
-            thresholdNote="learned"
+            thresholdNote={msg('learned')}
           />
           {detected?.preferredMiddle ? (
             <Help>{msg('The middle pedal was chosen because it sends a usable message.')}</Help>

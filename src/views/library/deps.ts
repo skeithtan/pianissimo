@@ -17,8 +17,8 @@ export interface LibraryDeps {
   /** `navigator.storage` stand-in; undefined uses the browser's. */
   readonly storageManager?: StorageManagerLike | undefined
   now(): number
-  /** Save bytes as a file the user keeps (the backup). */
-  download(bytes: Uint8Array, fileName: string): void
+  /** Save a file the user keeps (the backup). */
+  download(file: Blob, fileName: string): void
   /** Write pending settings now (before a restore replaces them). */
   flushSettings(): Promise<void>
   /** Reload settings from storage into the app (after a restore). */
@@ -30,10 +30,9 @@ export interface LibraryDeps {
   isAppleMobile(): boolean
 }
 
-function browserDownload(bytes: Uint8Array, fileName: string): void {
-  const copy = new Uint8Array(bytes.byteLength)
-  copy.set(bytes)
-  const url = URL.createObjectURL(new Blob([copy.buffer], { type: 'application/zip' }))
+/** Hand the Blob itself to the browser: no copy of a backup that may hold recordings. */
+function browserDownload(file: Blob, fileName: string): void {
+  const url = URL.createObjectURL(file)
   const a = document.createElement('a')
   a.href = url
   a.download = fileName

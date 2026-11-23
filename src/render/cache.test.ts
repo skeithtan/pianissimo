@@ -171,4 +171,20 @@ describe('storeLayoutCache', () => {
     expect(isPreparedLayout(layout('k', '<svg><script>alert(1)</script></svg>'))).toBe(false)
     expect(isPreparedLayout(layout('k'))).toBe(true)
   })
+
+  it('reads back layouts cached with the retired ink bounds and the baked bar labels', async () => {
+    const ink = { top: [1, 2], bottom: [8, 9] }
+    const old = {
+      ...layout('k'),
+      inkBounds: ink,
+      occurrences: [{ occ: 0, x0: 0, x1: 10, start: 0, duration: 1, anchors: [], label: '1 (pass 2)', labelBox: {} }],
+    }
+    expect(await storeLayoutCache(store(old)).get('k')).toBe(old)
+    const page = { ...layout('k'), mode: 'page', systems: [{ index: 0, occStart: 0, occEnd: 0, inkBounds: ink }] }
+    expect(isPreparedLayout(page, 'k')).toBe(true)
+    // A stale field is not counted, and does not break the memory cache either.
+    const cache = new MemoryLayoutCache(1024)
+    await cache.put(old as unknown as PreparedLayout)
+    expect(await cache.get('k')).toBe(old)
+  })
 })

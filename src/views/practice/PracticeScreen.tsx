@@ -12,14 +12,15 @@ import { msg, messageLanguage } from '../../i18n/messages'
  * Back, the title (or, with the phone on its side, the piece overview), the hand toggles around
  * Start and a Menu button whose sheet holds Speed, Note names, Keep time, Show keys
  * (not on its side: no keyboard guide there), the connection status and Settings. The score takes the rest, and in portrait the page is engraved
- * to the stage's width and fitted to it (R17). In focus mode the bar slides up and fades like the
- * tablet header, its row giving the score its height; any press on the score brings it back, and
- * that press does not seek (U93).
+ * to the stage's width and fitted to it (R17, as on every device). In focus mode the bar slides up
+ * and fades, its row giving the score its height; any press on the score brings it back, and that
+ * press does not seek (U93). A tablet's or desktop's header stays in focus mode.
  *
  * The `PracticeSession` owns every live behavior; this component only wires it to Preact and
  * re-renders on its coarse `ui` store. Per-frame state (cursor, correction cue, keyboard guide) goes to
  * small subscribed children.
  */
+import type { RefObject } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { effect, untracked } from '@preact/signals'
 import { connectionOpen, navigate, openSettings, settingsOpen, type PracticePreset } from '../../app/navigation'
@@ -104,6 +105,44 @@ function nearCursor(event: PointerEvent, view: StripHandle | null): boolean {
   return Math.abs(event.clientX - (rect.left + rect.width / 3)) <= CURSOR_REVEAL_PX
 }
 
+/** Space kept between Restart loop and the result pill beside it (px). */
+const RESTART_GAP_PX = 8
+
+/**
+ * Restart loop sits at the start edge of the result dock, beside the centered pill. Where the pill
+ * (as wide as its words, in the language shown) leaves it no room there, it moves up above the pill
+ * (P11). Measured when the dock, the pill or the button change size or come and go, never on a render.
+ */
+function useRestartStacked(dock: RefObject<HTMLElement | null>, layout: string): boolean {
+  const [stacked, setStacked] = useState(false)
+  useEffect(() => {
+    const el = dock.current
+    if (!el || typeof ResizeObserver === 'undefined' || typeof MutationObserver === 'undefined') return
+    const check = () => {
+      const restart = el.querySelector(`:scope > .${styles.loopRestart}`)
+      const pill = el.querySelector(':scope > [data-testid="attempt-result"]')
+      if (!restart || !pill) return setStacked(false)
+      const room = pill.getBoundingClientRect().left - el.getBoundingClientRect().left
+      setStacked(restart.getBoundingClientRect().width + RESTART_GAP_PX > room)
+    }
+    const resize = new ResizeObserver(check)
+    const follow = () => {
+      resize.disconnect()
+      resize.observe(el)
+      for (const child of Array.from(el.children)) resize.observe(child)
+      check()
+    }
+    const children = new MutationObserver(follow)
+    children.observe(el, { childList: true })
+    follow()
+    return () => {
+      resize.disconnect()
+      children.disconnect()
+    }
+  }, [dock, layout])
+  return stacked
+}
+
 /** In-memory layouts per Practice screen: a few engravings of one piece on the reference tablet. */
 const RECENT_LAYOUT_BYTES = 24 * 1024 * 1024
 
@@ -143,7 +182,7 @@ export interface LayoutParamsKey {
   readonly mode: 'strip' | 'page'
   readonly pageWidth: number
   readonly room: LabelRoom
-  /** The page is capped at its requested width and fitted to the stage (a phone, R17). */
+  /** The page is capped at its requested width and fitted to the stage (every page, R17). */
   readonly fit: boolean
 }
 
@@ -161,7 +200,7 @@ export function sameParams(a: LayoutParamsKey, b: LayoutParamsKey): boolean {
   )
 }
 
-/** The prepare options a layout key means (R17: a phone's page never grows past its width). */
+/** The prepare options a layout key means (R17: a fitted page never grows past its width). */
 export function prepareOptionsFor(
   key: LayoutParamsKey,
 ): Pick<PrepareOptions, 'labels' | 'mode' | 'pageWidth' | 'pageMaxWidth'> {
@@ -327,12 +366,15 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   // page mode"). The page is engraved for the stage width at its own zoom (`view.pageZoom`).
   const mode = useOrientation() === 'portrait' ? 'page' : 'strip'
   const reviewInset = useReviewInset(resultDock, topOverlays, stripRef, mode)
+  const restartStacked = useRestartStacked(resultDock, mode)
   const stageWidth = useStageWidth(host)
-  // A phone's page opens fitted to the stage's width, never scrolling sideways (R17), and a
-  // pinch magnifies it like a photo without re-engraving (U83), so it is always engraved at
-  // zoom 1: a page zoom saved before U83 (or on a wider screen) does not apply.
-  const fit = phone && mode === 'page'
-  const pageZoom = fit ? 1 : appSettings.view.pageZoom
+  // Every page is capped at the width it was engraved for and fitted to the stage, so the whole
+  // system shows and the page never scrolls sideways (R17). A phone's page pinches like a photo
+  // without re-engraving (U83), so it is always engraved at zoom 1: a page zoom saved before U83
+  // (or on a wider screen) does not apply there.
+  const fit = mode === 'page'
+  const phonePage = phone && mode === 'page'
+  const pageZoom = phonePage ? 1 : appSettings.view.pageZoom
   const pageWidth = mode === 'page' && stageWidth > 0 ? pageWidthFor(stageWidth, pageZoom) : 0
   // The chrome recedes while something plays; an interruption or pause brings it back (U13).
   // The phone's menu sheet is modal: it closes when playback starts, and with the layout it
@@ -342,9 +384,11 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   }, [ui.playing, phone])
   // Focus mode waits for the review to end (U102), even when Repeat at Ready counts as playing.
   const recede = useRecede(ui.playing && !ui.reviewing, env.timers)
-  // Portrait phones keep Stop in their footer. Other layouts keep the status pills in the header.
-  const recordingInHeader = recorder.isOpen && (!phone || sideways)
-  const headerInert = recede.receded && !recordingInHeader
+  // Focus mode hides the top bar of a phone only (U93): a tablet's or desktop's header has room to
+  // stay, upright or on its side. While recording, a phone on its side keeps Stop and the status
+  // pills in its bar; an upright phone has them in its footer.
+  const recordingInBar = phone && sideways && recorder.isOpen
+  const barInert = recede.receded && !recordingInBar
   // An upright phone gives the Repeat controls a row of their own that folds away while playing;
   // elsewhere they float over the score (U14, U80, revised 15 November 2026). Their options open
   // in a sheet on a phone, which closes when playback starts, like the menu.
@@ -467,17 +511,17 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         const snapshot = respace ? (old?.respaceSnapshot?.(layout) ?? null) : null
         old?.destroy()
         // Turned sideways (or a wider stage): the next phone page starts fitted again.
-        if (!fit) magnifyRef.current = 1
+        if (!phonePage) magnifyRef.current = 1
         const strip = env.createStrip(
           el,
           layout,
           {
-            initialZoom: mode === 'page' ? (fit ? 1 : settings.peek().view.pageZoom) : settings.peek().view.zoom,
+            initialZoom: mode === 'page' ? (phonePage ? 1 : settings.peek().view.pageZoom) : settings.peek().view.zoom,
             fitWidth: fit,
             // A phone's page zooms like a photo (U83); a re-engraved page keeps the magnification,
             // a rotation or a new visit starts fitted again.
-            imageZoom: fit,
-            initialMagnify: fit ? magnifyRef.current : 1,
+            imageZoom: phonePage,
+            initialMagnify: phonePage ? magnifyRef.current : 1,
             onMagnify: (m) => {
               magnifyRef.current = m
             },
@@ -512,7 +556,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         stripRef.current = strip
         layoutRef.current = layout
         shown.current = key
-        strip.setReviewInset?.(reviewInset.current?.bottom ?? 0, reviewInset.current?.top ?? 0)
+        // Measured against the new view's root (and followed from now on), then handed to it.
+        reviewInset.attach()
         session.attachStrip(strip)
         strip.respaceFrom?.(snapshot)
         setPrep({ state: 'ready' })
@@ -527,7 +572,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       // A run still in flight goes back to the runs prepared ahead, under their rule (below).
       if (adopted) adopted.adopted = false
     }
-  }, [session, maxChars, mode, pageWidth, room, fit])
+  }, [session, maxChars, mode, pageWidth, room, fit, phonePage])
 
   // Prepare the other label room ahead once nothing has played for a moment, so the first switch
   // of Labels Off ↔ on glides at once instead of waiting for an engraving (user). Its engraving is
@@ -748,6 +793,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       class={mode === 'page' ? styles.resultRow : styles.resultDock}
       data-testid="result-dock"
       data-mode={mode}
+      data-stack={restartStacked || undefined}
     >
       {mode === 'strip' ? restartLoop : null}
       <AttemptResult
@@ -785,17 +831,17 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       data-activity={ui.activity}
       data-phase={ui.phase ?? ''}
       data-recede={recede.receded ? 'true' : undefined}
-      data-recording-header={recordingInHeader || undefined}
+      data-recording-header={recordingInBar || undefined}
       data-compact={phone ? 'true' : undefined}
       data-sideways={sideways ? 'true' : undefined}
     >
       {phone ? (
-        // The phone's top bar (U80). In focus mode it slides up, fades and its row collapses like
-        // the tablet header (U93), the overview with it on its side; a tap on the score brings it
-        // back without seeking. The connection status is in the menu.
+        // The phone's top bar (U80). In focus mode it slides up, fades and its row collapses (U93),
+        // the overview with it on its side; a tap on the score brings it back without seeking.
+        // The connection status is in the menu.
         <div class={styles.headerSlot} data-testid="practice-bar-slot">
           <div class={styles.headerClip}>
-            <div class={styles.bar} data-testid="practice-bar" inert={headerInert} {...recede.zone}>
+            <div class={styles.bar} data-testid="practice-bar" inert={barInert} {...recede.zone}>
               {back}
               {sideways ? (
                 <>
@@ -828,29 +874,26 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           </div>
         </div>
       ) : (
-        <div class={styles.headerSlot} data-testid="practice-header-slot">
-          <div class={styles.headerClip}>
-            <header class={styles.header} inert={headerInert} {...recede.zone}>
-              <div class={styles.titleBlock}>
-                {back}
-                {titleText}
-              </div>
-              <div class={styles.headerTools}>
-                {recorder.controls(openRecorder)}
-                <ConnectionChip compact="narrow" />
-                <button
-                  type="button"
-                  class={styles.iconButton}
-                  aria-label={msg('Settings')}
-                  title={msg('Settings')}
-                  onClick={openSettings}
-                >
-                  <Icon name="settings" size={22} />
-                </button>
-              </div>
-            </header>
+        // A tablet's or desktop's header stays in focus mode, upright or on its side: there is room.
+        <header class={styles.header} data-testid="practice-header" {...recede.zone}>
+          <div class={styles.titleBlock}>
+            {back}
+            {titleText}
           </div>
-        </div>
+          <div class={styles.headerTools}>
+            {recorder.controls(openRecorder)}
+            <ConnectionChip compact="narrow" />
+            <button
+              type="button"
+              class={styles.iconButton}
+              aria-label={msg('Settings')}
+              title={msg('Settings')}
+              onClick={openSettings}
+            >
+              <Icon name="settings" size={22} />
+            </button>
+          </div>
+        </header>
       )}
 
       {sideways ? null : <OverviewBar session={session} model={model} range={ui.range} view={stripRef} />}

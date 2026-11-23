@@ -34,8 +34,8 @@ import {
 
 /**
  * Strip options, incl. the cursor action (round repeat button on the cursor line, U14) and the
- * page's width fit (`fitWidth`, a phone, R17) and its image zoom (`imageZoom`, U83); the strip
- * ignores both.
+ * page's width fit (`fitWidth`, every page, R17) and its image zoom (`imageZoom`, a phone's page,
+ * U83); the strip ignores both.
  */
 export type PracticeStripOptions = StripOptions &
   Pick<PageOptions, 'fitWidth' | 'imageZoom' | 'initialMagnify' | 'onMagnify'>
@@ -110,8 +110,9 @@ export interface PracticeEnv {
    */
   readonly primeAudio?: () => void
   /**
-   * The microphone follower and whether this browser can open a microphone (DECISIONS P22).
-   * Absent: the real ones (`app/audio/micFollower.ts`); view tests inject fakes.
+   * The microphone follower and whether this browser can open a microphone (DECISIONS P22), read by
+   * Sheet music's live following (`views/study`, U105); Practice follows no microphone. Absent: the
+   * real ones (`app/audio/micFollower.ts`); view tests inject fakes.
    */
   readonly createMicFollower?: CreateMicFollower
   readonly micSupported?: () => boolean

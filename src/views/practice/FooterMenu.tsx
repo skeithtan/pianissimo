@@ -171,7 +171,11 @@ export function PracticeMenuItems({
           onChange={(on) => session.setKeyboardVisible(on)}
         />
       ) : null}
-      {onRecord && <Button onClick={onRecord}>{msg('Record performance')}</Button>}
+      {onRecord && (
+        <Button icon="record" onClick={onRecord}>
+          {msg('Record performance')}
+        </Button>
+      )}
     </>
   )
 }
@@ -179,7 +183,10 @@ export function PracticeMenuItems({
 export interface FooterMenuPopoverProps {
   /** The popover's accessible name ("Practice menu", "Study menu"). */
   readonly label: string
-  /** Forces the menu shut (and keeps it so) while true: Practice playing or receded. */
+  /**
+   * Closes the menu when it turns true (Practice: playback starting, the chrome receding, the
+   * recorder opening). It can be opened again while it stays true, as Playback changes live.
+   */
   readonly closed?: boolean
   /** Shown on the Menu button's corner (Practice: the Keep time metronome). */
   readonly badge?: ComponentChildren

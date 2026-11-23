@@ -149,7 +149,14 @@ test('Test click works through system audio without changing either click switch
   await countOscillators(page)
   await seedPiece(page)
   const settings = await openSoundSettings(page)
-  await expect(settings.getByRole('combobox', { name: /^Metronome output/u })).toHaveValue('')
+  // The picker shows only where Web Audio can play through a chosen output (U139). The system
+  // audio is the choice there, and the only route elsewhere.
+  const picker = settings.getByRole('combobox', { name: /^Metronome output/u })
+  if (await page.evaluate(() => 'setSinkId' in AudioContext.prototype)) await expect(picker).toHaveValue('')
+  else {
+    await expect(settings.getByText(/use your device’s audio output controls/)).toBeVisible()
+    await expect(picker).toHaveCount(0)
+  }
   await settings.getByRole('button', { name: 'Test click' }).click()
   await expect.poll(() => clicks(page)).toBe(1)
   await expect(settings.getByRole('switch', { name: 'Metronome click' })).not.toBeChecked()

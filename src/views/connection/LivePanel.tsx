@@ -122,7 +122,7 @@ export function LivePanel({
                 value={m.value}
                 threshold={learned ? hint.threshold : CONVENTIONAL_THRESHOLD}
                 inverted={learned ? hint.inverted : false}
-                thresholdNote={learned ? msg('hint pedal') : 'conventional'}
+                thresholdNote={learned ? msg('hint pedal') : msg('conventional')}
               >
                 <span>
                   {meterBehavior(m)} · {m.min}–{m.max}

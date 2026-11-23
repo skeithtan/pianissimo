@@ -114,8 +114,14 @@ export class FakeStrip implements StripSink {
     this.accepted = notes
   }
   timingCue: TimingDirection | null = null
-  setTimingCue(direction: TimingDirection | null): void {
+  /** Whether the cue row is reserved (the second argument of the last call). */
+  timingEnabled = false
+  /** Every `setTimingCue` call, in order. */
+  readonly timingCalls: { readonly direction: TimingDirection | null; readonly enabled: boolean }[] = []
+  setTimingCue(direction: TimingDirection | null, enabled: boolean): void {
     this.timingCue = direction
+    this.timingEnabled = enabled
+    this.timingCalls.push({ direction, enabled })
   }
   /** The last `wrapTo` position (null until a Repeat pass wraps). */
   wrappedTo: number | null = null
@@ -291,6 +297,8 @@ export function harness(
       createMidiBackend: () => backend,
       // The record arrives at the final key (pass `finalSlipMs` to test the P24 hold).
       finalSlipMs: 0,
+      // A silent Keep time bar stops at its barline (pass `keepTimeGraceMs` to test the grace).
+      keepTimeGraceMs: 0,
       ...opts.deps,
     },
   )

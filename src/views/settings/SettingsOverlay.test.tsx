@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
-import { currentView, settingsOpen } from '../../app/navigation'
-import { notices, settings, updateSettings } from '../../app/state'
+import { currentView, navigate, settingsOpen } from '../../app/navigation'
+import { notices, setSettingsPersistence, settings, updateSettings } from '../../app/state'
+import type { AppSettings } from '../../core/model/settings'
 import { $, $$, byLabel, click, mount, press, type Mounted } from '../shared/testing'
+import { untranslatedText, usePseudoCatalog } from '../shared/catalogTesting'
+import { msg } from '../../i18n/messages'
 import { isLabelDraftDirty } from './labelDraft'
 import { ALL_FEATURES, openOverlay, openTab, radio, resetSettingsTestState, tab } from './testkit'
 import { SettingsOverlay, requestCloseSettings } from './SettingsOverlay'
@@ -145,5 +148,71 @@ describe('Settings overlay shell', () => {
     const root = open()
     const names = openTab(root, 'Note names')
     expect(radio(names, 'Naming system', 'Fixed do').getAttribute('aria-checked')).toBe('true')
+  })
+})
+
+describe('translation coverage', () => {
+  // Note names, language names (each in its own language), product, format, license and browser
+  // API names are literal data.
+  const literal = [
+    /\b[A-G][♯♭𝄪𝄫]?-?\d?\b/u,
+    /\b(Do|Re|Mi|Fa|Sol|La|Si|Ti)\b/u,
+    /^(English|Español|Français|Filipino|日本語)( \(.+\))?$/u,
+    'MusicXML',
+    'Pianissimo',
+    'CC-BY',
+    'Web MIDI',
+    'Web Audio',
+  ]
+
+  it('shows no text that bypasses the catalogs in any section', () => {
+    const restore = usePseudoCatalog()
+    try {
+      updateSettings({
+        labels: { mode: 'conditional' },
+        hints: { lifetime: 45, autoThreshold: 5 },
+        pedal: {
+          hintPedal: {
+            controller: 66,
+            channel: 0,
+            threshold: 64,
+            inverted: false,
+            verified: true,
+            observedMin: 0,
+            observedMax: 127,
+          },
+          observedControllers: [64, 66, 67],
+        },
+        metronome: { enabled: true },
+      })
+      const root = open()
+      for (const name of ['Note names', 'Score labels', 'Hints', 'Pedal', 'Sound', 'General', 'Backup', 'About'])
+        expect(untranslatedText(openTab(root, msg(name)), literal)).toEqual([])
+      expect(untranslatedText(root, literal)).toEqual([])
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe('saving on the way out', () => {
+  it.each([
+    ['the close button', (root: HTMLElement) => click(byLabel(root, 'Close'))],
+    ['the browser Back button', () => act(() => void (settingsOpen.value = false))],
+    ['another view taking over', () => act(() => navigate('practice'))],
+    ['Set up in Connection', (root: HTMLElement) => click(byLabel(openTab(root, 'Pedal'), 'Set up in Connection'))],
+  ])('writes pending preferences at once when Settings closes through %s', async (_, close) => {
+    vi.useFakeTimers()
+    const saves: AppSettings[] = []
+    await setSettingsPersistence({ load: () => null, save: (next) => void saves.push(next) })
+    const root = open()
+    click(radio(openTab(root, 'General'), 'Theme', 'Dark'))
+    expect(saves).toHaveLength(0) // debounced
+    close(root)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(settingsOpen.value).toBe(false)
+    expect(saves.at(-1)?.view.theme).toBe('dark')
   })
 })

@@ -69,7 +69,8 @@ export class TimingDrift {
    */
   attack(pitch: number, time: number, start: number, toleranceMs: number): void {
     const attacks = this.#attacksByPitch.get(pitch)
-    if (!attacks || time < start) return
+    // The first downbeat can be played up to the tolerance early (a press from the count-in's end).
+    if (!attacks || time < start - toleranceMs) return
     const elapsed = Math.round(time - start)
     const after = firstAttackAtOrAfter(attacks, elapsed)
     const past = attacks[after - 1]

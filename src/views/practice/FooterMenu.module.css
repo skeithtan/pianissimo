@@ -50,6 +50,16 @@
 .popover > :is(.row, .keepTimeGroup) + :is(.row, .keepTimeGroup) {
   border-block-start: 1px solid var(--border);
 }
+/* An action after the rows (Record performance, in Practice's and Sheet music's menus): the rows'
+   spacing above and below it and a hairline above it, the full width with its label at the start,
+   as the phone menu's actions. */
+.popover > button {
+  margin-block: var(--space-3);
+  justify-content: flex-start;
+}
+.popover > :is(.row, .keepTimeGroup):has(+ button) {
+  border-block-end: 1px solid var(--border);
+}
 .label,
 .toggle > span {
   font-size: var(--text-s);

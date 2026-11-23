@@ -1,9 +1,10 @@
-import { msg } from '../../i18n/messages'
+import { decimal, msg } from '../../i18n/messages'
 import type { ResultDetails } from '../../app/session'
 import { TimingDrift, timingFeedbackThreshold } from '../../app/session/timingDrift'
 import { barLabel, DEFAULT_RHYTHM_TOLERANCE_MS } from '../../core/engine'
 import type { TimingDirection } from '../../core/model/practice'
 import { toNumber } from '../../core/music/rational'
+import { missedText } from './format'
 
 export interface TimingPoint {
   readonly group: number
@@ -25,6 +26,12 @@ export interface TimingReviewData {
   readonly bars: ReadonlyMap<number, TimingBar>
   readonly tolerance: number
   readonly nearBeat: number
+  /**
+   * Scoring counted a group early, late or missed. Scoring measures a group's completion while the
+   * plot shows its first attack, so a rolled chord can start on the beat and still be scored late:
+   * the review then never says that every attack was near the beat.
+   */
+  readonly scoredOff: boolean
 }
 
 /** The pass's original timeline keeps exact loop boundaries and repeat occurrences in order. */
@@ -44,6 +51,7 @@ export function buildTimingReview(details: ResultDetails): TimingReviewData | nu
   const nearBeat = timingFeedbackThreshold(tolerance)
   const bars = new Map<number, TimingBar>()
   let measured = false
+  let scoredOff = false
   for (const measure of timeline.measures) {
     const occ = timeline.model.occurrences[measure.occ]
     if (!occ) continue
@@ -58,6 +66,9 @@ export function buildTimingReview(details: ResultDetails): TimingReviewData | nu
       const missed = outcome?.missed === true
       const value = outcome?.onsetOffsetMs ?? outcome?.offsetMs
       const offset = !missed && value !== undefined && Number.isFinite(value) ? value : null
+      // As `core/history` scores it: the completion against the tolerance.
+      const completion = outcome?.offsetMs
+      if (missed || (completion !== undefined && Math.abs(completion) > tolerance)) scoredOff = true
       points.push({ group: index, position: toNumber(group.position), offset, missed })
       if (offset !== null || missed) measured = true
       if (missed || (offset !== null && Math.abs(offset) > nearBeat)) needsReview = true
@@ -78,7 +89,7 @@ export function buildTimingReview(details: ResultDetails): TimingReviewData | nu
         direction,
       })
   }
-  return measured ? { bars, tolerance, nearBeat } : null
+  return measured ? { bars, tolerance, nearBeat, scoredOff } : null
 }
 
 export function timingBarTitle(bar: TimingBar): string {
@@ -99,15 +110,16 @@ export function timingBarDetail(bar: TimingBar, nearBeat: number): string {
     else onBeat++
   }
   const parts: string[] = []
-  if (early.length) parts.push(offsetRange(early, 'early'))
+  if (early.length) parts.push(msg('{0} early, by {1} ms', early.length, offsetRange(early)))
   if (onBeat) parts.push(msg('{0} on the beat', onBeat))
-  if (late.length) parts.push(offsetRange(late, 'late'))
-  if (missed) parts.push(msg('{0} missed', missed))
+  if (late.length) parts.push(msg('{0} late, by {1} ms', late.length, offsetRange(late)))
+  if (missed) parts.push(missedText(missed))
   return parts.join(' · ')
 }
 
-function offsetRange(values: readonly number[], direction: 'early' | 'late'): string {
+/** "48" or "48–110": the smallest and largest offset, in the language's numerals. */
+function offsetRange(values: readonly number[]): string {
   const min = Math.min(...values)
   const max = Math.max(...values)
-  return msg('{0} {1}, by {2} ms', values.length, direction, min === max ? min : `${min}–${max}`)
+  return min === max ? decimal(min) : `${decimal(min)}–${decimal(max)}`
 }

@@ -120,23 +120,38 @@ for (const portrait of [false, true]) {
       await page.getByRole('button', { name: 'Listen', exact: true }).click()
       await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
 
-      // At the rewind the inline transform points to the opening. The computed transform
-      // still shows an intermediate frame unless Reduced Motion was requested.
+      // The page cursor's rewind is a CSS glide: its inline transform points to the opening at once
+      // and the computed one still shows an intermediate frame. The strip draws this rewind frame by
+      // frame (it pins the opening), so its inline transform itself passes through the places between
+      // where it was and the opening. With Reduced Motion both land at once.
       const animated = await moving.evaluate(
-        (el, openingX) =>
+        (el, { openingX, portrait }) =>
           new Promise<boolean>((resolve, reject) => {
             const deadline = performance.now() + 10_000
+            const xs: number[] = []
             const sample = () => {
               const x = new DOMMatrix((el as HTMLElement).style.transform).m41
-              if (Math.abs(x - openingX) < 1) {
-                const visibleX = new DOMMatrix(getComputedStyle(el).transform).m41
-                resolve(Math.abs(visibleX - openingX) > 1)
-              } else if (performance.now() >= deadline) reject(new Error('The score did not return to the opening'))
+              const away = xs.reduce((far, v) => Math.max(far, Math.abs(v - openingX)), 0)
+              if (Math.abs(x - openingX) < 1 && (portrait || away > 1)) {
+                if (portrait) {
+                  const visibleX = new DOMMatrix(getComputedStyle(el).transform).m41
+                  return resolve(Math.abs(visibleX - openingX) > 1)
+                }
+                // The last place farthest from the opening is where the rewind began.
+                const from = xs.findLastIndex((v) => Math.abs(v - openingX) === away)
+                const between = xs.slice(from + 1).filter((v) => {
+                  const d = Math.abs(v - openingX)
+                  return d > 1 && d < away
+                })
+                return resolve(between.length >= 2)
+              }
+              xs.push(x)
+              if (performance.now() >= deadline) reject(new Error('The score did not return to the opening'))
               else requestAnimationFrame(sample)
             }
             requestAnimationFrame(sample)
           }),
-        openingX,
+        { openingX, portrait },
       )
       expect(animated).toBe(reducedMotion === 'no-preference')
       await expect(overview).toHaveAttribute('aria-valuenow', '1')

@@ -102,6 +102,14 @@ async function snapshot(s: PianissimoStorage) {
   }
 }
 
+/** The exported archive's bytes. */
+async function exported(
+  s: PianissimoStorage,
+  options?: Parameters<PianissimoStorage['exportAll']>[0],
+): Promise<Uint8Array> {
+  return new Uint8Array(await (await s.exportAll(options)).arrayBuffer())
+}
+
 /** Rebuild a backup after editing its files. */
 function edit(bytes: Uint8Array, change: (files: Record<string, Uint8Array>) => void): Uint8Array {
   const files = unzipSync(bytes)
@@ -127,7 +135,7 @@ describe('export', () => {
   it('writes a manifest, one JSON file per store, the original sources and every package', async () => {
     const s = await fresh({ appVersion: '9.9.9', now: () => 1_700_000_123_000 })
     await populate(s)
-    const bytes = await s.exportAll()
+    const bytes = await exported(s)
     const files = unzipSync(bytes)
     expect(Object.keys(files).sort()).toEqual([
       'abandonEvents.json',
@@ -159,14 +167,14 @@ describe('export', () => {
   it('excludes the derived layout cache', async () => {
     const s = await fresh()
     await populate(s)
-    const files = unzipSync(await s.exportAll())
+    const files = unzipSync(await exported(s))
     expect(Object.keys(files).some((n) => /layout/i.test(n))).toBe(false)
     expect(JSON.stringify(Object.values(files).map((f) => strFromU8(f).slice(0, 4000)))).not.toContain('derived')
   })
 
   it('exports an empty library', async () => {
     const s = await fresh()
-    const files = unzipSync(await s.exportAll())
+    const files = unzipSync(await exported(s))
     expect((json(files, 'manifest.json') as BackupManifest).counts).toEqual({
       pieces: 0,
       packages: 0,
@@ -187,7 +195,7 @@ describe('export', () => {
     const s = await fresh()
     const { piece } = await importPiece(s, 'v1')
     s.history.queueAttempt(attemptFor(piece.id, [[1, 'clean']]))
-    const files = unzipSync(await s.exportAll())
+    const files = unzipSync(await exported(s))
     expect((json(files, 'attempts.json') as unknown[]).length).toBe(1)
   })
 
@@ -198,7 +206,7 @@ describe('export', () => {
   it('keeps ids with unusual characters in safe entry names and restores them', async () => {
     const s = await fresh()
     await importPiece(s, 'sha256:ab/cd e', { title: 'Odd id' })
-    const bytes = await s.exportAll()
+    const bytes = await exported(s)
     expect(Object.keys(unzipSync(bytes))).toContain('packages/sha256%3Aab%2Fcd%20e.json')
     const target = await fresh()
     await target.restore(bytes)
@@ -526,7 +534,7 @@ describe('restore merges by id and never deletes local data', () => {
     const { piece } = await importPiece(source, 'v1')
     source.history.queueAttempt(attemptFor(piece.id, [[1, 'clean']]))
     await source.history.flush()
-    const bytes = edit(await source.exportAll(), (files) => {
+    const bytes = edit(await exported(source), (files) => {
       // Simulate a backup in which the package of the piece was lost.
       delete files['packages/v1.json']
       delete files['sources/v1.bin']
@@ -546,7 +554,7 @@ describe('restore merges by id and never deletes local data', () => {
   it('accepts a piece whose package already exists locally', async () => {
     const source = await fresh()
     const { piece } = await importPiece(source, 'v1')
-    const bytes = edit(await source.exportAll(), (files) => {
+    const bytes = edit(await exported(source), (files) => {
       delete files['packages/v1.json']
       delete files['sources/v1.bin']
       const manifest = json(files, 'manifest.json') as BackupManifest
@@ -592,6 +600,39 @@ describe('settings policy', () => {
     expect((await target.loadSettings()).route).toEqual(CUSTOM_SETTINGS.route)
   })
 
+  describe("the metronome's audio output follows the route rule", () => {
+    async function outputs() {
+      const source = await fresh()
+      await source.saveSettings({
+        ...CUSTOM_SETTINGS,
+        metronome: { ...DEFAULT_SETTINGS.metronome, volume: 0.3, outputId: 'other-machine-speakers' },
+      })
+      const bytes = await source.exportAll()
+      const target = await fresh()
+      await target.saveSettings({
+        ...DEFAULT_SETTINGS,
+        metronome: { ...DEFAULT_SETTINGS.metronome, outputId: 'my-usb' },
+      })
+      return { bytes, target }
+    }
+
+    it("keeps this device's output by default, restoring the other metronome settings", async () => {
+      const { bytes, target } = await outputs()
+      await target.restore(bytes)
+      expect((await target.loadSettings()).metronome).toEqual({
+        ...DEFAULT_SETTINGS.metronome,
+        volume: 0.3,
+        outputId: 'my-usb',
+      })
+    })
+
+    it("takes the backup's output when the route is restored too", async () => {
+      const { bytes, target } = await outputs()
+      await target.restore(bytes, { route: 'backup' })
+      expect((await target.loadSettings()).metronome.outputId).toBe('other-machine-speakers')
+    })
+  })
+
   it('leaves local settings alone when asked', async () => {
     const { bytes, target, localRoute } = await pair()
     const report = await target.restore(bytes, { settings: 'keep' })
@@ -618,7 +659,7 @@ describe('invalid backups are refused with a readable error and write nothing', 
     await populate(source)
     const target = await fresh()
     await importPiece(target, 'keep', { title: 'Keep me' })
-    return { bytes: await source.exportAll(), target }
+    return { bytes: await exported(source), target }
   }
 
   async function untouched(target: PianissimoStorage): Promise<void> {

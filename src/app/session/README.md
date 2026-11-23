@@ -303,7 +303,10 @@ position); the transport is rebuilt by the next Start.
 
 Every scored attempt is then `transport: 'strict'` with `rhythm: { toleranceMs }` from
 `settings.rhythm` (`#scoredKind`, also for Restart, Repeat resets, ladder steps and selection
-changes that prepare a fresh attempt). The transport is the gated one of practice (silent with
+changes that prepare a fresh attempt), plus `scorePlayback: true` while Playback (P27) is on above
+0% (`#playbackHeard`: at 0% it plays nothing and counts as off, for the comparison context, the
+Start plan's echo-free output and silent both-hands practice; raising the volume mid-pass is
+switching it on mid-pass). The transport is the gated one of practice (silent with
 both hands, the other hand automatic with one; its click per `metronome.keepTime`, below).
 
 - **Count-in.** When the engine reaches Ready, `#beginCountIn` uses the opening meter and
@@ -313,7 +316,14 @@ both hands, the other hand automatic with one; its click per `metronome.keepTime
   metronome for it even when both Metronome switches are off. `ui.countIn` counts the clicks
   left (one timer per click). At the end (`#endCountIn`) the engine's
   `startRunning(t)` and `transport.play(t)` get the same timestamp. Presses meanwhile are not judged
-  (the engine ignores them in Ready). Leaving Ready (pause, seek, selection change, interruption,
+  (the engine ignores them in Ready), except the count-in's last stretch: presses from the planned
+  downbeat minus the tolerance on (a ring of `COUNT_IN_PRESSES` = 16 on `CountIn`, no allocation
+  per press) are the first downbeat played early, or on time before the count-in timer ran.
+  `#replayCountIn`, once the transport plays, takes those from the music's downbeat (with its stall
+  shift) minus the tolerance on and gives each, at its own time, to the first bar's silent-bar and
+  opening checks, the captured pass, the live timing cue and `engine.countInPress` (judged as a
+  press at that moment of the pass). Every Repeat pass has its own count-in, so the next pass's
+  downbeat is covered the same way. Leaving Ready (pause, seek, selection change, interruption,
   a new attempt) cancels it: the timer goes and the sink's `cancel(now)` drops its clicks.
 - **Metronome (DECISIONS P20).** The count-in always clicks; the attempt after it clicks per
   `settings.metronome.keepTime` (default on: one steady pulse from the count-in into the music),
@@ -329,7 +339,9 @@ both hands, the other hand automatic with one; its click per `metronome.keepTime
   microphone follows (P16). The click is not assistance and is not recorded. Start
   (`#unlockAudio`) creates the shared AudioContext synchronously inside the tap when this Start
   will click (iPadOS starts one only in a user gesture; `#ensureMetronome` creates it after an
-  await); nothing when no click is wanted, never throws.
+  await); nothing when no click is wanted, never throws. Overlapping `#ensureMetronome` calls (a
+  switch flipped while Start loads) queue behind each other, so each returns with a metronome and
+  the count-in's clicks always have one to go to.
 - **Gates.** The music never waits. At the count-in's end every gate is released before
   `play`, so the transport never holds (releasing on arrival would re-anchor the music at each
   timer wake-up and let jitter accumulate); `onGateReached(i)` still reports
@@ -340,28 +352,52 @@ both hands, the other hand automatic with one; its click per `metronome.keepTime
   attack offset from each strict `input-complete` event (U107). Three consecutive drifting
   groups show a cue. A feedback-only match to an onset within a second of the playhead or the
   player's next written onset outside the tolerance shows it immediately (U111, U113).
-  The pitch index is prepared before the count-in. A miss clears the scored trend. The cue
-  clears after two attacks near the beat or a phase change, and an out-of-window cue expires
-  after 1.2 s. The frame calls `setTimingCue` with the direction and whether live timing is
-  enabled. The playhead uses blue or amber while the timing label is visible. The renderer
+  The pitch index is prepared before the count-in; each press is matched after taking off the
+  transport's stall shift (`Transport.shiftMs`: a late count-in timer or a main-thread stall moves
+  the music later, and the engine grades against its real arrivals). A miss clears the scored
+  trend. The cue clears after two attacks near the beat or a phase change, and an out-of-window
+  cue expires after 1.2 s. The frame calls `setTimingCue` with the direction (while running) and
+  whether the cue row is reserved (`#timingRowEnabled`: `hints.showTimingCues`, a hand selected,
+  not Listen, not the microphone in play-through), whatever the phase (U122), so the score never
+  shifts on Start, Pause or a new pass; `attachStrip` sets the row before anything else. The
+  playhead uses blue or amber while the timing label is visible. The renderer
   places the label near the playhead and falls back to the top
   margin when surrounding notation leaves too little space (U120).
   After the attempt the corrections (missed / late marks) and the result card show what happened.
   `lastResult.timing` = `{ groups, onTime, early, late, missed }` from `timingAccuracy(record)`.
+- **Unattended stop (DECISIONS U112).** `#watchKeepTimeActivity` turns each playable bar into a
+  window from the downbeat. A press at t counts for every bar k with t in [start k − tolerance,
+  end k) (the attempt's tolerance: an early downbeat counts for its own bar and the one it fell
+  in; one in the count-in's last stretch counts for the first bar), compared after the
+  transport's stall shift. A bar is judged a grace after its end (`SessionDeps.keepTimeGraceMs`,
+  default `KEEP_TIME_GRACE_MS` = 100 ms: a key stamped before the barline but delivered after
+  the bar-end timer still counts; the harness passes 0); an unplayed one, or a Repeat opening
+  with no learner pitch from the first bar's early start to its end, pauses and drops the pass
+  (`#stopInactiveKeepTime`). A completed record waits in the activity while a bar left could
+  still be silent. Every other way of leaving the pass (pause, seek, selection or mode change, a
+  lost input or output, Again, leaving the view) records it first (`#releaseKeepTime`, with no
+  Repeat reset after it), unless the Repeat opening check is still pending (`#openingPending`: no
+  sign of a player yet; in a one-bar loop's first traversal, whose check carries over, an unplayed
+  bar): then it is dropped as the stop drops it, the previous result and its review back.
 - **Lifecycle.** Pause interrupts (scored); Start afterwards is a fresh attempt from the
   start of the selected loop or the current playable onset with a count-in. Seeks interrupt, also during the count-in. Speed, hands and range changes
   prepare a fresh attempt as for gated attempts, so one in progress counts in again. Repeat: every
   pass (Repeat reset, Restart, Start, a ladder step) goes Preparing → Ready → count-in → running;
   the consecutive-pass target and the ladder read `record.passed` unchanged. Lead-ins (U38) are
   off. The header overview moves the paused cursor across the whole piece, including outside a
-  selected loop. With Repeat closed, the playhead is also draggable while paused.
+  selected loop; a speed change or switching Keep time off then returns the engine to the loop at
+  its start. With Repeat closed, the playhead is also draggable while paused. A pass from the
+  cursor (U128) that reaches the end rewinds everything to zero (U126: its transport, which
+  stopped at the cursor, goes); Start then counts in from the top, Again from that pass's start.
 - **Settings.** A changed `settings.rhythm.toleranceMs` goes to the engine
   (`updateSettings({ rhythm })`), which interrupts an active strict attempt ('setting-change'); the
   interruption then reads "The Keep time tolerance changed, so the attempt stopped."
   `SessionSettings.rhythm` is optional (Study has no Keep time; absent = the engine default).
 
 Tests: `PracticeSession.rhythm.test.ts` (manual clock, a recording metronome module),
-`countIn.test.ts`, `metronome.test.ts`, `selection.test.ts`.
+`PracticeSession.keepTime.test.ts` (the unattended stop with the production grace, kept records,
+stalls, the rewind, Playback at 0%, the cue row), `countIn.test.ts`, `metronome.test.ts`,
+`selection.test.ts`.
 
 ## Play-through (DECISIONS P12)
 

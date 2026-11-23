@@ -7,7 +7,8 @@ import { msg } from '../../i18n/messages'
  *
  * Format `pianissimo-backup` v1, a zip (`*.pianissimo.zip`):
  *
- *   manifest.json                 format, formatVersion, appVersion, createdAt, counts
+ *   manifest.json                 format, formatVersion, appVersion, createdAt, counts,
+ *                                 recordingsExcluded (true when recordings were left out)
  *   settings.json                 { settings: AppSettings | null }
  *   pieces.json                   PieceRecord[]
  *   attempts.json                 AttemptRecord[]
@@ -17,6 +18,9 @@ import { msg } from '../../i18n/messages'
  *   sources.json                  [{ scoreVersionId, fileName, packaging, sha256, bytesSha256, size, file }]
  *   sources/<id>.bin              the original source bytes
  *   packages/<id>.json            one ScorePackage per score version
+ *   recordings.json               RecordingInfo[] (only when there are takes)
+ *   recordings/<id>.mid           a take's MIDI file
+ *   recordings/<id>.wav.<i>       its WAV file in stored (not deflated) parts of at most 4 MiB, from 0
  *
  * The layout cache is derived data and is not exported.
  */
@@ -38,6 +42,17 @@ import {
   preferPackage,
 } from './merge'
 import { clearVersionLayouts } from './pieces'
+import { isQuotaError } from './persist'
+import {
+  DamagedTakeError,
+  RECORDING_AUDIO_TYPE,
+  RECORDING_BLOCK_BYTES,
+  filesBytes,
+  isLegacyFiles,
+  readBlocks,
+  writeTake,
+} from './recordings'
+import type { RecordingFilesRecord } from './recordings'
 import type { AbandonRecord, PieceRecord, SuggestionStateRecord } from './records'
 import type { BarStoreKey, Db } from './schema'
 import { DB_VERSION, INITIAL_LIBRARY_KEY, SETTINGS_KEY } from './schema'
@@ -57,7 +72,8 @@ import {
   sourceMetaProblem,
   suggestionStateProblem,
 } from './validate'
-import { ZipReader, ZipWriter, looksLikeZip } from './zipio'
+import { ZipLimitError, ZipReader, ZipWriter, looksLikeZip } from './zipio'
+import type { ZipSource } from './zipio'
 
 const FILE = {
   manifest: 'manifest.json',
@@ -83,15 +99,51 @@ export interface ExportOptions {
   /** Recorded in the manifest. */
   readonly appVersion?: string
   readonly now?: number
+  /** Include recorded takes (default true). Without them the manifest says they were left out. */
+  readonly includeRecordings?: boolean
 }
+
+const RECORDINGS_DIR = 'recordings/'
+/** Room for the manifest, which is written last. */
+const MANIFEST_ALLOWANCE = 4096
 
 /**
  * Serialize everything the player owns into a backup zip: library, original sources, score
- * packages, settings (including label rules), attempts, measure histories, suggestion state and
- * abandon events. Packages and sources are read and compressed one at a time with yields in
- * between, so exporting a large library does not freeze the page or hold it all in memory twice.
+ * packages, settings (including label rules), attempts, measure histories, suggestion state,
+ * abandon events and, unless left out, recorded takes. Packages and sources are read and
+ * compressed one at a time with yields in between, and a take's audio one block at a time, so
+ * exporting does not freeze the page. The archive is a Blob built from parts: no array of the
+ * whole file exists, and each audio block is released once it is in the archive.
+ *
+ * Refuses (`BackupError` 'too-large') a backup that `restoreBackup` would refuse for its size,
+ * before reading any audio when the takes alone make it too large.
  */
-export async function exportBackup(db: Db, options: ExportOptions = {}): Promise<Uint8Array> {
+export async function exportBackup(db: Db, options: ExportOptions = {}): Promise<Blob> {
+  const includeRecordings = options.includeRecordings ?? true
+  let tooLargeHint = false
+  try {
+    return await writeBackup(db, options, includeRecordings, (hasTakes) => {
+      tooLargeHint = hasTakes
+    })
+  } catch (error) {
+    if (!(error instanceof ZipLimitError)) throw error
+    throw new BackupError(
+      'too-large',
+      tooLargeHint
+        ? msg(
+            'The backup was not created because it would be too large to restore. Turn off “Include recordings” and export again.',
+          )
+        : msg('The backup was not created because it would be too large to restore.'),
+    )
+  }
+}
+
+async function writeBackup(
+  db: Db,
+  options: ExportOptions,
+  includeRecordings: boolean,
+  onTakes: (hasTakes: boolean) => void,
+): Promise<Blob> {
   const now = options.now ?? Date.now()
   const tx = db.transaction(
     ['pieces', 'settings', 'attempts', 'measureHistory', 'suggestionState', 'abandonEvents', 'packages', 'sources'],
@@ -147,17 +199,7 @@ export async function exportBackup(db: Db, options: ExportOptions = {}): Promise
   }
   await zip.addJson(FILE.sources, sourceMetas)
 
-  const recordings: RecordingInfo[] = []
-  for (const info of await db.getAll('recordings')) {
-    const files = await db.get('recordingFiles', info.id)
-    if (!files) continue
-    const path = 'recordings/' + entryName(info.id)
-    await zip.add(path + '.mid', new Uint8Array(files.midi), false)
-    for (const [i, block] of files.audio.entries()) {
-      await zip.add(path + '.wav.' + i, new Uint8Array(block), false)
-    }
-    recordings.push(info)
-  }
+  const recordings = includeRecordings ? await addRecordings(db, zip, onTakes) : []
   if (recordings.length) await zip.addJson('recordings.json', recordings)
 
   const manifest: BackupManifest = {
@@ -166,6 +208,7 @@ export async function exportBackup(db: Db, options: ExportOptions = {}): Promise
     appVersion: options.appVersion ?? 'unknown',
     createdAt: now,
     dbVersion: DB_VERSION,
+    ...(includeRecordings ? {} : { recordingsExcluded: true }),
     counts: {
       ...(recordings.length ? { recordings: recordings.length } : {}),
       pieces: pieces.length,
@@ -182,6 +225,57 @@ export async function exportBackup(db: Db, options: ExportOptions = {}): Promise
   return zip.finish()
 }
 
+/**
+ * Add every take: its MIDI file, then its audio one stored part per block. Checks first that all
+ * of it fits the restore limits, from the files records' sizes. A take that turns out to be
+ * damaged (a missing block) is left out of `recordings.json`; its parts already written are
+ * ignored by restore.
+ */
+async function addRecordings(db: Db, zip: ZipWriter, onTakes: (hasTakes: boolean) => void): Promise<RecordingInfo[]> {
+  const infos = await db.getAll('recordings')
+  const sizes = new Map<string, { bytes: number; parts: number }>()
+  const tx = db.transaction('recordingFiles', 'readonly')
+  await runTx(tx, async () => {
+    let cursor = await tx.store.openCursor()
+    while (cursor) {
+      const record = cursor.value
+      const parts = isLegacyFiles(record) ? record.audio.length : record.blocks
+      sizes.set(cursor.key, { bytes: filesBytes(record), parts: Math.max(1, parts) })
+      cursor = await cursor.continue()
+    }
+  })
+  const takes = infos.filter((info) => sizes.has(info.id))
+  onTakes(takes.length > 0)
+  let bytes = new TextEncoder().encode(JSON.stringify(takes)).length + MANIFEST_ALLOWANCE
+  let entries = 2
+  for (const info of takes) {
+    const size = sizes.get(info.id)!
+    bytes += size.bytes
+    entries += 1 + size.parts
+  }
+  if (!zip.fits(bytes, entries)) throw new ZipLimitError(RECORDINGS_DIR)
+
+  const added: RecordingInfo[] = []
+  for (const info of takes) {
+    const record: RecordingFilesRecord | undefined = await db.get('recordingFiles', info.id)
+    if (!record) continue
+    const path = RECORDINGS_DIR + entryName(info.id)
+    await zip.add(path + '.mid', new Uint8Array(record.midi), false)
+    let part = 0
+    try {
+      const blocks = isLegacyFiles(record) ? record.audio : readBlocks(db, info.id, record)
+      for await (const block of blocks) await zip.add(path + '.wav.' + part++, new Uint8Array(block), false)
+    } catch (error) {
+      if (error instanceof DamagedTakeError) continue
+      throw error
+    }
+    // Readers before schema 4 require at least one part, even for a take without audio.
+    if (part === 0) await zip.add(path + '.wav.0', new Uint8Array(0), false)
+    added.push(info)
+  }
+  return added
+}
+
 export interface RestoreOptions {
   /**
    * `backup` (default): replace this browser's settings with the backup's (label rules, naming,
@@ -194,6 +288,8 @@ export interface RestoreOptions {
    * route when settings are restored; `backup` restores it too.
    */
   readonly route?: 'keep-local' | 'backup'
+  /** Clock of the unfinished-write markers of restored takes (tests). */
+  readonly now?: () => number
 }
 
 export interface MergeCounts {
@@ -207,9 +303,19 @@ export interface MergeCounts {
 export type RestoredStore =
   'pieces' | 'packages' | 'sources' | 'attempts' | 'measureHistory' | 'suggestionState' | 'abandonEvents'
 
+/** Takes are immutable: each is added, already here, or could not be stored in this browser. */
+export interface RecordingCounts {
+  added: number
+  /** Already on this device (same id): kept as it is. */
+  skipped: number
+  /** Could not be stored (quota, a value this browser refuses); named in `warnings`. */
+  failed: number
+}
+
 export interface RestoreReport {
   readonly manifest: BackupManifest
   readonly stores: Readonly<Record<RestoredStore, MergeCounts>>
+  readonly recordings: Readonly<RecordingCounts>
   readonly settings: 'restored' | 'kept' | 'not-in-backup'
   readonly warnings: readonly string[]
 }
@@ -281,6 +387,7 @@ function parseManifest(zip: ZipReader): BackupManifest {
     appVersion: isStr(raw['appVersion']) ? raw['appVersion'] : 'unknown',
     createdAt: isNum(raw['createdAt']) ? raw['createdAt'] : 0,
     dbVersion: isInt(raw['dbVersion']) ? raw['dbVersion'] : 0,
+    ...(raw['recordingsExcluded'] === true ? { recordingsExcluded: true } : {}),
     counts: counts as unknown as BackupCounts,
   }
 }
@@ -296,12 +403,17 @@ function list<T>(zip: ZipReader, file: string, check: (v: unknown) => string | n
   return raw as T[]
 }
 
-/** Read and validate the whole backup without touching storage. */
-async function readBackup(bytes: Uint8Array): Promise<ParsedBackup> {
-  if (!looksLikeZip(bytes)) {
+/**
+ * Read and validate the whole backup without touching storage. Everything but the takes' files
+ * is loaded into memory (it is small, and the main transaction reads it synchronously); the
+ * takes' files stay in the source until each take is restored.
+ */
+async function readBackup(source: ZipSource): Promise<ParsedBackup> {
+  if (!(await looksLikeZip(source))) {
     throw new BackupError('not-a-backup', msg('This file is not a Pianissimo backup (it is not a zip archive).'))
   }
-  const zip = new ZipReader(bytes)
+  const zip = await ZipReader.open(source)
+  await zip.load((name) => !name.startsWith(RECORDINGS_DIR))
   const manifest = parseManifest(zip)
   const problems: string[] = []
 
@@ -323,7 +435,7 @@ async function readBackup(bytes: Uint8Array): Promise<ParsedBackup> {
   const ids = new Set<string>()
   for (const info of recordings) {
     if (recordingProblem(info)) continue
-    const path = 'recordings/' + entryName(info.id)
+    const path = RECORDINGS_DIR + entryName(info.id)
     const parts = zip.names(path + '.wav.')
     if (
       ids.has(info.id) ||
@@ -488,17 +600,22 @@ function versionsWonByBackup(
 }
 
 /**
- * Validate a backup completely, then merge it into the database in one transaction: either
- * everything is restored or nothing is. Records merge by id and nothing local is deleted:
- * attempts and sources are immutable (kept if present), pieces and bar histories resolve by
- * recency, suggestions and abandon events are unioned, and a package is
- * replaced when the backup's one carries more user input (confirmed hands, tempo) or, with
- * equal input, when the backup's piece records of that version win the merge.
+ * Validate a backup completely, then merge the library, results, histories and settings into
+ * the database in one transaction: either all of that is restored or nothing is. Records merge
+ * by id and nothing local is deleted: attempts and sources are immutable (kept if present),
+ * pieces and bar histories resolve by recency, suggestions and abandon events are unioned, and
+ * a package is replaced when the backup's one carries more user input (confirmed hands, tempo)
+ * or, with equal input, when the backup's piece records of that version win the merge.
  * Throws `BackupError` with a readable message and writes nothing when the file is not a
  * Pianissimo backup, is damaged, is newer than this app understands, or holds invalid records.
+ *
+ * Takes are restored after that transaction has committed, each on its own and read from the
+ * source a block at a time. One already here is kept; one that cannot be stored (storage full,
+ * a value this browser refuses) is left out, named in `warnings` and counted as failed, and
+ * never undoes the rest.
  */
-export async function restoreBackup(db: Db, bytes: Uint8Array, options: RestoreOptions = {}): Promise<RestoreReport> {
-  const backup = await readBackup(bytes)
+export async function restoreBackup(db: Db, source: ZipSource, options: RestoreOptions = {}): Promise<RestoreReport> {
+  const backup = await readBackup(source)
   const stores: Record<RestoredStore, MergeCounts> = {
     pieces: emptyCounts(),
     packages: emptyCounts(),
@@ -524,8 +641,6 @@ export async function restoreBackup(db: Db, bytes: Uint8Array, options: RestoreO
       'layoutCache',
       'layoutMeta',
       'libraryState',
-      'recordings',
-      'recordingFiles',
     ],
     'readwrite',
   )
@@ -577,20 +692,6 @@ export async function restoreBackup(db: Db, bytes: Uint8Array, options: RestoreO
       }
       stores.sources.added += 1
       await tx.objectStore('sources').put(record, meta.scoreVersionId)
-    }
-
-    for (const info of backup.recordings) {
-      if (await tx.objectStore('recordings').getKey(info.id)) continue
-      const path = 'recordings/' + entryName(info.id)
-      const audio = backup.zip.names(path + '.wav.').map((_, i) => new Uint8Array(backup.zip.read(path + '.wav.' + i)))
-      await tx.objectStore('recordingFiles').put(
-        {
-          audio: audio.map((part) => part.buffer),
-          midi: new Uint8Array(backup.zip.read(path + '.mid')).buffer,
-        },
-        info.id,
-      )
-      await tx.objectStore('recordings').add(info)
     }
 
     const restorable = backup.pieces.filter((p) => {
@@ -645,14 +746,68 @@ export async function restoreBackup(db: Db, bytes: Uint8Array, options: RestoreO
         settingsOutcome = 'kept'
       } else {
         const incoming = normalizeSettings(backup.settings)
-        const local = await tx.objectStore('settings').get(SETTINGS_KEY)
+        const local = normalizeSettings(await tx.objectStore('settings').get(SETTINGS_KEY))
+        // The metronome's audio output id names a device of the machine that made the backup,
+        // like the MIDI route: both stay this device's unless the route is restored too.
         const next: AppSettings =
-          options.route === 'backup' ? incoming : { ...incoming, route: normalizeSettings(local).route }
+          options.route === 'backup'
+            ? incoming
+            : {
+                ...incoming,
+                route: local.route,
+                metronome: { ...incoming.metronome, outputId: local.metronome.outputId },
+              }
         await tx.objectStore('settings').put(next, SETTINGS_KEY)
         settingsOutcome = 'restored'
       }
     }
   })
 
-  return { manifest: backup.manifest, stores, settings: settingsOutcome, warnings }
+  const recordings = await restoreTakes(db, backup, warnings, options.now ?? Date.now)
+  return { manifest: backup.manifest, stores, recordings, settings: settingsOutcome, warnings }
+}
+
+/** Restore each take of the backup on its own (see `restoreBackup`). */
+async function restoreTakes(
+  db: Db,
+  backup: ParsedBackup,
+  warnings: string[],
+  now: () => number,
+): Promise<RecordingCounts> {
+  const counts: RecordingCounts = { added: 0, skipped: 0, failed: 0 }
+  const zip = backup.zip
+  for (const info of backup.recordings) {
+    const path = RECORDINGS_DIR + entryName(info.id)
+    const parts = zip.names(path + '.wav.').map((_, i) => `${path}.wav.${i}`)
+    try {
+      if ((await db.getKey('recordings', info.id)) !== undefined) {
+        counts.skipped += 1
+        continue
+      }
+      const midi = (await zip.fetch(path + '.mid')).slice().buffer
+      const added = await writeTake(
+        db,
+        {
+          info,
+          midi,
+          type: RECORDING_AUDIO_TYPE,
+          audio: (async function* () {
+            for (const part of parts) yield* zip.pieces(part, RECORDING_BLOCK_BYTES)
+          })(),
+          bytes: parts.reduce((sum, part) => sum + (zip.size(part) ?? 0), 0),
+        },
+        now,
+      )
+      if (added) counts.added += 1
+      else counts.skipped += 1
+    } catch (error) {
+      counts.failed += 1
+      warnings.push(
+        isQuotaError(error)
+          ? msg('The recording "{0}" was not restored because this browser’s storage is full.', info.title)
+          : msg('The recording "{0}" could not be restored in this browser.', info.title),
+      )
+    }
+  }
+  return counts
 }

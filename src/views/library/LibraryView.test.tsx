@@ -8,6 +8,8 @@ import { studyRequest, currentView, practiceRequest, settingsOpen } from '../../
 import { notices, resetAppStateForTests, updateSettings } from '../../app/state'
 import { attemptFor, importPiece } from '../../core/storage/testkit'
 import { $, $$, byLabel, byText, click, mount, type, type Mounted } from '../shared/testing'
+import { DEVICE_DATES, untranslatedText, useCatalog, usePseudoCatalog } from '../shared/catalogTesting'
+import { msg } from '../../i18n/messages'
 import { Library } from './LibraryView'
 import { resetPersistenceRequestForTests } from './importFlow'
 import { sessionDismissals } from './suggestionsData'
@@ -760,5 +762,84 @@ describe('Suggested practice (Library)', () => {
     const root = await open()
     click(byLabel(root, 'Options for Etude'))
     await until(() => /turned off in Settings/.test(root.textContent ?? ''), 'global off')
+  })
+})
+
+describe('interface languages', () => {
+  /** Open a piece's option in whatever language is active. */
+  async function option(root: HTMLElement, title: string, text: string): Promise<HTMLDialogElement> {
+    click(byLabel(root, msg('Options for {0}', title)))
+    click(button(byLabel(root, msg('Manage {0}', title))!, msg(text)))
+    await settle()
+    return dialog(root)!
+  }
+  async function close(root: HTMLElement): Promise<void> {
+    click(button(dialog(root)!, msg('Cancel')) ?? button(dialog(root)!, msg('Keep it')))
+    await until(() => dialog(root) === null, 'sheet closed')
+    await settle(250)
+  }
+
+  it.each([
+    [
+      'ja-JP',
+      '「Etude」の楽譜、結果、練習履歴をこの端末から削除します。元に戻せません。必要に応じて先にバックアップを書き出してください。',
+      '「Etude」で苦手だった小節の履歴、練習の提案（改善済みを含む）、弾き直しの記録を削除します。楽譜は残ります。',
+    ],
+    [
+      'fr-FR',
+      '«\u00a0Etude\u00a0» sera supprimé de cet appareil avec sa partition, ses résultats et son historique. Cette action est définitive. Faites d’abord une sauvegarde si vous souhaitez le conserver.',
+      'Les données sur les mesures de «\u00a0Etude\u00a0» qui vous ont posé problème seront effacées\u00a0: historique par mesure, suggestions, améliorations et reprises de jeu. La partition sera conservée.',
+    ],
+  ] as const)('%s: the delete and clear sheets quote the title in one sentence', async (language, remove, clear) => {
+    const restore = useCatalog(language)
+    try {
+      await importPiece(deps.storage, 'v1', { title: 'Etude' })
+      const root = await open()
+      expect($(await option(root, 'Etude', 'Delete…'), 'p')?.textContent).toBe(remove)
+      await close(root)
+      expect($(await option(root, 'Etude', 'Clear practice history…'), 'p')?.textContent).toBe(clear)
+    } finally {
+      restore()
+    }
+  })
+
+  it('shows no text that bypasses the catalogs', async () => {
+    const restore = usePseudoCatalog()
+    try {
+      let root = await open()
+      expect(untranslatedText(root)).toEqual([])
+      view!.unmount()
+
+      const { piece } = await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })
+      for (let i = 0; i < 3; i++)
+        deps.storage.history.queueAttempt(
+          attemptFor(piece.id, [
+            [1, 'error'],
+            [2, 'clean'],
+          ]),
+        )
+      await deps.storage.history.flush()
+      await importPiece(deps.storage, 'v2', {
+        title: 'Nocturne',
+        lastOpenedAt: deps.clock - 30_000,
+        lastHands: 'right',
+        lastMultiplier: 0.75,
+        lastPassage: { fromOcc: 1, toOcc: 2 },
+        repeatOpen: true,
+      })
+      root = await open()
+      await until(() => $(root, '[data-suggestion]') !== null, 'suggestion')
+      const literal = ['Etude', 'Nocturne', 'Anon', 'Piano', ...DEVICE_DATES]
+      expect(untranslatedText(root, literal)).toEqual([])
+      click(byLabel(root, msg('Options for {0}', 'Etude')))
+      expect(untranslatedText(root, literal)).toEqual([])
+      click(byLabel(root, msg('Options for {0}', 'Etude')))
+      for (const text of ['Rename…', 'Review hands and tempo…', 'Delete…', 'Clear practice history…']) {
+        expect(untranslatedText(await option(root, 'Etude', text), literal)).toEqual([])
+        await close(root)
+      }
+    } finally {
+      restore()
+    }
   })
 })

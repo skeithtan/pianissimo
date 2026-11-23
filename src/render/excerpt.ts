@@ -13,6 +13,7 @@
  */
 import { estimateMeasurer, type TextMeasurer } from './labels/metrics'
 import { layoutCorrections, penRing, type CorrectionMark } from './shared/corrections'
+import { barLabel } from './shared/scoreLanguage'
 import type { PreparedLayout, StaffGeometry } from './types'
 
 /** Something to show on the music: its bar (`occ`), in severity order (first = most severe). */
@@ -146,16 +147,12 @@ export interface ExcerptMarkup {
   readonly height: number
   /** Add this to an engraving x coordinate to get its position within the excerpt. */
   readonly offsetX: number
-  /** Top staff line measured from the excerpt's top edge. */
-  readonly staffTop: number
 }
 
 export interface ExcerptOptions {
   readonly marks?: readonly CorrectionMark[]
   readonly ghosts?: readonly GhostNote[]
   readonly measurer?: TextMeasurer
-  /** Omit the inserted clef and key when this excerpt follows another in a strip. */
-  readonly includeContext?: boolean
 }
 
 /** Space kept around the notation of an excerpt (layout px). */
@@ -218,7 +215,7 @@ export function excerptMarkup(layout: PreparedLayout, occ: number, opts: Excerpt
   x0 = Math.max(segment.x0, Math.floor(x0))
   x1 = Math.min(segment.x1, Math.ceil(x1))
 
-  const prefix = opts.includeContext === false ? null : signaturePrefix(layout, occ, staves)
+  const prefix = signaturePrefix(layout, occ, staves)
   const pw = prefix ? prefix.width : 0
   const w = r2(pw + (x1 - x0))
   const h = r2(y1 - y0)
@@ -228,13 +225,13 @@ export function excerptMarkup(layout: PreparedLayout, occ: number, opts: Excerpt
   const inner = innerSvg(segment.svg)
   parts.push(
     `<svg class="pn-ex-music" x="${r2(pw)}" y="${r2(y0)}" width="${r2(x1 - x0)}" height="${h}" viewBox="${r2(x0)} ${r2(y0)} ${r2(x1 - x0)} ${h}">${inner}` +
-      numberMarkup(bar.label, bar.labelBox) +
+      numberMarkup(barLabel(bar), bar.labelBox) +
       shapes.map(correctionMarkup).join('') +
       ghosts.map(ghostMarkup).join('') +
       `</svg>`,
   )
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" class="pn-excerpt-svg" viewBox="0 ${r2(y0)} ${w} ${h}" width="${w}" height="${h}">${parts.join('')}</svg>`
-  return { svg, width: w, height: h, offsetX: pw - x0, staffTop: Math.min(...staves.map((s) => s.top)) - y0 }
+  return { svg, width: w, height: h, offsetX: pw - x0 }
 }
 
 /**

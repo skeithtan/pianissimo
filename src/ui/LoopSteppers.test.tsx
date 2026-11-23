@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { byLabel, click, mount, type Mounted } from '../views/shared/testing'
+import { untranslatedText, usePseudoCatalog } from '../views/shared/catalogTesting'
 import { LoopSteppers } from './LoopSteppers'
 import type { LoopRange } from './loopStep'
 
@@ -117,5 +118,18 @@ describe('<LoopSteppers>', () => {
     )
     expect(view.container.textContent).toContain('m. 12')
     expect(view.container.textContent).toContain('m. 14')
+  })
+})
+
+describe('<LoopSteppers> translation coverage', () => {
+  it('shows no text that bypasses the catalogs', () => {
+    const restore = usePseudoCatalog()
+    try {
+      expect(untranslatedText(setup(null, 4).root)).toEqual([])
+      view?.unmount()
+      expect(untranslatedText(setup({ fromOcc: 3, toOcc: 6 }, 4).root)).toEqual([])
+    } finally {
+      restore()
+    }
   })
 })

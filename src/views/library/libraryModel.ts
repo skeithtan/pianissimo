@@ -15,6 +15,7 @@ import { summarizeImport, type ImportSummary } from '../../core/import/summary'
 import type { ScorePackage } from '../../core/model/score'
 import type { PieceRecord } from '../../core/storage/records'
 import type { RestoreReport } from '../../core/storage/backup'
+import type { RecordingsSummary } from '../../core/storage/recordings'
 import type { LibraryDeps } from './deps'
 import type { StorageStatus } from './importFlow'
 import type { FinalizedReview } from './review'
@@ -70,6 +71,8 @@ export function normalizePieceName(name: { readonly title: string; readonly comp
 export class LibraryModel {
   readonly state: Signal<LibraryState> = signal({ status: 'loading' })
   readonly storageStatus: Signal<StorageStatus | null> = signal(null)
+  /** Takes on this device and their size, for the backup's "Include recordings" choice. */
+  readonly recordings: Signal<RecordingsSummary | null> = signal(null)
   #deps: LibraryDeps
   #generation = 0
 
@@ -205,34 +208,55 @@ export class LibraryModel {
     await storage.clearPracticeHistory(pieceId, { attempts: alsoResults })
   }
 
-  /** Build the backup and hand it to the browser as a download. Returns the file name. */
-  async exportBackup(): Promise<string> {
+  /** Count the takes and their size. Never throws: null when storage cannot say. */
+  async refreshRecordings(): Promise<void> {
+    try {
+      const storage = await this.#deps.getStorage()
+      this.recordings.value = await storage.recordingsSummary()
+    } catch {
+      this.recordings.value = null
+    }
+  }
+
+  /**
+   * Build the backup and hand it to the browser as a download (the archive Blob itself, never
+   * copied). Recordings are included unless `includeRecordings` is false. Returns the file name.
+   */
+  async exportBackup(options: { includeRecordings?: boolean } = {}): Promise<string> {
     // Settings still waiting on the save debounce belong in the backup too.
     await this.#deps.flushSettings()
     const storage = await this.#deps.getStorage()
-    const bytes = await storage.exportAll()
+    const archive = await storage.exportAll(
+      options.includeRecordings === undefined ? {} : { includeRecordings: options.includeRecordings },
+    )
     const name = backupFileName(this.#deps.now())
-    this.#deps.download(bytes, name)
+    this.#deps.download(archive, name)
     return name
   }
 
   /**
    * Restore a backup: validated first (nothing written on failure), merged by id, settings
    * replaced except this device's MIDI route (ST3, ST4); then the app reloads its settings.
+   * A picked file is read by slices, so recordings in it are never loaded whole.
    */
-  async restore(file: Pick<File, 'arrayBuffer'>): Promise<RestoreOutcome> {
-    let bytes: Uint8Array
-    try {
-      bytes = new Uint8Array(await file.arrayBuffer())
-    } catch (error) {
-      return { ok: false, message: msg('The file could not be read: {0}', message(error)), problems: [] }
+  async restore(file: Blob | Pick<Blob, 'arrayBuffer'>): Promise<RestoreOutcome> {
+    let source: Blob | Uint8Array
+    if (typeof (file as Blob).slice === 'function') {
+      source = file as Blob
+    } else {
+      try {
+        source = new Uint8Array(await file.arrayBuffer())
+      } catch (error) {
+        return { ok: false, message: msg('The file could not be read: {0}', message(error)), problems: [] }
+      }
     }
     try {
       await this.#deps.flushSettings()
       const storage = await this.#deps.getStorage()
-      const report = await storage.restore(bytes)
+      const report = await storage.restore(source)
       await this.#deps.reloadSettings()
       await this.refresh()
+      await this.refreshRecordings()
       return { ok: true, report }
     } catch (error) {
       if (error instanceof BackupError) return { ok: false, message: error.message, problems: error.problems }
@@ -265,18 +289,27 @@ export function describeRestore(report: RestoreReport): string[] {
     if (c.skipped) bits.push(msg('{0} skipped', c.skipped))
     return bits.length ? `${label}: ${bits.join(', ')}` : null
   }
+  const takes = (c: RestoreReport['recordings']) => {
+    const bits: string[] = []
+    if (c.added) bits.push(msg('{0} added', c.added))
+    if (c.skipped) bits.push(msg('{0} already on this device', c.skipped))
+    if (c.failed) bits.push(msg('{0} failed', c.failed))
+    return bits.length ? `${msg('Recordings')}: ${bits.join(', ')}` : null
+  }
   for (const line of [
     part(msg('Pieces'), s.pieces),
     part(msg('Results'), s.attempts),
     part(msg('Bar histories'), s.measureHistory),
     part(msg('Suggestions'), s.suggestionState),
+    takes(report.recordings),
   ]) {
     if (line) lines.push(line)
   }
   if (lines.length === 0) lines.push(msg('Everything in the backup was already on this device.'))
+  if (report.manifest.recordingsExcluded) lines.push(msg('The backup did not include recordings.'))
   lines.push(
     report.settings === 'restored'
-      ? msg('Settings were restored from the backup (this device keeps its own piano connection).')
+      ? msg('Settings were restored from the backup (this device keeps its own piano connection and metronome output).')
       : report.settings === 'kept'
         ? msg('Settings on this device were kept.')
         : msg('The backup had no settings. Yours were kept.'),

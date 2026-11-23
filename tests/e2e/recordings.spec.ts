@@ -44,6 +44,34 @@ async function installPianoAudio(page: Page) {
   })
 }
 
+/** Before a take the header holds no recording control at all; a take starts from the menu. */
+async function expectNoRecordControl(page: Page) {
+  await expect(page.locator('[data-recording-control]')).toHaveCount(0)
+  await expect(
+    page.locator('header, [data-testid="practice-bar"]').getByRole('button', { name: 'Record performance' }),
+  ).toHaveCount(0)
+  await expect(page.getByRole('group', { name: 'Recording', exact: true })).toHaveCount(0)
+}
+
+/** Open the recorder from the Practice menu (footer popover, or the phone bar's sheet). */
+async function recordFromPracticeMenu(page: Page) {
+  await expectNoRecordControl(page)
+  const menu = await openFooterMenu(page)
+  await menu.getByRole('button', { name: 'Record performance' }).click()
+}
+
+/** Open the recorder from the Sheet music menu (footer popover, or the phone header's sheet). */
+async function recordFromSheetMusicMenu(page: Page) {
+  await expectNoRecordControl(page)
+  const footerMenu = page.locator('footer').getByRole('button', { name: 'Menu', exact: true })
+  const menu = (await footerMenu.count())
+    ? page.getByRole('dialog', { name: 'Sheet music menu' })
+    : page.getByRole('dialog', { name: 'Menu' })
+  if (await footerMenu.count()) await footerMenu.click()
+  else await page.locator('header').getByRole('button', { name: 'Menu', exact: true }).click()
+  await menu.getByRole('button', { name: 'Record performance' }).click()
+}
+
 async function checkTransport(page: Page) {
   const controls = page.getByRole('group', { name: 'Recording', exact: true })
   await expect(controls.getByRole('timer')).toHaveText(/^[0-9]+:[0-5][0-9]$/)
@@ -67,9 +95,8 @@ test('records a scored take, downloads both real files and manages recording his
   await seedPiece(page)
   await openSeededPractice(page)
   await page.clock.setFixedTime(new Date('2026-11-21T23:04:56.789Z'))
-  const record = async (notes: number[], menu = false) => {
-    const controls = menu ? await openFooterMenu(page) : page.locator('header')
-    await controls.getByRole('button', { name: 'Record performance' }).click()
+  const record = async (notes: number[], shot = false) => {
+    await recordFromPracticeMenu(page)
     await page.getByRole('button', { name: 'Enable audio input' }).click()
     await expect(page.getByRole('combobox', { name: 'Audio input', exact: true })).toHaveValue('usb')
     await page.getByRole('button', { name: 'Start recording' }).click()
@@ -96,13 +123,13 @@ test('records a scored take, downloads both real files and manages recording his
     await page.clock.setFixedTime(new Date('2026-11-22T01:00:00Z'))
     await play(page, ...notes)
     await expect(page.getByRole('timer')).not.toHaveText('0:00')
-    if (!menu) await page.screenshot({ path: info.outputPath('recording-active.png') })
+    if (shot) await page.screenshot({ path: info.outputPath('recording-active.png') })
     await page.getByRole('button', { name: /Stop recording/ }).click()
     return page.getByRole('dialog', { name: 'Recordings' })
   }
-  let history = await record([60, 48])
+  let history = await record([60, 48], true)
   await expect(history.getByText('Best take', { exact: true })).toBeVisible()
-  const link = history.getByRole('link', { name: 'Download MIDI and WAV (.zip)' })
+  const link = history.getByRole('button', { name: 'Download MIDI and WAV (.zip)' })
   await expect(link).toBeVisible()
   await page.screenshot({ path: info.outputPath('recording-history.png') })
   const pendingDownload = page.waitForEvent('download')
@@ -120,7 +147,7 @@ test('records a scored take, downloads both real files and manages recording his
   expect(wav.length).toBeGreaterThan(4096)
   expect(new Int16Array(wav.slice(44).buffer).some((sample) => Math.abs(sample) > 100)).toBe(true)
   await history.getByRole('button', { name: 'Close' }).click()
-  history = await record([120], true)
+  history = await record([120])
   await expect(history.getByRole('button', { name: /Two Hands/ })).toHaveCount(2)
   await expect(history.getByText('Best take', { exact: true })).toHaveCount(1)
   await page.reload()
@@ -146,7 +173,7 @@ test('a phone can record from Sheet music and keep both files when the page is i
   await installPianoAudio(page)
   await seedPiece(page)
   await page.getByRole('button', { name: 'Open sheet music for Two Hands' }).click()
-  await page.locator('header').getByRole('button', { name: 'Record performance', exact: true }).click()
+  await recordFromSheetMusicMenu(page)
   await page.getByRole('button', { name: 'Enable audio input' }).click()
   await expect(page.getByRole('combobox', { name: 'Audio input', exact: true })).toHaveValue('usb')
   await page.screenshot({ path: info.outputPath('recording-phone.png') })
@@ -164,7 +191,7 @@ test('a phone can record from Sheet music and keep both files when the page is i
   await page.evaluate(() => window.dispatchEvent(new Event('pagehide')))
   const history = page.getByRole('dialog', { name: 'Recordings' })
   await expect(history.getByText('Interrupted', { exact: true })).toBeVisible()
-  await expect(history.getByRole('link', { name: 'Download MIDI and WAV (.zip)' })).toBeVisible()
+  await expect(history.getByRole('button', { name: 'Download MIDI and WAV (.zip)' })).toBeVisible()
   await expect(history.getByText('Best take', { exact: true })).toHaveCount(0)
 })
 
@@ -176,7 +203,7 @@ test('Practice keeps Stop within reach on a narrow phone and through rotation wh
   await installPianoAudio(page)
   await seedPiece(page)
   await openSeededPractice(page)
-  await page.getByTestId('practice-bar').getByRole('button', { name: 'Record performance' }).click()
+  await recordFromPracticeMenu(page)
   await page.getByRole('button', { name: 'Enable audio input' }).click()
   await page.getByRole('button', { name: 'Start recording' }).click()
   await checkTransport(page)
@@ -208,15 +235,17 @@ for (const viewport of [
     await seedPiece(page)
     await openSeededPractice(page)
     const header = page.locator('header, [data-testid="practice-bar"]')
-    await header.getByRole('button', { name: 'Record performance' }).click()
+    await recordFromPracticeMenu(page)
     await page.getByRole('button', { name: 'Enable audio input' }).click()
     await page.getByRole('button', { name: 'Start recording' }).click()
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await play(page, 60, 48)
     await expect(page.locator('[data-activity]')).toHaveAttribute('data-recede', 'true')
-    await expect(header.getByRole('button', { name: 'Back to Library' })).toBeHidden()
+    // Focus mode hides a phone's bar only: a tablet's header stays in full (U93 revised).
+    const tablet = viewport.height > 520
+    await expect(header.getByRole('button', { name: 'Back to Library' })).toBeVisible({ visible: tablet })
     await checkTransport(page)
-    if (viewport.height > 520) {
+    if (tablet) {
       await expect(header.getByRole('button', { name: /MIDI status: Connected/ })).toBeInViewport({ ratio: 1 })
       await expect(page.getByTestId('footer-tools-slot')).toHaveAttribute('inert', '')
     }
@@ -230,7 +259,7 @@ for (const viewport of [
     await page.screenshot({ path: info.outputPath('recording-focus.png') })
     await stop.click()
     await expect(
-      page.getByRole('dialog', { name: 'Recordings' }).getByRole('link', { name: 'Download MIDI and WAV (.zip)' }),
+      page.getByRole('dialog', { name: 'Recordings' }).getByRole('button', { name: 'Download MIDI and WAV (.zip)' }),
     ).toBeVisible()
   })
 }

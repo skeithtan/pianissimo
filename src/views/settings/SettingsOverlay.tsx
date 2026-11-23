@@ -148,9 +148,12 @@ export function requestCloseSettings(): void {
 export function SettingsOverlay({ features = getFeatures() }: { features?: FeatureReport }) {
   const open = settingsOpen.value
   // Settings can also close without the close button: the browser's Back button, or another
-  // screen taking over (Set up in Connection). Staged label edits never outlive the overlay.
+  // screen taking over (Set up in Connection). Staged label edits never outlive the overlay, and
+  // debounced preferences are written however it closes.
   useEffect(() => {
-    if (!open) dropStagedLabelEdits()
+    if (open) return
+    dropStagedLabelEdits()
+    void flushSettings()
   }, [open])
   return (
     <Sheet title={msg('Settings')} open={open} onClose={requestCloseSettings} className={styles.dialog} tall flush>

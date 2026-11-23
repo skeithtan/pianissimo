@@ -5,6 +5,8 @@ import { act } from 'preact/test-utils'
 import { fixtureBytes } from '../../../tests/unit/import/fixtures'
 import { existingAudioContext, resetSharedAudioContext } from '../../core/playback/webaudio/context'
 import { $, $$, byLabel, byText, click, mount, type, type Mounted } from '../shared/testing'
+import { untranslatedText, useCatalog, usePseudoCatalog } from '../shared/catalogTesting'
+import { msg } from '../../i18n/messages'
 import { ImportSheet } from './ImportSheet'
 import { ImportFlow, resetPersistenceRequestForTests, type FlowPhase } from './importFlow'
 import { initialDraft } from './review'
@@ -127,4 +129,129 @@ describe('Import review', () => {
     expect(onOpenExisting).toHaveBeenCalledWith(existing.id)
     expect(await deps.storage.listPieces()).toHaveLength(1)
   })
+})
+
+describe('translation coverage', () => {
+  const scores = [
+    'two-hands.musicxml',
+    'no-tempo.musicxml',
+    'split-voice.musicxml',
+    'cross-staff.musicxml',
+    'timing-marks.musicxml',
+    'tempo-changes.musicxml',
+    'tempo-conflict.musicxml',
+    'changes.musicxml',
+    'ottava.musicxml',
+    'rolls.musicxml',
+    'repeats.musicxml',
+    'ds-al-coda.musicxml',
+    'unsupported.musicxml',
+    'cue-notes.musicxml',
+  ]
+
+  it.each(scores)('%s: the review shows no text that bypasses the catalogs', async (name) => {
+    const restore = usePseudoCatalog()
+    try {
+      const root = await open(name)
+      const { summary } = review().result
+      // Score text (titles, part names, printed tempo words) and MusicXML element names stay as written.
+      const printed = summary.timingIssues.filter((t) => t.kind !== 'fermata').map((t) => t.text)
+      const tokens = summary.unsupported.flatMap((u) => /\(([a-z-]+)\)$/u.exec(u.message)?.slice(1) ?? [])
+      const literal = [
+        summary.title,
+        summary.composer ?? '',
+        ...summary.parts.map((p) => p.name),
+        ...printed,
+        ...tokens,
+      ]
+      expect(untranslatedText(root, literal.filter(Boolean))).toEqual([])
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe('the score check in other languages', () => {
+  /** The repeats fixture with fourteen repeated bars, one error and one importer note. */
+  async function openFull(): Promise<HTMLElement> {
+    await flow.openFile(file('repeats.musicxml'))
+    const phase = review()
+    const summary = phase.result.summary
+    flow.phase.value = {
+      ...phase,
+      result: {
+        ...phase.result,
+        summary: {
+          ...summary,
+          repeats: {
+            unfolded: true,
+            repeatedBars: Array.from({ length: 14 }, (_, i) => ({ bar: String(i + 1), passes: 2 })),
+            endings: ['1', '2'],
+          },
+          diagnostics: {
+            ...summary.diagnostics,
+            errors: 1,
+            infos: 1,
+            list: [
+              ...summary.diagnostics.list,
+              {
+                severity: 'error',
+                code: 'test-error',
+                message: 'A note in bar 3 has an unreadable pitch. It was skipped.',
+              },
+              { severity: 'info', code: 'test-info', message: 'The performance ends at Fine in bar 8.' },
+            ],
+          },
+        },
+      },
+    }
+    view = mount(<ImportSheet flow={flow} pieces={[]} onClose={() => flow.close()} />)
+    return view.container
+  }
+
+  it.each([
+    ['ja-JP', 'ほか2件'],
+    ['fr-FR', '…et 2 de plus'],
+  ] as const)('%s: says how many more repeated bars there are in one phrase', async (language, more) => {
+    const restore = useCatalog(language)
+    try {
+      const root = await openFull()
+      expect($$(root, 'li').map((li) => li.textContent)).toContain(more)
+    } finally {
+      restore()
+    }
+  })
+
+  it('shows no text that bypasses the catalogs when every check has entries', async () => {
+    const restore = usePseudoCatalog()
+    try {
+      const root = await openFull()
+      const { summary } = review().result
+      const literal = [summary.title, summary.composer ?? '', ...summary.parts.map((p) => p.name)]
+      expect(untranslatedText(root, literal.filter(Boolean))).toEqual([])
+    } finally {
+      restore()
+    }
+  })
+
+  it.each([
+    ['en-US', 'Tempo set', 'None found'],
+    ['es-ES', 'Definido', 'Sin resultados'],
+    ['fr-FR', 'Réglé', 'Aucun résultat'],
+  ] as const)(
+    '%s: a typed tempo reads as a state, and an empty check agrees with any noun',
+    async (language, set, none) => {
+      const restore = useCatalog(language)
+      try {
+        const root = await open('no-tempo.musicxml')
+        type(byLabel(root, msg('Beats per minute')), '84')
+        const tempo = $(root, '[aria-labelledby="import-tempo"]')!
+        expect(tempo.querySelector('[data-tone="success"]')?.textContent).toBe(set)
+        const ottavas = $$(root, 'summary').find((s) => s.textContent?.includes(msg('Ottava lines')))
+        expect(ottavas?.lastElementChild?.textContent).toBe(none)
+      } finally {
+        restore()
+      }
+    },
+  )
 })

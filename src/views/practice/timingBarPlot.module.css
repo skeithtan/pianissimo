@@ -1,20 +1,23 @@
+/* The labels share one grid cell, each centered on its line of the plot: in the flow, so the
+   axis column is as wide as the longest label in the language shown. */
 .axis {
-  position: relative;
+  display: grid;
+  justify-items: end;
+  align-items: start;
   color: var(--fg-muted);
   font-size: var(--text-xs);
   white-space: nowrap;
 }
 
 .axis span {
-  position: absolute;
-  inset-inline-end: 0;
+  grid-area: 1 / 1;
   transform: translateY(-50%);
 }
 
-.early { top: 14px; color: var(--hand-control-left); }
-.beat { top: 39px; }
-.late { top: 64px; color: var(--warning); }
-.missed { top: 89px; color: var(--danger); }
+.early { margin-top: 14px; color: var(--hand-control-left); }
+.beat { margin-top: 39px; }
+.late { margin-top: 64px; color: var(--warning); }
+.missed { margin-top: 89px; color: var(--danger); }
 
 .chart {
   position: relative;

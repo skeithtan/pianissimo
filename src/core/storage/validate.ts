@@ -289,6 +289,7 @@ export function recordingProblem(v: unknown): string | null {
   return firstBad([
     ['id', isStr(v['id']) && v['id'].length > 0],
     ['recording', ['pieceId', 'title', 'context', 'input', 'passage'].every((key) => isStr(v[key]))],
+    ['passageRange', v['passageRange'] === undefined || v['passageRange'] === null || passage(v['passageRange'])],
     ['hands', isOneOf(v['hands'], ['both', 'left', 'right'])],
     ['durationMs', isNum(v['durationMs']) && v['durationMs'] >= 0],
     ['createdAt', isNum(v['createdAt']) && !Number.isNaN(new Date(v['createdAt']).getTime())],

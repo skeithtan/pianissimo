@@ -34,7 +34,7 @@ const cases = [
     device: 'tl-PH',
     lang: 'fil-PH',
     library: 'Aklatan',
-    settings: 'Mga pagtatakda',
+    settings: 'Mga Setting',
     general: 'Pangkalahatan',
     language: 'Wika',
     add: 'Idagdag at buksan',
@@ -77,8 +77,7 @@ for (const c of cases) {
       await sheet.getByRole('button', { name: c.add, exact: true }).click()
       await expect(page.locator('.pn-strip').first()).toBeVisible({ timeout: 60000 })
       const url = page.url()
-      const menu =
-        ({ 'fil-PH': 'Pagpipilian', 'es-ES': 'Menú', 'ja-JP': 'メニュー' } as Record<string, string>)[c.lang] ?? 'Menu'
+      const menu = ({ 'es-ES': 'Menú', 'ja-JP': 'メニュー' } as Record<string, string>)[c.lang] ?? 'Menu'
       await page.getByRole('button', { name: menu, exact: true }).click()
       await page.getByRole('button', { name: c.settings, exact: true }).click()
       await sheet.getByRole('tab', { name: c.general, exact: true }).click()
@@ -100,6 +99,8 @@ for (const c of cases) {
       await page.reload()
       await expect(page.locator('html')).toHaveAttribute('lang', tag)
       expect((await storedSettings(page))?.view.language).toBe(tag)
+      // The first render after a reload waits for the cached catalog: only then is there a screen.
+      await expect(page.locator('.pn-strip').first()).toBeVisible({ timeout: 60_000 })
       const menuAfterReload = page.getByRole('button', { name: tag === 'fr-CA' ? 'Menu' : 'Menú', exact: true })
       if (await menuAfterReload.isVisible()) await menuAfterReload.click()
       await page.getByRole('button', { name: tag === 'fr-CA' ? 'Paramètres' : 'Ajustes', exact: true }).click()
@@ -117,16 +118,16 @@ test.describe('Filipino score workflows', () => {
     await expect(page.getByRole('heading', { name: 'Aklatan' })).toBeVisible()
     await page.locator('input[type=file]').first().setInputFiles(fixtureFile('unrelated.xml'))
     const dialog = page.getByRole('dialog')
-    await expect(dialog).toContainText('Hindi maipasok ang talaksang ito.')
+    await expect(dialog).toContainText('Hindi ma-import ang file na ito.')
     await expect(dialog).toContainText('MusicXML')
     await expect(dialog).not.toContainText('not a MusicXML score')
-    await expect(dialog.getByRole('button', { name: 'Pumili ng ibang talaksan' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Pumili ng ibang file' })).toBeVisible()
     await dialog.locator('button[aria-label="Isara"]').click()
     await page.getByRole('button', { name: 'Buksan ang partitura ng Ode to Joy' }).click()
     await expect(page.getByTestId('study-screen').getByRole('group', { name: 'Partitura', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Sundan ang tugtog ko', exact: true })).toBeVisible()
     await page.goto('./#/results')
-    await expect(page.getByRole('heading', { name: 'Kinalabasan', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Resulta', exact: true })).toBeVisible()
   })
 })
 
@@ -147,7 +148,7 @@ for (const [lang, close, start, show, title, clean] of [
     'fil-PH',
     'Isara',
     'Magsimula',
-    'Ipakita ang mga detalye ng ulit na ito',
+    'Ipakita ang mga detalle ng ulit na ito',
     'Ulit na ito',
     'Walang sablay: walang maling nota at walang tulong.',
   ],

@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import en from '../../i18n/locales/en-US.json'
+import es from '../../i18n/locales/es-ES.json'
+import { readMessagesWith } from '../../i18n/messages'
 import { rat } from '../music/rational'
 import { buildScore, quarters } from './testkit'
 import { buildTimeline, groupAtOrAfter, transportGates } from './timeline'
@@ -387,6 +390,35 @@ describe('scored-practice blockers', () => {
     expect(t.blockers.map((b) => b.kind)).toEqual(['unsupported-region', 'hands-unconfirmed'])
     const firstBar = buildTimeline(m, { hands: 'both', range: { fromOcc: 0, toOcc: 0 }, multiplier: 1 })
     expect(firstBar.blockers.map((b) => b.kind)).toEqual(['hands-unconfirmed'])
+  })
+
+  describe('in Spanish', () => {
+    afterEach(() => readMessagesWith(() => ({ language: 'en-US', strings: {} })))
+
+    it('translates an unsupported region with its details', () => {
+      const source: Readonly<Record<string, string>> = en
+      const strings = Object.fromEntries(Object.entries(es).map(([id, value]) => [source[id]!, value]))
+      readMessagesWith(() => ({ language: 'es-ES', strings }))
+      const m = buildScore({
+        notes: [
+          { at: 0, midi: C4 },
+          { at: 4, midi: D4 },
+        ],
+        unsupported: [
+          {
+            kind: 'unsupported-repeat',
+            fromOcc: 1,
+            toOcc: 1,
+            message:
+              'Repeat instruction that is not followed (D.S. al Coda: no segno before it, To Coda: no D.C. or D.S. al Coda leads to it)',
+          },
+        ],
+      })
+      const message = buildTimeline(m, both).blockers[0]!.message
+      expect(message).toBe(
+        'Todavía no se puede evaluar Indicación de repetición no interpretada (D.S. al Coda: falta el segno anterior, To Coda: no hay D.C. ni D.S. al Coda que conduzca aquí) (compases 2–2).',
+      )
+    })
   })
 
   it('the comparison context names version, passage, hands, tempo map, speed, roll policy and rules', () => {

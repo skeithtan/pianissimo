@@ -1,5 +1,4 @@
 import type { RecordingInfo, RecordingFiles } from '../recording/records'
-import { runTx } from './tx'
 import { deleteDB } from 'idb'
 import { summarizeByContext } from '../history/results'
 import type { ContextResults } from '../history/results'
@@ -29,10 +28,21 @@ import {
 } from './pieces'
 import type { ImportCommit } from './pieces'
 import type { LayoutCacheLimits, PiecePatch, PieceRecord } from './records'
+import {
+  RECORDING_AUDIO_TYPE,
+  blobBlocks,
+  deleteTake,
+  discardAbandonedWrites,
+  readTakeFiles,
+  summarizeTakes,
+  writeTake,
+} from './recordings'
+import type { RecordingsSummary } from './recordings'
 import { DEFAULT_DB_NAME, SETTINGS_KEY, openPianissimoDb } from './schema'
 import { normalizeSettings } from './settings'
 import type { ClearOptions } from './historyStore'
 import { initializeLibrary, needsInitialPieces, needsLibraryExpansion } from './initialLibrary'
+import type { ZipSource } from './zipio'
 
 export interface StorageOptions {
   /** Recorded in exported backups. */
@@ -40,6 +50,13 @@ export interface StorageOptions {
   readonly layoutCache?: Partial<LayoutCacheLimits>
   readonly history?: HistoryWriterOptions
   readonly now?: () => number
+  /** The database upgrade waits for another tab that keeps an older version open. */
+  readonly onBlocked?: () => void
+}
+
+export interface ExportAllOptions {
+  /** Include recorded takes (default true). */
+  readonly includeRecordings?: boolean
 }
 
 /** The persistence API for the views and the practice session. See the module README. */
@@ -67,10 +84,18 @@ export interface PianissimoStorage {
   loadSettings(): Promise<AppSettings>
   saveSettings(settings: AppSettings): Promise<AppSettings>
 
+  // Recordings (see recordings.ts)
   listRecordings(): Promise<RecordingInfo[]>
+  /**
+   * A take's files as Blobs. The WAV Blob is assembled from the stored blocks, which are read a
+   * couple at a time: play it through an object URL and download it without another copy.
+   */
   getRecordingFiles(id: string): Promise<RecordingFiles | undefined>
+  /** Store a take, reading its WAV Blob one block at a time. Listed only once complete. */
   saveRecording(info: RecordingInfo, files: RecordingFiles): Promise<void>
   deleteRecording(id: string): Promise<void>
+  /** How many takes there are and how many bytes their files hold (for the backup choice). */
+  recordingsSummary(): Promise<RecordingsSummary>
 
   // Results
   addAttempts(records: readonly AttemptRecord[]): Promise<void>
@@ -97,8 +122,10 @@ export interface PianissimoStorage {
   layoutCacheStats(): Promise<LayoutCacheStats>
 
   // Export / restore
-  exportAll(): Promise<Uint8Array>
-  restore(bytes: Uint8Array, options?: RestoreOptions): Promise<RestoreReport>
+  /** The backup archive as a Blob assembled from parts (save it as `backupFileName()`). */
+  exportAll(options?: ExportAllOptions): Promise<Blob>
+  /** Restore a backup from a picked file (read by slices) or bytes. */
+  restore(source: ZipSource, options?: RestoreOptions): Promise<RestoreReport>
 }
 
 /** Open (creating on first use) the IndexedDB database `name`. */
@@ -106,7 +133,10 @@ export async function openStorage(
   name: string = DEFAULT_DB_NAME,
   options: StorageOptions = {},
 ): Promise<PianissimoStorage> {
-  const db = await openPianissimoDb(name)
+  const db = await openPianissimoDb(name, options.onBlocked ? { onBlocked: options.onBlocked } : {})
+  const now = options.now ?? Date.now
+  // Takes whose blocks a closed page left half written are never listed; free their space.
+  await discardAbandonedWrites(db, now()).catch(() => undefined)
   const history = new HistoryWriter(db, options.history)
   const layouts = new LayoutCache(db, options.layoutCache, options.now)
   const settleHistory = (): Promise<unknown> => history.flush().catch(() => undefined)
@@ -186,55 +216,46 @@ export async function openStorage(
     clearPracticeHistory: (pieceId, clearOptions) => history.clearHistory(pieceId, clearOptions),
 
     listRecordings: () => db.getAll('recordings'),
-    async getRecordingFiles(id) {
-      const files = await db.get('recordingFiles', id)
-      if (!files) return undefined
-      return {
-        midi: new Blob([files.midi], { type: 'audio/midi' }),
-        audio: new Blob(files.audio, { type: 'audio/wav' }),
-      }
-    },
+    getRecordingFiles: (id) => readTakeFiles(db, id),
     async saveRecording(info, files) {
-      // WebKit can capture and play a Blob in a session that rejects storing Blobs in IndexedDB.
-      // Read binary blocks before opening the transaction so the transaction cannot auto-commit.
-      const midi = await files.midi.arrayBuffer()
-      const audio: ArrayBuffer[] = []
-      const blockSize = 4 * 1024 * 1024
-      for (let offset = 0; offset < files.audio.size; offset += blockSize) {
-        audio.push(await files.audio.slice(offset, offset + blockSize).arrayBuffer())
-      }
-      const tx = db.transaction(['recordings', 'recordingFiles'], 'readwrite')
-      await runTx(tx, async () => {
-        await tx.objectStore('recordings').put(info)
-        await tx.objectStore('recordingFiles').put({ midi, audio }, info.id)
-      })
+      // WebKit can capture and play a Blob in a session that rejects storing Blobs in IndexedDB,
+      // so the audio is stored as ArrayBuffer blocks read from the Blob one at a time.
+      await writeTake(
+        db,
+        {
+          info,
+          midi: await files.midi.arrayBuffer(),
+          type: files.audio.type || RECORDING_AUDIO_TYPE,
+          audio: blobBlocks(files.audio),
+          bytes: files.audio.size,
+        },
+        now,
+      )
     },
-    async deleteRecording(id) {
-      const tx = db.transaction(['recordings', 'recordingFiles'], 'readwrite')
-      await runTx(tx, async () => {
-        await tx.objectStore('recordings').delete(id)
-        await tx.objectStore('recordingFiles').delete(id)
-      })
-    },
+    deleteRecording: (id) => deleteTake(db, id),
+    recordingsSummary: () => summarizeTakes(db),
     getLayout: (key) => layouts.get(key),
     putLayout: (key, scoreVersionId, value, approxBytes) => layouts.put(key, scoreVersionId, value, approxBytes),
     clearLayouts: (scoreVersionId) => layouts.clear(scoreVersionId),
     layoutCacheStats: () => layouts.stats(),
 
-    async exportAll() {
+    async exportAll(exportOptions = {}) {
       await settleHistory()
       // The zip layer is a separate chunk, fetched only when the player exports or restores.
       const { exportBackup } = await import('./backup')
       return exportBackup(db, {
         ...(options.appVersion !== undefined ? { appVersion: options.appVersion } : {}),
         ...(options.now ? { now: options.now() } : {}),
+        ...(exportOptions.includeRecordings !== undefined
+          ? { includeRecordings: exportOptions.includeRecordings }
+          : {}),
       })
     },
-    async restore(bytes, restoreOptions) {
+    async restore(source, restoreOptions = {}) {
       await settleHistory()
       const { restoreBackup } = await import('./backup')
       try {
-        return await restoreBackup(db, bytes, restoreOptions)
+        return await restoreBackup(db, source, { now, ...restoreOptions })
       } finally {
         history.forget()
       }

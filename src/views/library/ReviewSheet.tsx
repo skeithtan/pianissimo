@@ -112,7 +112,7 @@ function ReviewForm({
         changes.hands && changes.tempo
           ? msg('hands and practice tempo')
           : changes.hands
-            ? 'hands'
+            ? msg('hands')
             : msg('practice tempo')
       pushNotice({ kind: 'success', text: msg('Saved the {0} of “{1}”.', what, piece.title) })
       onClose()

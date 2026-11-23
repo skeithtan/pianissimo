@@ -1,3 +1,4 @@
+import { importMessage } from '../../i18n/importMessage'
 import { msg } from '../../i18n/messages'
 /**
  * Practice timeline: the learner's required onset groups for one hand selection and passage,
@@ -468,7 +469,7 @@ export function buildTimeline(model: ScoreModel, options: TimelineOptions): Time
       region,
       message: msg(
         '{0} (bars {1}–{2}) cannot be scored yet.',
-        msg(region.message),
+        importMessage(region.message),
         barLabel(model, region.fromOcc),
         barLabel(model, region.toOcc),
       ),

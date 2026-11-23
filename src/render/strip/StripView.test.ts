@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
+import { signal } from '@preact/signals'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readMessagesWith, type Messages } from '../../i18n/messages'
 import {
   PREPARED_LAYOUT_FORMAT,
   type LabelBox,
@@ -877,6 +879,180 @@ describe('StripView sticky context and lifecycle', () => {
     v.destroy()
     views = []
     expect(host.children.length).toBe(0)
+  })
+})
+
+describe('StripView bar numbers', () => {
+  afterEach(() => readMessagesWith(() => ({ language: 'en-US', strings: {} })))
+
+  it('draws later passes in the current language, also in segments kept detached meanwhile', () => {
+    const messages = signal<Messages>({ language: 'en-US', strings: {} })
+    readMessagesWith(() => messages.value)
+    const base = testLayout(40)
+    const layout: PreparedLayout = {
+      ...base,
+      occurrences: base.occurrences.map((o) =>
+        o.occ === 1
+          ? { ...o, label: '2 (pass 2)', number: '2', pass: 2 }
+          : o.occ === 2
+            ? { ...o, label: '3 (pass 2)' } // cached before the parts were kept: drawn as stored
+            : o,
+      ),
+    }
+    const v = new StripView(host, layout)
+    views.push(v)
+    v.flushNow()
+    const texts = () => [...host.querySelectorAll('.pn-mnum')].slice(0, 3).map((t) => t.textContent)
+    expect(texts()).toEqual(['1', '2 (pass 2)', '3 (pass 2)'])
+    const french = { language: 'fr-FR', strings: { '{0} (pass {1})': '{0} (passage {1})' } } as const
+    messages.value = french
+    expect(texts()).toEqual(['1', '2 (passage 2)', '3 (pass 2)'])
+    // Away (the first segment goes to the detached cache), a language change, and back.
+    v.setCursor(30, { smooth: false })
+    v.flushNow()
+    expect(host.querySelector('[data-n="2"]')).toBeNull()
+    messages.value = { language: 'en-US', strings: {} }
+    const parsed = v.stats().parsedSegments
+    v.setCursor(0, { smooth: false })
+    v.flushNow()
+    expect(v.stats().parsedSegments).toBe(parsed) // re-attached, not rebuilt
+    expect(texts()).toEqual(['1', '2 (pass 2)', '3 (pass 2)'])
+  })
+})
+
+describe('StripView pinned opening during glides (U125)', () => {
+  // The opening clef/key/meter starts 20 px into the content; the context is 60 px wide, fade 32.
+  const OPENING_X = 20
+  const END = 60 + 32
+
+  function pinnedView(): { v: StripView; layout: PreparedLayout } {
+    const base = testLayout(40)
+    const layout: PreparedLayout = {
+      ...base,
+      contextChanges: [{ x: 0, occ: 0, context: 0, glyphEnd: 90, openingX: OPENING_X }],
+    }
+    const v = new StripView(host, layout)
+    views.push(v)
+    v.flushNow()
+    return { v, layout }
+  }
+
+  const content = () => host.querySelector<HTMLElement>('.pn-content')!
+  const stickyX = () => transformX(host.querySelector('.pn-sticky-inner')!)
+  const maskX = (el: string) => parseFloat(host.querySelector<HTMLElement>(el)!.style.maskPosition)
+  const root = () => host.querySelector('.pn-strip')!
+  const at = (t: number) => vi.spyOn(performance, 'now').mockReturnValue(t)
+
+  /** On every frame: the block at max(edge, its engraved place), the masks slid to match. */
+  function expectPinnedFrame(): void {
+    const tx = transformX(content())
+    const offset = Math.max(0, tx + OPENING_X)
+    expect(stickyX()).toBeCloseTo(offset, 1)
+    const shift = -END * Math.min(1, offset / 32)
+    expect(maskX('.pn-stage')).toBeCloseTo(shift, 1)
+    expect(maskX('.pn-sticky-staff')).toBeCloseTo(shift, 1)
+  }
+
+  it('draws a seek that pins the opening frame by frame, without reading layout', () => {
+    const { v } = pinnedView()
+    // Position 0: the music at 210 px, the opening at 230 px (not pinned).
+    expect(transformX(content())).toBe(210)
+    expect(stickyX()).toBe(230)
+    expect(host.querySelector<HTMLElement>('.pn-sticky-staff')!.style.width).toBe(`${END}px`)
+    at(1000)
+    v.setCursor(2)
+    v.flushNow()
+    // Driven here: no CSS transition on the music, which starts where it was.
+    expect(root().classList.contains('pn-instant')).toBe(true)
+    expect(transformX(content())).toBe(210)
+    expectPinnedFrame()
+    const rect = vi.mocked(HTMLElement.prototype.getBoundingClientRect)
+    const reads = rect.mock.calls.length
+    const style = vi.spyOn(window, 'getComputedStyle')
+    const seen: number[] = []
+    for (const t of [1010, 1025, 1040, 1060, 1100, 1150]) {
+      at(t)
+      v.flushFrame()
+      seen.push(transformX(content()))
+      expect(root().classList.contains('pn-instant')).toBe(true)
+      expectPinnedFrame()
+    }
+    expect(rect.mock.calls.length).toBe(reads)
+    expect(style).not.toHaveBeenCalled()
+    // It moves on a curve toward the target (−190 px) and passes the pin point on the way.
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeLessThan(seen[i - 1]!)
+    expect(seen[0]).toBeGreaterThan(-OPENING_X)
+    expect(seen.at(-1)).toBeLessThan(-OPENING_X)
+    // Landed: at the target, then the next frame lets CSS take over again.
+    at(1181)
+    v.flushFrame()
+    expect(transformX(content())).toBe(-190)
+    expect(stickyX()).toBe(0)
+    expect(maskX('.pn-stage')).toBe(0)
+    at(1200)
+    v.flushFrame()
+    expect(root().classList.contains('pn-instant')).toBe(false)
+  })
+
+  it('releases the opening on a seek back to the start, frame by frame', () => {
+    const { v } = pinnedView()
+    v.setCursor(2, { smooth: false })
+    v.flushNow()
+    expect(stickyX()).toBe(0)
+    at(2000)
+    v.setCursor(0)
+    v.flushNow()
+    for (const t of [2015, 2030, 2050, 2080, 2120, 2170, 2200]) {
+      at(t)
+      v.flushNow()
+      expectPinnedFrame()
+    }
+    expect(transformX(content())).toBe(210)
+    expect(stickyX()).toBe(230)
+    expect(maskX('.pn-stage')).toBe(-END)
+  })
+
+  it('leaves a glide that keeps the opening pinned to the CSS transition', () => {
+    const { v } = pinnedView()
+    v.setCursor(10, { smooth: false })
+    v.flushNow()
+    at(3000)
+    v.setCursor(12)
+    v.flushNow()
+    expect(root().classList.contains('pn-instant')).toBe(false)
+    expect(transformX(content())).toBe(300 - (50 + 12 * MEASURE + 40))
+    expect(stickyX()).toBe(0)
+  })
+
+  it('pans a wrap back to bar 1 frame by frame and keeps its timing while the transport moves on', () => {
+    const { v } = pinnedView()
+    v.setCursor(3, { smooth: false })
+    v.flushNow()
+    const from = transformX(content())
+    at(4000)
+    v.wrapTo(0)
+    v.flushNow()
+    expect(root().classList.contains('pn-wrap')).toBe(true)
+    expect(root().classList.contains('pn-instant')).toBe(true)
+    expect(transformX(content())).toBe(from)
+    at(4100)
+    v.flushNow()
+    const mid = transformX(content())
+    expect(mid).toBeGreaterThan(from)
+    expect(mid).toBeLessThan(210)
+    expectPinnedFrame()
+    // The transport moves on from the loop start: the pan continues on its own clock.
+    v.setCursor(0.02, { smooth: false })
+    at(4200)
+    v.flushNow()
+    expect(root().classList.contains('pn-instant')).toBe(true)
+    expect(transformX(content())).toBeGreaterThan(mid)
+    expectPinnedFrame()
+    at(4330)
+    v.flushNow()
+    const path = (v as unknown as { path: { smoothAt(p: number): number } }).path
+    expect(transformX(content())).toBeCloseTo(300 - path.smoothAt(0.02), 1)
+    expectPinnedFrame()
   })
 })
 

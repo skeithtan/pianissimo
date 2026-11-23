@@ -78,3 +78,9 @@ export function byLabel(root: ParentNode, label: string): HTMLElement | null {
     null
   )
 }
+
+/** The button starts with the red record icon (a circle filled with the danger color). */
+export function hasRecordIcon(button: HTMLElement | null): boolean {
+  const circle = button?.querySelector('svg:first-child > circle:only-child')
+  return circle?.getAttribute('style')?.includes('fill: var(--danger)') ?? false
+}

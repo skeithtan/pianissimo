@@ -2,6 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HandSelection } from '../core/model/score'
 import { byLabel, click, mount, type Mounted } from '../views/shared/testing'
+import { untranslatedText, usePseudoCatalog } from '../views/shared/catalogTesting'
+import { msg } from '../i18n/messages'
 import { HandToggles, handsFromToggles, playButtonLabel } from './HandToggles'
 
 let view: Mounted | null = null
@@ -129,5 +131,25 @@ describe('<HandToggles>', () => {
     click(left)
     expect(onHandsChange).not.toHaveBeenCalled()
     expect(onHandsUnavailable).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('<HandToggles> translation coverage', () => {
+  it('shows no text that bypasses the catalogs', () => {
+    const restore = usePseudoCatalog()
+    try {
+      for (const hands of ['both', 'left', 'right', 'none'] as const) {
+        const { root } = setup(hands)
+        expect(untranslatedText(root)).toEqual([])
+        view?.unmount()
+      }
+      const { root } = setup('both', {
+        handsUnavailable: msg('Piano not connected'),
+        onHandsUnavailable: () => undefined,
+      })
+      expect(untranslatedText(root)).toEqual([])
+    } finally {
+      restore()
+    }
   })
 })

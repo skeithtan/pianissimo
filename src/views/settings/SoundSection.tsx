@@ -1,4 +1,4 @@
-import { msg } from '../../i18n/messages'
+import { msg, percentage } from '../../i18n/messages'
 /**
  * Sound (spec "Listening and hand practice", DECISIONS S4): where Listen and the accompaniment
  * play. Auto (default) uses the connected piano when there is one and this device otherwise;
@@ -14,7 +14,7 @@ import { Notice, Segmented, Slider, Toggle } from '../../ui/controls'
 import { Group, Help, Setting } from './parts'
 import { MetronomeOutputSettings } from './MetronomeOutputSettings'
 
-const percent = (v: number): string => `${Math.round(v * 100)}%`
+const percent = (v: number): string => percentage(Math.round(v * 100) / 100)
 
 const DESTINATIONS = [
   { value: 'auto', label: 'Auto' },

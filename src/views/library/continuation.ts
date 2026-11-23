@@ -3,6 +3,7 @@ import type { ScoreModel } from '../../core/model/score'
 import { beatText, describePassage, normalizePassage, positionText } from '../../core/model/passage'
 import { cmp, isZero, ZERO, type Rational } from '../../core/music/rational'
 import type { PieceRecord } from '../../core/storage/records'
+import { formatSpeedPercent } from '../../ui/speed'
 import { formatLastSpeed, formatRelativeTime } from './format'
 
 /** An import alone is not a practice session, even though it receives a last-opened time. */
@@ -73,6 +74,7 @@ export function continuationContext(piece: PieceRecord, score: ScoreModel | null
           : msg('Saved position')
   }
   const parts = [position, msg(HANDS[piece.lastHands])]
-  if (piece.lastMultiplier !== 1) parts.push(formatLastSpeed(piece.lastMultiplier))
+  if (formatSpeedPercent(piece.lastMultiplier) !== formatSpeedPercent(1))
+    parts.push(formatLastSpeed(piece.lastMultiplier))
   return parts.join(' · ')
 }

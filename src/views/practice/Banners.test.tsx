@@ -4,11 +4,15 @@ import { act } from 'preact/test-utils'
 import type { AttemptSummary, GuideState, PracticeSession, SessionUi } from '../../app/session'
 import { Store } from '../../app/session/store'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
+import en from '../../i18n/locales/en-US.json'
+import fr from '../../i18n/locales/fr-FR.json'
+import { readMessagesWith } from '../../i18n/messages'
 import { $, byLabel, byText, click, mount, type Mounted } from '../shared/testing'
 import {
   AttemptResult,
   DETAILS_FOLD_MS,
   Banners,
+  QUICK_FOLD_MS,
   wrapTab,
   RESULT_FADE_MS,
   RESULT_SLIDE_MS,
@@ -301,6 +305,17 @@ describe('Banners', () => {
   })
 })
 
+describe('the result card in other languages (P5)', () => {
+  afterEach(() => readMessagesWith(() => ({ language: 'en-US', strings: {} })))
+  it('words the streak in one sentence', () => {
+    const source = en as Record<string, string>
+    const strings = Object.fromEntries(Object.entries(fr).map(([id, text]) => [source[id]!, text]))
+    readMessagesWith(() => ({ language: 'fr-FR', strings }))
+    view = mount(result({ lastResult: { ...RESULT, streak: 3 } }))
+    expect($(view.container, '[data-testid="attempt-result"]')?.textContent).toContain('3 essais sans faute de suite')
+  })
+})
+
 describe('the result card expands in place (U99)', () => {
   const toggle = () => $(view!.container, '[data-testid="result-details-toggle"]')!
   const body = () => $(view!.container, '[data-testid="result-details"]')
@@ -359,6 +374,44 @@ describe('the result card expands in place (U99)', () => {
     expect(toggle().getAttribute('aria-expanded')).toBe('true') // the session owns dismissal
   })
 
+  it('a touch swipe that opens it sends no click: the first tap inside the details still acts (P1)', () => {
+    vi.useFakeTimers()
+    const inside = vi.fn()
+    const details = () => (
+      <button type="button" data-testid="inside" onClick={inside}>
+        What you played
+      </button>
+    )
+    view = mount(result({ lastResult: RESULT }, { details }))
+    advance(50)
+    act(() => {
+      const common = { bubbles: true, pointerId: 1, isPrimary: true, pointerType: 'touch', button: 0 }
+      toggle().dispatchEvent(new PointerEvent('pointerdown', { ...common, clientX: 0, clientY: 0 }))
+      toggle().dispatchEvent(new PointerEvent('pointerup', { ...common, clientX: 2, clientY: -60 }))
+    })
+    expect(body()).not.toBeNull()
+    // A touch drag is not followed by a click; the next tap is a new gesture.
+    advance(300)
+    click($(view.container, '[data-testid="inside"]'))
+    expect(inside).toHaveBeenCalledOnce()
+    // A mouse drag is: that one click (on the pill it started on) does not toggle the card.
+    act(() => {
+      const common = { bubbles: true, pointerId: 2, isPrimary: true, pointerType: 'mouse', button: 0 }
+      toggle().dispatchEvent(new PointerEvent('pointerdown', { ...common, clientX: 0, clientY: 0 }))
+      toggle().dispatchEvent(new PointerEvent('pointerup', { ...common, clientX: 30, clientY: 0 }))
+      toggle().dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+    })
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    // And a capture lost before the release (no click follows) arms nothing either.
+    act(() => {
+      const common = { bubbles: true, pointerId: 3, isPrimary: true, pointerType: 'touch', button: 0 }
+      toggle().dispatchEvent(new PointerEvent('pointerdown', { ...common, clientX: 0, clientY: 0 }))
+      toggle().dispatchEvent(new PointerEvent('pointercancel', common))
+    })
+    click($(view.container, '[data-testid="inside"]'))
+    expect(inside).toHaveBeenCalledTimes(2)
+  })
+
   it('Escape folds it; a new result or none starts folded', () => {
     vi.useFakeTimers()
     view = mount(result({ lastResult: RESULT }))
@@ -402,7 +455,9 @@ describe('the result card expands in place (U99)', () => {
     // Wrong keys change nothing (the session keeps resultDimmed false); the first correct note:
     view.rerender(result({ lastResult: RESULT, resultDimmed: true }, { onDismiss }))
     expect(card().dataset['dimmed']).toBe('true')
-    advance(DETAILS_FOLD_MS + 1)
+    // A short fold: it never holds up the pass being played.
+    expect(body()?.dataset['phase']).toBe('leaving')
+    advance(QUICK_FOLD_MS + 1)
     expect(body()).toBeNull()
     // A tap on Hide while dimmed only brings the pill back to full strength.
     click(byLabel(card(), 'Hide result'))

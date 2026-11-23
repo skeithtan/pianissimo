@@ -38,7 +38,7 @@ export function PedalMeter({
         aria-valuemin={0}
         aria-valuemax={127}
         aria-valuenow={value}
-        aria-valuetext={`${value}, ${down ? 'down' : 'up'}`}
+        aria-valuetext={down ? msg('{0}, down', value) : msg('{0}, up', value)}
       >
         <div class={styles.meterFill} style={{ transform: `scaleX(${value / 127})` }} />
         <div

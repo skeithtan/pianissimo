@@ -103,8 +103,13 @@ test.describe('practice assistance and repeat', () => {
     await expect(group.getByRole('radio', { name: 'Off' })).toHaveAttribute('aria-checked', 'true')
     await expect(labels(page)).toHaveCount(0)
 
+    await page.locator('.pn-strip').evaluate((el) => el.setAttribute('data-probe', 'tight'))
     await group.getByRole('radio', { name: 'All' }).click()
     await expect(group.getByRole('radio', { name: 'All' })).toHaveAttribute('aria-checked', 'true')
+    // The roomy engraving has replaced the tight one, and its notes have arrived: only then can a
+    // press on the score not fall on the outgoing view.
+    await expect(page.locator('.pn-strip[data-probe]')).toHaveCount(0)
+    await expect(page.locator('.pn-strip.pn-respacing')).toHaveCount(0)
     await expect(labels(page).first()).toBeVisible()
     await expect(labels(page).filter({ hasText: /^C4$/ })).toHaveCount(1)
     await expect(labels(page).filter({ hasText: /^D5$/ })).toHaveCount(1)
@@ -279,7 +284,7 @@ test.describe('practice assistance and repeat', () => {
 
 test.describe('practice without a piano', () => {
   // No fake Web MIDI here: headless browsers have none, like a device with no piano.
-  test('Listen plays through this device (Auto, S4); the hands stay available for the microphone (P22)', async ({
+  test('Listen plays through this device (Auto, S4); the hands are off and unavailable (U27, U105)', async ({
     page,
   }) => {
     const samples: string[] = []
@@ -288,14 +293,12 @@ test.describe('practice without a piano', () => {
     })
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
     await openSeededPractice(page)
-    // Without a piano a hand plays through the microphone (P22): the hands stay selectable and
-    // the main button reads Start. Both hands off is Listen, as ever.
+    // Without a piano Practice offers Listen only, with or without a microphone: following the
+    // learner's playing with a microphone belongs to Sheet music (U105).
     const left = page.getByRole('button', { name: 'Left hand' })
-    await expect(left).toHaveAttribute('aria-pressed', 'true')
-    await expect(left).not.toHaveAttribute('aria-disabled', 'true')
-    await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeEnabled()
-    await left.click()
-    await page.getByRole('button', { name: 'Right hand' }).click()
+    await expect(left).toHaveAttribute('aria-pressed', 'false')
+    await expect(left).toHaveAttribute('aria-disabled', 'true')
+    await expect(page.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-disabled', 'true')
     const listen = page.getByRole('button', { name: 'Listen', exact: true })
     await expect(listen).toBeEnabled()
     expect(samples).toEqual([]) // nothing is fetched before the gesture
@@ -319,7 +322,7 @@ test.describe('practice without a piano', () => {
     await expect(left).toHaveAttribute('aria-disabled', 'true')
     await expect(page.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-disabled', 'true')
     await left.click({ force: true })
-    await expect(page.getByText(/Connect a piano to play a hand yourself/)).toBeVisible()
+    await expect(page.getByText(/Connect a piano to practice a hand/)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Listen', exact: true })).toBeEnabled()
   })
 })

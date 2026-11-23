@@ -5,8 +5,11 @@ import { handAssignmentId } from '../../core/model/practice'
 import { hasTempo, tempoMapId } from '../../core/music/tempo'
 import { detectAppleMobile } from './deps'
 import { formatBytes, formatLastSpeed, formatRelativeTime, plural } from './format'
+import type { SummaryVoice } from '../../core/import/summary'
+import { useCatalog } from '../shared/catalogTesting'
 import {
   defaultBeatUnit,
+  describeCrossStaff,
   describeStaffUse,
   finalizeImport,
   finalizeStoredReview,
@@ -226,5 +229,35 @@ describe('review of a stored piece (L5)', () => {
     const piece = await stored('two-hands.musicxml')
     const draft = storedDraft(piece.summary, piece.model, undefined)
     expect(storedReviewChanges(piece.summary, { ...draft, bpmText: '200' }, undefined).tempo).toBe(false)
+  })
+})
+
+describe('cross-staff notes in one sentence', () => {
+  const voice = (away: number, bars: string[]): SummaryVoice => ({
+    key: 'P1:1',
+    partId: 'P1',
+    partName: 'Piano',
+    voice: '1',
+    hand: 'R',
+    notesPerStaff: { 0: 12, 1: away },
+    homeStaff: 0,
+    crossStaffBars: bars,
+    ambiguous: false,
+  })
+
+  it.each([
+    ['en-US', 1, ['3'], '1 note written on the lower staff in bar 3'],
+    ['en-US', 6, ['3', '7'], '6 notes written on the lower staff in bars 3, 7'],
+    ['fr-FR', 1, ['3'], '1 note écrite sur la portée inférieure dans la mesure 3'],
+    ['fr-FR', 6, ['3', '7'], '6 notes écrites sur la portée inférieure dans les mesures 3, 7'],
+    ['ja-JP', 1, ['3'], '第3小節では1音が下段に記譜されています'],
+    ['ja-JP', 6, ['3', '7'], '第3, 7小節では6音が下段に記譜されています'],
+  ] as const)('%s: %i note(s) in bars %j', (language, away, bars, expected) => {
+    const restore = useCatalog(language)
+    try {
+      expect(describeCrossStaff(voice(away, [...bars]), 2)).toBe(expected)
+    } finally {
+      restore()
+    }
   })
 })

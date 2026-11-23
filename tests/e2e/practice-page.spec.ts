@@ -9,12 +9,13 @@ import { DEFAULT_SETTINGS, type AppSettings } from '../../src/core/model/setting
 import { newPieceRecord } from '../../src/core/storage/records'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { importBytes } from '../unit/import/fixtures'
+import { storedSettings } from './app-helpers'
 import { SHOT_DIR, installFakeMidi, play } from './practice-helpers'
 
 const PIECE_ID = 'e2e-page'
 const TITLE = 'Page Mode Etude'
 
-async function seedLongPiece(page: Page): Promise<number[]> {
+async function seedLongPiece(page: Page, settingsPatch: Partial<AppSettings> = {}): Promise<number[]> {
   const built = await importBytes('page.musicxml', new TextEncoder().encode(generateLongScore(24)))
   const piece = { ...newPieceRecord(built.package, { id: PIECE_ID, now: Date.now() }), title: TITLE }
   const settings: AppSettings = {
@@ -28,6 +29,7 @@ async function seedLongPiece(page: Page): Promise<number[]> {
       outputVerified: true,
       echo: 'none',
     },
+    ...settingsPatch,
   }
   await page.goto('./')
   await expect
@@ -97,6 +99,12 @@ async function playDueTargets(page: Page, pitches: readonly number[]): Promise<v
 
 const cursorBox = (page: Page) => page.locator('.pn-page .pn-cursor-bar').boundingBox()
 const scrollTop = (page: Page) => page.getByTestId('page-scroll').evaluate((el) => el.scrollTop)
+/** Where the page rests: its scroll offset, and the first system's top below the viewport's top (px). */
+const restingPlace = (page: Page) =>
+  page.getByTestId('page-scroll').evaluate((el) => {
+    const tops = [...document.querySelectorAll('.pn-page .pn-seg')].map((seg) => seg.getBoundingClientRect().top)
+    return { scrollTop: el.scrollTop, systemTop: Math.round(Math.min(...tops) - el.getBoundingClientRect().top) }
+  })
 
 test.describe('practice page mode (portrait)', () => {
   test.beforeEach(async ({ page }) => {
@@ -158,18 +166,25 @@ test.describe('practice page mode (portrait)', () => {
 
     const chromeHeights = () =>
       page.evaluate(() =>
-        ['practice-header-slot', 'footer-tools-slot'].map((id) =>
+        ['practice-header', 'footer-tools-slot'].map((id) =>
           Math.round(document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect().height),
         ),
       )
     const expandedChrome = await chromeHeights()
+    // The first system rests whole at the top of the page, right under the timing cue's reserved row.
+    const rest = await restingPlace(page)
+    expect(rest.systemTop).toBeGreaterThanOrEqual(0)
+    expect(rest.systemTop).toBeLessThan((await page.getByTestId('page-scroll').boundingBox())!.height / 4)
     await page.getByRole('button', { name: 'Start', exact: true }).click()
-    // Focus mode deliberately grows the score viewport. Measure stationary-system behavior
-    // after that transition, so the check still catches unwanted scrolling during the line.
+    // Focus mode on a tablet keeps the header (U93 revised) and this footer's one row: the score's
+    // viewport keeps its size. Measure stationary-system behavior once focus mode is on, so the
+    // check still catches unwanted scrolling during the line.
     await expect(page.locator('[data-activity]')).toHaveAttribute('data-recede', 'true')
-    await expect.poll(chromeHeights).toEqual([0, 0])
+    await page.waitForTimeout(400)
+    expect(await chromeHeights()).toEqual(expandedChrome)
     const before = (await cursorBox(page))!
-    expect(await scrollTop(page)).toBe(0)
+    // Starting moves nothing: the cue row is reserved in every phase.
+    expect(await restingPlace(page)).toEqual(rest)
     await playDueTargets(page, pitches)
     await playDueTargets(page, pitches)
     await playDueTargets(page, pitches)
@@ -177,7 +192,7 @@ test.describe('practice page mode (portrait)', () => {
     const after = (await cursorBox(page))!
     // Same system: the bar did not move vertically, and the page did not scroll.
     expect(Math.abs(after.y - before.y)).toBeLessThan(1)
-    expect(await scrollTop(page)).toBe(0)
+    expect(await restingPlace(page)).toEqual(rest)
     await page.screenshot({ path: join(SHOT_DIR, `${browserName}-page-playing.png`) })
 
     // Pause, then seek to a late bar from the overview: the page scrolls to its system, which
@@ -193,6 +208,83 @@ test.describe('practice page mode (portrait)', () => {
     expect(bar.y + bar.height / 2).toBeGreaterThan(stage.y)
     expect(bar.y + bar.height / 2).toBeLessThan(stage.y + stage.height)
     await page.screenshot({ path: join(SHOT_DIR, `${browserName}-page-seek.png`) })
+  })
+})
+
+/**
+ * How far the page scrolls sideways, and the current system's first and last noteheads against the
+ * page's viewport (px inside its left and right edges): the system under the cursor bar.
+ */
+const systemInView = (page: Page) =>
+  page.evaluate(() => {
+    const scroller = document.querySelector('.pn-page-scroll')!
+    const box = scroller.getBoundingClientRect()
+    const bar = document.querySelector('.pn-page .pn-cursor-bar')!.getBoundingClientRect()
+    const heads = [...document.querySelectorAll('.pn-page .pn-music [data-n]')]
+      .map((el) => el.getBoundingClientRect())
+      .filter((r) => r.top + r.height / 2 >= bar.top && r.top + r.height / 2 <= bar.bottom)
+    return {
+      heads: heads.length,
+      width: box.width,
+      firstIn: Math.min(...heads.map((r) => r.left)) - box.left,
+      lastIn: box.right - Math.max(...heads.map((r) => r.right)),
+      sideways: scroller.scrollWidth - scroller.clientWidth,
+      scrollLeft: scroller.scrollLeft,
+    }
+  })
+
+/** Polls until the page has settled, then checks that nothing of the system is cut off sideways. */
+async function expectWholeSystem(page: Page, viewportWidth: number): Promise<void> {
+  await expect(page.getByTestId('score-skeleton')).toHaveCount(0, { timeout: 60_000 })
+  await expect(page.locator('.pn-page-content')).toHaveCount(1, { timeout: 60_000 })
+  await expect.poll(async () => (await systemInView(page)).heads).toBeGreaterThan(1)
+  const now = await systemInView(page)
+  expect(now.width).toBe(viewportWidth)
+  expect(now.sideways).toBeLessThanOrEqual(0)
+  expect(now.scrollLeft).toBe(0)
+  expect(now.firstIn).toBeGreaterThan(0)
+  expect(now.lastIn).toBeGreaterThan(0)
+}
+
+test.describe('a tablet held upright always shows whole systems (R17)', () => {
+  const UPRIGHT = { width: 834, height: 1194 }
+  const ON_ITS_SIDE = { width: 1194, height: 834 }
+  test.use({ viewport: UPRIGHT, hasTouch: true })
+
+  test('the page never scrolls sideways, at the largest zoom and after turning the tablet and back', async ({
+    page,
+  }) => {
+    await installFakeMidi(page)
+    // Every note named: at the largest zoom a bar alone needs more than the page's width.
+    await seedLongPiece(page, { labels: { ...DEFAULT_SETTINGS.labels, mode: 'all' } })
+    await page.getByRole('button', { name: `Practice ${TITLE}` }).click()
+    await expect(page.locator('.pn-page')).toBeVisible({ timeout: 60_000 })
+    await expectWholeSystem(page, UPRIGHT.width)
+
+    // A pinch in (here its trackpad form, a ctrl-wheel) to the largest page zoom re-engraves the
+    // page at the width that zoom means.
+    await page.locator('.pn-page-content').evaluate((el) => el.setAttribute('data-probe', 'before'))
+    const box = (await page.locator('.pn-page-scroll').boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 3)
+    await page.keyboard.down('Control')
+    for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -120)
+    await page.keyboard.up('Control')
+    await expect.poll(async () => (await storedSettings(page))?.['view']?.['pageZoom']).toBe(2.5)
+    await expect(page.locator('.pn-page-content[data-probe="before"]')).toHaveCount(0, { timeout: 60_000 })
+    await expectWholeSystem(page, UPRIGHT.width)
+
+    // Turned on its side (the strip) and back: the zoom is kept and the system is still whole.
+    await page.setViewportSize(ON_ITS_SIDE)
+    await expect(page.getByTestId('strip-host')).toHaveAttribute('data-mode', 'strip')
+    await expect(page.getByTestId('score-skeleton')).toHaveCount(0, { timeout: 60_000 })
+    await expect(page.locator('.pn-strip:not(.pn-page)')).toBeVisible({ timeout: 60_000 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
+
+    await page.setViewportSize(UPRIGHT)
+    await expect(page.getByTestId('strip-host')).toHaveAttribute('data-mode', 'page')
+    await expect(page.locator('.pn-page')).toBeVisible({ timeout: 60_000 })
+    await expectWholeSystem(page, UPRIGHT.width)
+    expect((await storedSettings(page))?.['view']?.['pageZoom']).toBe(2.5)
   })
 })
 

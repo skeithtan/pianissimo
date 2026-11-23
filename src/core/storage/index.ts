@@ -1,5 +1,8 @@
 export { deleteStorage, openStorage } from './storage'
-export type { PianissimoStorage, StorageOptions } from './storage'
+export type { ExportAllOptions, PianissimoStorage, StorageOptions } from './storage'
+export { RECORDING_BLOCK_BYTES } from './recordings'
+export type { RecordingsSummary } from './recordings'
+export type { ZipSource } from './zipio'
 export { DB_VERSION, DEFAULT_DB_NAME } from './schema'
 export { newId, newPieceRecord } from './records'
 export type {
@@ -23,7 +26,7 @@ export { LayoutCache } from './layoutCache'
 export type { LayoutCacheStats } from './layoutCache'
 export { BACKUP_EXTENSION, BACKUP_FORMAT, BACKUP_FORMAT_VERSION, backupFileName } from './backupFormat'
 export type { BackupCounts, BackupManifest } from './backupFormat'
-export type { MergeCounts, RestoreOptions, RestoreReport, RestoredStore } from './backup'
+export type { MergeCounts, RecordingCounts, RestoreOptions, RestoreReport, RestoredStore } from './backup'
 export { BackupError } from './errors'
 export type { BackupErrorCode } from './errors'
 export {

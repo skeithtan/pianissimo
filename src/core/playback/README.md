@@ -19,6 +19,7 @@ createTransport({ clock, timers?, tempo, multiplier, events, gates, range, backe
   metronome?: { sink, clicks, enabled? }, onGateReached?, onRangeEnd?, onInterrupted?, onEmit? }): Transport
 Transport: state, holdingGate, multiplier, play(at?), pause(), stop(), seek(pos), setMultiplier(m),
   releaseGate(i), positionNow(), msUntilGate(i, atTime), msUntilPosition(pos, atTime),
+  shiftMs /* real ms musical time runs behind the last play(at): a late start plus every stall */,
   setMetronomeEnabled(b), interrupt(), stopSound(), dispose()
 
 // Backends

@@ -258,8 +258,14 @@ export function describeCrossStaff(v: SummaryVoice, staffCount: number): string 
     .filter((staff) => staff !== v.homeStaff && (v.notesPerStaff[staff] ?? 0) > 0)
   const where = staves.length === 1 ? staffName(staves[0]!, staffCount) : msg('other staves')
   const bars = v.crossStaffBars
-  const barText = `${bars.length === 1 ? msg('bar') : msg('bars')} ${bars.slice(0, 6).join(', ')}${bars.length > 6 ? ', …' : ''}`
-  return msg('{0} {1} written on {2} in {3}', away, away === 1 ? msg('note') : msg('notes'), where, barText)
+  const list = `${bars.slice(0, 6).join(', ')}${bars.length > 6 ? ', …' : ''}`
+  if (away === 1)
+    return bars.length === 1
+      ? msg('{0} note written on {1} in bar {2}', away, where, list)
+      : msg('{0} note written on {1} in bars {2}', away, where, list)
+  return bars.length === 1
+    ? msg('{0} notes written on {1} in bar {2}', away, where, list)
+    : msg('{0} notes written on {1} in bars {2}', away, where, list)
 }
 
 export interface HandLine {

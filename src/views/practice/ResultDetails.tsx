@@ -10,6 +10,7 @@ import { msg, messageLanguage } from '../../i18n/messages'
  * passes sit below the corrections. Nothing here
  * navigates: a history row shows that pass's numbers in the card; an excerpt is only a picture.
  */
+import { memo } from 'preact/compat'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { AttemptSummary, SnippetState } from '../../app/session'
 import type { SnippetKind } from '../../app/session/snippets'
@@ -27,7 +28,7 @@ import { ScorecardPanel } from '../results/ScorecardPanel'
 import { loadResultsData, type ResultsData } from '../results/data'
 import { handsAndSpeed } from '../results/format'
 import { deriveResults, passageText } from '../results/model'
-import { passFacts, wrongText } from './format'
+import { passFacts } from './format'
 import type { ResultDetailsProps } from './resultDetailsTypes'
 import { TimingBarPlot } from './TimingBarPlot'
 import { buildTimingReview, timingBarDetail, timingBarTitle, type TimingReviewData } from './timingReview'
@@ -83,17 +84,21 @@ export function ResultDetails(p: ResultDetailsProps) {
   const playing = useStore(p.session.snippet)
   const session = p.session
   useEffect(() => () => session.stopSnippet(), [session])
-  const listen: Listen = {
-    playing,
-    blocked: (occ, kind) => session.snippetBlocked(p.result.id, occ, kind),
-    toggle: (occ, kind) => {
-      if (playing?.occ === occ && playing.kind === kind) {
-        session.stopSnippet()
-        return Promise.resolve(null)
-      }
-      return session.playSnippet(p.result.id, occ, kind)
-    },
-  }
+  // One toggle for every card, so a card re-renders only when its own props change.
+  const latest = useRef({ playing, session, id: p.result.id })
+  latest.current = { playing, session, id: p.result.id }
+  const toggle = useMemo(
+    () =>
+      (occ: number, kind: SnippetKind): Promise<string | null> => {
+        const { playing: now, session: s, id } = latest.current
+        if (now?.occ === occ && now.kind === kind) {
+          s.stopSnippet()
+          return Promise.resolve(null)
+        }
+        return s.playSnippet(id, occ, kind)
+      },
+    [],
+  )
   const excerpt = (plan: ExcerptPlan<RankedMistake>, index: number) => (
     <Excerpt
       key={plan.occ}
@@ -102,8 +107,13 @@ export function ResultDetails(p: ResultDetailsProps) {
       model={p.model}
       naming={p.naming}
       measurer={measurer}
-      listen={listen}
+      sounding={playing?.occ === plan.occ ? playing : null}
+      blockedPlayed={session.snippetBlocked(p.result.id, plan.occ, 'played')}
+      blockedWritten={session.snippetBlocked(p.result.id, plan.occ, 'written')}
+      onListen={toggle}
       timing={timing}
+      // Every affected bar stays in the list (U108); its notation is mounted only near the view.
+      virtual={hasTimingCorrections}
       deferMusic={hasTimingCorrections && index >= EXCERPT_LIMIT}
     />
   )
@@ -140,12 +150,11 @@ export function ResultDetails(p: ResultDetailsProps) {
         </Button>
       ) : null}
       <div class={styles.folds}>
-        {timing && !hasTimingCorrections ? (
+        {/* Only when scoring agrees: a group it counted early, late or missed is not "near the beat". */}
+        {timing && !hasTimingCorrections && !timing.scoredOff ? (
           <details class={styles.fold} data-testid="timing-review-steady">
             <summary>{msg('Timing strip')}</summary>
-            <p class={styles.muted}>
-              {msg('All measured attacks were within')} {timing.nearBeat} {msg('ms of the beat.')}
-            </p>
+            <p class={styles.muted}>{msg('All measured attacks were within {0} ms of the beat.', timing.nearBeat)}</p>
           </details>
         ) : null}
         <Earlier pieceId={p.pieceId} attemptId={p.result.id} {...(p.loadHistory ? { load: p.loadHistory } : {})} />
@@ -154,13 +163,8 @@ export function ResultDetails(p: ResultDetailsProps) {
   )
 }
 
-/** The excerpts' playback controls (U100). */
-interface Listen {
-  readonly playing: SnippetState | null
-  blocked(occ: number, kind: SnippetKind): string | null
-  /** Plays (or stops, when it is the one playing); resolves with why it did not play. */
-  toggle(occ: number, kind: SnippetKind): Promise<string | null>
-}
+/** Plays (or stops, when it is the one playing) a bar's snippet; resolves with why it did not play. */
+type ListenToggle = (occ: number, kind: SnippetKind) => Promise<string | null>
 
 const SNIPPET_LABEL: Readonly<Record<SnippetKind, string>> = {
   played: 'What you played',
@@ -172,11 +176,26 @@ const SNIPPET_LABEL: Readonly<Record<SnippetKind, string>> = {
  * from the score at the pass's speed). The one sounding shows Stop; a short line says why one
  * cannot play, or that long pauses were shortened.
  */
-function ListenControls({ occ, bar, listen }: { occ: number; bar: string; listen: Listen }) {
+function ListenControls({
+  occ,
+  bar,
+  sounding,
+  blockedPlayed,
+  blockedWritten,
+  onListen,
+}: {
+  occ: number
+  bar: string
+  /** This bar's snippet while it sounds, else null. */
+  sounding: SnippetState | null
+  blockedPlayed: string | null
+  blockedWritten: string | null
+  onListen: ListenToggle
+}) {
   const [refused, setRefused] = useState<string | null>(null)
   const kinds: SnippetKind[] = ['played', 'written']
-  const blocked = kinds.map((k) => listen.blocked(occ, k))
-  const on = listen.playing?.occ === occ ? listen.playing : null
+  const blocked = [blockedPlayed, blockedWritten]
+  const on = sounding
   const note = on?.shortened ? msg('Long pauses are shortened.') : (refused ?? blocked[0] ?? blocked[1])
   return (
     <div class={styles.listen} data-testid="excerpt-listen">
@@ -194,7 +213,7 @@ function ListenControls({ occ, bar, listen }: { occ: number; bar: string; listen
               data-kind={kind}
               onClick={() => {
                 setRefused(null)
-                void listen.toggle(occ, kind).then((why) => setRefused(why))
+                void onListen(occ, kind).then((why) => setRefused(why))
               }}
             >
               <Icon name={sounding ? 'stop' : 'play'} size={16} />
@@ -208,41 +227,75 @@ function ListenControls({ occ, bar, listen }: { occ: number; bar: string; listen
   )
 }
 
-/** One bar of the score with its marks, and what went wrong there in words. */
-function Excerpt({
-  plan,
-  layout,
-  model,
-  naming,
-  measurer,
-  listen,
-  timing,
-  deferMusic,
-}: {
+interface ExcerptProps {
   plan: ExcerptPlan<RankedMistake>
   layout: PreparedLayout | null
   model: ScoreModel
   naming: NamingSettings
   measurer: NonNullable<Parameters<typeof excerptMarkup>[2]>['measurer']
-  listen: Listen
+  sounding: SnippetState | null
+  blockedPlayed: string | null
+  blockedWritten: string | null
+  onListen: ListenToggle
   timing: TimingReviewData | null
+  /** A long list (every off-beat bar, U108): the notation is mounted only while near the view. */
+  virtual: boolean
+  /** Starts without its notation (further down a long list) until it comes near the view. */
   deferMusic: boolean
-}) {
+}
+
+/** Notation this far outside the scrolling list's view is mounted ahead (px above and below). */
+const EXCERPT_AHEAD_PX = 240
+
+/**
+ * One bar of the score with its marks, and what went wrong there in words. Memoized: the session's
+ * frequent updates re-render the card only when something it shows changed.
+ */
+const Excerpt = memo(function Excerpt({
+  plan,
+  layout,
+  model,
+  naming,
+  measurer,
+  sounding,
+  blockedPlayed,
+  blockedWritten,
+  onListen,
+  timing,
+  virtual,
+  deferMusic,
+}: ExcerptProps) {
   const lead = plan.items[0]
   const timedBar = timing?.bars.get(plan.occ)
   const barLabel = lead?.bar ?? timedBar!.label
   const level = lead?.level ?? 'timing'
   const timingTitle = timedBar ? timingBarTitle(timedBar) : ''
   const figure = useRef<HTMLElement>(null)
-  const [showMusic, setShowMusic] = useState(() => !deferMusic || typeof IntersectionObserver === 'undefined')
+  const observable = virtual && typeof IntersectionObserver !== 'undefined'
+  const [showMusic, setShowMusic] = useState(() => !observable || !deferMusic)
+  // The notation's height when it was last unmounted: the placeholder keeps it, so the list
+  // (and its scroll position) does not move.
+  const [musicHeight, setMusicHeight] = useState<number | null>(null)
   useEffect(() => {
-    if (showMusic || !figure.current) return
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry?.isIntersecting) setShowMusic(true)
-    })
-    observer.observe(figure.current)
+    const el = figure.current
+    if (!observable || !el) return
+    const root = el.closest('[data-testid="result-details"]')
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[entries.length - 1]
+        if (!entry) return
+        if (!entry.isIntersecting) {
+          const music = el.querySelector(`.${styles.music}`)
+          const height = music?.getBoundingClientRect().height ?? 0
+          if (height > 0) setMusicHeight(height)
+        }
+        setShowMusic(entry.isIntersecting)
+      },
+      { root, rootMargin: `${EXCERPT_AHEAD_PX}px 0px` },
+    )
+    observer.observe(el)
     return () => observer.disconnect()
-  }, [showMusic])
+  }, [observable])
   const markup = useMemo(() => {
     if (!layout || !showMusic) return null
     const marks: CorrectionMark[] = plan.items
@@ -272,9 +325,7 @@ function Excerpt({
       aria-label={msg('Bar {0}', barLabel)}
     >
       <figcaption class={styles.caption}>
-        <span class={styles.bar}>
-          {msg('Bar')} {barLabel}
-        </span>
+        <span class={styles.bar}>{msg('Bar {0}', barLabel)}</span>
         <span class={styles.reason} data-level={level}>
           {lead?.reason ?? timingTitle}
         </span>
@@ -300,8 +351,13 @@ function Excerpt({
             score
           )}
         </div>
-      ) : layout && !showMusic ? (
-        <div class={styles.musicPlaceholder} aria-hidden="true" />
+      ) : !showMusic && (layout || timedBar) ? (
+        <div
+          class={styles.musicPlaceholder}
+          data-testid="excerpt-placeholder"
+          aria-hidden="true"
+          style={musicHeight !== null ? { height: `${musicHeight}px` } : undefined}
+        />
       ) : null}
       {lines.length ? (
         <ul class={styles.lines}>
@@ -311,11 +367,7 @@ function Excerpt({
               {line.flag ? <strong class={styles.flag}> ({line.flag})</strong> : null}
             </li>
           ))}
-          {extra > 0 ? (
-            <li class={styles.muted}>
-              {msg('and')} {extra + 1} {msg('more wrong keys here')}
-            </li>
-          ) : null}
+          {extra > 0 ? <li class={styles.muted}>{msg('and {0} more wrong keys here', extra + 1)}</li> : null}
         </ul>
       ) : null}
       {timing && timedBar ? (
@@ -324,10 +376,17 @@ function Excerpt({
           {timingBarDetail(timedBar, timing.nearBeat)}
         </p>
       ) : null}
-      <ListenControls occ={plan.occ} bar={barLabel} listen={listen} />
+      <ListenControls
+        occ={plan.occ}
+        bar={barLabel}
+        sounding={sounding}
+        blockedPlayed={blockedPlayed}
+        blockedWritten={blockedWritten}
+        onListen={onListen}
+      />
     </figure>
   )
-}
+})
 
 const MARK_WORDS: Readonly<Record<string, string>> = {
   missed: 'Missed: the music moved on before it was played',
@@ -347,7 +406,8 @@ function itemLines(m: RankedMistake, model: ScoreModel, naming: NamingSettings):
 /** "Clean pass: no wrong notes and no help." or why not, in one plain sentence. */
 export function verdict(r: AttemptSummary): string {
   if (r.passed) return msg('Clean pass: no wrong notes and no help.')
-  if (r.wrongAttacks > 0) return msg('Not clean: {0}.', wrongText(r.wrongAttacks).toLowerCase())
+  if (r.wrongAttacks === 1) return msg('Not clean: 1 wrong note.')
+  if (r.wrongAttacks > 0) return msg('Not clean: {0} wrong notes.', r.wrongAttacks)
   if (r.timing && r.timing.onTime < r.timing.groups) return msg('Not clean: the timing slipped.')
   if (r.assistance === 'keyboard') return msg('Not clean: the keyboard guide helped.')
   if (r.assistance === 'names') return msg('Not clean: note names helped.')
@@ -432,10 +492,7 @@ function Earlier({
       </details>
       {model.history && model.historyCount > 1 ? (
         <details class={styles.fold} data-testid="result-history">
-          <summary>
-            {msg('Earlier passes of this loop (')}
-            {model.historyCount - 1})
-          </summary>
+          <summary>{msg('Earlier passes of this loop ({0})', model.historyCount - 1)}</summary>
           <HistoryPanel history={model.history} contextText={context} selectedId={attempt.id} onSelect={setSelected} />
         </details>
       ) : null}

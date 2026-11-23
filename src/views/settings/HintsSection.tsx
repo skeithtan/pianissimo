@@ -147,10 +147,10 @@ export function HintsSection() {
             label={msg('Hint lifetime')}
             value={lifetime}
             options={[
-              { value: '10', label: '10 s' },
-              { value: '20', label: '20 s' },
-              { value: '30', label: '30 s' },
-              { value: '60', label: '60 s' },
+              { value: '10', label: msg('{0} s', 10) },
+              { value: '20', label: msg('{0} s', 20) },
+              { value: '30', label: msg('{0} s', 30) },
+              { value: '60', label: msg('{0} s', 60) },
               { value: 'custom', label: msg('Custom') },
               { value: 'until-correct', label: msg('Until correct') },
             ]}

@@ -1,5 +1,5 @@
 import { importMessage } from '../../i18n/importMessage'
-import { msg, percentage } from '../../i18n/messages'
+import { decimal, messageLanguage, msg, percentage } from '../../i18n/messages'
 /**
  * The scorecard of one attempt (spec "Results and timing"): a transparent set of results, no
  * points total and no "missed notes" metric. Persistent score labels, temporary hints and the
@@ -67,6 +67,11 @@ function Tile({
   )
 }
 
+/** A counted noun ("3 groups"). French counts zero in the singular ("0 demande d’indice"). */
+function counted(count: number, one: string): string {
+  return count === 0 && messageLanguage().startsWith('fr') ? `${decimal(0)} ${msg(one)}` : plural(count, one)
+}
+
 function isCondition(value: unknown): value is { enabled: boolean } {
   return typeof value === 'object' && value !== null && typeof (value as { enabled?: unknown }).enabled === 'boolean'
 }
@@ -108,8 +113,8 @@ function Assistance({ attempt, card }: { attempt: AttemptRecord; card: Scorecard
           {labelsUsed
             ? msg(
                 'Revealed {0} in {1}, including labels seen in advance.',
-                plural(a.persistentLabelNotes, 'note'),
-                plural(a.persistentLabelGroups, 'group'),
+                counted(a.persistentLabelNotes, 'note'),
+                counted(a.persistentLabelGroups, 'group'),
               )
             : msg('No notes were revealed by labels.')}
         </span>
@@ -130,9 +135,9 @@ function Assistance({ attempt, card }: { attempt: AttemptRecord; card: Scorecard
           {hintsUsed
             ? msg(
                 '{0} (manual), {1}. {2} revealed.',
-                plural(a.hintRequests, 'hint request'),
-                plural(a.autoHints, 'automatic hint'),
-                plural(a.hintGroups, 'group'),
+                counted(a.hintRequests, 'hint request'),
+                counted(a.autoHints, 'automatic hint'),
+                counted(a.hintGroups, 'group'),
               )
             : msg('No hints were requested or shown automatically.')}
         </span>
@@ -208,7 +213,7 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: Scor
           value={card.wrongAttacks}
           detail={
             card.wrongAttacks === 0
-              ? msg('None')
+              ? msg('No wrong notes')
               : early !== null
                 ? msg('{0} of them too early (right key, pressed before its moment)', early)
                 : undefined
@@ -297,7 +302,7 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: Scor
           wide
           value={
             card.assistance.level === 'none'
-              ? msg('None')
+              ? msg('No assistance')
               : card.assistance.level === 'names'
                 ? msg('Note names')
                 : msg('Keyboard guide')

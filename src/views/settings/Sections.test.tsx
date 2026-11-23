@@ -5,6 +5,8 @@ import { connectionOpen, currentView, settingsOpen } from '../../app/navigation'
 import { settings, updateSettings } from '../../app/state'
 import { APP_VERSION } from '../../app/version'
 import { $, $$, byLabel, click, type, type Mounted } from '../shared/testing'
+import { useCatalog } from '../shared/catalogTesting'
+import { msg, percentage } from '../../i18n/messages'
 import { ALL_FEATURES, openOverlay, openTab, radio, resetSettingsTestState, toggle } from './testkit'
 import { SALAMANDER_LICENSE_URL } from './AboutSection'
 
@@ -373,4 +375,25 @@ describe('About', () => {
     const supported = openTab(open(ALL_FEATURES), 'About')
     expect($$(supported, '[data-supported="false"]')).toHaveLength(0)
   })
+})
+
+describe('numbers in other languages', () => {
+  it.each([
+    ['fr-FR', '10\u00a0s'],
+    ['ja-JP', '10秒'],
+  ] as const)(
+    '%s: volumes use the percent format of the language, and hint lifetimes its seconds',
+    (language, seconds) => {
+      const restore = useCatalog(language)
+      try {
+        const root = open()
+        const outputs = $$(openTab(root, msg('Sound')), 'output').map((o) => o.textContent)
+        expect(outputs).toContain(percentage(settings.value.sound.browserVolume))
+        expect(outputs).toContain(percentage(settings.value.metronome.volume))
+        expect(radio(openTab(root, msg('Hints')), msg('Hint lifetime'), seconds)).toBeTruthy()
+      } finally {
+        restore()
+      }
+    },
+  )
 })

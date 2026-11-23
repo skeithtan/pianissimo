@@ -105,8 +105,8 @@ test('dragging browses while enabled and Return to current position comes back',
   const ret = page.getByRole('button', { name: 'Return to current position' })
   await expect(ret).toBeVisible()
   await ret.click()
-  await page.evaluate(() => window.harness.strip()!.flushNow())
-  expect(await tx()).toBe(start)
+  // The return releases the pinned opening, so it glides frame by frame and lands a moment later.
+  await expect.poll(tx).toBe(start)
   const browse = await page.evaluate(() => window.harness.events.filter((e) => e.type === 'browse').map((e) => e.value))
   expect(browse).toEqual([true, false])
 })
@@ -272,83 +272,90 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     await page.setViewportSize({ width: 1194, height: 834 })
     await page.emulateMedia({ reducedMotion })
     await setup(page, 'long-500', { width: 1194, height: 500 })
-    const frames = await page.evaluate(() => {
+    const frames = await page.evaluate(async () => {
       const strip = window.harness.strip()!
       const layout = window.harness.layout()!
       const root = document.querySelector('.pn-strip')!
       const sticky = root.querySelector('.pn-sticky-inner')!
+      const staff = root.querySelector('.pn-sticky-staff')!
       const stage = root.querySelector('.pn-stage')!
       const clefs = [...sticky.querySelectorAll('.vf-clef')]
       const original = [...stage.querySelectorAll('.pn-opening-signature.vf-clef')]
       const matrix = new DOMMatrixReadOnly(getComputedStyle(root.querySelector('.pn-content')!).transform)
       const edge = root.getBoundingClientRect().left
+      // The hidden engraved clefs ride with the music: where the pinned ones belong on every frame.
       const sample = () => ({
         x: clefs.map((clef) => clef.getBoundingClientRect().left - edge),
+        engraved: original.map((clef) => clef.getBoundingClientRect().left - edge),
+        offset: sticky.getBoundingClientRect().left - edge,
         visible: clefs.every((clef) => getComputedStyle(clef).visibility === 'visible'),
         mask: parseFloat(getComputedStyle(stage).maskPosition),
+        staffMask: parseFloat(getComputedStyle(staff).maskPosition),
       })
       const begin = sample()
-      const normal = original.map((clef) => clef.getBoundingClientRect().left - edge)
       const originalsHidden = original.every((clef) => getComputedStyle(clef).visibility === 'hidden')
       const pinAt = root.getBoundingClientRect().width / 3 / matrix.a + layout.contextChanges[0]!.openingX!
       const next = layout.occurrences
         .flatMap((o) => o.anchors.slice(0, -1).map(([offset, x]) => ({ position: o.start + offset, x })))
-        .find(({ x }) => x > pinAt + 120)!
-      const step = (position: number) => {
+        .find(({ x }) => x > pinAt + 20)!
+      const frame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve))
+      // A smooth seek, sampled after the strip's own work on every frame until well after it lands.
+      const glide = async (position: number) => {
         strip.setCursor(position)
-        strip.flushNow()
-        // Read the positions to commit the transition before sampling its midpoint.
-        sample()
-        const animations = [...sticky.getAnimations(), ...stage.getAnimations()]
-        for (const animation of animations) {
-          animation.pause()
-          animation.currentTime = 60
+        const out: ReturnType<typeof sample>[] = []
+        for (let i = 0; i < 24; i++) {
+          await frame()
+          out.push(sample())
         }
-        const middle = sample()
-        for (const animation of animations) animation.finish()
-        return { middle, end: sample(), animated: animations.length > 0 }
+        return out
       }
-      const forward = step(next.position)
+      const forward = await glide(next.position)
       strip.setCursor(next.position + 0.25, { smooth: false })
       strip.flushNow()
       const later = sample()
-      const back = step(0)
-      return { begin, normal, originalsHidden, forward, later, back }
+      const back = await glide(0)
+      return { begin, originalsHidden, fade: 32 * matrix.a, forward, later, back }
     })
 
-    expect(frames.begin.x).toHaveLength(2)
-    expect(frames.normal).toHaveLength(2)
+    const { begin, forward, back } = frames
+    const pinned = forward.at(-1)!
+    expect(begin.x).toHaveLength(2)
+    expect(begin.engraved).toHaveLength(2)
     expect(frames.originalsHidden).toBe(true)
-    expect(frames.begin.mask).toBeLessThan(0)
-    expect(frames.forward.end.mask).toBe(0)
-    expect(frames.later).toEqual(frames.forward.end)
-    expect(frames.back.end.mask).toBe(frames.begin.mask)
-    expect(frames.forward.animated).toBe(reducedMotion !== 'reduce')
-    expect(frames.back.animated).toBe(reducedMotion !== 'reduce')
-    if (reducedMotion === 'no-preference') {
-      expect(frames.forward.middle.mask).toBeGreaterThan(frames.begin.mask)
-      expect(frames.forward.middle.mask).toBeLessThan(0)
-      expect(frames.back.middle.mask).toBeGreaterThan(frames.begin.mask)
-      expect(frames.back.middle.mask).toBeLessThan(0)
+    expect(begin.mask).toBeLessThan(0)
+    expect(pinned.mask).toBe(0)
+    expect(frames.later.x).toEqual(pinned.x)
+    expect(frames.later.mask).toBe(0)
+    expect(back.at(-1)!.mask).toBe(begin.mask)
+    for (const [index, start] of begin.x.entries()) {
+      expect(start).toBeCloseTo(begin.engraved[index]!, 1)
+      expect(pinned.x[index]).toBeGreaterThan(0)
+      expect(pinned.x[index]).toBeLessThan(10)
+      expect(back.at(-1)!.x[index]).toBeCloseTo(start, 1)
     }
-    for (const [index, start] of frames.begin.x.entries()) {
-      const pinned = frames.forward.end.x[index]!
-      expect(start).toBeCloseTo(frames.normal[index]!, 1)
-      expect(pinned).toBeGreaterThan(0)
-      expect(pinned).toBeLessThan(10)
-      expect(frames.back.end.x[index]).toBeCloseTo(start, 1)
-      if (reducedMotion === 'no-preference') {
-        expect(frames.forward.middle.x[index]).toBeGreaterThan(pinned)
-        expect(frames.forward.middle.x[index]).toBeLessThan(start)
-        expect(frames.back.middle.x[index]).toBeGreaterThan(pinned)
-        expect(frames.back.middle.x[index]).toBeLessThan(start)
+    // Every frame of both glides: each clef at max(its pinned place, its engraved place), the stage
+    // and staff masks slid by the same clamped offset (fully slid away a fade's width from the edge).
+    for (const run of [forward, back]) {
+      for (const f of run) {
+        for (const [index, x] of f.x.entries()) {
+          expect(Math.abs(x - Math.max(pinned.x[index]!, f.engraved[index]!))).toBeLessThan(2)
+        }
+        expect(Math.abs(f.mask - begin.mask * Math.min(1, Math.max(0, f.offset) / frames.fade))).toBeLessThan(1)
+        expect(f.staffMask).toBeCloseTo(f.mask, 1)
+        expect(f.visible).toBe(true)
       }
     }
-    expect(
-      [frames.begin, frames.forward.middle, frames.forward.end, frames.back.middle, frames.back.end].every(
-        (frame) => frame.visible,
-      ),
-    ).toBe(true)
+    // The glide shows the block on its way (pin and release); Reduced Motion lands at once.
+    const between = (run: typeof forward) =>
+      run.filter((f) => f.x[0]! > pinned.x[0]! + 2 && f.x[0]! < begin.x[0]! - 2).length
+    if (reducedMotion === 'no-preference') {
+      expect(between(forward)).toBeGreaterThan(0)
+      expect(between(back)).toBeGreaterThan(0)
+    } else {
+      expect(between(forward)).toBe(0)
+      expect(between(back)).toBe(0)
+      expect(forward[0]!.x).toEqual(pinned.x)
+    }
   })
 }
 

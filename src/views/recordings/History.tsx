@@ -1,20 +1,27 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { msg, percentage } from '../../i18n/messages'
 import { Button, Sheet } from '../../ui/controls'
+import type { PassageWords } from '../../core/model/passage'
 import { noteAccuracy } from '../../core/recording/performance'
 import type { RecordingInfo, RecordingFiles } from '../../core/recording/records'
 import type { PianissimoStorage } from '../../core/storage'
-import { downloadPair, recordingName } from './downloads'
+import { downloadPair, recordingName, saveBlob } from './downloads'
+import { takePassageLabel, takeScoreVersion } from './passageLabel'
 import { unsaved } from './unsaved'
 import styles from './recordings.module.css'
 
 export type RecordingStorage = () => Promise<PianissimoStorage>
 
+/**
+ * Listen to a take and download it. The player plays the take's own WAV Blob; the ZIP is built
+ * only when Download is pressed, from the same Blobs without copying them, and its URL is
+ * released once the browser has the file.
+ */
 export function RecordingLinks({ files, info }: { files: RecordingFiles; info: RecordingInfo }) {
   const [audioUrl, setAudioUrl] = useState('')
-  const [zip, setZip] = useState('')
-  const [attempt, setAttempt] = useState(0)
+  const [preparing, setPreparing] = useState(false)
   const [error, setError] = useState(false)
+  const building = useRef<AbortController | null>(null)
   const name = recordingName(info)
   useEffect(() => {
     const audio = URL.createObjectURL(files.audio)
@@ -23,30 +30,32 @@ export function RecordingLinks({ files, info }: { files: RecordingFiles; info: R
       URL.revokeObjectURL(audio)
     }
   }, [files])
-  useEffect(() => {
-    setError(false)
+  useEffect(
+    () => () => {
+      building.current?.abort()
+      building.current = null
+    },
+    [files],
+  )
+  async function download() {
+    if (building.current) return
     const abort = new AbortController()
-    let live = true
-    let url = ''
-    void downloadPair(files, name, abort.signal).then(
-      (b) => {
-        if (live) {
-          url = URL.createObjectURL(b)
-          setZip(url)
-        }
-      },
-      () => {
-        if (live) {
-          setError(true)
-        }
-      },
-    )
-    return () => {
-      live = false
-      abort.abort()
-      if (url) URL.revokeObjectURL(url)
+    building.current = abort
+    setError(false)
+    setPreparing(true)
+    try {
+      const localStart = info.createdAt + (info.startUtcOffsetMinutes ?? 0) * 60_000
+      const zip = await downloadPair(files, name, abort.signal, localStart)
+      if (!abort.signal.aborted) saveBlob(zip, name + '.zip')
+    } catch {
+      if (!abort.signal.aborted) setError(true)
+    } finally {
+      if (building.current === abort) {
+        building.current = null
+        setPreparing(false)
+      }
     }
-  }, [attempt, files, name])
+  }
   if (!audioUrl) return null
   return (
     <div class={styles.detail}>
@@ -58,15 +67,9 @@ export function RecordingLinks({ files, info }: { files: RecordingFiles; info: R
         aria-label={msg('Listen to recording')}
       />
       <div class={styles.actions}>
-        {zip ? (
-          <a download={name + '.zip'} href={zip}>
-            {msg('Download MIDI and WAV (.zip)')}
-          </a>
-        ) : (
-          <Button disabled={!error} onClick={() => setAttempt((n) => n + 1)}>
-            {error ? msg('Retry') : msg('Preparing…')}
-          </Button>
-        )}
+        <Button icon="download" disabled={preparing} onClick={() => void download()}>
+          {preparing ? msg('Preparing…') : msg('Download MIDI and WAV (.zip)')}
+        </Button>
       </div>
       {error && <p role="alert">{msg('Could not prepare the download. Try again.')}</p>}
     </div>
@@ -75,6 +78,7 @@ export function RecordingLinks({ files, info }: { files: RecordingFiles; info: R
 
 function RecordingRow({
   info,
+  words,
   best,
   storage,
   onDeleted,
@@ -82,6 +86,8 @@ function RecordingRow({
   onToggle,
 }: {
   info: RecordingInfo
+  /** The score of the take's version, when it is on this device (for its passage label). */
+  words: PassageWords | undefined
   best: boolean
   storage: RecordingStorage
   open: boolean
@@ -136,7 +142,7 @@ function RecordingRow({
         <span>
           <strong>{info.title}</strong>
           <small>
-            {msg(info.passage)} · {handName(info.hands)}
+            {takePassageLabel(info, words)} · {handName(info.hands)}
           </small>
           <small>
             {new Date(info.createdAt).toLocaleString(undefined)} · {Math.round(info.durationMs / 1000)} s
@@ -187,16 +193,22 @@ export function RecordingHistory({
   onClose,
   pieceId,
   initialId,
+  model,
 }: {
   storage: RecordingStorage
   onClose: () => void
   initialId?: string | undefined
   pieceId?: string
+  /** The score already open (Practice, Sheet music): its takes need not load it again. */
+  model?: PassageWords & { readonly scoreVersionId: string }
 }) {
   const [selected, setSelected] = useState(initialId)
   const [rows, setRows] = useState<RecordingInfo[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [reload, setReload] = useState(0)
+  const [scores, setScores] = useState<ReadonlyMap<string, PassageWords>>(
+    () => new Map(model ? [[model.scoreVersionId, model]] : []),
+  )
   useEffect(() => {
     let live = true
     setFailed(false)
@@ -215,6 +227,37 @@ export function RecordingHistory({
       live = false
     }
   }, [storage, pieceId, reload])
+  // Passage labels are built from each take's score, looked up once per score version.
+  const looked = useRef(new Set<string>())
+  const mounted = useRef(true)
+  useEffect(
+    () => () => {
+      mounted.current = false
+    },
+    [],
+  )
+  useEffect(() => {
+    const missing = new Set<string>()
+    for (const r of rows ?? []) {
+      const version = r.passageRange ? takeScoreVersion(r) : undefined
+      if (version !== undefined && !scores.has(version) && !looked.current.has(version)) missing.add(version)
+    }
+    if (missing.size === 0) return
+    for (const version of missing) looked.current.add(version)
+    void (async () => {
+      const found = new Map<string, PassageWords>()
+      try {
+        const s = await storage()
+        for (const version of missing) {
+          const pkg = await s.getPackage(version)
+          if (pkg) found.set(version, pkg.model)
+        }
+      } catch {
+        // Labels fall back to the text stored with each take.
+      }
+      if (mounted.current && found.size) setScores((old) => new Map([...old, ...found]))
+    })()
+  }, [rows, storage, scores])
   const best = new Map<string, number>()
   for (const r of rows ?? [])
     if (!r.interrupted) best.set(r.context, Math.max(best.get(r.context) ?? -1, noteAccuracy(r.score)))
@@ -263,6 +306,7 @@ export function RecordingHistory({
                   open={selected === r.id}
                   onToggle={() => setSelected((old) => (old === r.id ? undefined : r.id))}
                   info={r}
+                  words={scores.get(takeScoreVersion(r) ?? '')}
                   storage={storage}
                   best={noteAccuracy(r.score) === best.get(r.context)}
                   onDeleted={() => setRows((old) => old?.filter((t) => t.id !== r.id) ?? [])}

@@ -387,7 +387,7 @@ function TempoSection({
         <h4 id="import-tempo">{msg('Practice tempo')}</h4>
         <StateTag
           ok={typeof parsePracticeBpm(draft.bpmText) !== 'string'}
-          okText={msg('Set')}
+          okText={msg('Tempo set')}
           needsText={msg('Required')}
         />
       </div>
@@ -478,7 +478,7 @@ function ScoreChecks({ summary }: { summary: Summary }) {
       ) : null}
       <Check
         title={msg('Unsupported passages')}
-        count={summary.unsupported.length ? String(summary.unsupported.length) : msg('None')}
+        count={summary.unsupported.length ? String(summary.unsupported.length) : msg('None found')}
         {...(summary.unsupported.length ? { tone: 'warning' as const } : {})}
       >
         {summary.unsupported.length ? (
@@ -500,7 +500,7 @@ function ScoreChecks({ summary }: { summary: Summary }) {
       </Check>
       <Check
         title={msg('Timing issues')}
-        count={summary.timingIssues.length ? String(summary.timingIssues.length) : msg('None')}
+        count={summary.timingIssues.length ? String(summary.timingIssues.length) : msg('None found')}
         {...(summary.timingIssues.length ? { tone: 'warning' as const } : {})}
       >
         {summary.timingIssues.length ? (
@@ -520,7 +520,10 @@ function ScoreChecks({ summary }: { summary: Summary }) {
           <p class={styles.muted}>{msg('No fermatas or verbal tempo changes.')}</p>
         )}
       </Check>
-      <Check title={msg('Ottava lines')} count={summary.ottavas.length ? String(summary.ottavas.length) : msg('None')}>
+      <Check
+        title={msg('Ottava lines')}
+        count={summary.ottavas.length ? String(summary.ottavas.length) : msg('None found')}
+      >
         {summary.ottavas.length ? (
           <ul>
             {summary.ottavas.map((o) => (
@@ -538,7 +541,10 @@ function ScoreChecks({ summary }: { summary: Summary }) {
           <p class={styles.muted}>{msg('No 8va, 8vb or 15ma lines.')}</p>
         )}
       </Check>
-      <Check title={msg('Rolled chords')} count={summary.rolls.length ? String(summary.rolls.length) : msg('None')}>
+      <Check
+        title={msg('Rolled chords')}
+        count={summary.rolls.length ? String(summary.rolls.length) : msg('None found')}
+      >
         {summary.rolls.length ? (
           <ul>
             {summary.rolls.map((g) => (
@@ -553,7 +559,10 @@ function ScoreChecks({ summary }: { summary: Summary }) {
           <p class={styles.muted}>{msg('No arpeggiated chords.')}</p>
         )}
       </Check>
-      <Check title={msg('Repeats')} count={r.unfolded ? msg('{0} bars repeat', r.repeatedBars.length) : msg('None')}>
+      <Check
+        title={msg('Repeats')}
+        count={r.unfolded ? msg('{0} bars repeat', r.repeatedBars.length) : msg('None found')}
+      >
         {r.unfolded ? (
           <>
             <p class={styles.muted}>
@@ -565,11 +574,7 @@ function ScoreChecks({ summary }: { summary: Summary }) {
                   {msg('Bar')} {b.bar}: {b.passes} {msg('passes')}
                 </li>
               ))}
-              {r.repeatedBars.length > 12 ? (
-                <li>
-                  {msg('…and')} {r.repeatedBars.length - 12} {msg('more')}
-                </li>
-              ) : null}
+              {r.repeatedBars.length > 12 ? <li>{msg('…and {0} more', r.repeatedBars.length - 12)}</li> : null}
             </ul>
             {r.endings.length ? (
               <p class={styles.muted}>
@@ -612,7 +617,7 @@ function ScoreChecks({ summary }: { summary: Summary }) {
       </Check>
       <Check
         title={msg('Warnings')}
-        count={warnings.length ? String(warnings.length) : msg('None')}
+        count={warnings.length ? String(warnings.length) : msg('None found')}
         {...(warnings.length ? { tone: 'warning' as const } : {})}
       >
         {warnings.length ? (

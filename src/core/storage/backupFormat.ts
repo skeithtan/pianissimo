@@ -25,6 +25,8 @@ export interface BackupManifest {
   readonly appVersion: string
   readonly createdAt: number
   readonly dbVersion: number
+  /** The player left recordings out: the backup has no recording files, and none are missing. */
+  readonly recordingsExcluded?: true
   readonly counts: BackupCounts
 }
 

@@ -28,8 +28,8 @@
 }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
-/* The slot's row collapses while playing and its content slides up and fades (U60): the tablet
-   header, and a phone's top bar (U93). */
+/* A phone's top bar (U93): in focus mode the slot's row collapses and the bar slides up and fades.
+   A tablet's or desktop's header (`.header`) stays, upright or on its side. */
 .headerSlot {
   flex: none;
   display: grid;
@@ -52,13 +52,13 @@
   transform: translateY(-100%);
   opacity: 0;
 }
-/* The status pills keep their positions and touch targets while the other header controls recede. */
-.screen[data-recede='true'][data-recording-header] .titleBlock,
-.screen[data-recede='true'][data-recording-header] .headerTools > .iconButton,
+/* Recording on a phone on its side: Stop and the status pills keep their places and touch targets
+   while the bar's other controls recede. */
 .screen[data-recede='true'][data-recording-header] .bar > :not([data-recording-control], .overviewInline) {
   visibility: hidden;
 }
 .header {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -286,10 +286,22 @@
   left: 0;
   bottom: 0;
 }
-/* A narrow landscape score stacks the action above a visible result pill. */
+/* A narrow landscape score stacks the action above a visible result pill, and so does any dock
+   where the pill leaves it no room beside it (`data-stack`, measured: the pill is as wide as its
+   words). */
+.resultDock[data-stack] > .loopRestart {
+  bottom: calc(100% + var(--space-2));
+}
 @media (max-width: 720px) {
   .resultDock:has(.resultCard) > .loopRestart {
     bottom: calc(100% + var(--space-2));
+  }
+}
+/* A narrow page: while the score view shows Return to current position on the same line, the
+   action moves up above it (both pills do not fit side by side, P11). */
+@media (max-width: 640px) {
+  .stage:has(> .stripHost :global(.pn-browsing)) > .loopRestart {
+    bottom: calc(14px + 44px + var(--space-2));
   }
 }
 
@@ -327,7 +339,9 @@
 
    A tap or upward swipe expands it in place: the details open above the pill as one card with it,
    positioned over the score (absolute, so the dock keeps the pill's height and the strip's
-   review stays in place), growing from the measured pill to the expanded panel. */
+   review stays in place). The card is laid out at its final size at once; the growth from the
+   measured pill is drawn with transforms, clips and opacity (`resultMotion.ts`), never by
+   animating a size. */
 .resultCard {
   --result-tone: var(--fg-muted);
   --result-tone-bg: var(--bg-sunken);
@@ -349,26 +363,66 @@
   width: var(--result-panel-width);
   max-width: var(--result-panel-width);
 }
-.resultCard[data-opening][data-layout='panel'] {
-  animation: result-grow-width var(--result-open-duration) var(--ease-standard) both;
-}
+/* While it grows from the pill, the details rise from behind the summary row. */
 .resultCard[data-opening][data-layout='panel'] .result {
-  animation: result-hold-row var(--result-open-duration) linear both;
+  z-index: 2;
 }
-@keyframes result-grow-width {
-  from {
-    width: var(--result-from-width);
-  }
-  to {
-    width: var(--result-panel-width);
-  }
+/* The growing card's edges, where its clips cut its borders: four corners and two sides at the
+   expanded card's place (its top set from the measured panel), moved there from the pill's. Shown
+   only while the motion runs (its keyframes hold them at full opacity). */
+.resultOutline {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
 }
-@keyframes result-hold-row {
-  from,
-  to {
-    height: var(--result-open-row-height);
-    overflow: hidden;
-  }
+.resultOutline > span {
+  position: absolute;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  border: 0 solid var(--result-border);
+  opacity: 0;
+}
+.resultOutline > [data-edge='tl'] {
+  top: 0;
+  left: 0;
+  border-width: 1px 0 0 1px;
+  border-top-left-radius: 24px;
+}
+.resultOutline > [data-edge='tr'] {
+  top: 0;
+  right: 0;
+  border-width: 1px 1px 0 0;
+  border-top-right-radius: 24px;
+}
+.resultOutline > [data-edge='bl'] {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 1px 1px;
+  border-bottom-left-radius: 24px;
+}
+.resultOutline > [data-edge='br'] {
+  bottom: 0;
+  right: 0;
+  border-width: 0 1px 1px 0;
+  border-bottom-right-radius: 24px;
+}
+.resultOutline > :is([data-edge='l'], [data-edge='r']) {
+  top: 24px;
+  bottom: 24px;
+  width: 1px;
+  height: auto;
+  background: var(--result-border);
+  transform-origin: bottom;
+}
+.resultOutline > [data-edge='l'] {
+  left: 0;
+}
+.resultOutline > [data-edge='r'] {
+  right: 0;
 }
 /* Reserve the collapsed preview's space so opening over the score doesn't reframe it. */
 .resultCard[data-expanded][data-preview] {
@@ -389,7 +443,6 @@
   border-radius: var(--radius-l);
   touch-action: none;
   user-select: none;
-  transition: border-radius var(--dur-fast) var(--ease-standard);
 }
 .resultSummary {
   display: flex;
@@ -399,7 +452,6 @@
 }
 .resultPreview {
   --result-preview-fade: linear-gradient(currentColor calc(100% - 8px), transparent);
-  --result-preview-tall: 52px;
   margin: var(--space-1) var(--space-2) 0;
   padding: 0;
   height: var(--result-preview-height);
@@ -411,19 +463,87 @@
   -webkit-mask-image: var(--result-preview-fade);
   mask-image: var(--result-preview-fade);
 }
-.resultPreview:has(li:nth-child(3)) {
+/* A new Repeat result first shows a taller preview, then settles (U110). The pill's box keeps its
+   settled size throughout, so the dock (and the review frame it sets) never changes: the extra
+   height is drawn above the box. A cap (`::before`, the pill's top edge) slides down from the
+   taller top onto the box's own; the summary slides down with it; the preview, as tall as its
+   lines (its extra height given back by a negative margin), slides down while it is clipped at the
+   box's bottom, where a gradient stands in for its fade until the intro ends. */
+.result {
+  --result-preview-tall: 52px;
+  --result-intro-shift: calc(var(--result-preview-tall) - var(--result-preview-height));
+}
+.result:has(.resultPreview > li:nth-child(3)) {
   --result-preview-tall: 64px;
 }
-.resultCard[data-intro] .resultPreview {
-  animation: result-preview-settle var(--result-preview-duration) var(--ease-out) both;
+.resultCard[data-intro] .result {
+  isolation: isolate;
 }
-@keyframes result-preview-settle {
+.resultCard[data-intro] .result::before,
+.resultCard[data-intro] .result::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+.resultCard[data-intro] .result::before {
+  z-index: -1;
+  top: calc(-1px - var(--result-intro-shift));
+  left: -1px;
+  right: -1px;
+  box-sizing: border-box;
+  height: calc(var(--result-intro-shift) + var(--radius-l) + 1px);
+  border: 1px solid var(--result-border);
+  border-bottom: 0;
+  border-radius: var(--radius-l) var(--radius-l) 0 0;
+  background: inherit;
+  animation: result-intro-cap var(--result-preview-duration) var(--ease-out) both;
+}
+.resultCard[data-intro] .result::after {
+  z-index: 1;
+  /* Over the preview's lines only (clear of the rounded corners). */
+  left: calc(2 * var(--space-2));
+  right: calc(2 * var(--space-2));
+  bottom: var(--space-2);
+  height: 8px;
+  background: linear-gradient(transparent, var(--bg-elevated));
+}
+.resultCard[data-intro] .resultPreview {
+  height: var(--result-preview-tall);
+  margin-bottom: calc(-1 * var(--result-intro-shift));
+  -webkit-mask-image: none;
+  mask-image: none;
+  animation: result-intro-preview var(--result-preview-duration) var(--ease-out) both;
+}
+.resultCard[data-intro] :is(.resultBadge, .resultText, .resultActions > button:not(.resultSurface), .resultLift) {
+  animation: result-intro-lift var(--result-preview-duration) var(--ease-out) both;
+}
+@keyframes result-intro-cap {
   0%,
   48% {
-    height: var(--result-preview-tall);
+    transform: translateY(0);
   }
   100% {
-    height: var(--result-preview-height);
+    transform: translateY(var(--result-intro-shift));
+  }
+}
+@keyframes result-intro-lift {
+  0%,
+  48% {
+    transform: translateY(calc(-1 * var(--result-intro-shift)));
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+@keyframes result-intro-preview {
+  0%,
+  48% {
+    transform: translateY(calc(-1 * var(--result-intro-shift)));
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    transform: translateY(0);
+    clip-path: inset(0 0 var(--result-intro-shift) 0);
   }
 }
 .resultPreview > li {
@@ -508,19 +628,9 @@
   height: auto;
   max-height: var(--result-details-max, 480px);
 }
-.resultCard[data-opening] .resultDetails[data-layout='panel'] {
-  animation: result-grow-panel var(--result-open-duration) var(--ease-standard) both;
-}
-.resultCard[data-opening][data-preview] .resultDetails[data-layout='panel'] {
-  --result-open-peek: calc(var(--result-from-preview) + var(--space-1));
-}
-@keyframes result-grow-panel {
-  from {
-    max-height: var(--result-open-peek, 0px);
-  }
-  to {
-    max-height: var(--result-details-max);
-  }
+/* Grown from the pill (`resultMotion.ts`), not unfolded. */
+.resultCard[data-opening] .resultDetails[data-layout] {
+  animation: none;
 }
 @keyframes result-unfold {
   from {
@@ -535,11 +645,13 @@
 .resultDetails[data-phase='leaving'] {
   pointer-events: none;
 }
+/* Padded as the details it stands in for (`.details`), so the opening waits for the same room. */
 .resultDetailsLoading {
   display: grid;
   place-items: center;
   min-height: 160px;
   height: 100%;
+  padding: var(--space-5);
   color: var(--fg-muted);
   font-size: var(--text-s);
 }
@@ -694,10 +806,11 @@
   font-size: var(--text-s);
   font-weight: 600;
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard);
 }
+/* Only the pointer's own feedback fades: the card opening or folding changes it at once. */
 .resultDetailsButton:hover {
   background: var(--hover);
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .resultDetailsButton:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -777,6 +890,9 @@
     border-radius: 32px;
     border-top-color: var(--result-border);
   }
+  .resultDetailsLoading {
+    padding: var(--space-4) calc(var(--space-3) + var(--safe-r)) var(--space-4) calc(var(--space-3) + var(--safe-l));
+  }
   .resultCard .resultDetails[data-layout='screen'] {
     position: fixed;
     inset: 0;
@@ -789,18 +905,7 @@
     animation: result-screen-in var(--result-open-duration) var(--ease-out) both;
   }
   .resultCard[data-opening] .resultDetails[data-layout='screen'] {
-    animation: result-grow-screen var(--result-open-duration) var(--ease-standard) both;
-  }
-  @keyframes result-grow-screen {
-    from {
-      inset: var(--result-from-top) calc(100% - var(--result-from-right)) calc(100% - var(--result-from-bottom))
-        var(--result-from-left);
-      border-radius: var(--radius-l);
-    }
-    to {
-      inset: 0;
-      border-radius: 0;
-    }
+    animation: none;
   }
   @keyframes result-screen-in {
     from {
@@ -1013,6 +1118,7 @@
   border-radius: var(--radius-l);
   background: var(--bg-elevated);
   text-align: start;
+  outline: none;
   animation: drop-menu var(--dur-fast) var(--ease-out) both;
 }
 .goalPopoverUp {
@@ -1425,8 +1531,8 @@
 /* No header and no footer: one top bar (Back, the title or, on its side, the overview, the hand
    toggles around Start, Menu) and a menu sheet for the rest (the connection status too). The bar is
    as short as its touch targets allow. In focus mode the whole bar slides up, fades and its row
-   collapses like the tablet header (`.headerSlot`, U93): with the phone on its side the overview
-   goes with it; a tap on the score brings it back (and does not seek). Nothing pads the top safe-area inset: the page
+   collapses (`.headerSlot`, U93): with the phone on its side the overview goes with it; a tap on
+   the score brings it back (and does not seek). Nothing pads the top safe-area inset: the page
    starts below the status bar (U84's `black` status bar; Safari's own bar in the browser). */
 .bar {
   flex: none;
@@ -1531,7 +1637,8 @@
   align-items: stretch;
   gap: var(--space-2);
 }
-.menuActions > button {
+/* Every action of the sheet starts at the same edge, its icon under the next one's. */
+:is(.menu, .menuActions) > button {
   justify-content: flex-start;
 }
 
@@ -1568,9 +1675,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .resultCard[data-opening][data-layout='panel'],
-  .resultCard[data-opening][data-layout='panel'] .result,
-  .resultCard[data-intro] .resultPreview {
+  .resultCard[data-intro] .result::before,
+  .resultCard[data-intro] .resultPreview,
+  .resultCard[data-intro]
+    :is(.resultBadge, .resultText, .resultActions > button:not(.resultSurface), .resultLift) {
     animation: none;
   }
   .countInBeat {

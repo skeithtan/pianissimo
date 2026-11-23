@@ -1,4 +1,8 @@
-/** Focus mode collapses chrome without replacing the score or interrupting playback. */
+/**
+ * Focus mode recedes chrome without replacing the score or interrupting playback. A tablet's or
+ * desktop's header stays, upright or on its side; a phone's top bar collapses (U93).
+ */
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '../browser-test'
 import { REVEAL_MS } from '../../src/views/practice/recede'
@@ -6,7 +10,7 @@ import { SHOT_DIR, installFakeMidi, openSeededPractice, seedPiece } from './prac
 
 const height = (locator: Locator) => locator.evaluate((el) => el.getBoundingClientRect().height)
 const screen = (page: Page) => page.locator('[data-activity]')
-const header = (page: Page) => page.getByTestId('practice-header-slot')
+const header = (page: Page) => page.getByTestId('practice-header')
 const tools = (page: Page) => page.getByTestId('footer-tools-slot')
 const stage = (page: Page) => page.getByTestId('strip-host')
 const speedButton = (page: Page) => page.getByRole('button', { name: /Open speed options/ })
@@ -29,15 +33,33 @@ async function open(page: Page): Promise<void> {
 
 async function focused(page: Page): Promise<void> {
   await expect(screen(page)).toHaveAttribute('data-recede', 'true')
-  await expect.poll(() => height(header(page))).toBeLessThan(1)
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+}
+
+/** The header is there in full, and takes input: not inert, at full strength, on top at Back. */
+async function headerStays(page: Page, box: { x: number; y: number; width: number; height: number }) {
+  await expect(header(page)).toBeVisible()
+  expect(await header(page).boundingBox()).toEqual(box)
+  expect(await header(page).evaluate((el) => el.hasAttribute('inert') || !!el.closest('[inert]'))).toBe(false)
+  const strength = await header(page).evaluate((el) => {
+    let value = 1
+    for (let node: Element | null = el; node; node = node.parentElement) value *= Number(getComputedStyle(node).opacity)
+    return value
+  })
+  expect(strength).toBe(1)
+  const back = header(page).getByRole('button', { name: 'Back to Library' })
+  expect(
+    await back.evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+    }),
+  ).toBe(true)
 }
 
 async function reveal(page: Page): Promise<void> {
   // Empty footer space reveals the tools without activating playback or seeking in the score.
   await page.locator('footer').click({ position: { x: 5, y: 5 } })
   await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
-  await expect.poll(() => height(header(page))).toBeGreaterThan(50)
 }
 
 for (const size of [
@@ -46,7 +68,7 @@ for (const size of [
   // A tablet held upright has the footer it has on its side (U88): one row, nothing to collapse.
   { name: 'tablet', width: 820, height: 1180, wraps: false, colorScheme: 'dark', reducedMotion: 'no-preference' },
 ] as const) {
-  test(`${size.name}: focus releases the header${size.wraps ? ' and the tool row' : ', the footer tools dim in place'}, and restores usable speed controls`, async ({
+  test(`${size.name}: focus keeps the header${size.wraps ? ', releases the tool row' : ', the footer tools dim in place'}, and restores usable speed controls`, async ({
     page,
     browserName,
   }) => {
@@ -56,15 +78,19 @@ for (const size of [
     await expect(page.locator('.pn-page')).toBeVisible()
     const originalPage = await page.locator('.pn-page').elementHandle()
     const originalHeight = await height(stage(page))
-    const releasedHeight = (await height(header(page))) + (await height(tools(page)))
+    const headerBox = (await header(page).boundingBox())!
+    // Only the wrapped tool row gives the score its height: the header stays.
+    const releasedHeight = size.wraps ? await height(tools(page)) : 0
     const playBefore = await page.getByRole('button', { name: 'Start', exact: true }).boundingBox()
     const speedBefore = await speedButton(page).boundingBox()
     const menuBefore = await menuButton(page).boundingBox()
 
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await focused(page)
-    await expect.poll(() => height(tools(page))).toBeLessThan(1)
+    if (size.wraps) await expect.poll(() => height(tools(page))).toBeLessThan(1)
     await expect.poll(() => height(stage(page))).toBeGreaterThan(originalHeight + releasedHeight - 2)
+    expect(await height(stage(page))).toBeLessThan(originalHeight + releasedHeight + 2)
+    await headerStays(page, headerBox)
     if (!size.wraps) {
       // Speed and Menu stay exactly where they were and dim, as in landscape.
       await expect.poll(() => strength(menuButton(page))).toBe(0.12)
@@ -73,11 +99,6 @@ for (const size of [
       expect(await menuButton(page).boundingBox()).toEqual(menuBefore)
     }
     expect(await originalPage!.evaluate((el) => el.isConnected)).toBe(true)
-    expect(
-      await header(page)
-        .locator('header')
-        .evaluate((el) => el.hasAttribute('inert')),
-    ).toBe(true)
     expect(await tools(page).evaluate((el) => el.hasAttribute('inert'))).toBe(true)
     await expect(page.getByRole('slider', { name: 'Piece overview' })).toBeVisible()
     const pause = await page.getByRole('button', { name: 'Pause', exact: true }).boundingBox()
@@ -111,7 +132,7 @@ for (const size of [
     await expect(speed).toHaveCount(0)
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
     await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
-    await expect.poll(() => height(header(page))).toBeGreaterThan(50)
+    await headerStays(page, headerBox)
     if (size.wraps) await expect.poll(() => height(tools(page))).toBeGreaterThan(40)
     else expect(await speedButton(page).boundingBox()).toEqual(speedBefore)
   })
@@ -186,12 +207,92 @@ test.describe('tablet Repeat options', () => {
     await expect(goal).toHaveText('No limit')
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
   })
+
+  /** How strongly an element shows: its opacity times every ancestor's. */
+  const shown = (locator: Locator) =>
+    locator.evaluate((el) => {
+      let value = 1
+      for (let node: Element | null = el; node; node = node.parentElement)
+        value *= Number(getComputedStyle(node).opacity)
+      return Math.round(value * 100) / 100
+    })
+
+  test('an open popover holds the chrome past the reveal time, after a tap inside it too', async ({ page }) => {
+    await open(page)
+    await page.getByRole('button', { name: 'Repeat from here' }).tap()
+    const panel = page.getByTestId('repeat-controls')
+    const goal = panel.getByRole('button', { name: /^Repeat goal: / })
+    const options = panel.getByRole('dialog', { name: 'Repeat options' })
+    await page.getByRole('button', { name: 'Start', exact: true }).tap()
+    await focused(page)
+    await page.locator('footer').tap({ position: { x: 5, y: 5 } })
+    await goal.tap()
+    await expect(options).toBeVisible()
+    // A tap on a choice need not keep keyboard focus inside the popover (a touch on WebKit).
+    await options.getByRole('radio', { name: '3', exact: true }).tap()
+    await expect(goal).toHaveText('Until 3 clean')
+    await page.waitForTimeout(REVEAL_MS + 400)
+    await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
+    await expect(goal).toHaveAttribute('aria-expanded', 'true')
+    expect(await shown(options)).toBe(1)
+    await options.getByRole('radio', { name: 'No limit' }).tap()
+    await expect(goal).toHaveText('No limit')
+    // Closed, the chrome recedes again after the reveal time.
+    await goal.tap()
+    await expect(options).toHaveCount(0)
+    await expect(screen(page)).toHaveAttribute('data-recede', 'true', { timeout: REVEAL_MS + 2000 })
+
+    // The footer's menu, opened while playing, holds it the same way.
+    await page.locator('footer').tap({ position: { x: 5, y: 5 } })
+    await menuButton(page).tap()
+    const menu = page.getByRole('dialog', { name: 'Practice menu' })
+    await expect(menu).toBeVisible()
+    await menu.getByRole('switch', { name: 'Show keys' }).tap()
+    await page.waitForTimeout(REVEAL_MS + 400)
+    await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
+    await expect(menu).toBeVisible()
+    expect(await shown(menu)).toBe(1)
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+  })
+})
+
+/**
+ * Focus mode on a tablet keeps the header, held upright or on its side (U93 revised): there is room
+ * for it. The score's stage keeps its size (the header never leaves), and the footer tools dim as
+ * before. A phone's top bar still recedes (below).
+ */
+test.describe('a tablet keeps its header in focus mode', () => {
+  test.use({ hasTouch: true })
+  for (const size of [
+    { name: 'upright', width: 834, height: 1194, mode: 'page' },
+    { name: 'on its side', width: 1194, height: 834, mode: 'strip' },
+  ] as const) {
+    test(`${size.name}: the header stays in full and takes input while the footer tools recede`, async ({ page }) => {
+      await page.setViewportSize({ width: size.width, height: size.height })
+      await open(page)
+      await expect(stage(page)).toHaveAttribute('data-mode', size.mode)
+      await expect(screen(page)).not.toHaveAttribute('data-compact', 'true')
+      const headerBox = (await header(page).boundingBox())!
+      expect(headerBox.height).toBeGreaterThan(50)
+      const stageHeight = await height(stage(page))
+      await page.getByRole('button', { name: 'Start', exact: true }).tap()
+      await focused(page)
+      await expect.poll(() => strength(menuButton(page))).toBe(0.12)
+      // Past the recede delay and its transitions: nothing moved, the header is all there.
+      await page.waitForTimeout(800)
+      await headerStays(page, headerBox)
+      expect(Math.abs((await height(stage(page))) - stageHeight)).toBeLessThan(1)
+      await expect(screen(page)).toHaveAttribute('data-recede', 'true')
+      // It takes a tap at once: Settings opens over Practice (and pauses it).
+      await header(page).getByRole('button', { name: 'Settings' }).tap()
+      await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
+    })
+  }
 })
 
 /**
  * A phone-size screen (U80) has one top bar instead of the header and footer. In focus mode the
- * whole bar slides up, fades and its row collapses like the tablet header (U93), the overview with
- * it on its side; the score takes the height, and a press on the score brings the bar back.
+ * whole bar slides up, fades and its row collapses (U93), the overview with it on its side; the score takes the height, and a press on the score brings the bar back.
  */
 test.describe('phone top bar', () => {
   test.use({ hasTouch: true })
@@ -329,10 +430,12 @@ for (const size of [
       play: await start.boundingBox(),
       footer: await footer.boundingBox(),
     }
+    const headerBox = (await header(page).boundingBox())!
     expect(Math.abs(initial.play!.x + initial.play!.width / 2 - size.width / 2)).toBeLessThan(2)
 
     await start.click()
     await focused(page)
+    await headerStays(page, headerBox)
     expect(await tools(page).evaluate((el) => el.hasAttribute('inert'))).toBe(true)
     // Inert tools are still visible, so use their existing DOM handles rather than role lookup.
     const focusedTools = await footer.evaluate((el) => {
@@ -353,7 +456,6 @@ for (const size of [
 
     await page.keyboard.press('Tab')
     await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
-    await expect.poll(() => height(header(page))).toBeGreaterThan(50)
     expect(await tools(page).evaluate((el) => el.hasAttribute('inert'))).toBe(false)
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
   })
@@ -377,3 +479,71 @@ test('Listen keeps playing while portrait chrome collapses and returns', async (
   await expect(screen(page)).toHaveAttribute('data-activity', 'listening')
   await expect(page.locator('.pn-page.pn-browsing')).toHaveCount(0)
 })
+
+/**
+ * The footer menu's last action (Record performance) keeps the rows' rhythm: a hairline above it,
+ * the rows' spacing above and below, its icon and label at the start of the full width (as the phone
+ * menu's actions). MENU_SHOTS=<dir outside the repo> also saves the open menu as
+ * <dir>/<browser>-menu-<size>-<MENU_SHOTS_LABEL or "after">.png.
+ */
+for (const size of [
+  { width: 1194, height: 834 },
+  { width: 834, height: 1194 },
+]) {
+  test(`${size.width}×${size.height}: the footer menu's Record performance has the rows' spacing`, async ({
+    page,
+    browserName,
+  }) => {
+    await page.setViewportSize(size)
+    await open(page)
+    await menuButton(page).click()
+    const menu = page.getByRole('dialog', { name: 'Practice menu' })
+    await expect(menu).toBeVisible()
+    const record = menu.getByRole('button', { name: 'Record performance' })
+    await expect(record).toBeEnabled()
+    await page.waitForTimeout(400)
+    const shots = process.env['MENU_SHOTS']
+    if (shots) {
+      mkdirSync(shots, { recursive: true })
+      const label = process.env['MENU_SHOTS_LABEL'] ?? 'after'
+      await page.screenshot({ path: join(shots, `${browserName}-menu-${size.width}x${size.height}-${label}.png`) })
+    }
+    const measured = await menu.evaluate((popover) => {
+      const inner = (el: Element) => {
+        const r = el.getBoundingClientRect()
+        const style = getComputedStyle(el)
+        return {
+          top: r.top + parseFloat(style.borderTopWidth),
+          bottom: r.bottom - parseFloat(style.borderBottomWidth),
+        }
+      }
+      const button = popover.querySelector(':scope > button')!
+      const rows = [...popover.children].filter((el) => el !== button)
+      const above = rows.at(-1)!
+      const b = button.getBoundingClientRect()
+      const box = inner(popover)
+      const result = {
+        below: Math.round((box.bottom - b.bottom) * 10) / 10,
+        above: Math.round((b.top - above.getBoundingClientRect().bottom) * 10) / 10,
+        hairline: getComputedStyle(above).borderBottomWidth,
+        width: Math.round(b.width),
+        rowWidth: Math.round(above.getBoundingClientRect().width),
+        // The record icon, then the label after it.
+        iconStart: Math.round(button.querySelector('svg')!.getBoundingClientRect().left - b.left),
+        // The rows' own spacing (the first row is Note names).
+        rowPadding: parseFloat(getComputedStyle(rows[0]!).paddingTop),
+      }
+      // Without the button: what the last row keeps below its content.
+      button.remove()
+      const last = rows.at(-1)!
+      const content = last.getBoundingClientRect().bottom - parseFloat(getComputedStyle(last).paddingBottom)
+      const rowBelow = Math.round((inner(popover).bottom - content) * 10) / 10
+      return { ...result, rowBelow }
+    })
+    expect(measured.below).toBe(measured.rowBelow)
+    expect(measured.above).toBe(measured.rowPadding)
+    expect(measured.hairline).toBe('1px')
+    expect(measured.width).toBe(measured.rowWidth)
+    expect(measured.iconStart).toBeLessThan(24)
+  })
+}

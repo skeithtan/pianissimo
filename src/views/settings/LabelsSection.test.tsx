@@ -137,6 +137,13 @@ describe('conditional rules', () => {
     const sample = sampleLabels(panel, 'Treble (G)')
     expect(sample.find((s) => s.text === 'C4')?.labeled).toBe(false)
     expect(sample.find((s) => s.text === 'C5')?.labeled).toBe(false)
+    // What a screen reader reads for a sample note: the name, a space, then whether it is labeled.
+    const spoken = (name: string) =>
+      $$(panel, '[aria-label="Sample notes for Treble (G)"] li')
+        .map((li) => li.textContent?.replace(/[●○]/gu, ''))
+        .find((text) => text?.startsWith(name))
+    expect(spoken('B3')).toBe('B3 labeled')
+    expect(spoken('C4')).toBe('C4 not labeled')
   })
 
   it('updates the summary and sample live while editing, before applying', () => {

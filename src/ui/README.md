@@ -39,7 +39,8 @@ link/editing menus are unchanged.
 `wide`, `tall`, and `flush` variants. Its `className` can set a custom width cap using
 `--sheet-width`. No big shadows (U12): sheets, the tempo popover and the selected segment use
 a 1 px `--border` edge.
-`icons.tsx` adds `hand`, `handLeft`, `plus`, `minus`, `forward`.
+`icons.tsx` adds `hand`, `handLeft`, `plus`, `minus`, `forward`, and `record` (a filled circle that is
+always the danger red, on every Record performance button).
 
 ## Fades (`fade.tsx`) — hints and overlays never vanish abruptly
 

@@ -4,9 +4,9 @@ How the pieces fit. Module owners update their section when they change a public
 
 ## Interface languages
 
-`core/model/language.ts` defines supported language tags and matches ordered device preferences. The persisted `AppSettings.view.language` field defaults to `system`. Missing and unrecognized settings normalize to that default. `app/language.ts` observes the setting and browser language changes, loads catalogs, and updates the document language and reactive message reader together. The English shell starts without loading a catalog. The service worker precaches every production language chunk. The app loads and saves settings as soon as IndexedDB opens, independently of the first-run score installation.
+`core/model/language.ts` defines supported language tags and matches ordered device preferences. The persisted `AppSettings.view.language` field defaults to `system`. Missing and unrecognized settings normalize to that default. `app/language.ts` observes the setting and browser language changes, loads catalogs, and updates the document language and reactive message reader together. It does nothing on the default setting while stored settings load; instead it caches the last resolved language in localStorage and starts loading that catalog before the first render, which waits for it at most 300 ms. A catalog that fails to load leaves the current language on screen with a notice and is tried again on the next language change or `online` event. The English shell starts without loading a catalog. The service worker precaches every production language chunk. The app loads and saves settings as soon as IndexedDB opens, independently of the first-run score installation.
 
-Use `msg('English source', ...literalValues)` from `i18n/messages.ts` when presenting text. Keep score content and hardware names as literal arguments. Translated templates may move or repeat numbered fields. Add the next unused ID to `i18n/locales/en-US.json` and use the same ID in each full catalog. Japanese has a full catalog and uses Japanese counters for practice and repeat counts. Canadian French inherits the French catalog and overrides regional wording. `i18n/importMessage.ts` recognizes diagnostic templates produced by import workers and older saved scores. Stored comparison keys and score data retain their original meaning when the interface language changes.
+Use `msg('English source', ...literalValues)` from `i18n/messages.ts` when presenting text. Keep score content and hardware names as literal arguments. Translated templates may move or repeat numbered fields. Add the next unused ID to `i18n/locales/en-US.json` and use the same ID in each full catalog. View tests render under a pseudo-catalog from `views/shared/catalogTesting.ts` that marks every catalog string, and fail on visible text or accessible names that bypass `msg`; give a word with two meanings its own source sentence. Japanese has a full catalog and uses Japanese counters for practice and repeat counts. Canadian French inherits the French catalog and overrides regional wording. `i18n/importMessage.ts` recognizes diagnostic templates produced by import workers and older saved scores. Stored comparison keys and score data retain their original meaning when the interface language changes.
 
 ## Data flow
 
@@ -116,7 +116,10 @@ negative = early); incomplete groups close at arrival + tolerance with a `missed
 next group becomes current; a press of the just-missed group within the tolerance is a gentle
 `'late'` slip, not a wrong attack. A press for a later group whose scheduled time is within the
 tolerance waits for that group (nearest first, P17), so a slip on a fast run costs only the
-groups slipped. Strict records use `matchingRules` `strict-v1-tol-<n>ms` and
+groups slipped. Presses in Ready are not judged, except those from the downbeat minus the
+tolerance on: the session hands them back after the count-in with `engine.countInPress(note,
+time)`, judged at their own time like any press, so an early first downbeat counts with its
+negative offset. Strict records use `matchingRules` `strict-v1-tol-<n>ms` and
 carry `rhythm`, `missedGroups` and per-group `offsetMs` / `missed`; they pass only with no wrong
 attack, no assistance, no missed group and every group within the tolerance. Close times come
 from injected arrivals and surface through `nextDeadline()`. Strict `input-complete` also
@@ -175,13 +178,31 @@ sends the played attacks to a worker for comparison with the selected practice t
 `core/recording` owns the file encoders and ordered, chord-aware note matching. Timing and
 velocity are preserved in the MIDI file. They do not affect this pitch score.
 
-IndexedDB v3 stores take metadata separately from its MIDI bytes and WAV blocks. Save and delete cover both
-stores in one transaction. History reads metadata for ranking and fetches media for the open
-take. A download packages both files in one ZIP. Its filename uses the capture start (`createdAt`)
-and the stored local offset (`startUtcOffsetMinutes`). Older takes use UTC. The header, or a footer on portrait phones, hosts
-the live timer and Stop control while the recorder keeps ownership of both input streams. Full backups include both stores and merge
-immutable recordings by ID. Deleting a score leaves its recorded performances available in
-Library → Recordings.
+IndexedDB v4 (`core/storage/recordings.ts`) stores a take as `recordings[id]` (metadata, the only
+store lists read), `recordingFiles[id]` (`{ midi, type, blocks, bytes }`) and one
+`recordingBlocks[[id, i]]` record per 4 MiB block of the WAV file, so no stored value comes near
+Chrome's 127 MiB limit. Save reads the captured Blob one block at a time and writes one block per
+transaction under a `pendingRecordings[id]` marker; the last transaction checks every block is
+there, writes the files record and the metadata, and removes the marker, so a take is listed only
+when complete. A failed save removes its blocks at once; one cut short by a closed page is removed
+on a later open (marker older than an hour). Delete removes metadata, files record and blocks (key
+range) together. Takes saved by schema 3 kept every block inline (`recordingFiles[id] = { midi,
+audio: ArrayBuffer[] }`): the version 4 upgrade moves them to blocks in the upgrade transaction,
+and a take it cannot convert keeps that shape, which every reader still accepts. History reads
+metadata for ranking; opening a take reads its blocks by key range into one Blob (one copy) for
+the player. Download builds the ZIP only when pressed, as a Blob that refers to the take's own
+Blobs between stored-entry headers (no second copy), and releases its URL after the download has
+started. Its filename uses the capture start (`createdAt`) and the stored local offset
+(`startUtcOffsetMinutes`). Older takes use UTC. A take stores its passage range (`passageRange`,
+null = whole piece) and its label is formatted when shown, in the current language, with the
+score of the take's version; takes saved before that, or whose score is gone, show the label they
+stored. A take warns once at 20 minutes and stops by itself at 60 (saved as if Stop was pressed),
+timed by the recorder's elapsed-time poll, never in the MIDI path; the 4 GB WAV guard stays. The
+header, or a footer on portrait phones, hosts the live timer and Stop control only while a take
+is in progress (a take starts from the menus' Record performance) while the recorder keeps
+ownership of both input streams. Full backups include takes unless the player turns off "Include
+recordings" (see core/storage) and merge immutable recordings by ID. Deleting a score leaves its
+recorded performances available in Library → Recordings.
 
 ### core/midi and core/playback
 core/midi: `MidiAdapter` (main thread) runs `onmidimessage` → `MidiDecoder` (monotonic `seq`,
@@ -206,7 +227,10 @@ started at the first press). `AppSettings.metronome` (P20): `enabled` (default o
 Listen, reading, scored practice and play-through; `keepTime` (default on, absent in older stored
 settings = on) is the click in a Keep time attempt after its count-in; the count-in always clicks.
 `outputId` defaults to system audio. A separately selected browser audio output uses its own
-context so Listen, accompaniment, and monitoring can continue using their own destinations.
+context so Listen, accompaniment, and monitoring can continue using their own destinations. The
+picker shows only where Web Audio can select an output (`AudioContext.setSinkId`). A browser that
+hides its outputs until the site has media permission gets a Show audio outputs button; only that
+tap asks (`selectAudioOutput`, or the microphone once, stopped at once).
 Session wiring notes: `src/core/playback/README.md`.
 
 ### core/history and core/storage
@@ -216,19 +240,36 @@ history (pure, worker-safe): `ingestAttempt` / `ingestAbandon` fold engine recor
 plus Improved; `results` / `buildScorecard` summarize attempts per comparison context (best
 clean unassisted vs assisted, streak). Bars are keyed (measureContextKey, occ); only complete
 traversals enter the window of five.
-storage (IndexedDB "pianissimo" v1, idb): `openStorage()` → `PianissimoStorage`. Stores:
+storage (IndexedDB "pianissimo" v4, idb): `openStorage()` → `PianissimoStorage`. Stores:
 pieces, sources, packages (both keyed by scoreVersionId), settings, attempts (indexes pieceId,
 contextKey), measureHistory, suggestionState, abandonEvents, layoutCache (+meta, LRU by bytes
-and count). `commitImport` writes source + package + piece in one transaction; `loadSettings`
-merges stored settings over `DEFAULT_SETTINGS` field by field (`normalizeSettings`).
+and count), libraryState, and the takes' recordings, recordingFiles, recordingBlocks (key
+`[recordingId, blockIndex]`) and pendingRecordings (see Performance recordings). An upgrade that
+another tab blocks (it keeps an older version open) calls `StorageOptions.onBlocked`, and
+`app/services` shows a notice asking to close the other tab until the open goes on; this tab
+closes its own connection when a newer version asks. `commitImport` writes source + package +
+piece in one transaction; `loadSettings` merges stored settings over `DEFAULT_SETTINGS` field by
+field (`normalizeSettings`).
 Practice records: the session calls `storage.history.queueAttempt` / `queueAbandon` (O(1),
 never in the MIDI path); the `HistoryWriter` flushes on idle, `pagehide` and visibility-hidden
 (`attachLifecycle()` once), ingests through core/history and writes attempts + changed
 history in one transaction. Views call `loadSuggestions(pieceId, sessionDismissals)` and
 `loadResults(pieceId)`. Export/restore (`*.pianissimo.zip`, format 1, fflate, lazily
-imported): manifest + one JSON per store + sources/*.bin + packages/*.json, layout cache
-excluded; restore validates everything first (`BackupError`, nothing written on failure) and
-merges by id in one transaction. Details: `src/core/storage/README.md`.
+imported): manifest + one JSON per store + sources/*.bin + packages/*.json + recordings.json and
+recordings/<id>.mid / recordings/<id>.wav.<i> (stored parts of at most 4 MiB), layout cache
+excluded. `exportAll({ includeRecordings })` returns a Blob assembled from parts (never one array
+of the archive; each audio block is released once added) that the download hands to the browser
+without copying; with recordings off the manifest carries `recordingsExcluded: true` and no
+recording entry is written. Export refuses (`BackupError` 'too-large', a message suggesting to
+turn recordings off) a backup that restore would refuse for its size (512 MiB per entry, 2 GiB in
+all, 50 000 entries), checked from the takes' stored sizes before any audio is read. Restore takes
+the picked File and reads it by slices (its own central-directory reader): it validates
+everything first (`BackupError`, nothing written on failure), merges library, results, history
+and settings by id in one transaction, then restores each take in its own transactions, reading
+its audio a block at a time; a take that cannot be stored is skipped and reported
+(`RestoreReport.recordings` added / skipped as already present / failed, plus a warning) and
+never undoes the rest. Settings restore keeps this device's MIDI route and metronome output
+device unless `route: 'backup'`. Details: `src/core/storage/README.md`.
 
 Rhythm mode results (core/history, views/results, app/session/corrections): `timingAccuracy(record)`
 summarizes a strict record's per-group `offsetMs` / `missed` against `rhythm.toleranceMs` (on
@@ -345,7 +386,10 @@ Practice paused; the later Start/Play gesture owns audio and microphone activati
 imports offer Open existing piece and a secondary Add another copy with shared reviewed metadata.
 Dependencies are injectable via `LibraryDeps` (tests: `views/library/testkit.ts`). Export and
 restore are in Settings → Backup (`views/settings/BackupSection`, its own `LibraryModel`); the
-Library refreshes its list when Settings close (L7).
+Library refreshes its list when Settings close (L7). When there are takes, Backup shows an
+"Include recordings" switch (on by default) with their number and total size
+(`LibraryModel.recordings` from `storage.recordingsSummary()`, `formatBytes`), and the restore
+report lists takes with the other stores (`describeRestore`).
 `app/session/` (framework-free, all dependencies injected): `PracticeSession` owns one piece's
 practice. Each human MIDI event → `MidiOutputBackend.humanInput` → `engine.input` → engine events
 drained (`input-complete` → `transport.releaseGate`, records → `storage.history.queue*`). Visual
@@ -456,12 +500,19 @@ A pass within the near-beat window has a folded timing summary beneath the pass 
 
 During Keep time (U112), the session converts each playable bar in the selected passage into
 an activity window using the tempo map and the actual bar and loop boundaries. A fresh key
-press counts for the bar it lands in. A bar with no required attacks has no silence check.
-The shared session timer stops playback at any silent playable bar's end. Repeat also checks
-for any written learner pitch in the opening two bars without scoring tolerance. A one-bar loop
-gets its second bar on the next traversal. The session holds early scoring completion while
-an unresolved check could still stop playback, so an automatic stop leaves the previous result
-and does not add a pass to history. On the next downbeat the session hides the previous pass's
+press counts for the bar it lands in and, when it comes up to the scoring tolerance before a
+barline, for the next bar too (an early downbeat; the count-in's last stretch counts for the
+first bar). The windows move with the transport when a late timer or a stall shifts the music
+(`Transport.shiftMs`), as the live timing cue does. A bar with no required attacks has no
+silence check. The shared session timer stops playback a short grace (100 ms) after any silent
+playable bar's end, so a key stamped before the barline but delivered late still counts.
+Repeat also checks for any written learner pitch in the opening two bars without scoring
+tolerance. A one-bar loop gets its second bar on the next traversal. The session holds early
+scoring completion while an unresolved check could still stop playback, so an automatic stop
+leaves the previous result and does not add a pass to history. Any other way of leaving the
+pass (pause, seek, selection or mode change, a lost input or output, Again, leaving the view)
+records the held pass first, unless the Repeat opening check is still pending: with no sign of a
+player it is dropped as the automatic stop drops it. On the next downbeat the session hides the previous pass's
 score marks in both layouts. The same marks return with the previous review after a stop.
 
 Playback (P27) is an opt-in app setting in `AppSettings.rhythm.scorePlayback`. The session
@@ -470,7 +521,8 @@ runs the optional metronome and reports each learner gate to the engine. It star
 after the count-in. Output uses the existing graded route check. The switch replaces the scheduled score events
 in the existing transport and releases its old notes.
 The count-in, metronome, clock, and grading continue. The engine adds `scorePlayback: true` to
-the comparison context for passes that use it. Result and per-measure keys append the playback
+the comparison context for passes that use it above 0% (at 0% Playback counts as off, also for
+the Start plan's output check). Result and per-measure keys append the playback
 mode only when it is present, preserving existing keys.
 
 The Playback volume slider reuses the Keep time reveal animation in both menu layouts.
@@ -486,7 +538,7 @@ Hints (`KeepTimeGroup`).
 session and `StripView` (`prepareLayout` + IndexedDB layout cache; re-prepared when
 `maxLabelWidthChars` changes). The `PracticeEnv` seam is injectable for tests.
 The Practice menu offers Keep time. The ungraded follower is started from Sheet music (U105, U106).
-Focus mode collapses the header, and on windows of 640 px or less the wrapped footer-tools row, using CSS grid tracks (U60); a tablet's footer is one row in both orientations and its tools dim in place (U88).
+Focus mode collapses a phone's top bar (U93) and, on windows of 640 px or less, the wrapped footer-tools row, using CSS grid tracks (U60); a tablet's or desktop's header stays, upright or on its side, and a tablet's footer is one row in both orientations whose tools dim in place (U88).
 Only the stage height changes, so the existing score view remeasures without re-engraving.
 `useRecede` restores chrome on pause, pointer/touch interaction, or keyboard navigation; it is
 held off while `SessionUi.reviewing` (the review after a completed pass, U102).
@@ -499,9 +551,9 @@ Sheet music menu (U105, U106). The two actions switch at the score cursor using 
 writing practice history or piece state. On phone-size screens (`views/shared/usePhone`) both Practice
 and Sheet music trade their header and footer for one top bar and a menu sheet (U74, U80); on tablets
 and desktops Sheet music uses Practice's footer shell (`FooterBar`, `FooterMenuPopover`)
-with Listen, Follow my playing and the menu (U90, U106), and the
+with Listen, Follow my playing and the menu (U90, U106). On every device the
 portrait page is capped at the stage's width and fitted to it (`pageMaxWidth`, `fitWidth`, R17);
-there a pinch magnifies the page as engraved (`imageZoom`, 1× to 4×, never saved, U83) and the
+on a phone a pinch magnifies the page as engraved (`imageZoom`, 1× to 4×, never saved, U83) and the
 app itself never zooms (`gesture*` events canceled in `app/boot.ts`, `touch-action` on the root).
 `views/results`: `ResultsView` reads `resultsRequest` and calls `loadResultsData(storage,
 request, sessionDismissals)` (flush the history writer, read the piece, its attempts for one
@@ -601,7 +653,9 @@ plays), and any other key stops it before being handled as usual.
   the animation deadline on the performance clock. Opening Details cancels the upcoming Keep
   time pass and restores its review frame while the score is resetting or counting in. The result
   card (`AttemptResult` in `views/practice/Banners.tsx`) docks at the bottom of the stage and
-  `views/practice/reviewInset.ts` hands its height to the strip. The next pass's first correct
+  `views/practice/reviewInset.ts` hands its height, measured against the strip's own root, to the
+  strip. The card's intro and its opening and fold never change the dock's size: they are drawn
+  with transforms, clips and opacity (`views/practice/resultMotion.ts`). The next pass's first correct
   note sets `SessionUi.resultDimmed` (the pill dims until the cursor
   leaves that bar; a one-bar loop ends the result at once); played past, `resultExit` is
   `'played'` and the pill slides away instead of fading.

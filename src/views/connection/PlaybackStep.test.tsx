@@ -5,6 +5,8 @@ import { getMidiService, resetServicesForTests } from '../../app/services'
 import { resetAppStateForTests, settings, updateSettings } from '../../app/state'
 import { FakeAccess, FakeInput, FakeOutput, fakeNavigator } from '../../core/midi/fakeWebMidi'
 import { byLabel, click, flush, mount, type Mounted } from '../shared/testing'
+import { useCatalog } from '../shared/catalogTesting'
+import { percentage } from '../../i18n/messages'
 import { PlaybackStep } from './PlaybackStep'
 import { playbackStatus } from './status'
 import { manualClock } from './testkit'
@@ -146,5 +148,19 @@ describe('PlaybackStep: the test notes double as the echo probe (DECISIONS C11)'
     r.rerender()
     expect(r.root.textContent).toContain('The test notes could not be sent')
     expect(settings.value.route.outputVerified).toBe(false)
+  })
+})
+
+describe('PlaybackStep in French', () => {
+  it('shows the accompaniment level in the French percent format', async () => {
+    const restore = useCatalog('fr-FR')
+    try {
+      updateSettings({ route: { accompanimentLevel: 0.75 } })
+      const r = await rig('silent')
+      expect(step(r.root).querySelector('output')?.textContent).toBe(percentage(0.75))
+      expect(percentage(0.75)).not.toBe('75%')
+    } finally {
+      restore()
+    }
   })
 })

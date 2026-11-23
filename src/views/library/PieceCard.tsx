@@ -265,9 +265,9 @@ function DeleteSheet({
     <Sheet title={msg('Delete this piece?')} open={open} onClose={onClose}>
       <div class={styles.flow}>
         <p>
-          “{piece.title}
           {msg(
-            '” will be removed from this device with its score, results and practice history. This cannot be undone. Export a backup first if you might want it back.',
+            '“{0}” will be removed from this device with its score, results and practice history. This cannot be undone. Export a backup first if you might want it back.',
+            piece.title,
           )}
         </p>
         {error ? <Notice tone="danger">{error}</Notice> : null}
@@ -322,10 +322,9 @@ function ClearSheet({
     <Sheet title={msg('Clear practice history?')} open={open} onClose={onClose}>
       <div class={styles.flow}>
         <p>
-          {msg('This forgets which bars of “')}
-          {piece.title}
           {msg(
-            '” gave you trouble: bar histories, suggestions (including Improved) and restart records. The score itself stays.',
+            'This forgets which bars of “{0}” gave you trouble: bar histories, suggestions (including Improved) and restart records. The score itself stays.',
+            piece.title,
           )}
         </p>
         <label class={styles.choice}>

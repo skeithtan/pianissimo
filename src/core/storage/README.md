@@ -18,7 +18,9 @@ const storage = await openStorage();            // database "pianissimo"; openSt
 ```
 
 `options`: `appVersion` (recorded in backups), `layoutCache` (`{ maxBytes, maxEntries }`,
-default 50 MB / 256 entries), `history` (`HistoryWriterOptions`), `now`.
+default 50 MB / 256 entries), `history` (`HistoryWriterOptions`), `now`, `onBlocked` (the
+upgrade waits for another tab that keeps an older version open; the app shows a notice).
+Opening also removes the blocks of takes whose save a closed page left unfinished.
 
 | Area | Methods |
 | --- | --- |
@@ -29,7 +31,8 @@ default 50 MB / 256 entries), `history` (`HistoryWriterOptions`), `now`.
 | Results | `addAttempts(records)`, `listAttempts({ pieceId } \| { contextKey } \| both, scoreVersionId? })`, `getAttempt(id)`, `loadResults(pieceId)` → `ContextResults[]` for the piece's current version |
 | Suggested practice | `history` (a `HistoryWriter`, below), `loadSuggestions(pieceId, dismissed?)` → up to three plus Improved, `loadPieceHistory(pieceId)`, `setSuggestionsDisabled(pieceId, bool)`, `clearPracticeHistory(pieceId, { attempts? })` |
 | Layout cache | `getLayout(key)`, `putLayout(key, scoreVersionId, value, approxBytes)` → boolean, `clearLayouts(scoreVersionId?)`, `layoutCacheStats()` |
-| Backup | `exportAll()` → `Uint8Array` (save as `backupFileName()`), `restore(bytes, { settings?, route? })` → `RestoreReport` (throws `BackupError`) |
+| Recordings | `listRecordings()`, `saveRecording(info, { midi, audio })` (reads the WAV Blob a block at a time; listed only once complete), `getRecordingFiles(id)` → `{ midi, audio }` Blobs (audio assembled from the blocks), `deleteRecording(id)`, `recordingsSummary()` → `{ count, bytes }` |
+| Backup | `exportAll({ includeRecordings? })` → `Blob` built from parts (save as `backupFileName()`), `restore(fileOrBytes, { settings?, route? })` → `RestoreReport` (throws `BackupError`) |
 | Environment | `requestPersistentStorage()`, `isStoragePersistent()`, `estimateStorage()`, `isIndexedDbAvailable()`, `isQuotaError(e)`; `newPieceRecord(pkg)` builds a library entry with defaults |
 
 `PieceRecord`: `id`, `title`, `composer?`, `scoreVersionId`, `createdAt`, `lastOpenedAt`,
@@ -69,12 +72,14 @@ record is dropped alone. Scheduling is injectable for tests. Ordinary-reading at
 the measure histories but their records are not stored unless `keepReadingAttempts` is set;
 Preview records nothing.
 
-## Database "pianissimo", version 3
+## Database "pianissimo", version 4
 
 | Store | Key | Value / indexes |
 | --- | --- | --- |
-| `recordings` | `id` | Recording metadata and note counts. |
-| `recordingFiles` | recording ID | MIDI bytes and WAV blocks in the same record. |
+| `recordings` | `id` | `RecordingInfo`: metadata, note counts, `passageRange` (absent on older takes). Lists read only this. |
+| `recordingFiles` | recording ID | `{ midi, type, blocks, bytes }`: the MIDI file and what to expect in `recordingBlocks`. A take the version 4 upgrade could not convert keeps the schema 3 shape `{ midi, audio: ArrayBuffer[] }`; every reader accepts both. |
+| `recordingBlocks` | `[recordingId, blockIndex]` | One block of the WAV file, at most 4 MiB (`RECORDING_BLOCK_BYTES`); read and deleted by key range. |
+| `pendingRecordings` | recording ID | `{ startedAt }` while a take's blocks are being written; installation-local. |
 | `pieces` | `id` | `PieceRecord`; indexes `lastOpenedAt`, `scoreVersionId` |
 | `sources` | `scoreVersionId` | `SourceFileRecord` (original bytes) |
 | `packages` | `scoreVersionId` | `ScorePackage` |
@@ -89,7 +94,24 @@ Preview records nothing.
 
 Heavy data (package, source) is separate from the small piece records so the library lists
 without loading scores. Upgrades add branches on `oldVersion` in `schema.ts` and never drop
-user stores. A connection told to upgrade by another tab closes itself.
+user stores. A connection told to upgrade by another tab closes itself; an upgrade blocked by
+another tab calls `onBlocked`.
+
+Takes (`recordings.ts`). Chrome refuses any single stored value above 133,169,152 bytes, so a
+take's WAV is stored as 4 MiB blocks: far below that limit, nothing to hold in memory on a 4 GB
+tablet, under 200 records for an hour of 48 kHz stereo, and the block size schema 3 already used
+(converted takes and older backups keep their blocks). A save writes one block per transaction,
+reading the Blob one block at a time, under a `pendingRecordings` marker; the last transaction
+checks that every block is present, writes the files record and the metadata and removes the
+marker, so a half-written take is never listed. A failed save removes its blocks at once; a save
+cut short by a closed page is removed when the database is next opened, once its marker is more
+than an hour old (a save running in another tab is younger; were it removed anyway, its last
+transaction would find blocks missing and fail rather than list a broken take). The version 4
+upgrade converts schema 3 takes inside the upgrade transaction, one take at a time and skipping
+converted ones; a take whose blocks cannot be written keeps its schema 3 record (its partial
+blocks are removed) and the upgrade continues. If the upgrade transaction fails as a whole (a
+browser may refuse the temporary extra space when it commits), the database is opened again
+without converting, and those takes stay readable in the schema 3 shape.
 
 Only a database created from version zero starts with pending initial-library eligibility.
 Ordinary imports, `putPiece`, and successful restores complete the first-use marker.
@@ -134,17 +156,28 @@ These pieces use ordinary IDs and records, including ordinary deletion, history,
 ## Backup format (`*.pianissimo.zip`, format 1)
 
 ```
-manifest.json         { format: "pianissimo-backup", formatVersion, appVersion, createdAt, dbVersion, counts }
+manifest.json         { format: "pianissimo-backup", formatVersion, appVersion, createdAt, dbVersion, counts,
+                        recordingsExcluded? (true: the player left recordings out) }
 settings.json         { settings: AppSettings | null }
 pieces.json  attempts.json  measureHistory.json  suggestionState.json  abandonEvents.json
 sources.json          [{ scoreVersionId, fileName, packaging, sha256, bytesSha256, size, file }]
 sources/<id>.bin      original bytes (stored, not deflated, for .mxl)
 packages/<id>.json    one ScorePackage per score version   (<id> is encodeURIComponent)
+recordings.json       RecordingInfo[] (only when there are takes; counts.recordings matches)
+recordings/<id>.mid   a take's MIDI file
+recordings/<id>.wav.<i>  its WAV file in stored parts of at most 4 MiB, from 0 (one empty part for a take without audio)
 ```
 
+The recordings layout is the one schema 3 wrote, so backups from either version restore in both.
 Export reads and compresses packages and sources one at a time and yields between 1 MiB
-chunks; the zip layer (`backup.ts`, `zipio.ts`, `merge.ts`) is a lazily imported chunk, so
-opening the library does not load it. Restore:
+chunks, and adds a take's audio one block at a time; the archive is a Blob assembled from parts
+(no array of the whole archive, each block released once added). With `includeRecordings: false`
+nothing of the takes is written and the manifest says `recordingsExcluded: true`. Export refuses
+(`BackupError` 'too-large') a backup over the restore limits below, checked from the takes'
+stored sizes before reading any audio; the message suggests turning recordings off when they
+are what makes it too large. The zip layer (`backup.ts`, `zipio.ts`, `merge.ts`) is a lazily
+imported chunk, so opening the library does not load it. `zipio.ts` reads the archive's central
+directory itself, from a picked File by slices or from bytes. Restore:
 
 1. **Validates everything first, writes nothing on failure** (`BackupError` with a code,
    a readable message and up to 20 record-level `problems`): not a zip / not a Pianissimo
@@ -152,7 +185,7 @@ opening the library does not load it. Restore:
    a format newer than this app ("update the app"), records of the wrong shape, packages of an
    unsupported format, source size or SHA-256 mismatch, size limits (512 MiB per entry, 2 GiB
    total, 50 000 entries).
-2. **Merges by id in one transaction**, deleting nothing local. Attempts and sources are
+2. **Merges library, results, history and settings by id in one transaction**, deleting nothing local. Attempts and sources are
    immutable (an existing id is kept). Pieces: the more recently opened record supplies the
    state; a tempo or composer missing there is taken from the other side only when both are on
    the same score version. Bar histories: the more recently updated record wins. Suggestions: union by id, newer
@@ -163,8 +196,14 @@ opening the library does not load it. Restore:
    merge is the backup's record), and a replaced package drops the version's cached layouts. Pieces whose package is in neither the
    backup nor this browser are skipped with a warning, with their records.
 3. **Settings** are replaced by the backup's (`settings: 'keep'` leaves local ones alone).
-   The MIDI **route** (port ids, output verification, echo result) is device- and
-   connection-specific, so this browser's route is kept (`route: 'backup'` restores it too).
+   The MIDI **route** (port ids, output verification, echo result) and the metronome's audio
+   output device (`metronome.outputId`) are device-specific, so this browser's are kept
+   (`route: 'backup'` restores them too).
+4. **Takes**, after that transaction has committed, each in its own transactions, reading its
+   audio from the file a block at a time. A take already here (same id) is kept; one that
+   cannot be stored (storage full, a value this browser refuses) is skipped, named in
+   `warnings` and counted in `RestoreReport.recordings` (`added`, `skipped`, `failed`); it
+   never undoes the rest.
 
 ## Decisions and interpretations
 

@@ -87,7 +87,7 @@ function RenameForm({ piece, model, onClose }: { piece: PieceRecord; model: Libr
           onInput={(e) => setTitle(e.currentTarget.value)}
         />
       </Field>
-      <Field label={msg('Composer')} hint="Optional">
+      <Field label={msg('Composer')} hint={msg('Optional')}>
         <input
           type="text"
           value={composer}

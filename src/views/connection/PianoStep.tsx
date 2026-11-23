@@ -192,7 +192,7 @@ function PairingGuide() {
       <summary>{msg('How to connect your piano')}</summary>
       <div class={styles.detailsBody}>
         <p>
-          <strong>USB:</strong>{' '}
+          <strong>{msg('USB:')}</strong>{' '}
           {msg(
             'connect the piano’s USB (often “USB to Host”) port to this device. On iPad, use a USB-C or Lightning adapter.',
           )}
@@ -204,7 +204,7 @@ function PairingGuide() {
           )}
         </p>
         <p>
-          <strong>Bluetooth:</strong>{' '}
+          <strong>{msg('Bluetooth:')}</strong>{' '}
           {msg(
             'the piano must offer Bluetooth MIDI (Bluetooth LE MIDI). Pair it in the system’s or MIDIWeb’s own Bluetooth MIDI settings — this website never pairs devices. Bluetooth audio alone is not enough: it only carries sound, not notes.',
           )}

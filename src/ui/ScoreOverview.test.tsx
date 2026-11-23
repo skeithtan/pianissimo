@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
 import { $, mount, press, type Mounted } from '../views/shared/testing'
+import { untranslatedText, usePseudoCatalog } from '../views/shared/catalogTesting'
 import { rat } from '../core/music/rational'
 import type { TempoMapData } from '../core/music/tempo'
 import {
@@ -461,5 +462,17 @@ describe('<ScoreOverview>', () => {
     const root = $(view.container, '[role="slider"]')!
     expect(root.getAttribute('aria-valuetext')).toBe('No score')
     expect(root.getAttribute('aria-disabled')).toBe('true')
+  })
+})
+
+describe('<ScoreOverview> translation coverage', () => {
+  it('shows no text that bypasses the catalogs', () => {
+    const restore = usePseudoCatalog()
+    try {
+      const { root } = setup({ loop: { fromOcc: 2, toOcc: 4 }, onLoopChange: () => undefined })
+      expect(untranslatedText(root)).toEqual([])
+    } finally {
+      restore()
+    }
   })
 })

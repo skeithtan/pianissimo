@@ -142,6 +142,12 @@ export interface SessionDeps {
    * so scenario tests see the record at the final key, as before.
    */
   readonly finalSlipMs?: number
+  /**
+   * How long after a bar's end Keep time judges it silent (DECISIONS U112), so a key press
+   * stamped inside the bar but delivered late still counts. Default `KEEP_TIME_GRACE_MS`; the test
+   * harness passes 0 so scenario tests see the stop at the barline, as before.
+   */
+  readonly keepTimeGraceMs?: number
   /** Lazy loaders (tests inject fakes; MIDI-only use never calls `loadBrowserAudio`). */
   readonly loadBrowserAudio?: () => Promise<BrowserAudioModule>
   /**

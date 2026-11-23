@@ -10,17 +10,44 @@
  * RESULT_DETAILS_SHOTS=<directory outside the repository> also saves screenshots collapsed and
  * expanded at iPad landscape / upright and phone upright / on its side, light and dark.
  */
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type Page } from '../browser-test'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/core/model/settings'
-import { installFakeMidi, loopWholePiece, openSeededPractice, play, playWhenDue, seedPiece } from './practice-helpers'
+import { QUICK_FOLD_MS } from '../../src/views/practice/resultMotion'
+import {
+  installFakeMidi,
+  loopWholePiece,
+  openFooterMenu,
+  openSeededPractice,
+  play,
+  playAfterCountIn,
+  playWhenDue,
+  seedPiece,
+} from './practice-helpers'
+
+/** The interface catalogs, by language (read as data: Playwright loads no JSON modules). */
+const CATALOGS: Record<string, Record<string, string>> = Object.fromEntries(
+  ['en-US', 'es-ES', 'fr-FR', 'fil-PH', 'ja-JP'].map((language) => [
+    language,
+    JSON.parse(readFileSync(new URL(`../../src/i18n/locales/${language}.json`, import.meta.url), 'utf8')),
+  ]),
+)
 
 const SHOTS = process.env['RESULT_DETAILS_SHOTS']
 
 /** The strip's content transform (zoom and translate). */
 async function stripTransform(page: Page): Promise<string> {
   return page.locator('.pn-strip .pn-content').evaluate((el) => (el as HTMLElement).style.transform)
+}
+
+/** The strip has not moved or zoomed since `before` (rounding may differ by a hundredth of a pixel). */
+async function expectStripAt(page: Page, before: string): Promise<void> {
+  const numbers = (transform: string) => (transform.match(/-?\d+(?:\.\d+)?(?=px|\))/g) ?? []).map(Number)
+  const now = numbers(await stripTransform(page))
+  const was = numbers(before)
+  expect(now.length).toBe(was.length)
+  now.forEach((n, i) => expect(Math.abs(n - was[i]!)).toBeLessThan(0.05))
 }
 
 /** Waits until the score's view (strip transform or page scroll) has not changed for 200 ms (the review zoom has landed). */
@@ -56,6 +83,27 @@ async function openLoop(page: Page, settings: Partial<AppSettings> = {}): Promis
   await page.getByRole('button', { name: 'Start', exact: true }).click()
 }
 
+/**
+ * A Keep time pass over bars 1–2 that misses some groups: a result with a status line as long as
+ * they get, and timing correction cards in its details.
+ */
+async function keepTimePass(page: Page): Promise<void> {
+  await page.setViewportSize({ width: 1194, height: 834 })
+  await installFakeMidi(page)
+  await seedPiece(page)
+  await openSeededPractice(page)
+  await loopWholePiece(page)
+  const menu = await openFooterMenu(page)
+  await menu.getByRole('switch', { name: 'Keep time' }).click()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Start', exact: true }).click()
+  await playAfterCountIn(page, [
+    { notes: [60, 48], atMs: 0 },
+    { notes: [67, 71, 74, 43], atMs: 4000 },
+  ])
+  await expect(page.getByTestId('attempt-result')).toContainText('missed', { timeout: 20_000 })
+}
+
 async function nextPass(page: Page): Promise<void> {
   await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'ready', { timeout: 15_000 })
 }
@@ -82,6 +130,155 @@ const hide = (page: Page) => page.getByTestId('result-details-hide')
 async function viewSignature(page: Page): Promise<string> {
   if ((await page.locator('.pn-strip .pn-content').count()) > 0) return stripTransform(page)
   return String(await page.getByTestId('page-scroll').evaluate((el) => el.scrollTop))
+}
+
+/** What may animate on the result card while it opens or folds: nothing that lays anything out. */
+const DRAWN_ONLY = new Set(['transform', 'clipPath', 'clip-path', 'opacity'])
+
+/**
+ * The properties animated on the result card and inside it, every frame for `ms` from now (CSS
+ * animations and transitions and script animations alike, `document.getAnimations()`).
+ */
+function animatedProperties(page: Page, ms: number): Promise<string[]> {
+  return page.getByTestId('result-dock').evaluate(
+    (dock, ms) =>
+      new Promise<string[]>((resolve) => {
+        const seen = new Set<string>()
+        const end = performance.now() + ms
+        const sample = () => {
+          for (const animation of document.getAnimations()) {
+            const effect = animation.effect as KeyframeEffect | null
+            const target = effect?.target
+            if (!target || !dock.contains(target)) continue
+            if ('transitionProperty' in animation) seen.add(String(animation.transitionProperty))
+            else
+              for (const frame of effect.getKeyframes())
+                for (const key of Object.keys(frame))
+                  if (!['offset', 'computedOffset', 'easing', 'composite'].includes(key)) seen.add(key)
+          }
+          if (performance.now() < end) requestAnimationFrame(sample)
+          else resolve([...seen].sort())
+        }
+        requestAnimationFrame(sample)
+      }),
+    ms,
+  )
+}
+
+/**
+ * From the moment the result appears: every frame for `ms`, the time since then, the dock's height,
+ * the score view's transform (or the stage's height upright) and where the pill's badge is drawn.
+ */
+function introFrames(page: Page, ms: number) {
+  return page.evaluate(
+    (ms) =>
+      new Promise<{ t: number; dock: number; view: string; badge: number }[]>((resolve) => {
+        const frames: { t: number; dock: number; view: string; badge: number }[] = []
+        let start = 0
+        const sample = (now: number) => {
+          const card = document.querySelector('[data-testid="attempt-result"]')
+          if (card) {
+            start ||= now
+            const content = document.querySelector<HTMLElement>('.pn-strip .pn-content')
+            const stage = document.querySelector('[data-repeat-bounds]')!
+            frames.push({
+              t: now - start,
+              dock: document.querySelector('[data-testid="result-dock"]')!.getBoundingClientRect().height,
+              view: content ? content.style.transform : String(stage.getBoundingClientRect().height),
+              badge: card.querySelector('[data-expandable] [aria-hidden="true"]')!.getBoundingClientRect().top,
+            })
+          }
+          if (!start || now - start < ms) requestAnimationFrame(sample)
+          else resolve(frames)
+        }
+        requestAnimationFrame(sample)
+      }),
+    ms,
+  )
+}
+
+/**
+ * Every frame for `ms`: the text, lists and excerpt cards in the details and the text of the summary
+ * row that show (their opacity, with their ancestors', above 0.05) but reach past the animated side
+ * clip of the element they are in. The clip is the element's computed `clip-path` (its running
+ * animation); its box already carries its translate. The notation's own SVG text is covered by its
+ * excerpt card. `fading` counts the frames in which the contents were partly transparent.
+ */
+function cutBySideClip(
+  page: Page,
+  ms: number,
+): Promise<{ frames: number; shown: number; fading: number; cut: string[] }> {
+  return page.evaluate(
+    (ms) =>
+      new Promise<{ frames: number; shown: number; fading: number; cut: string[] }>((resolve) => {
+        const cut: string[] = []
+        let frames = 0
+        let shown = 0
+        let fading = 0
+        const end = performance.now() + ms
+        const look = (clipped: HTMLElement, what: string) => {
+          const box = clipped.getBoundingClientRect()
+          const inset = /^inset\(([^)]*?)(?: round [^)]*)?\)$/.exec(getComputedStyle(clipped).clipPath)
+          const [t = 0, r = t, , l = r] = inset ? inset[1]!.trim().split(/\s+/).map(parseFloat) : []
+          const from = box.left + l
+          const to = box.right - r
+          const visible = (el: Element) => {
+            let opacity = 1
+            for (let node: Element | null = el; node && node !== clipped.parentElement; node = node.parentElement)
+              opacity *= Number(getComputedStyle(node).opacity)
+            return opacity > 0.05
+          }
+          const check = (rect: DOMRect, name: string) => {
+            if (rect.width === 0 || rect.height === 0) return
+            shown++
+            if (rect.left < from - 0.5 || rect.right > to + 0.5)
+              cut.push(
+                `${what} ${name}: ${Math.round(rect.left)}–${Math.round(rect.right)} in ${Math.round(from)}–${Math.round(to)}`,
+              )
+          }
+          const walker = document.createTreeWalker(clipped, NodeFilter.SHOW_TEXT)
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const el = node.parentElement
+            if (!el || !node.textContent?.trim() || el.closest('svg') || !visible(el)) continue
+            const range = document.createRange()
+            range.selectNodeContents(node)
+            // What an ellipsis or a list's own edge hides is not shown: keep the part inside the
+            // nearest ancestor that clips its overflow.
+            let clip: Element | null = el
+            while (clip && clip !== clipped && getComputedStyle(clip).overflowX === 'visible') clip = clip.parentElement
+            const bounds = clip && clip !== clipped ? clip.getBoundingClientRect() : null
+            for (const rect of range.getClientRects()) {
+              const left = bounds ? Math.max(rect.left, bounds.left) : rect.left
+              const right = bounds ? Math.min(rect.right, bounds.right) : rect.right
+              if (right > left)
+                check(
+                  new DOMRect(left, rect.top, right - left, rect.height),
+                  JSON.stringify(node.textContent.trim().slice(0, 24)),
+                )
+            }
+          }
+          for (const el of clipped.querySelectorAll('ul, [data-testid="result-excerpt"]'))
+            if (visible(el)) check(el.getBoundingClientRect(), el.tagName.toLowerCase())
+        }
+        const sample = () => {
+          const panel = document.querySelector<HTMLElement>('[data-testid="result-details"]')
+          if (panel) {
+            frames++
+            // The contents fade (they are neither absent nor there at once).
+            const opacity = Number(getComputedStyle(panel.lastElementChild!).opacity)
+            if (opacity > 0.05 && opacity < 0.95) fading++
+            look(panel, 'panel')
+            // On a phone the pill lies under the panel, whole; its own clip never moves.
+            if (panel.dataset['layout'] === 'panel')
+              look(document.querySelector<HTMLElement>('[data-testid="attempt-result"] [data-expandable]')!, 'row')
+          }
+          if (performance.now() < end) requestAnimationFrame(sample)
+          else resolve({ frames, shown, fading, cut: [...new Set(cut)] })
+        }
+        requestAnimationFrame(sample)
+      }),
+    ms,
+  )
 }
 
 /** Folds the expanded result by its chevron: the panel's own on a phone, the pill's otherwise. */
@@ -112,13 +309,27 @@ test.describe('the result details open in place (U99)', () => {
   }) => {
     await page.setViewportSize({ width: 1194, height: 834 })
     await openLoop(page)
+    const intro = introFrames(page, 1100)
     await pass(page)
     const card = page.getByTestId('attempt-result')
     await expect(card).toContainText('Clean pass')
     const preview = card.getByTestId('result-details-preview')
     await expect(card).toHaveAttribute('data-intro', 'true')
-    const intro = (await card.boundingBox())!
     await expect(card).not.toHaveAttribute('data-intro', 'true')
+    // The taller preview is drawn above the pill: the dock keeps one height from the first frame, so
+    // the review frame never re-fits. Once the zoom out has landed (650 ms), the score holds still
+    // through the end of the intro (960 ms).
+    const frames = await intro
+    const docks = frames.map((f) => f.dock)
+    expect(Math.max(...docks) - Math.min(...docks)).toBeLessThan(0.5)
+    const held = frames
+      .filter((f) => f.t >= 760 && f.t <= 960)
+      .map((f) => (f.view.match(/-?[\d.]+/g) ?? []).map(Number))
+    expect(held.length).toBeGreaterThan(3)
+    // (The strip's own sub-pixel rounding aside.)
+    for (const numbers of held) numbers.forEach((n, i) => expect(Math.abs(n - held[0]![i]!)).toBeLessThan(0.05))
+    const early = frames.find((f) => f.t > 50 && f.t < 400)!
+    expect(frames.at(-1)!.badge - early.badge).toBeGreaterThan(20)
     await settled(page)
     const url = page.url()
     const before = await stripTransform(page)
@@ -134,21 +345,21 @@ test.describe('the result details open in place (U99)', () => {
     await expect(card.getByText('More below')).toHaveCount(0)
     const previewLines = await preview.locator('li').allTextContents()
     const collapsed = (await card.boundingBox())!
-    expect(intro.width).toBeCloseTo(collapsed.width, 0)
-    expect(intro.height - collapsed.height).toBeGreaterThan(30)
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
     await expect(toggle(page)).toHaveAccessibleName('Show details of this pass')
-    // Sample the actual growing boxes before waiting for the lazy details.
+    // Sample the growing card before waiting for the lazy details: where its top edge and the
+    // badge at its start edge are drawn.
     const motion = card.evaluate(
       (el) =>
-        new Promise<{ width: number; height: number }[]>((resolve) => {
-          const trail: { width: number; height: number }[] = []
+        new Promise<{ badge: number; height: number }[]>((resolve) => {
+          const trail: { badge: number; height: number }[] = []
           const sample = () => {
             const panel = el.querySelector('[data-testid="result-details"]')
             if (panel) {
-              const box = panel.getBoundingClientRect()
+              const top = panel.getBoundingClientRect().top
               const bottom = el.getBoundingClientRect().bottom
-              trail.push({ width: box.width, height: bottom - box.top })
+              const badge = el.querySelector('[data-expandable] [aria-hidden="true"]')!.getBoundingClientRect().left
+              trail.push({ badge, height: bottom - top })
             }
             if (trail.length < 20) requestAnimationFrame(sample)
             else resolve(trail)
@@ -156,7 +367,11 @@ test.describe('the result details open in place (U99)', () => {
           requestAnimationFrame(sample)
         }),
     )
-    await toggle(page).click()
+    // By keyboard, the pointer away: a hovered control's own feedback is not part of the motion.
+    await page.mouse.move(1, 1)
+    await page.waitForTimeout(300)
+    const opening = animatedProperties(page, 600)
+    await toggle(page).press('Enter')
     await expect(details(page)).toBeVisible()
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true')
     await expect(toggle(page)).toHaveText('Details')
@@ -170,7 +385,7 @@ test.describe('the result details open in place (U99)', () => {
     await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
     await expect(page.locator('.pn-strip')).toHaveClass(/pn-review/)
     await page.waitForTimeout(500)
-    expect(await stripTransform(page)).toBe(before)
+    await expectStripAt(page, before)
     expect((await page.getByTestId('result-dock').boundingBox())!.height).toBeCloseTo(dock.height, 0)
     // The details sit above the pill, over the stage.
     const panel = (await details(page).boundingBox())!
@@ -178,16 +393,25 @@ test.describe('the result details open in place (U99)', () => {
     expect(panel.width).toBe(900)
     expect(panel.y + panel.height).toBeCloseTo(pill.y + 1, 0)
     const expandedHeight = pill.y + pill.height - panel.y
-    const frames = await motion
-    expect(frames.some(({ width }) => width > collapsed.width + 10 && width < panel.width - 10)).toBe(true)
-    expect(frames.some(({ height }) => height > collapsed.height + 5 && height < expandedHeight - 5)).toBe(true)
+    const trail = await motion
+    const badgeEnd = (await card.locator('[data-expandable] [aria-hidden="true"]').first().boundingBox())!.x
+    expect(trail.some(({ badge }) => badge > badgeEnd + 10 && badge < collapsed.x + 20)).toBe(true)
+    expect(trail.some(({ height }) => height > collapsed.height + 5 && height < expandedHeight - 5)).toBe(true)
+    // Grown with transforms, clips and opacity only: nothing in the card is laid out per frame.
+    const grown = await opening
+    expect(grown.length).toBeGreaterThan(0)
+    expect(grown.filter((p) => !DRAWN_ONLY.has(p))).toEqual([])
 
-    await toggle(page).click()
+    const folding = animatedProperties(page, 600)
+    await toggle(page).press('Enter')
+    const folded = await folding
+    expect(folded.length).toBeGreaterThan(0)
+    expect(folded.filter((p) => !DRAWN_ONLY.has(p))).toEqual([])
     await expect(details(page)).toHaveCount(0)
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
     await expect(preview).toBeVisible()
     await expect(card).not.toHaveAttribute('data-intro', 'true')
-    expect(await stripTransform(page)).toBe(before)
+    await expectStripAt(page, before)
 
     // Escape folds it too; nothing navigates.
     await toggle(page).click()
@@ -209,28 +433,43 @@ test.describe('the result details open in place (U99)', () => {
       await page.setViewportSize(size)
       await settled(page)
       const pill = (await card.boundingBox())!
+      // No frame of the opening or the fold shows a letter, a bullet or an excerpt cut by the side clip.
+      const opening = cutBySideClip(page, 700)
       await toggle(page).click()
       const panel = details(page)
       await expect(panel.getByTestId('result-excerpt').first()).toBeVisible()
-      await page.waitForTimeout(500)
+      const opened = await opening
+      expect(opened.frames).toBeGreaterThan(10)
+      expect(opened.shown).toBeGreaterThan(0)
+      expect(opened.cut).toEqual([])
       const expanded = (await panel.boundingBox())!
+      // The height drawn above the pill's bottom edge, down to the pill's own as it folds.
       const closing = panel.evaluate(
-        (el) =>
+        (el, bottom) =>
           new Promise<number[]>((resolve) => {
             const heights: number[] = []
             const sample = () => {
               if (!el.isConnected) return resolve(heights)
-              if (el.getAttribute('data-phase') === 'leaving') heights.push(el.getBoundingClientRect().height)
+              if (el.getAttribute('data-phase') === 'leaving') heights.push(bottom - el.getBoundingClientRect().top)
               requestAnimationFrame(sample)
             }
             sample()
           }),
+        pill.y + pill.height,
       )
+      await page.mouse.move(1, 1)
+      await page.waitForTimeout(300)
+      const folding = animatedProperties(page, 500)
+      const unclipped = cutBySideClip(page, 500)
       const controls = size === PHONE_SIZES[0] ? page.getByTestId('result-screen-header') : card
-      await controls.getByRole('button', { name: 'Hide result', exact: true }).click()
+      await controls.getByRole('button', { name: 'Hide result', exact: true }).press('Enter')
       const heights = await closing
+      const folded = await unclipped
+      expect(folded.frames).toBeGreaterThan(5)
+      expect(folded.cut).toEqual([])
       expect(heights.some((h) => h < expanded.height - 10 && h > pill.height + 10)).toBe(true)
       expect(heights.at(-1)!).toBeLessThan(pill.height + 15)
+      expect((await folding).filter((p) => !DRAWN_ONLY.has(p))).toEqual([])
       await expect(card).toHaveCount(0)
     })
   }
@@ -260,13 +499,30 @@ test.describe('the result details open in place (U99)', () => {
     await expect(card).not.toHaveAttribute('data-dimmed')
     await expect(page.locator('.pn-strip')).toHaveClass(/pn-review/)
     await expect(page.locator('.pn-corr')).not.toHaveCount(0)
-    // The first correct note: folded, dimmed, the strip back at the playing frame, the marks gone.
+    // The first correct note: folded at once (a short fold that never holds up the playing), dimmed,
+    // the strip back at the playing frame, the marks gone.
+    const fold = page.evaluate(
+      () =>
+        new Promise<number>((resolve) => {
+          let dimmed = 0
+          const check = (now: number) => {
+            const card = document.querySelector('[data-testid="attempt-result"]')
+            if (!dimmed && card?.hasAttribute('data-dimmed')) dimmed = now
+            if (dimmed && !document.querySelector('[data-testid="result-details"]')) return resolve(now - dimmed)
+            requestAnimationFrame(check)
+          }
+          requestAnimationFrame(check)
+        }),
+    )
+    const unclipped = cutBySideClip(page, 500)
     await play(page, 60, 48)
+    expect(await fold).toBeLessThan(QUICK_FOLD_MS + 160)
+    expect((await unclipped).cut).toEqual([])
     await expect(details(page)).toHaveCount(0)
     await expect(card).toHaveAttribute('data-dimmed', 'true')
     await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-review/)
     await expect(page.locator('.pn-corr')).toHaveCount(0)
-    expect(Number(await card.evaluate((el) => getComputedStyle(el).opacity))).toBeLessThan(0.5)
+    await expect.poll(() => card.evaluate((el) => Number(getComputedStyle(el).opacity))).toBeLessThan(0.5)
     // Focus mode follows the first correct note after its usual delay.
     await expect(practice).toHaveAttribute('data-recede', 'true', { timeout: 3000 })
     // A tap brings it back to full strength without acting on its controls.
@@ -347,7 +603,7 @@ test.describe('the result details open in place (U99)', () => {
     // Tapping an excerpt does nothing: same screen, same review.
     await first.getByTestId('excerpt-music').click()
     expect(page.url()).toBe(url)
-    expect(await stripTransform(page)).toBe(before)
+    await expectStripAt(page, before)
     await expect(details(page)).toBeVisible()
     // The earlier passes are in the card; a row shows that pass's numbers there.
     await details(page)
@@ -540,6 +796,94 @@ test.describe('the expanded result by screen size (U99, 17 November 2026)', () =
   })
 })
 
+/**
+ * RESULT_OPEN_SHOTS=<dir outside the repo> saves the opening motion paused at its start, middle and
+ * end at 1194×834 and 390×844: <dir>/<browser>-<size>-<label>-open-<start|middle|end>.png, where
+ * RESULT_OPEN_LABEL (default "after") names the build being shown.
+ */
+test.describe('result opening screenshots', () => {
+  const OPEN_SHOTS = process.env['RESULT_OPEN_SHOTS']
+  const LABEL = process.env['RESULT_OPEN_LABEL'] ?? 'after'
+  test.skip(!OPEN_SHOTS, 'set RESULT_OPEN_SHOTS=<dir outside the repo> to save screenshots')
+  for (const size of [TABLET_SIZES[0], PHONE_SIZES[0]]) {
+    test(`the pill growing into the card at ${size.width}x${size.height}`, async ({ page, browserName }) => {
+      test.setTimeout(200_000)
+      mkdirSync(OPEN_SHOTS!, { recursive: true })
+      await page.setViewportSize(TABLET_SIZES[0])
+      await openLoop(page)
+      await pass(page, { 1: [61] })
+      const card = page.getByTestId('attempt-result')
+      await expect(card).toContainText('1 wrong note')
+      if (size === TABLET_SIZES[0]) {
+        // The intro: the taller preview, then settling (its own timer ends it at 960 ms).
+        await expect(card).toHaveAttribute('data-intro', 'true')
+        for (const [label, time] of [
+          ['intro-tall', 300],
+          ['intro-settling', 720],
+        ] as const) {
+          await card.evaluate((el, time) => {
+            for (const a of el.getAnimations({ subtree: true })) {
+              a.pause()
+              a.currentTime = time
+            }
+          }, time)
+          const box = (await card.boundingBox())!
+          await page.screenshot({
+            path: join(OPEN_SHOTS!, `${browserName}-${LABEL}-${label}.png`),
+            clip: { x: box.x - 20, y: box.y - 80, width: box.width + 40, height: box.height + 100 },
+          })
+        }
+      }
+      await expect(card).not.toHaveAttribute('data-intro', 'true')
+      await page.setViewportSize(size)
+      await page.waitForTimeout(2500)
+      await settled(page)
+      // Once open and folded, so the lazy details are in place and the motion is the one seen later.
+      await toggle(page).click()
+      await expect(details(page).getByTestId('result-excerpt').first()).toBeVisible()
+      await fold(page)
+      await expect(details(page)).toHaveCount(0)
+      await page.waitForTimeout(800)
+      const count = await page.evaluate(async () => {
+        document.querySelector<HTMLElement>('[data-testid="result-details-toggle"]')!.click()
+        const root = document.querySelector('[data-testid="attempt-result"]')!
+        const running = () =>
+          document.getAnimations().filter((a) => {
+            const target = (a.effect as KeyframeEffect | null)?.target
+            return !!target && root.contains(target) && root.hasAttribute('data-opening')
+          })
+        let motion = running()
+        for (let i = 0; i < 50 && motion.length === 0; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          motion = running()
+        }
+        for (const a of motion) {
+          a.pause()
+          a.currentTime = 0
+        }
+        ;(window as unknown as { __open: Animation[] }).__open = motion
+        return motion.length
+      })
+      expect(count).toBeGreaterThan(0)
+      const at = async (label: string, time: number) => {
+        await page.evaluate((time) => {
+          for (const a of (window as unknown as { __open: Animation[] }).__open) a.currentTime = time
+        }, time)
+        await page.waitForTimeout(100)
+        await page.screenshot({
+          path: join(OPEN_SHOTS!, `${browserName}-${size.width}x${size.height}-${LABEL}-open-${label}.png`),
+        })
+      }
+      await at('start', 0)
+      await at('middle', 210)
+      await at('end', 419)
+      await page.evaluate(() => {
+        for (const a of (window as unknown as { __open: Animation[] }).__open) a.finish()
+      })
+    })
+  }
+})
+
 test.describe('result details screenshots (U99)', () => {
   test.skip(!SHOTS, 'set RESULT_DETAILS_SHOTS=<dir outside the repo> to save screenshots')
   const SIZES = [
@@ -572,5 +916,104 @@ test.describe('result details screenshots (U99)', () => {
         await page.screenshot({ path: join(SHOTS!, `${name}-expanded-end.png`) })
       }
     })
+  }
+})
+
+/**
+ * The same on a result with the longest status line there is (Keep time's timing), opened and folded
+ * with the toggle: no letter is cut by the side clips, in the details or in the summary row. The
+ * first opening has the details replace their loading line in the middle of it (the request for
+ * them is held back; the service worker would serve it around the route).
+ */
+test.describe('no letter is cut while a long result opens and folds', () => {
+  test.use({ serviceWorkers: 'block' })
+  for (const size of [TABLET_SIZES[0], PHONE_SIZES[0]]) {
+    test(`at ${size.width}×${size.height}`, async ({ page }) => {
+      test.setTimeout(200_000)
+      let held = 0
+      await page.route('**/assets/ResultDetails-*.js', async (route) => {
+        held++
+        await new Promise((resolve) => setTimeout(resolve, 150))
+        await route.continue()
+      })
+      await keepTimePass(page)
+      await expect(page.getByTestId('timing-result')).toBeVisible()
+      await page.setViewportSize(size)
+      await page.waitForTimeout(1500)
+      expect(held).toBe(0) // fetched only on the first expansion
+      for (let i = 0; i < 2; i++) {
+        const opening = cutBySideClip(page, 900)
+        await toggle(page).click()
+        const opened = await opening
+        expect(opened.frames).toBeGreaterThan(10)
+        expect(opened.cut, `opening ${i + 1}`).toEqual([])
+        expect(opened.fading, `opening ${i + 1} fades its contents in`).toBeGreaterThan(1)
+        await expect(details(page).getByTestId('timing-review').first()).toBeVisible()
+        const folding = cutBySideClip(page, 600)
+        await fold(page)
+        expect((await folding).cut, `folding ${i + 1}`).toEqual([])
+        await expect(details(page)).toHaveCount(0)
+      }
+      expect(held).toBe(1)
+    })
+  }
+})
+
+/**
+ * The Keep time correction cards' plot axis (Early, On beat, Late, Missed) in every interface
+ * language: no label is cut off by the card at a phone's or a tablet's width (P9). The labels are
+ * measured in place with each catalog's words.
+ */
+test('the timing plot labels fit in every language', async ({ page }) => {
+  test.setTimeout(200_000)
+  await keepTimePass(page)
+  const words: Record<string, readonly string[]> = {}
+  for (const [language, catalog] of Object.entries(CATALOGS)) {
+    words[language] = ['265', '577', '415', '468'].map((id) => catalog[id]!)
+  }
+  for (const size of [PHONE_SIZES[0], TABLET_SIZES[0], TABLET_SIZES[1]]) {
+    await page.setViewportSize(size)
+    await page.waitForTimeout(1500)
+    if ((await toggle(page).getAttribute('aria-expanded')) !== 'true') await toggle(page).click()
+    const axis = details(page).getByTestId('timing-review').first()
+    await expect(axis).toBeVisible()
+    const clipped = await details(page).evaluate((root, words) => {
+      const out: string[] = []
+      const plot = root.querySelector('[data-testid="timing-review"]')!
+      const labels = [...plot.previousElementSibling!.querySelectorAll('span')]
+      for (const [language, list] of Object.entries(words)) {
+        labels.forEach((label, i) => {
+          if (list[i]) label.textContent = list[i]!
+        })
+        // Laid out again with this language's words: the card's edge and the plot's start.
+        const music = plot.closest('.pn-excerpt')!.getBoundingClientRect()
+        const chart = plot.getBoundingClientRect()
+        for (const label of labels) {
+          const r = label.getBoundingClientRect()
+          if (r.left < music.left - 0.5 || r.right > chart.left + 0.5)
+            out.push(
+              `${language} "${label.textContent}" ${Math.round(r.left)}–${Math.round(r.right)} in ${Math.round(music.left)}–${Math.round(chart.left)}`,
+            )
+        }
+      }
+      return out
+    }, words)
+    expect(clipped, `${size.width}×${size.height}`).toEqual([])
+    const shots = process.env['AXIS_SHOTS']
+    if (shots) {
+      mkdirSync(shots, { recursive: true })
+      await axis.evaluate((plot, list) => {
+        plot.previousElementSibling!.querySelectorAll('span').forEach((label, i) => {
+          if (list[i]) label.textContent = list[i]!
+        })
+      }, words['fr-FR']!)
+      await details(page)
+        .getByTestId('result-excerpt')
+        .first()
+        .screenshot({
+          path: join(shots, `${test.info().project.name}-axis-${size.width}x${size.height}-fr.png`),
+        })
+    }
+    await fold(page)
   }
 })

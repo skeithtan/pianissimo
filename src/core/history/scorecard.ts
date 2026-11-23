@@ -209,7 +209,7 @@ export function buildScorecard(a: AttemptRecord, streak?: PracticeStreak): Score
       {
         id: 'on-time',
         label: msg('On-time groups'),
-        value: msg('{0} of {1} ({2}%)', accuracy.onTime, accuracy.groups, percent),
+        value: msg('{0} of {1} ({2})', accuracy.onTime, accuracy.groups, percentage(percent / 100)),
       },
       {
         id: 'early',
@@ -260,7 +260,7 @@ export function buildScorecard(a: AttemptRecord, streak?: PracticeStreak): Score
         value:
           diffPercent === null
             ? signed(diff)
-            : `${signed(diff)} (${diffPercent >= 0 ? '+' : ''}${diffPercent.toFixed(0)}%)`,
+            : `${signed(diff)} (${diffPercent >= 0 ? '+' : ''}${percentage(Math.round(diffPercent) / 100)})`,
       })
     }
   }

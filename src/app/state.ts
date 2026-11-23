@@ -4,7 +4,7 @@ import { msg } from '../i18n/messages'
  * on purpose (spec "Technical design": small view state, never per-note reactive state), and
  * nothing here is touched by the MIDI input path.
  */
-import { signal } from '@preact/signals'
+import { batch, signal } from '@preact/signals'
 import { DEFAULT_SETTINGS, type AppSettings, type PersistentLabelSettings } from '../core/model/settings'
 import { deepEqual, mergeSettings, normalizeSettings, settingsFromStored, type SettingsPatch } from './settingsMerge'
 
@@ -41,15 +41,17 @@ let saveFailureReported = false
 /**
  * Merge `patch` into the settings immutably (nested objects merge, per-clef label rules merge
  * per key, nullable fields and arrays are replaced whole). Changes are saved after a short
- * debounce; a patch that changes nothing is ignored.
+ * debounce; a patch that changes nothing is ignored. While stored settings load, every patch is
+ * kept for replay over them, even one that matches the defaults on screen (choosing System audio
+ * must still replace a stored output).
  */
 export function updateSettings(patch: SettingsPatch<AppSettings>): void {
   const current = settings.peek()
   const next = normalizeSettings(mergeSettings(current, patch))
+  if (pendingPatches) pendingPatches.push(patch)
   if (next === current) return
   settings.value = next
-  if (pendingPatches) pendingPatches.push(patch)
-  else scheduleSave()
+  if (!pendingPatches) scheduleSave()
 }
 
 /** Collect edits as soon as boot starts, including time spent opening the database and library. */
@@ -98,7 +100,9 @@ export function flushSettings(): Promise<void> {
 /**
  * Install the storage backend (or `null` for memory only) and load the saved settings over the
  * defaults. Changes made while the load is pending are replayed on top of the loaded values, so
- * nothing the user touched is lost. Resolves once settings reflect storage.
+ * nothing the user touched is lost. Resolves once settings reflect storage. When the stored
+ * settings cannot be read, settings stay in memory for this session: writing would replace the
+ * stored ones with defaults.
  */
 export async function setSettingsPersistence(next: SettingsPersistence | null): Promise<void> {
   persistence = next
@@ -114,18 +118,24 @@ export async function setSettingsPersistence(next: SettingsPersistence | null): 
   settingsLoading.value = true
   const replay = (pendingPatches ??= [])
   let stored: unknown = null
+  let readable = true
   try {
     stored = await next.load()
   } catch {
+    readable = false
     pushNotice({ kind: 'warning', text: msg('Saved settings could not be read, so defaults are in use.') })
   }
   if (persistence !== next) return
   pendingPatches = null
-  settingsLoading.value = false
+  if (!readable) persistence = null
   let loaded = settingsFromStored(stored)
   for (const patch of replay) loaded = normalizeSettings(mergeSettings(loaded, patch))
-  settings.value = loaded
-  if (replay.length > 0) await writeSettings()
+  // One update: whatever waits for the load (theme, language) sees the stored values, never the defaults.
+  batch(() => {
+    settingsLoading.value = false
+    settings.value = loaded
+  })
+  if (readable && replay.length > 0) await writeSettings()
 }
 
 // ---------------------------------------------------------------------------------------------

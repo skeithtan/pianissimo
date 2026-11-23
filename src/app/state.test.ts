@@ -1,3 +1,4 @@
+import { effect } from '@preact/signals'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, TREBLE_PRESET, type AppSettings, type PersistentLabelSettings } from '../core/model/settings'
 import {
@@ -182,6 +183,61 @@ describe('settings persistence', () => {
     await setSettingsPersistence(store)
     expect(settings.value).toBe(DEFAULT_SETTINGS)
     expect(notices.value.some((n) => /could not be read/u.test(n.text))).toBe(true)
+  })
+
+  it('keeps changes in memory and writes nothing over stored settings that could not be read', async () => {
+    beginSettingsLoad()
+    updateSettings({ view: { theme: 'dark' } })
+    const store = memoryStore()
+    store.load = () => {
+      throw new Error('corrupt')
+    }
+    await setSettingsPersistence(store)
+    expect(settings.value.view.theme).toBe('dark')
+    expect(notices.value.some((n) => /could not be read/u.test(n.text))).toBe(true)
+    updateSettings({ hints: { fadeMs: 100 } })
+    await flushSettings()
+    await vi.advanceTimersByTimeAsync(SETTINGS_SAVE_DEBOUNCE_MS * 2)
+    expect(store.saves).toHaveLength(0)
+  })
+
+  it('ends the load in one update, so nothing sees the defaults after loading ends', async () => {
+    beginSettingsLoad()
+    const seen: [boolean, string][] = []
+    const stop = effect(() => {
+      seen.push([settingsLoading.value, settings.value.view.language])
+    })
+    await setSettingsPersistence(memoryStore({ view: { language: 'fr-FR' } }))
+    stop()
+    expect(seen).toEqual([
+      [true, 'system'],
+      [false, 'fr-FR'],
+    ])
+  })
+
+  it('replays each kind of change made before stored settings load over the stored values', async () => {
+    beginSettingsLoad()
+    // Nested fields merge, nullable fields and arrays are replaced whole, label rules merge per clef.
+    updateSettings({ naming: { showOctave: false } })
+    updateSettings({ metronome: { outputId: null } })
+    updateSettings({ pedal: { observedControllers: [67] } })
+    updateSettings({
+      labels: { rules: { F4: { below: { enabled: true, threshold: { step: 'E', alter: 0, octave: 2 } } } } },
+    })
+    const store = memoryStore({
+      naming: { system: 'fixed-do' },
+      metronome: { outputId: 'usb-piano', volume: 0.4 },
+      pedal: { observedControllers: [64, 66] },
+      labels: { mode: 'conditional' },
+    })
+    await setSettingsPersistence(store)
+    expect(settings.value.naming).toMatchObject({ system: 'fixed-do', showOctave: false })
+    expect(settings.value.metronome).toMatchObject({ outputId: null, volume: 0.4 })
+    expect(settings.value.pedal.observedControllers).toEqual([67])
+    expect(settings.value.labels.mode).toBe('conditional')
+    expect(settings.value.labels.rules['F4']?.below.enabled).toBe(true)
+    expect(settings.value.labels.rules['G2']).toEqual(TREBLE_PRESET)
+    expect(store.saves.at(-1)).toEqual(settings.value)
   })
 
   it('can be detached', async () => {

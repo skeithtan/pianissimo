@@ -8,8 +8,13 @@ export function timingText(t: AttemptTiming): string {
   const parts = [msg('On time {0} of {1}', t.onTime, t.groups)]
   if (t.early > 0) parts.push(msg('{0} early', t.early))
   if (t.late > 0) parts.push(msg('{0} late', t.late))
-  if (t.missed > 0) parts.push(msg('{0} missed', t.missed))
+  if (t.missed > 0) parts.push(missedText(t.missed))
   return parts.join(' · ')
+}
+
+/** "1 missed" / "3 missed": a separate singular, as French and Spanish agree it with the count. */
+export function missedText(n: number): string {
+  return n === 1 ? msg('1 missed') : msg('{0} missed', n)
 }
 
 export function wrongText(n: number): string {

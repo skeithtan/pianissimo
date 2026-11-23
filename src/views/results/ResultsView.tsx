@@ -66,7 +66,7 @@ export function ResultsPage(props: ResultsPageProps) {
       onDismiss={props.onDismissSuggestion}
       onDisableSuggestions={props.onDisableSuggestions}
       {...(props.suggestionsGloballyOff ? {} : { onEnableSuggestions: props.onEnableSuggestions })}
-      disableLabel="Turn off suggestions for this piece"
+      disableLabel={msg('Turn off suggestions for this piece')}
     />
   )
   const globalOff = props.suggestionsGloballyOff ? (

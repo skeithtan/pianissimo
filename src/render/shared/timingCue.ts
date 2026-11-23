@@ -8,19 +8,30 @@ const EDGE = 8
 const GAP = 8
 const RESERVED_ROW_Y = -HEIGHT - 2
 
-/** A badge above the music that tracks the playhead horizontally. */
+/**
+ * A badge above the music that tracks the playhead horizontally. The direction is written on the
+ * badge and on the cursor bar only (`data-direction`, `data-timing`), never on an ancestor of the
+ * score: a change restyles those two elements, not every mounted note.
+ */
 export class TimingCue {
   private readonly frame: HTMLDivElement
   private readonly bubble: HTMLDivElement
   private readonly label: HTMLSpanElement
+  private readonly cursor: HTMLElement
   private readonly stopLanguage: () => void
   private enabled = false
   private direction: TimingDirection | null = null
+  /** The last place the view reported (`place`), kept while hidden; NaN before the first. */
+  private cursorX = NaN
+  private width = NaN
+  private scoreTop = NaN
   private x = NaN
   private y = NaN
 
-  constructor(host: HTMLElement, score: HTMLElement) {
+  /** `cursor`: the playhead bar, tinted while a cue shows (U119). */
+  constructor(host: HTMLElement, score: HTMLElement, cursor: HTMLElement) {
     const doc = host.ownerDocument
+    this.cursor = cursor
     this.frame = doc.createElement('div')
     this.frame.className = 'pn-score-viewport'
     const layer = doc.createElement('div')
@@ -31,6 +42,10 @@ export class TimingCue {
     this.bubble.dataset.testid = 'timing-cue'
     this.bubble.style.width = `${WIDTH}px`
     this.bubble.style.height = `${HEIGHT}px`
+    // The gradient slides on its own layer (transform only), clipped by the badge.
+    const sweep = doc.createElement('span')
+    sweep.className = 'pn-timing-sweep'
+    sweep.setAttribute('aria-hidden', 'true')
     const signal = doc.createElement('span')
     signal.className = 'pn-timing-signal'
     signal.setAttribute('aria-hidden', 'true')
@@ -45,7 +60,7 @@ export class TimingCue {
     signal.append(arrows)
     this.label = doc.createElement('span')
     this.label.className = 'pn-timing-label'
-    this.bubble.append(signal, this.label)
+    this.bubble.append(sweep, signal, this.label)
     layer.append(this.bubble)
     this.frame.append(score, layer)
     host.append(this.frame)
@@ -62,13 +77,16 @@ export class TimingCue {
       this.frame.toggleAttribute('data-timing-enabled', enabled)
     }
     if (direction === this.direction) return layoutChanged
+    const appearing = this.direction === null
     this.direction = direction
     if (direction === null) {
-      delete this.frame.dataset.timingDirection
       delete this.bubble.dataset.direction
+      delete this.cursor.dataset.timing
     } else {
-      this.frame.dataset.timingDirection = direction
+      // In place before it is painted: at the view's last reported place, or hidden until the first.
+      if (appearing) this.apply()
       this.bubble.dataset.direction = direction
+      this.cursor.dataset.timing = direction
     }
     this.updateText()
     return true
@@ -87,10 +105,26 @@ export class TimingCue {
     return this.enabled
   }
 
+  /**
+   * The playhead's screen x, the viewport width and the top of the score (px). Views report it on
+   * every frame, hidden or not; only a visible cue is moved.
+   */
   place(cursorX: number, width: number, scoreTop = 0): void {
-    const inset = Math.min(WIDTH / 2 + EDGE, width / 2)
-    const x = Math.round(Math.max(inset, Math.min(cursorX, width - inset)))
-    const y = Math.max(RESERVED_ROW_Y, Math.floor(scoreTop) - HEIGHT - GAP)
+    this.cursorX = cursorX
+    this.width = width
+    this.scoreTop = scoreTop
+    if (this.direction !== null) this.apply()
+  }
+
+  private apply(): void {
+    if (Number.isNaN(this.cursorX)) {
+      this.bubble.style.visibility = 'hidden'
+      return
+    }
+    const inset = Math.min(WIDTH / 2 + EDGE, this.width / 2)
+    const x = Math.round(Math.max(inset, Math.min(this.cursorX, this.width - inset)))
+    const y = Math.max(RESERVED_ROW_Y, Math.floor(this.scoreTop) - HEIGHT - GAP)
+    if (this.bubble.style.visibility) this.bubble.style.visibility = ''
     if (x === this.x && y === this.y) return
     this.x = x
     this.y = y

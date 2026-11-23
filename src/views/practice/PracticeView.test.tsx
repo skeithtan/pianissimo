@@ -11,7 +11,7 @@ import type { PianissimoStorage } from '../../core/storage'
 import type { PreparedLayout } from '../../render'
 import { ManualClock } from '../../core/playback/testkit'
 import { importFixture } from '../../../tests/unit/import/fixtures'
-import { $, $$, byLabel, byText, click, mount, press, type Mounted } from '../shared/testing'
+import { $, $$, byLabel, byText, click, hasRecordIcon, mount, press, type Mounted } from '../shared/testing'
 import type { PracticeEnv, PracticeStripOptions, StripHandle } from './env'
 import type { RespaceSnapshot } from '../../render'
 import { PREPARE_AHEAD_MS, prepareAheadDelay, REPEAT_PANEL_FADE_MS } from './PracticeScreen'
@@ -1202,6 +1202,7 @@ describe('PracticeView', () => {
           (row) => row.textContent?.trim().match(/^(Note names|Keep time|Metronome|Show keys|Record performance)/)?.[0],
         ),
       ).toEqual(['Note names', 'Keep time', 'Metronome', 'Show keys', 'Record performance'])
+      expect(hasRecordIcon(byLabel(dialog, 'Record performance'))).toBe(true)
       expect(byLabel(dialog, 'Faster by 5 percent')).toBeNull()
       expect(byLabel(dialog, 'Note names on the score')).not.toBeNull()
       expect(accessibleMenuSwitches(dialog)).toHaveLength(3)
@@ -1276,9 +1277,10 @@ describe('PracticeView', () => {
     act(() => r.clock.advance(RECEDE_DELAY_MS))
     await settle(r, 1)
     expect(screen().dataset['recede']).toBe('true')
-    // A tap on the footer brings it back for a while; the main button never recedes.
-    expect($(view.container, 'header')!.hasAttribute('inert')).toBe(true)
+    // A tablet's header stays and takes input (U93 revised); the footer tools recede.
+    expect($(view.container, 'header')!.hasAttribute('inert')).toBe(false)
     expect($(view.container, '[data-testid="footer-tools-slot"]')!.hasAttribute('inert')).toBe(true)
+    // A tap on the footer brings them back for a while; the main button never recedes.
     act(() => {
       $(view!.container, 'footer')!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     })
@@ -1331,6 +1333,8 @@ describe('PracticeView', () => {
     await settle(r)
     const options = $(panel, '[role="dialog"][aria-label="Repeat options"]')!
     expect(goal.getAttribute('aria-expanded')).toBe('true')
+    // Focusable, so a press inside it keeps Escape working in WebKit (practice-reload.spec.ts).
+    expect(options.getAttribute('tabindex')).toBe('-1')
     // Repeat until: No limit, 3, 5, 10 clean in a row.
     const until = $(options, '[role="radiogroup"][aria-label="Repeat until"]')!
     expect($$(until, '[role="radio"]').map((b) => b.textContent)).toEqual(['No limit', '3', '5', '10'])
@@ -1413,13 +1417,14 @@ describe('PracticeView', () => {
     async function pageRig() {
       const r = await rig()
       const modes: (string | undefined)[] = []
-      const prepared: { mode?: string; pageWidth?: number }[] = []
+      const prepared: { mode?: string; pageWidth?: number; pageMaxWidth?: number }[] = []
       const env: PracticeEnv = {
         ...r.env,
         prepare: async (_s, _i, options) => {
           prepared.push({
             ...(options.mode ? { mode: options.mode } : {}),
             ...(options.pageWidth ? { pageWidth: options.pageWidth } : {}),
+            ...(options.pageMaxWidth ? { pageMaxWidth: options.pageMaxWidth } : {}),
           })
           return { key: 'fake' } as unknown as PreparedLayout
         },
@@ -1475,6 +1480,32 @@ describe('PracticeView', () => {
       expect(r.modes).toEqual(['page', 'page'])
       expect(r.prepared.at(-1)!.pageWidth!).toBeLessThan(width)
       expect(r.strips.at(-1)!.options.initialZoom).toBe(2)
+      // The zoomed page is still capped at the width it was engraved for and fitted (R17).
+      expect(r.prepared.at(-1)!.pageMaxWidth).toBe(r.prepared.at(-1)!.pageWidth)
+      expect(r.strips.at(-1)!.options.fitWidth).toBe(true)
+    })
+
+    it('a tablet-size upright page is capped and fitted to the stage, with no image zoom (R17)', async () => {
+      portrait = true
+      const r = await pageRig()
+      practiceRequest.value = { pieceId: r.pieceId }
+      view = mount(<PracticeViewWith env={r.env} />)
+      await settle(r)
+      expect(r.modes).toEqual(['page'])
+      expect(r.prepared.at(-1)!.pageMaxWidth).toBe(r.prepared.at(-1)!.pageWidth)
+      const options = r.strips.at(-1)!.options
+      expect(options.fitWidth).toBe(true)
+      // Pinching re-engraves at the saved page zoom away from a phone (U83 is phone-only).
+      expect(options.imageZoom).toBe(false)
+      expect(options.initialMagnify).toBe(1)
+
+      // The strip on its side is not fitted.
+      rotate(false)
+      await settle(r)
+      expect(r.modes).toEqual(['page', 'strip'])
+      expect(r.prepared.at(-1)!.pageMaxWidth).toBeUndefined()
+      expect(r.strips.at(-1)!.options.fitWidth).toBe(false)
+      expect(r.strips.at(-1)!.options.imageZoom).toBe(false)
     })
   })
 
@@ -1528,7 +1559,7 @@ describe('PracticeView', () => {
       const root = r.root
       expect($(root, '[data-activity]')?.dataset['compact']).toBe('true')
       expect($(root, 'footer')).toBeNull()
-      expect($(root, '[data-testid="practice-header-slot"]')).toBeNull()
+      expect($(root, '[data-testid="practice-header"]')).toBeNull()
       expect($(bar(root), 'h1')?.textContent).toBe('Two Hands')
       for (const name of ['Back to Library', 'Left hand', 'Start', 'Right hand', 'Menu'])
         expect(byLabel(bar(root), name), name).not.toBeNull()
@@ -1539,6 +1570,9 @@ describe('PracticeView', () => {
       expect(r.prepared.at(-1)?.mode).toBe('page')
       expect(r.prepared.at(-1)?.pageMaxWidth).toBe(r.prepared.at(-1)?.pageWidth)
       expect(r.strips.at(-1)!.options.fitWidth).toBe(true)
+      // A phone's page magnifies like a photo (U83), engraved at zoom 1.
+      expect(r.strips.at(-1)!.options.imageZoom).toBe(true)
+      expect(r.strips.at(-1)!.options.initialZoom).toBe(1)
       // Nothing of the footer is on screen until the menu opens.
       expect(byLabel(root, 'Open speed options')).toBeNull()
       expect(byLabel(root, 'Note names on the score')).toBeNull()
@@ -1552,7 +1586,7 @@ describe('PracticeView', () => {
       expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
       const switches = accessibleMenuSwitches(menu).map(switchName)
       expect(switches).toEqual(['Keep time', 'Metronome', 'Show keys'])
-      expect(menu.textContent).toContain('Record performance')
+      expect(hasRecordIcon(byLabel(menu, 'Record performance'))).toBe(true)
       expect(menu.textContent).toContain('Connected · Test piano')
       expect(byLabel(menu, 'Settings')).not.toBeNull()
       // Show keys opens the guide slot from the sheet.

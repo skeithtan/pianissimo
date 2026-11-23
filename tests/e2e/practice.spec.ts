@@ -72,7 +72,7 @@ test.describe('practice', () => {
     await page.clock.runFor(30)
     const viewport = page.locator('.pn-score-viewport')
     await expect(viewport).not.toHaveAttribute('data-timing-enabled', '')
-    await expect(viewport).not.toHaveAttribute('data-timing-direction', /rushing|dragging/)
+    await expect(cursor).not.toHaveAttribute('data-timing')
     await expect(page.getByTestId('timing-cue')).toBeHidden()
     await expect(cursor).toHaveCSS('background-color', themeColor)
   })

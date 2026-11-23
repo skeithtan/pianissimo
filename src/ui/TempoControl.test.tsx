@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
 import { rat } from '../core/music/rational'
 import { $, $$, byLabel, byText, click, mount, press, type, type Mounted } from '../views/shared/testing'
+import { untranslatedText, usePseudoCatalog } from '../views/shared/catalogTesting'
 import { TempoControl, type TempoControlProps } from './TempoControl'
 
 let view: Mounted | null = null
@@ -251,5 +252,22 @@ describe('<TempoControl> speed options', () => {
 
   beforeEach(() => {
     document.body.innerHTML = ''
+  })
+})
+
+describe('<TempoControl> translation coverage', () => {
+  it('shows no text that bypasses the catalogs, closed or open, with or without a tempo', () => {
+    const restore = usePseudoCatalog()
+    try {
+      const { root } = setup({ multiplier: 0.75 })
+      expect(untranslatedText(root, ['BPM'])).toEqual([])
+      click(root.querySelector('[aria-haspopup]'))
+      expect(untranslatedText(root, ['BPM'])).toEqual([])
+      view?.unmount()
+      const bare = setup({ noTempo: true, onRequestTempo: () => undefined })
+      expect(untranslatedText(bare.root, ['BPM'])).toEqual([])
+    } finally {
+      restore()
+    }
   })
 })

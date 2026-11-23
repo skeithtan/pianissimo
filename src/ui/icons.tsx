@@ -15,6 +15,8 @@ const paths: Record<string, () => JSX.Element> = {
     </g>
   ),
   stop: () => <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none" />,
+  /** Start recording: the red of the recording status light, whatever the control's text color. */
+  record: () => <circle cx="12" cy="12" r="8" stroke="none" style="fill: var(--danger)" />,
   listen: () => (
     <path d="M4 15v-3a8 8 0 0 1 16 0v3M4 15a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2zm16 0a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2z" />
   ),

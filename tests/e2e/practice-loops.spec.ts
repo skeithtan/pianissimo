@@ -39,8 +39,11 @@ test.describe('note-level practice', () => {
 
   test('Keep time stops a silent first pass at the end of a partial bar', async ({ page }) => {
     await page.getByRole('button', { name: 'Repeat from here' }).click()
-    await page.getByRole('button', { name: /Passage end/ }).press('ArrowLeft')
     const end = page.getByTestId('repeat-controls').getByRole('group', { name: 'Loop end' })
+    // The loop's handles take keys once it has been drawn unlocked, a frame after the click.
+    await expect(end).toBeVisible()
+    await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-loop-locked/)
+    await page.getByRole('button', { name: /Passage end/ }).press('ArrowLeft')
     await expect(end).toContainText(/Bar 1, beat/)
 
     const menu = await openFooterMenu(page)

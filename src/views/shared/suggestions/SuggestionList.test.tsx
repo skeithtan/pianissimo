@@ -5,6 +5,7 @@ import type { Suggestion } from '../../../core/history'
 import { abandon, fresh, occurrences, play } from '../../../core/history/testkit'
 import type { PieceHistory } from '../../../core/history'
 import { $, $$, byLabel, byText, click, mount, type Mounted } from '../testing'
+import { untranslatedText, useCatalog, usePseudoCatalog } from '../catalogTesting'
 import { SuggestionList } from './SuggestionList'
 import type { SuggestionListProps } from './SuggestionList'
 import { barsTitle, handsText, speedText } from './format'
@@ -196,5 +197,49 @@ describe('format helpers', () => {
     expect(speedText(1)).toBe('1×')
     const [s] = select(history()).active.filter((x) => x.core.fromOcc === 12)
     expect(s && barsTitle(s.bars)).toBe('Bars 12–14')
+  })
+})
+
+describe('in other languages', () => {
+  it.each([
+    ['ja-JP', '上達しました（1）', '両手（1×）', 'おすすめの練習', '提案をオフにする'],
+    ['fr-FR', 'Améliorations (1)', 'Deux mains à 1×', 'Suggestions de travail', 'Désactiver les suggestions'],
+  ] as const)(
+    '%s: the Improved count, hands at speed and the default labels are whole translations',
+    (language, count, context, title, disable) => {
+      const restore = useCatalog(language)
+      try {
+        const { active, improved } = select(play(history(), 12, ['clean', 'clean', 'clean']))
+        const root = show({ suggestions: active, improved, onDisableSuggestions: () => undefined })
+        expect($(root, 'summary span')?.textContent).toBe(count)
+        expect($(root, '[data-suggestion] h3 span, [data-suggestion] h2 span')?.textContent).toBe(` · ${context}`)
+        expect($(root, 'header h2')?.textContent).toBe(title)
+        expect(byText(root, disable, 'button span')).not.toBeNull()
+        view?.unmount()
+        const unlabeled = show({ suggestions: active, showHeading: false })
+        expect(unlabeled.querySelector('section')?.getAttribute('aria-label')).toBe(title)
+      } finally {
+        restore()
+      }
+    },
+  )
+
+  it('shows no text that bypasses the catalogs', () => {
+    const restore = usePseudoCatalog()
+    try {
+      const { active, improved } = select(play(history(), 12, ['clean', 'clean', 'clean']))
+      const root = show({
+        suggestions: active,
+        improved,
+        onDismiss: () => undefined,
+        onDisableSuggestions: () => undefined,
+      })
+      expect(untranslatedText(root)).toEqual([])
+      view?.unmount()
+      const off = show({ suggestions: [], disabled: true, onEnableSuggestions: () => undefined, showHeading: false })
+      expect(untranslatedText(off)).toEqual([])
+    } finally {
+      restore()
+    }
   })
 })

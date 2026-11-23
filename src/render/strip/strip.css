@@ -114,11 +114,7 @@
 }
 
 .pn-instant .pn-content,
-.pn-instant .pn-cursor,
-.pn-instant .pn-sticky-inner,
-.pn-instant .pn-sticky-staff svg,
-.pn-instant .pn-stage,
-.pn-instant .pn-sticky-staff {
+.pn-instant .pn-cursor {
   transition: none;
 }
 
@@ -310,9 +306,19 @@
   height: 100%;
   left: calc(var(--pn-cursor-w) * var(--pn-zoom) / -2);
   width: calc(var(--pn-cursor-w) * var(--pn-zoom));
-  background: var(--pn-cursor-timing, var(--pn-cursor));
+  background: var(--pn-cursor);
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 96px, #000 calc(100% - 96px), transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 96px, #000 calc(100% - 96px), transparent);
+}
+
+/* The live timing cue's tint (U119): TimingCue marks the bar itself, so a cue change restyles the
+   bar and the pill only, never the mounted score. */
+.pn-cursor-bar[data-timing='rushing'] {
+  background: color-mix(in srgb, var(--score-timing-rushing, #53749b) 32%, transparent);
+}
+
+.pn-cursor-bar[data-timing='dragging'] {
+  background: color-mix(in srgb, var(--score-timing-dragging, #a36643) 32%, transparent);
 }
 
 /* Page cues use the top row. A strip cue can sit lower when there is room above its music. */
@@ -345,22 +351,8 @@
   background: transparent;
 }
 
-.pn-score-viewport[data-timing-direction='rushing'] {
-  --pn-timing-base: #293f56;
-  --pn-timing-highlight: #53749b;
-  --pn-timing-cursor-color: var(--score-timing-rushing, #53749b);
-}
-
-.pn-score-viewport[data-timing-direction='dragging'] {
-  --pn-timing-base: #693b24;
-  --pn-timing-highlight: #a3603e;
-  --pn-timing-cursor-color: var(--score-timing-dragging, #a36643);
-}
-
-.pn-score-viewport[data-timing-direction] {
-  --pn-cursor-timing: color-mix(in srgb, var(--pn-timing-cursor-color) 32%, transparent);
-}
-
+/* The pill's colors live on the pill (TimingCue writes data-direction there), so a cue change
+   restyles the pill alone. Only transform and opacity animate, so the compositor runs them. */
 .pn-timing-cue {
   --pn-timing-chevron-step: 16px;
   --pn-timing-gradient-period: 160px;
@@ -373,12 +365,7 @@
   align-items: stretch;
   border-radius: 8px;
   overflow: hidden;
-  background: repeating-linear-gradient(
-    90deg,
-    var(--pn-timing-base) 0 25px,
-    var(--pn-timing-highlight) 72px 88px,
-    var(--pn-timing-base) 135px var(--pn-timing-gradient-period)
-  ) 0 0 / calc(2 * var(--pn-timing-gradient-period)) 100% no-repeat;
+  isolation: isolate;
   color: #fff;
   font: 700 max(15px, var(--text-s, 14px)) / 1 var(--font-ui, system-ui);
   white-space: nowrap;
@@ -387,10 +374,34 @@
 
 .pn-timing-cue[data-direction] {
   display: flex;
-  animation: pn-timing-gradient 1.6s linear infinite;
 }
 
 .pn-timing-cue[data-direction='rushing'] {
+  --pn-timing-base: #293f56;
+  --pn-timing-highlight: #53749b;
+}
+
+.pn-timing-cue[data-direction='dragging'] {
+  --pn-timing-base: #693b24;
+  --pn-timing-highlight: #a3603e;
+}
+
+/* The gradient, two periods wide behind the text, slides by one period (half its width). */
+.pn-timing-sweep {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: -1;
+  width: calc(2 * var(--pn-timing-gradient-period));
+  background: repeating-linear-gradient(
+    90deg,
+    var(--pn-timing-base) 0 25px,
+    var(--pn-timing-highlight) 72px 88px,
+    var(--pn-timing-base) 135px var(--pn-timing-gradient-period)
+  );
+  animation: pn-timing-gradient 1.6s linear infinite;
+}
+
+.pn-timing-cue[data-direction='rushing'] .pn-timing-sweep {
   animation-direction: reverse;
 }
 
@@ -401,13 +412,10 @@
 }
 
 .pn-timing-signal {
-  --pn-timing-chevron-mask: linear-gradient(to right, transparent, #000 20%, #000 80%, transparent);
   position: relative;
   flex: 0 0 calc(3 * var(--pn-timing-chevron-step));
   overflow: hidden;
   scale: -1 1;
-  -webkit-mask-image: var(--pn-timing-chevron-mask);
-  mask-image: var(--pn-timing-chevron-mask);
 }
 
 .pn-timing-cue[data-direction='dragging'] .pn-timing-signal {
@@ -415,7 +423,8 @@
   scale: 1;
 }
 
-/* A shift by one chevron width produces the same pattern at either end of the loop. */
+/* A shift by one chevron width (a quarter of the four) produces the same pattern at either end of
+   the loop. */
 .pn-timing-chevrons {
   position: absolute;
   inset: 0 auto 0 0;
@@ -430,6 +439,19 @@
   place-items: center;
 }
 
+/* The chevrons fade in as they enter and out as they leave, in step with the track. */
+.pn-timing-chevron:first-child {
+  animation: pn-timing-chevron-in 400ms linear infinite;
+}
+
+.pn-timing-chevron:nth-child(3) {
+  animation: pn-timing-chevron-fade 400ms linear infinite;
+}
+
+.pn-timing-chevron:last-child {
+  animation: pn-timing-chevron-out 400ms linear infinite;
+}
+
 .pn-timing-chevron::before {
   content: '';
   box-sizing: border-box;
@@ -441,22 +463,34 @@
 }
 
 @keyframes pn-timing-flow {
-  from { translate: calc(-1 * var(--pn-timing-chevron-step)) 0; }
-  to { translate: 0 0; }
+  from { transform: translateX(-25%); }
+  to { transform: translateX(0); }
 }
 
 @keyframes pn-timing-gradient {
-  from { background-position-x: calc(-1 * var(--pn-timing-gradient-period)); }
-  to { background-position-x: 0; }
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes pn-timing-chevron-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pn-timing-chevron-fade {
+  0%, 40% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+@keyframes pn-timing-chevron-out {
+  0% { opacity: 0.4; }
+  50%, 100% { opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pn-timing-cue[data-direction] {
+  .pn-timing-sweep,
+  .pn-timing-cue .pn-timing-chevron {
     animation: none;
-  }
-
-  .pn-timing-signal {
-    --pn-timing-chevron-mask: none;
   }
 
   .pn-timing-chevrons {
@@ -880,7 +914,9 @@
   pointer-events: none;
 }
 
-/* Sticky clef / key / meter at the left edge. */
+/* Sticky clef / key / meter at the left edge. Its place and both masks are written by StripView
+   for every frame of a glide that pins or releases the opening, never transitioned (U125): a CSS
+   transition would interpolate the clamped place linearly while the music moves on its curve. */
 .pn-sticky {
   position: absolute;
   inset: 0;
@@ -898,12 +934,14 @@
   left: 0;
   top: 0;
   transform-origin: 0 0;
-  transition: transform var(--pn-scroll-ms) var(--pn-scroll-ease, var(--pn-ease));
 }
 
+/* As wide as the pinned block plus its fade (StripView sets the width). */
 .pn-sticky-staff {
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
+  bottom: 0;
 }
 
 .pn-sticky-staff svg {
@@ -914,7 +952,6 @@
 .pn-sticky-staff {
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
-  transition: mask-position var(--pn-scroll-ms) var(--pn-scroll-ease, var(--pn-ease));
 }
 
 .pn-sticky-inner svg {

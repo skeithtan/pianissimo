@@ -30,7 +30,10 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   target without a transition, then pans the rest), `setTargets(notes)`, `setAccepted(notes)`,
   `setTimingCue('rushing'|'dragging'|null, enabled)`
   (a gradient pill fixed just above the active staff that follows the playhead horizontally,
-  with left chevrons on slate blue or right chevrons on copper and a matching playhead tint), `setOttavaEmphasis(spans)`,
+  with left chevrons on slate blue or right chevrons on copper and a matching playhead tint;
+  `shared/timingCue.ts` writes the direction on the pill and the cursor bar only, so a change never
+  restyles the score; the pill is placed from the playhead's last place in the same call, and only
+  `transform` / `opacity` animate), `setOttavaEmphasis(spans)`,
   `setLabels(Map<note, text>)`, `setLabelOpacity(Map<note, 0..1>)` (every frame OK),
   `setLoop({fromOcc,toOcc,start?,end?}|null)` (a `PassageRange`; exact edges draw a note-level band),
   `setSnapPositions(onsets)` (the hands' exact onsets: loop edges and the dragged playhead snap to
@@ -119,6 +122,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   The page cursor follows the same eased progress between the two layouts' current musical
   positions and staff spans (U64). Playback and respacing bypass CSS seek transitions. An
   initial unchanged-size ResizeObserver notification does not reset the page's handoff anchor.
+  A resize never downgrades a pending smooth or rewind follow; a height change alone (the cue
+  row opening or closing) glides to the new resting place, a width change relayouts at once.
 - **Segments** (`partition.ts`): measure-range segments ≥ 400 px (a measure or two, PF6). A
   top-level unit belongs to the segment holding its center and is also copied into every segment
   it reaches more than 1.5 px into, clipped by the segment viewBox (2 px seam overlap), so ties/
@@ -142,8 +147,12 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   56 px at each end, faded by a vertical mask. Far jumps are unanimated (loop wraps pan, `wrapTo`);
   segments mount for viewport ± 1 viewport (both old and new views during smooth scroll), with bounded
   detached LRU and O(changed notes) frame updates. Labels exist only while opacity > 0.
-  Sticky clef/key/meter includes the five lines of each staff with matching theme opacity.
-  A stationary viewport mask fades moving notation into the signatures without a divider.
+  Sticky clef/key/meter includes the five lines of each staff with matching theme opacity
+  (a layer as wide as the block plus its fade). A stationary viewport mask fades moving notation
+  into the signatures without a divider. The pinned block and both masks are never transitioned:
+  a glide (seek, wrap, rewind) that pins or releases the opening is drawn frame by frame
+  (`glideTx`, the CSS curves in `strip/glide.ts`, no layout reads), so on every frame the block
+  sits at max(edge, its engraved x) and the masks match (U125); other glides stay CSS transitions.
   Zoom fits both the staff height and the widest context before the fixed cursor, keeping the
   active notes unobscured on narrow screens. The fit is applied to the requested zoom on every
   mount and resize without `onZoomChange` (a short strip never lowers the saved preference; the
@@ -246,8 +255,9 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   slur / bracket piece in its own system's staffline).
 - **View** (`page/PageView.ts`, `page.css` on top of strip.css: the root is `.pn-strip.pn-page`,
   so every token, note state, label, cursor, loop and correction style is the strip's): a
-  scrolling sheet (`overflow: auto`, `overscroll-behavior: contain`, locked while browsing is
-  disabled), content scaled by the zoom and centered when it fits, systems
+  scrolling sheet (`overflow: auto`, `overscroll-behavior: contain`, which keeps the sheet's own
+  rubber band and only stops scroll chaining; locked while browsing is disabled), content scaled
+  by the zoom and centered when it fits, systems
   mounted for the visible range ± one viewport with the strip's bounded LRU
   (`page/segments.ts`, a copy of `SegmentStore` by y). The cursor bar (the strip's
   width and colors, but a plain unfaded bar with rounded ends over the staves plus `PAGE_CURSOR_MARGIN` 16 px each
@@ -260,7 +270,15 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   systems also pan horizontally as the cursor approaches the right third, keeping read-ahead
   visible. Both axes are captured in respacing frames. Following stops while browsing (a scroll the view did not write, with browsing enabled →
   `onBrowse(true)`, Return button). A tap, accepted playhead drag, or accepted keyboard seek ends
-  browsing. `browsedPosition()` returns null because scrolling never changes the page cursor's
+  browsing. **A learner's scroll is native** (momentum and bounce): from its first touch, wheel
+  or mouse press on the scroller until it settles (`scrollend`, else 200 ms without a scroll,
+  wheel or touch move and no finger down; a contact whose end never arrives is let go after 1 s),
+  the frame writes no `scrollTop` / `scrollLeft` (iOS stops a scroll's momentum and bounce for
+  both axes on any script write), no sheet size and no scroller lock; the follow it owed, a
+  clamp and a lock asked for meanwhile are done once, when it settles. A tap settles at once;
+  Return (and a Start's `returnToCurrent`) ends a scroll still gliding. Handle, playhead and
+  image-zoom gestures place the page themselves. The scroller's pointer and touch listeners are
+  passive (only the wheel's is not: a ctrl-wheel zooms the score). `browsedPosition()` returns null because scrolling never changes the page cursor's
   musical position. Resuming calls `returnToCurrent()` to restore following. **Loop**: one band per
   system crossed (`PageGeometry.loopBands`), handles at the two edges, ✕ on the first band; a
   either handle can drag vertically onto another system. Reaching the right/left page edge
@@ -271,12 +289,22 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   Arrow keys also step across systems (U59).
   **Playhead drag**: within the current system; keyboard (← → Shift Home End) across systems.
   **Zoom**: pinch / ctrl-wheel / `setZoom` scale the page at once; 250 ms later
-  `onZoomChange(scale)` asks the owner to re-prepare at the new page width.
-  **Width fit** (R17, a phone): `PrepareOptions.pageMaxWidth` caps the canvas (a dense bar alone
+  `onZoomChange(scale)` asks the owner to re-prepare at the new page width. A zoom-in scales the
+  zoom already asked for (so a trackpad's many small ctrl-wheel steps add up while the narrower
+  page is pending), a zoom-out the scale shown (so the page shrinks at once).
+  **Width fit** (R17): `PrepareOptions.pageMaxWidth` caps the canvas (a dense bar alone
   on its system that needs more keeps its stacks and callouts, and no engraving is spent on it);
   the key gains `|max<w>`. `PageOptions.fitWidth` shows the page at min(requested zoom,
-  (host − 2 × 16) / canvas width), so it never scrolls sideways; the requested zoom is kept,
-  re-fitted on resize and reported as is (a pinch in past the fit still asks for a narrower page).
+  (host − 2 × 16) / canvas width) on every path (open, zoom, pinch, ctrl-wheel, a host resize,
+  relaid out inside the ResizeObserver callback so no frame shows the old scale, a layout wider
+  than asked); the requested zoom is kept, re-fitted on resize and reported as is (a pinch in
+  past the fit still asks for a narrower page, and nothing on screen grows until it arrives: a
+  scaled preview would cut the system's ends off). Unless magnified (`imageZoom`), the page is
+  `pn-page-fit`: the sheet is the scroller's own width (CSS 100%, `overflow-x: clip`), the
+  scroller `overflow-x: hidden; touch-action: pan-y`, so it cannot scroll, drag or bounce
+  sideways by construction (also with a classic scrollbar, and for the loop handles, playhead
+  readout or ottava reminder near the edge; the reminder flips to the cursor's left there), and
+  the horizontal follow, pan, mouse drag-to-pan and edge scrolling are inert.
   **Image zoom** (U83, a phone upright): `PageOptions.imageZoom` makes a pinch / ctrl-wheel /
   `setZoom` magnify the page as engraved, 1× (fitted) to `MAX_MAGNIFY` (4×), anchored at the
   fingers (two fingers pan too; iOS pinches come from touch events), with no `onZoomChange`; the
@@ -348,6 +376,10 @@ storage-backed `LayoutStore` (WP5) wiring; keyboard guide is WP3.
   remaining callouts are the spec's "nearby stacked callout linked to the correct notes".
 - Measure numbers drawn by the app above each bar ("12", "12 (pass 2)"), raised past engraved
   marks where needed (`ADAPTER_VERSION` pn-3 invalidates layouts cached with estimated widths).
+  The layout keeps each bar's number and pass (`OccurrenceGeometry.number` / `pass`); the views
+  format "(pass N)" when they mount a segment and again on a language change
+  (`shared/scoreLanguage.ts`). Layouts cached before that draw their stored `label`. The number's
+  reserved box keeps the width measured in the language the layout was prepared in.
 - Unison twins in two voices share one label; microtones map by nearest pitch (relaxed).
 - Zoom is capped so both staves always fit the strip height.
 - The harness keeps a copy of the score-paper tokens (`tests/harness/theme.css`) until the

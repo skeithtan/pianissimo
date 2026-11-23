@@ -8,6 +8,8 @@ import { contextKey } from '../../core/model/practice'
 import type { AttemptRecord, ComparisonContext } from '../../core/model/practice'
 import { makePackage, makePiece } from '../../core/storage/testkit'
 import { $, $$, byText, click, mount, type Mounted } from '../shared/testing'
+import { DEVICE_DATES, untranslatedText, useCatalog, usePseudoCatalog } from '../shared/catalogTesting'
+import { percentage } from '../../i18n/messages'
 import { DISABLED_RULE, TREBLE_PRESET } from '../../core/model/settings'
 import { ResultsPage } from './ResultsView'
 import { labelRules } from './ScorecardPanel'
@@ -106,7 +108,7 @@ describe('scorecard', () => {
     expect(dd(root, 'time-difference')).toContain('+1.2 s (+15%)')
     expect(dd(root, 'time-difference')).toContain('faster is not automatically better')
     expect(dd(root, 'notated-duration')).toContain('10.5 s')
-    expect(dd(root, 'assistance')).toContain('None')
+    expect(dd(root, 'assistance')).toContain('No assistance')
     expect(root.textContent).toContain('Not a pass: wrong-note attacks')
     // The definition of completion time is available in the details.
     const details = $$(root, 'details').find((d) => d.textContent?.includes('How completion time is measured'))
@@ -459,5 +461,89 @@ describe('label rules recorded with an attempt', () => {
     })
     const root = show(data([a]))
     expect($(root, '[data-row="assist-labels"] details')?.textContent).toContain('label notes below C4 or above C5')
+  })
+})
+
+describe('translation coverage', () => {
+  it('shows no text that bypasses the catalogs', () => {
+    const restore = usePseudoCatalog()
+    try {
+      let h = fresh()
+      h = play(h, 12, ['error', 'clean', 'error', 'error', 'clean'])
+      const selection = selectSuggestions(h, SCORE, { scoreVersionId: 'v1', enabled: true })
+      const attempts = [
+        attempt(A, NOW - 500_000, { completionTimeSec: 7.9, expectedTimeSec: 8 }),
+        attempt(A, NOW - 300_000, { wrongAttacks: 2, passed: false }),
+        attempt(A, NOW - 200_000, {
+          passed: false,
+          assistance: {
+            ...noAssistance(),
+            level: 'names',
+            hintRequests: 1,
+            persistentLabelNotes: [1],
+            persistentLabelGroups: [0],
+            labelSettings: { mode: 'conditional', rulesJson: JSON.stringify({ G2: TREBLE_PRESET }) },
+          },
+        }),
+        attempt(A, NOW - 100_000, { completion: 'abandoned', interruptReason: 'user-stop', passed: false }),
+        attempt(B, NOW - 50_000, { completionTimeSec: 12, expectedTimeSec: 12 }),
+        attempt(A, NOW - 10_000, { completionTimeSec: 8.1, expectedTimeSec: 8 }),
+      ]
+      const root = show(data(attempts), {}, selection)
+      expect(untranslatedText(root, ['Gymnopédie', 'Satie', ...DEVICE_DATES])).toEqual([])
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe('in Japanese and French', () => {
+  const attempts = () => [
+    attempt(A, NOW - 500_000, { completionTimeSec: 7.9, expectedTimeSec: 8 }),
+    attempt(A, NOW - 400_000, { completionTimeSec: 8.6, expectedTimeSec: 8 }),
+    attempt(A, NOW - 10_000, {
+      completionTimeSec: 9.2,
+      expectedTimeSec: 8,
+      passed: false,
+      assistance: { ...noAssistance(), level: 'names', hintRequests: 0, autoHints: 2, hintGroups: [0] },
+    }),
+  ]
+  const cases = [
+    ['ja-JP', 'この条件での最高記録：2回', '0回のヒント要求'],
+    [
+      'fr-FR',
+      'Meilleure série avec ces réglages\u00a0: 2',
+      '0 demande d’indice (sur demande), 2 indices automatiques.',
+    ],
+  ] as const
+
+  it.each(cases)(
+    '%s: the best streak is one sentence; zero hint requests agree with the count',
+    (language, best, hints) => {
+      const restore = useCatalog(language)
+      try {
+        const root = show(data(attempts()))
+        expect($(root, '[data-row="streak"] p:last-child')?.textContent).toBe(best)
+        expect($(root, '[data-row="assist-hints"] span')?.textContent).toContain(hints)
+        expect(dd(root, 'time-difference')).toContain(`(+${percentage(0.15)})`)
+      } finally {
+        restore()
+      }
+    },
+  )
+
+  it.each([
+    ['en-US', 'No wrong notes', 'No assistance'],
+    ['es-ES', 'Sin notas incorrectas', 'Sin ayuda'],
+    ['fr-FR', 'Aucune fausse note', 'Aucune aide'],
+  ] as const)('%s: "none" agrees with the feminine nouns of the scorecard', (language, wrong, assistance) => {
+    const restore = useCatalog(language)
+    try {
+      const root = show(data([attempt(A, NOW - 1000, { completionTimeSec: 8, expectedTimeSec: 8 })]))
+      expect(row(root, 'wrong-attacks')?.querySelector('dd span:last-child')?.textContent).toBe(wrong)
+      expect(row(root, 'assistance')?.querySelector('dd span')?.textContent).toBe(assistance)
+    } finally {
+      restore()
+    }
   })
 })

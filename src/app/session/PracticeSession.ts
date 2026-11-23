@@ -166,6 +166,18 @@ interface CountIn {
   /** Clicks left to count, the number shown (`ui.countIn`). */
   remaining: number
   timer: unknown
+  /**
+   * Presses from `from` (the planned downbeat minus the tolerance) on: the first downbeat played
+   * early, or on time before this count-in's end reaches the session. `#endCountIn` judges them as
+   * the first group's and credits them to the first bar. A ring of `COUNT_IN_PRESSES` (time, key,
+   * velocity), oldest overwritten; nothing is allocated per press.
+   */
+  readonly from: number
+  readonly pressTimes: Float64Array
+  readonly pressNotes: Uint8Array
+  readonly pressVelocities: Uint8Array
+  pressHead: number
+  pressCount: number
 }
 
 interface RepeatOpening {
@@ -174,11 +186,19 @@ interface RepeatOpening {
   readonly waitAnotherPass: boolean
 }
 
-/** Playable bar windows, measured from the count-in downbeat. */
+/**
+ * The silent-bar check of a Keep time pass (DECISIONS U112): its playable bar windows, measured
+ * from the count-in downbeat on the attempt's schedule. Every time is compared after taking off
+ * the transport's stall shift (`#keepTimeShift`), so the windows follow the music the engine grades.
+ */
 interface KeepTimeActivity {
   readonly bars: readonly { readonly start: number; readonly end: number }[]
+  /** Bars credited with a key press (1), by index; one allocation per pass. */
+  readonly played: Uint8Array
+  /** The first bar not judged yet. */
   bar: number
-  played: boolean
+  /** A press up to this many ms before a bar's start also counts for it: the Keep time tolerance. */
+  readonly early: number
   opening: RepeatOpening | null
   /** The final scoring window can close before the last playable bar ends. */
   completed: AttemptRecord | null
@@ -227,6 +247,19 @@ interface PlayThrough {
 /** What the keyboard guide reads from the engine or the play-through follower. */
 type GuideSource = Pick<EngineState, 'targetNotes' | 'acceptedPitches' | 'heldKeys' | 'heldWrongKeys'>
 
+/**
+ * Keep time judges a bar silent this long after its end (DECISIONS U112). A Note On carries the
+ * time the system received it (`MIDIMessageEvent.timeStamp`) but reaches `#keepTimePress` only once
+ * the main thread is free, while the bar-end check is a timer: a busy frame on the reference tablet
+ * (layout, garbage collection) holds both for tens of milliseconds and may run the timer first, and
+ * Bluetooth MIDI can stamp a press up to a connection interval (tens of ms) before delivering it.
+ * 100 ms covers both with margin, delays an unattended stop imperceptibly, and stays below the
+ * transport's 250 ms stall threshold, beyond which the music itself moves later and the bar windows
+ * move with it (`Transport.shiftMs`).
+ */
+export const KEEP_TIME_GRACE_MS = 100
+/** Presses kept from the count-in's last stretch: a chord on the downbeat and a slip or two. */
+const COUNT_IN_PRESSES = 16
 const RESUME_SAVE_MS = 5000
 /** Estimates below this confidence never move the cursor (about 0.5 on synthetic audio; tune on recordings). */
 const MIC_CONFIDENCE = 0.5
@@ -287,7 +320,8 @@ export class PracticeSession {
   #accomp: Transport | null = null
   #accompKey = ''
   #metronome: InstanceType<MetronomeModule['WebAudioMetronome']> | null = null
-  #metronomeRequest = 0
+  /** The latest metronome request still running; later ones wait for it (`#ensureMetronome`). */
+  #metronomeLoading: Promise<void> | null = null
   /** Counts the sink's cancels, so a settings change can tell whether it silenced a count-in. */
   #sinkCancels = 0
   /** Click schedules exist from the start; sound can be enabled later without rebuilding time. */
@@ -346,6 +380,10 @@ export class PracticeSession {
   #pendingRepeat = false
   #secondOpeningBarOnWrap = false
   #keepTimeActivity: KeepTimeActivity | null = null
+  /** `SessionDeps.keepTimeGraceMs`. */
+  readonly #keepTimeGrace: number
+  /** The practice transport's `shiftMs` when it last played (`#keepTimeShift`). */
+  #shift = 0
   /** Repeat mode (U10): loop controls shown, Start = scored attempts over `#loop`, repeated. */
   #repeat = false
   /** The loop, remembered while Repeat mode is closed (saved as `lastPassage`). */
@@ -475,6 +513,7 @@ export class PracticeSession {
     this.#model = options.model
     this.#tempo = options.model.tempo
     this.#settings = options.settings
+    this.#keepTimeGrace = Math.max(0, deps.keepTimeGraceMs ?? KEEP_TIME_GRACE_MS)
     this.#rhythm = options.rhythm === true && hasTempo(options.model.tempo)
     this.#loop = clampPassage(options.model, options.selection.range)
     this.#repeat = options.repeat === true
@@ -563,6 +602,9 @@ export class PracticeSession {
   /** The prepared strip is mounted: push the whole visual state, then keep it updated per frame. */
   attachStrip(strip: StripSink): void {
     this.#strip = strip
+    // The cue row first, so the new view never lays out a frame without it (U122); the frame
+    // below adds the cue itself.
+    strip.setTimingCue?.(null, this.#timingRowEnabled())
     this.#lastVersion = -1
     this.#lockState = ''
     this.#reviewShown = null
@@ -791,6 +833,9 @@ export class PracticeSession {
   /** Restart passage / Repeat now: a running attempt is abandoned ('user-restart'). */
   restart(): void {
     const now = this.#deps.clock()
+    // A completed Keep time pass still waiting for its last bar is recorded first, so Again goes on
+    // from it as from any finished pass (its ladder step included).
+    this.#releaseKeepTime()
     this.#clearCorrections()
     if (this.#playThrough) {
       // Play-through has no passage: back to the start of the piece, playing on if it played.
@@ -948,6 +993,8 @@ export class PracticeSession {
     const group = groupAtOrAfter(timeline, position)
     if (group >= timeline.groups.length) return false
     if (this.#engine.mode === 'scored' || timeline !== this.#engine.timeline) {
+      // A completed pass still waiting for its last bar is recorded; the seek clears its marks too.
+      if (this.#releaseKeepTime()) this.#clearCorrections()
       this.#cancelCountIn(now)
       this.#pauseTransports()
       this.#disposeAccompaniment()
@@ -1863,6 +1910,13 @@ export class PracticeSession {
         now,
       )
       this.#readingStarted = false
+    } else if (!samePassage(this.#engine.timeline.range, this.#timeline.range)) {
+      // Keep time read across the whole score after a seek outside the loop: back to the loop start.
+      this.#engine.reconfigure(
+        { reason: 'mode-change', mode: 'reading', timeline: this.#timeline, transport: 'accompaniment', startGroup: 0 },
+        now,
+      )
+      this.#readingStarted = false
     }
     if (this.#engine.state.phase === 'running') this.#engine.pause(now)
     // The next Start builds the transport for the new mode.
@@ -1886,7 +1940,8 @@ export class PracticeSession {
   #rhythmParams(settings = this.#settings): RhythmParams {
     return {
       toleranceMs: this.#toleranceMs(settings),
-      ...(settings.rhythm?.scorePlayback ? { scorePlayback: true } : {}),
+      // Playback at 0% plays nothing and counts as off for history.
+      ...(playbackHeard(settings) ? { scorePlayback: true } : {}),
     }
   }
 
@@ -1934,7 +1989,20 @@ export class PracticeSession {
     const start = this.#engine.timeline.start
     const plan = countInPlan(this.#model, this.#tempo, start, this.#sel.multiplier)
     for (let k = 0; k < plan.beats; k++) this.#metronomeSink.click(now + k * plan.beatMs, k === 0)
-    this.#countIn = { start: now, beats: plan.beats, beatMs: plan.beatMs, remaining: plan.beats, timer: null }
+    this.#countIn = {
+      start: now,
+      beats: plan.beats,
+      beatMs: plan.beatMs,
+      remaining: plan.beats,
+      timer: null,
+      // A transport moving the music later only moves this window later: earlier presses never count.
+      from: now + plan.beats * plan.beatMs - this.#toleranceMs(this.#settings),
+      pressTimes: new Float64Array(COUNT_IN_PRESSES),
+      pressNotes: new Uint8Array(COUNT_IN_PRESSES),
+      pressVelocities: new Uint8Array(COUNT_IN_PRESSES),
+      pressHead: 0,
+      pressCount: 0,
+    }
     this.#nextCountInBeat()
     this.#scheduleFrame()
   }
@@ -1971,6 +2039,7 @@ export class PracticeSession {
    * transport still reports each arrival (`onGateReached` → `transportArrived`).
    */
   #endCountIn(at: number): void {
+    const c = this.#countIn
     this.#countIn = null
     const t = this.#accomp
     const s = this.#engine.state
@@ -1978,13 +2047,45 @@ export class PracticeSession {
       this.#publishUi()
       return
     }
+    // Every way to a new pass hands on the last one first; a record still waiting is kept here too.
+    this.#releaseKeepTime()
     this.#setCorrectionsVisible(false)
     this.#watchKeepTimeActivity(at)
     this.#capture.begin(at)
     this.#engine.startRunning(at)
     for (let g = 0; g < this.#engine.timeline.groups.length; g++) t.releaseGate(g + this.#gateOffset)
     t.play(at)
+    if (c && c.pressCount > 0) this.#replayCountIn(c, at)
     this.#process(this.#deps.clock())
+  }
+
+  /**
+   * Presses from the count-in's last stretch, now that the attempt runs and the transport plays:
+   * those from the music's downbeat (the transport may have moved it later) minus the tolerance on
+   * are the first downbeat played early, or on time before the count-in's end reached the session.
+   * Each goes, at its own time, where a press during the pass goes: the first bar's silent-bar and
+   * opening checks, the captured pass, the live timing cue and the engine (`countInPress`).
+   */
+  #replayCountIn(c: CountIn, at: number): void {
+    const now = this.#deps.clock()
+    // The downbeat's own engine events go first (the phase change resets the live cue).
+    this.#drain(now)
+    const shift = this.#keepTimeShift()
+    const downbeat = at + shift
+    const tolerance = this.#toleranceMs(this.#settings)
+    for (let i = 0; i < c.pressCount; i++) {
+      const k = (c.pressHead + i) % COUNT_IN_PRESSES
+      const time = c.pressTimes[k]!
+      if (time < downbeat - tolerance) continue
+      const note = c.pressNotes[k]!
+      const activity = this.#keepTimeActivity
+      if (activity) this.#creditKeepTimePress(activity, note, time - shift)
+      if (this.#engine.state.phase !== 'running') continue
+      this.#capture.add(time, note, c.pressVelocities[k]!, this.#engine.state.groupIndex ?? -1)
+      this.#timingDrift.attack(note, time, downbeat, tolerance)
+      this.#engine.countInPress(note, time)
+      this.#drain(now)
+    }
   }
 
   #watchKeepTimeActivity(downbeat: number): void {
@@ -2017,23 +2118,47 @@ export class PracticeSession {
       }
       opening = { end: openingEnd, pitches, waitAnotherPass: !secondBar && openingOcc === first }
     }
-    this.#keepTimeActivity = { bars, bar: 0, played: false, opening, completed: null }
+    this.#keepTimeActivity = {
+      bars,
+      played: new Uint8Array(bars.length),
+      bar: 0,
+      // The tolerance the engine accepts an early note with in this attempt (a change interrupts it).
+      early: this.#toleranceMs(this.#settings),
+      opening,
+      completed: null,
+    }
   }
 
+  /**
+   * Real milliseconds the transport moved the music later than the schedule fixed at the downbeat
+   * (a late count-in timer, main-thread stalls), so the bar windows and the timing cue judge on the
+   * clock the engine grades against (it takes each arrival from the transport). Kept from when the
+   * transport last played: the last bar's check can outlast it by the grace. O(1).
+   */
+  #keepTimeShift(): number {
+    const t = this.#accomp
+    if (t?.state === 'playing') this.#shift = t.shiftMs
+    return this.#shift
+  }
+
+  /**
+   * Judge the bars that ended at least `#keepTimeGrace` before `now` (on the music's clock): an
+   * unplayed one stops the pass (U112), as does an opening check still unmet at its end.
+   */
   #checkKeepTimeActivity(now: number): void {
     const activity = this.#keepTimeActivity
     if (!activity) return
-    let bar = activity.bars[activity.bar]
-    while (bar && now >= bar.end) {
-      if (!activity.played) {
+    const due = now - this.#keepTimeShift() - this.#keepTimeGrace
+    const { bars, played } = activity
+    while (activity.bar < bars.length && due >= bars[activity.bar]!.end) {
+      if (!played[activity.bar]) {
         this.#stopInactiveKeepTime()
         return
       }
-      activity.played = false
-      bar = activity.bars[++activity.bar]
+      activity.bar++
     }
     const opening = activity.opening
-    if (opening && now >= opening.end) {
+    if (opening && due >= opening.end) {
       if (!opening.waitAnotherPass) {
         this.#stopInactiveKeepTime()
         return
@@ -2045,23 +2170,49 @@ export class PracticeSession {
     this.#finishKeepTimeActivity(activity)
   }
 
-  #keepTimePress(note: number, time: number): void {
+  /** O(1), in the input path: a key press during the count-in or a Keep time pass (U112). */
+  #keepTimePress(note: number, time: number, velocity: number): void {
     const activity = this.#keepTimeActivity
-    if (!activity) return
-    const currentBar = activity.bars[activity.bar]
-    // A MIDI event at the barline belongs to the new bar, even if its timer has not fired yet.
-    if (currentBar && time >= currentBar.end) this.#checkKeepTimeActivity(time)
-    if (this.#keepTimeActivity !== activity) return
-    const bar = activity.bars[activity.bar]
-    if (bar && time >= bar.start) activity.played = true
-    const opening = activity.opening
-    if (opening && time >= activity.bars[0]!.start && time < opening.end && opening.pitches.has(note)) {
-      activity.opening = null
+    if (!activity) {
+      // The count-in's last stretch may hold the first downbeat played early (`#endCountIn`);
+      // earlier presses are count-in noodling and never count.
+      const c = this.#countIn
+      if (c && time >= c.from) {
+        const full = c.pressCount === COUNT_IN_PRESSES
+        const k = full ? c.pressHead : (c.pressHead + c.pressCount) % COUNT_IN_PRESSES
+        c.pressTimes[k] = time
+        c.pressNotes[k] = note
+        c.pressVelocities[k] = velocity
+        if (full) c.pressHead = (c.pressHead + 1) % COUNT_IN_PRESSES
+        else c.pressCount++
+      }
+      return
     }
-    this.#finishKeepTimeActivity(activity)
+    this.#creditKeepTimePress(activity, note, time - this.#keepTimeShift())
+    // A late timer can leave bars due; this press cannot belong to them (they ended before it).
+    this.#checkKeepTimeActivity(time)
   }
 
+  /**
+   * A press at `t` (on the music's clock) counts for every bar k with t in [start k − tolerance,
+   * end k): an early downbeat counts for its own bar and for the bar it fell in. The opening check
+   * takes a pitch from the same early start of the first bar on. Walks only the bars not judged yet
+   * that the press can reach (one or two).
+   */
+  #creditKeepTimePress(activity: KeepTimeActivity, note: number, t: number): void {
+    const { bars, early } = activity
+    const opening = activity.opening
+    if (opening && opening.pitches.has(note) && t >= bars[0]!.start - early && t < opening.end) activity.opening = null
+    for (let k = activity.bar; k < bars.length; k++) {
+      const bar = bars[k]!
+      if (t < bar.start - early) return
+      if (t < bar.end) activity.played[k] = 1
+    }
+  }
+
+  /** U112: the unattended pass stops and is dropped, also one the engine already completed. */
   #stopInactiveKeepTime(): void {
+    this.#keepTimeActivity = null
     this.#reviewReturnBy = null
     this.#setCorrectionsVisible(true)
     this.#discarding = true
@@ -2072,13 +2223,50 @@ export class PracticeSession {
     }
   }
 
+  /** A completed pass goes on once no bar left can be judged silent: every remaining bar was played. */
   #finishKeepTimeActivity(activity: KeepTimeActivity): void {
     if (!activity.completed || activity.opening) return
-    const remaining = activity.bars.length - activity.bar
-    if (remaining > 1 || (remaining === 1 && !activity.played)) return
+    for (let k = activity.bar; k < activity.bars.length; k++) if (!activity.played[k]) return
     this.#keepTimeActivity = null
     this.#onRecord(activity.completed)
     this.#completedPending = true
+  }
+
+  /**
+   * The pass is left before its silent-bar check ended (a pause, seek, selection or mode change,
+   * a lost input or output, Again, leaving the view). A completed record still waiting for its last
+   * bars is kept, as if they had been played, once the Repeat opening check has seen someone play.
+   * While that check is still pending the pass shows no sign of a player, so it is dropped as the
+   * unattended stop drops it (U112): no record, the previous result and its review come back. No
+   * Repeat reset follows (`#completedPending` stays): what cleared the activity decides what plays
+   * next. Returns whether a record was handed on.
+   */
+  #releaseKeepTime(): boolean {
+    const activity = this.#keepTimeActivity
+    if (!activity) return false
+    this.#keepTimeActivity = null
+    if (!activity.completed) return false
+    if (this.#openingPending(activity)) {
+      this.#reviewReturnBy = null
+      this.#setCorrectionsVisible(true)
+      return false
+    }
+    this.#onRecord(activity.completed)
+    return true
+  }
+
+  /**
+   * The Repeat opening check (U112) has not seen a learner pitch yet. In the first traversal of a
+   * loop inside one bar the check carries to the next traversal (`waitAnotherPass`): there the bar
+   * having been played is the evidence its end would accept, and an unplayed bar is the silent bar
+   * its end would stop.
+   */
+  #openingPending(activity: KeepTimeActivity): boolean {
+    const opening = activity.opening
+    if (!opening) return false
+    if (!opening.waitAnotherPass) return true
+    for (let k = 0; k < activity.bars.length; k++) if (!activity.played[k]) return true
+    return false
   }
 
   /**
@@ -2528,6 +2716,9 @@ export class PracticeSession {
       if (modeChanged) this.#process(this.#deps.clock())
       return
     }
+    // A completed Keep time pass still waiting for its last bar is recorded; the change then ends
+    // its result and its ladder step as for any finished pass.
+    if (this.#releaseKeepTime()) this.#ladderNext = null
     // The result card goes with its corrections (U39), unless the ladder set the speed after it.
     if (!ladder) {
       this.#lastResult = null
@@ -2597,7 +2788,13 @@ export class PracticeSession {
       this.#sel = next
       this.#timeline = selectionTimeline(this.#model, this.#tempo, next)
       this.#bothTimeline = null
-      this.#engine.reconfigure({ reason, timeline: this.#timeline, transport: 'accompaniment' }, now)
+      // Keep time reads across the whole score after a seek outside the loop: the new speed returns
+      // to the loop at its start (the position outside it has no group there).
+      const elsewhere = !samePassage(this.#engine.timeline.range, this.#timeline.range)
+      this.#engine.reconfigure(
+        { reason, timeline: this.#timeline, transport: 'accompaniment', ...(elsewhere ? { startGroup: 0 } : {}) },
+        now,
+      )
       this.#accomp?.setMultiplier(next.multiplier)
       this.#process(now)
       return
@@ -2735,11 +2932,11 @@ export class PracticeSession {
         this.#interruptText = msg('The Keep time tolerance changed, so the attempt stopped.')
       }
     }
-    const muteChanged = (prev.rhythm?.scorePlaybackVolume === 0) !== (next.rhythm?.scorePlaybackVolume === 0)
+    const muteChanged = playbackAudible(prev) !== playbackAudible(next)
     if ((playbackChanged || muteChanged) && this.#accomp && this.#engine.transport === 'strict') {
       const transport = this.#accomp
       if (
-        this.#scorePlayback() &&
+        this.#playbackHeard() &&
         !accompanimentAllowed(next, this.#deps.midi.output(), this.#browserSoundPossible())
       ) {
         this.#soundStatus = this.#plan().reason
@@ -2841,6 +3038,9 @@ export class PracticeSession {
   dispose(): void {
     if (this.#disposed) return
     const now = this.#deps.clock()
+    // A completed Keep time pass still waiting for its last bar is stored (leaving is not an
+    // unattended stop); nothing plays or publishes after this.
+    this.#releaseKeepTime()
     if (
       this.#engine.state.phase === 'running' ||
       (this.#engine.mode === 'scored' && ACTIVE.includes(this.#engine.state.phase))
@@ -2902,14 +3102,16 @@ export class PracticeSession {
       this.#processPlay()
       return
     }
-    if (ev.kind === 'noteon' && ev.velocity > 0) this.#keepTimePress(ev.note, ev.time)
+    if (ev.kind === 'noteon' && ev.velocity > 0) this.#keepTimePress(ev.note, ev.time, ev.velocity)
     // Judged before the input: a press never changes the group or phase while nothing plays.
     const group = this.#previewGroupNow()
     this.#captureKey(ev)
     if (this.#engine.transport === 'strict' && ev.kind === 'noteon' && ev.velocity > 0) {
       const { phase, clockStartedAt } = this.#engine.state
       if (phase === 'running' && clockStartedAt !== null) {
-        this.#timingDrift.attack(ev.note, ev.time, clockStartedAt, this.#toleranceMs(this.#settings))
+        // The written onsets move with the music when a stall shifted it (the engine grades so too).
+        const start = clockStartedAt + this.#keepTimeShift()
+        this.#timingDrift.attack(ev.note, ev.time, start, this.#toleranceMs(this.#settings))
       }
     }
     this.#engine.input(ev)
@@ -3513,7 +3715,13 @@ export class PracticeSession {
       this.#accomp?.stop()
       this.#clearSounding()
       if (this.#repeat) this.#accomp?.seek(this.#timeline.end)
-      else this.#rewindPiece()
+      else {
+        // A Keep time pass from the cursor (U128) has its transport stop at that start, not at zero:
+        // it goes, so the cursor reads the piece's start (U126). Start then counts in from the top;
+        // Again builds it again from the finished pass's start (the engine keeps that timeline).
+        if (this.#accomp && this.#accomp.positionNow() > 1e-9) this.#disposeAccompaniment()
+        this.#rewindPiece()
+      }
     }
     this.#process(now)
   }
@@ -3534,7 +3742,11 @@ export class PracticeSession {
     this.#process(now)
   }
 
-  /** The stopped transport is at zero. Animate the view without starting another pass. */
+  /**
+   * Back to position zero after the piece's tail (U126): the caller's transport is stopped at zero
+   * (or gone), so the cursor and the progress read zero. Animate the view without starting another
+   * pass.
+   */
   #rewindPiece(): void {
     this.#lastVersion = -1
     this.#playVersion = -1
@@ -3651,15 +3863,30 @@ export class PracticeSession {
    * time's own, DECISIONS P20), or `force` (the Keep time count-in clicks anyway).
    */
   async #ensureMetronome(force = false): Promise<void> {
-    if (!this.#deps.loadMetronome || this.#deps.hasWebAudio?.() === false) return
+    const load = this.#deps.loadMetronome
+    if (!load || this.#deps.hasWebAudio?.() === false) return
     if (!this.#metronome && !force && !this.#settings.metronome.enabled && !this.#practiceClick()) return
-    const request = ++this.#metronomeRequest
+    // Overlapping requests (a metronome setting changed while Start loads) queue instead of
+    // canceling each other: each returns once a metronome exists, so a count-in never schedules
+    // its clicks into nothing; the later one then moves it to the output set by then.
+    const previous = this.#metronomeLoading
+    const request = previous ? previous.then(() => this.#loadMetronome(load)) : this.#loadMetronome(load)
+    this.#metronomeLoading = request
     try {
-      const module = this.#metronome ? null : await this.#deps.loadMetronome()
-      if (this.#disposed || request !== this.#metronomeRequest) return
+      await request
+    } finally {
+      if (this.#metronomeLoading === request) this.#metronomeLoading = null
+    }
+  }
+
+  /** One metronome request, for the output set when it runs (`#ensureMetronome`). Never rejects. */
+  async #loadMetronome(load: NonNullable<SessionDeps['loadMetronome']>): Promise<void> {
+    try {
+      const module = this.#metronome ? null : await load()
+      if (this.#disposed) return
       const output = metronomeAudioOutput(this.#settings.metronome.outputId)
       const { context } = output instanceof Promise ? await output : output
-      if (this.#disposed || request !== this.#metronomeRequest) return
+      if (this.#disposed) return
       if (this.#metronome) this.#metronome.setContext(context)
       else if (module) {
         this.#metronome = new module.WebAudioMetronome({
@@ -3678,7 +3905,11 @@ export class PracticeSession {
     if (this.#sel.hands === 'none' || !hasTempo(this.#tempo)) return
     const scorePlayback = this.#scorePlayback()
     const scoreVolume = scorePlayback ? level(this.#settings.rhythm?.scorePlaybackVolume ?? 1) : 1
-    if (scorePlayback && !accompanimentAllowed(this.#settings, this.#deps.midi.output(), this.#browserSoundPossible()))
+    // At 0% nothing is played (P27), so no echo-free route is needed.
+    if (
+      this.#playbackHeard() &&
+      !accompanimentAllowed(this.#settings, this.#deps.midi.output(), this.#browserSoundPossible())
+    )
       return
     const silent = this.#practiceSilent()
     // Follow human-held MIDI keys from the count-in, even if Playback is first enabled mid-note.
@@ -3793,7 +4024,7 @@ export class PracticeSession {
   }
 
   #pauseTransports(): void {
-    this.#keepTimeActivity = null
+    this.#releaseKeepTime()
     this.#secondOpeningBarOnWrap = false
     if (this.#accomp && this.#accomp.state === 'playing') this.#accomp.pause()
     this.#clearSounding()
@@ -3886,7 +4117,7 @@ export class PracticeSession {
     const versionChanged = s.version !== this.#lastVersion || force
     // Listen mode (both hands off, U9) shows no targets, even before Play.
     const quiet = this.#listen !== null || this.#sel.hands === 'none'
-    const timingEnabled = this.#settings.hints.showTimingCues && !quiet && ACTIVE.includes(s.phase)
+    const timingEnabled = this.#timingRowEnabled()
     const timing = this.#engine.transport === 'strict' ? this.#timingDrift : this.#practiceTiming
     strip?.setTimingCue?.(timingEnabled && s.phase === 'running' ? timing.directionAt(now) : null, timingEnabled)
     if (versionChanged || previewChanged) {
@@ -4004,8 +4235,10 @@ export class PracticeSession {
     const s = this.#engine.state
     const f = p.follower.state
     const changed = force || f.version !== this.#playVersion
-    const timing = this.#settings.hints.showTimingCues && p.playing ? p.timing : null
-    strip?.setTimingCue?.(timing?.directionAt(now) ?? null, timing !== null)
+    // The row stays while paused too (`#timingRowEnabled`); the cue follows live MIDI timing while playing.
+    const timingEnabled = this.#timingRowEnabled()
+    const timing = timingEnabled && p.playing ? p.timing : null
+    strip?.setTimingCue?.(timing?.directionAt(now) ?? null, timingEnabled)
     if (changed) {
       this.#playVersion = f.version
       if (strip) {
@@ -4037,13 +4270,32 @@ export class PracticeSession {
     if (more) this.#scheduleFrame()
   }
 
+  /**
+   * The cue row above the score is reserved whenever live timing feedback is on (DECISIONS U122):
+   * the setting, a hand practiced (not Listen), and in play-through a piano to time (the microphone
+   * gives no live timing, P22). It does not follow the phase, so the score stays put on Start,
+   * Pause and each new pass; the cue itself shows only while the music runs.
+   */
+  #timingRowEnabled(): boolean {
+    if (!this.#settings.hints.showTimingCues || this.#listen !== null || this.#sel.hands === 'none') return false
+    return !this.#playThrough || !this.#micActive()
+  }
+
   /** Wake for engine deadlines (pending presses, hint expiry and fades), label fades before Ready. */
   #scheduleTick(): void {
     if (this.#disposed) return
     const now = this.#deps.clock()
     let at = this.#engine.nextDeadline() ?? Infinity
     const activity = this.#keepTimeActivity
-    if (activity) at = Math.min(at, activity.bars[activity.bar]?.end ?? Infinity, activity.opening?.end ?? Infinity)
+    if (activity) {
+      // A stall moving the music later re-runs this after the early wake-up (`#checkKeepTimeActivity`).
+      const delay = this.#keepTimeShift() + this.#keepTimeGrace
+      at = Math.min(
+        at,
+        (activity.bars[activity.bar]?.end ?? Infinity) + delay,
+        (activity.opening?.end ?? Infinity) + delay,
+      )
+    }
     const patience = this.#play?.follower.nextDeadline() ?? null
     if (patience !== null) at = Math.min(at, patience)
     const playCueUntil = this.#play?.timing?.cueUntil
@@ -4104,7 +4356,7 @@ export class PracticeSession {
       {
         playThrough: this.#playThrough,
         rhythm: this.#rhythm,
-        scorePlayback: this.#scorePlayback(),
+        scorePlayback: this.#playbackHeard(),
         mic: this.#micActive(),
       },
     )
@@ -4136,12 +4388,22 @@ export class PracticeSession {
     return !this.#inputAvailable && this.#sel.hands !== 'none'
   }
 
+  /** Keep time's Playback switch is on (the score's sound follows it, P27: none at 0%). */
   #scorePlayback(): boolean {
     return this.#rhythm && this.#sel.hands !== 'none' && this.#settings.rhythm?.scorePlayback === true
   }
 
+  /**
+   * Playback is on above 0%. At 0% it counts as off: no Playback comparison context, no
+   * echo-free output needed, both hands practice silently; raising the volume mid-pass is switching
+   * it on mid-pass.
+   */
+  #playbackHeard(): boolean {
+    return this.#rhythm && this.#sel.hands !== 'none' && playbackHeard(this.#settings)
+  }
+
   #practiceSilent(): boolean {
-    return this.#sel.hands === 'both' && !this.#scorePlayback()
+    return this.#sel.hands === 'both' && !this.#playbackHeard()
   }
 
   /** Whether a route change can remove the backend without stopping the active transport. */
@@ -4549,6 +4811,16 @@ function timingSummary(record: AttemptRecord): Pick<AttemptSummary, 'timing'> {
 /** Stored settings are not clamped (normalizeSettings falls back per field only): keep 0..1. */
 function level(v: number): number {
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1
+}
+
+/** Keep time's Playback volume is above 0%. */
+function playbackAudible(settings: SessionSettings): boolean {
+  return level(settings.rhythm?.scorePlaybackVolume ?? 1) > 0
+}
+
+/** Keep time's Playback is switched on above 0% (at 0% it counts as off). */
+function playbackHeard(settings: SessionSettings): boolean {
+  return settings.rhythm?.scorePlayback === true && playbackAudible(settings)
 }
 
 /** Bar index containing a float performance position. */

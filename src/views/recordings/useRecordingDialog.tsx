@@ -1,6 +1,5 @@
 import type { ComponentType } from 'preact'
 import { useRef, useState, useEffect } from 'preact/hooks'
-import pill from '../../ui/statusPill.module.css'
 import styles from './recordingControl.module.css'
 import { msg } from '../../i18n/messages'
 import { pushNotice } from '../../app/state'
@@ -46,22 +45,17 @@ export function useRecordingDialog() {
       })
     }
   }
-  function controls(onOpen: () => void, inHeader = true) {
+  /**
+   * The header's place for a take: its status light, timer and Stop, shown only while the
+   * recorder is open and a take fills it. Otherwise it renders nothing (no space, nothing to
+   * focus); a take is started from the menus' Record performance button. On a portrait phone
+   * (`inHeader` false) the take shows in `phoneFooter` instead.
+   */
+  function controls(_onOpen: () => void, inHeader = true) {
+    if (!Panel || !inHeader) return null
     return (
       <div class={styles.control} data-recording-control>
-        <span class={styles.slot} ref={inHeader && Panel ? setControlsHost : null} />
-        <button
-          class={`${pill.pill} ${pill.action} ${styles.record}`}
-          type="button"
-          aria-label={msg('Record performance')}
-          title={msg('Record performance')}
-          aria-haspopup="dialog"
-          disabled={Panel !== null}
-          onClick={onOpen}
-        >
-          <span class={pill.dot} aria-hidden="true" />
-          <span class={styles.label}>{msg('Record')}</span>
-        </button>
+        <span class={styles.slot} ref={setControlsHost} />
       </div>
     )
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { makePackage, makePiece } from '../../core/storage/testkit'
 import { rat } from '../../core/music/rational'
+import { useCatalog } from '../shared/catalogTesting'
 import { continuationContext, continuingPiece, hasPracticeContext, neverOpened, openedStatus } from './continuation'
 
 describe('Library continuation', () => {
@@ -96,6 +97,15 @@ describe('Library continuation', () => {
     expect(at(1)).toBe('Repeat whole piece · both hands')
     expect(at(0.95)).toBe('Repeat whole piece · both hands · 95% speed')
     expect(at(1.05)).toBe('Repeat whole piece · both hands · 105% speed')
+    expect(at(0.9996)).toBe('Repeat whole piece · both hands')
+    expect(at(1.0004)).toBe('Repeat whole piece · both hands')
+    expect(at(0.999)).toBe('Repeat whole piece · both hands · 99.9% speed')
+    const restore = useCatalog('fr-FR')
+    try {
+      expect(at(0.9996)).toBe('Répéter le morceau entier · deux mains')
+    } finally {
+      restore()
+    }
   })
 
   it.each([-1, 4, 100])('does not label a restored position outside the score (%s)', (position) => {

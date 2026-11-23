@@ -10,15 +10,22 @@ import { bindScoreLanguage } from '../shared/scoreLanguage'
  *   plus 96 px faded at each end, at the x of the musical position along that system's cursor
  *   path; the round repeat button rides on it. Within a system it glides (180 ms per seek,
  *   per-frame while following); at a system boundary it jumps to the next system.
- * - A page wider than the viewport can be browsed horizontally and pans to keep the cursor
- *   readable during playback. Pages that fit stay still while a line is played. When the current
+ * - A `fitWidth` page is never wider than the viewport (`pn-page-fit`): it is shown at the fitted
+ *   scale and cannot scroll sideways. Only a page without `fitWidth`, or one magnified with
+ *   `imageZoom`, is wider: it can be browsed horizontally and pans to keep the cursor readable
+ *   during playback. Pages that fit stay still while a line is played. When the current
  *   system changes (and on a seek, wrap or return), the page scrolls (300 ms `--ease-standard`, instant with reduced
  *   motion) so that system's top sits a quarter down the viewport, unless the learner browses
  *   (a manual scroll while browsing is enabled; "Return to current position").
+ * - A scroll the learner drives (touch, wheel, mouse on the scrollbar) keeps its native momentum
+ *   and bounce: from its first event until it settles, the view writes no scroll position and
+ *   changes neither the scroller's overflow nor the sheet's size; what it owes is done once the
+ *   scroll has settled (`scrollend`, or a quiet period where that event does not exist).
  * - Note states, labels, ottava emphasis, loop band, corrections: the strip's classes and
  *   semantics (strip.css styles them; page.css adds the page structure).
- * - Zoom changes the page width: a pinch / ctrl-wheel / `setZoom` previews the scale at once and,
- *   250 ms after it settles, reports `onZoomChange(scale)`; the owner re-prepares the layout at
+ * - Zoom changes the page width: a pinch / ctrl-wheel / `setZoom` previews the scale at once (with
+ *   `fitWidth`, never past the fit: a zoom-in waits for the narrower page) and, 250 ms after it
+ *   settles, reports `onZoomChange(scale)`; the owner re-prepares the layout at
  *   `pageWidthFor(stage, scale)` and opens a new view at that zoom. With `imageZoom` (a phone
  *   upright, U83) they magnify the page as engraved instead, like a photo: nothing is reported.
  * - A new engraving with other spacing (Labels Off ↔ on) keeps the cursor's line where it was on
@@ -73,10 +80,12 @@ export interface PageOptions extends StripOptions {
   /** Debounce before a zoom change is reported (`onZoomChange`), ms (default 250). */
   readonly zoomDebounceMs?: number
   /**
-   * Fit the page to the host's width (R17, a phone): the shown scale never exceeds what puts the
-   * whole canvas between the side gutters, so the fitted page never scrolls sideways (only an
-   * `imageZoom` magnification does). The zoom asked for is kept (and reported) as the preference;
-   * a wider host shows it again.
+   * Fit the page to the host's width (R17): the shown scale never exceeds what puts the whole
+   * canvas between the side gutters, on every path (zoom, pinch, ctrl-wheel, resize, a layout
+   * wider than asked), and the sheet is exactly as wide as the host, clipped, with sideways
+   * scrolling off: the page never scrolls, drags or bounces sideways (only an `imageZoom`
+   * magnification does). The zoom asked for is kept (and reported) as the preference; a wider
+   * host shows it again.
    */
   readonly fitWidth?: boolean
   /**
@@ -123,6 +132,15 @@ const FOLLOW_MAX_STEP = 0.25
 /** A held loop handle scrolls within this distance of a viewport edge. */
 const HANDLE_SCROLL_ZONE = 48
 const HANDLE_SCROLL_SPEED = 600
+/**
+ * A learner's scroll has settled after this long without a scroll, wheel or touch move event
+ * (the fallback for browsers without `scrollend`, Safari 16.4 among them), ms.
+ */
+const SCROLL_SETTLE_MS = 200
+/** A contact whose end never arrives (its target was detached meanwhile) is let go after, ms. */
+const CONTACT_LOST_MS = 1000
+/** The ottava reminder's distance from the cursor (screen px). */
+const REMINDER_GAP = 18
 
 interface LabelNode {
   readonly text: SVGTextElement
@@ -211,7 +229,8 @@ export class PageView {
     cursor: '',
     cursorH: NaN,
     sheetH: NaN,
-    sheetW: NaN,
+    /** The sheet's inline width: px, or '' (the scroller's width) for a fitted page. */
+    sheetW: 'unset',
     position: NaN,
     transform: '',
     gx: NaN,
@@ -219,6 +238,23 @@ export class PageView {
   }
   private browsing = false
   private browseEnabled = false
+  /** Browsing was disabled during a learner's scroll: the lock waits until it settles. */
+  private lockPending = false
+  /**
+   * A scroll the learner drives, from its first touch / wheel / mouse press until it settles:
+   * nothing writes the scroll position, the scroller's overflow or the sheet's size meanwhile.
+   */
+  private scrollHold = false
+  /** A finger (touch events) or a mouse button (pointer events) is down on the scroller. */
+  private touching = false
+  private pressed = false
+  /** The scroll moved since the contact began: a release then waits for the momentum to end. */
+  private scrollMoved = false
+  /** When the hold last saw activity (performance.now()). */
+  private holdAt = 0
+  private settleTimer: ReturnType<typeof setTimeout> | null = null
+  /** The ottava reminder pill's width (px), measured when its text changes. */
+  private reminderW = 0
   private ottavaSpans: number[] = []
   private readonly ottavaBoxes = new Map<number, HTMLDivElement>()
   private readonly reminders = new Map<number, HTMLDivElement>()
@@ -248,7 +284,8 @@ export class PageView {
     mouse: boolean
     moved: boolean
   } | null = null
-  private pinch: { dist: number; scale: number } | null = null
+  /** A pointer pinch: the distance, requested zoom and shown scale when it began. */
+  private pinch: { dist: number; zoom: number; scale: number } | null = null
   /** `imageZoom`: the magnification over the fitted scale (1 = fitted). */
   private magnify = 1
   /** `imageZoom`: a two-finger touch pinch, anchored at the page point under its first center. */
@@ -374,7 +411,7 @@ export class PageView {
       this.root.append(ret)
     }
     this.cleanup.push(bindScoreLanguage(this.root, opts))
-    this.timingCue = new TimingCue(host, this.root)
+    this.timingCue = new TimingCue(host, this.root, bar)
 
     this.store = new PageSegmentStore(
       layout,
@@ -400,9 +437,17 @@ export class PageView {
         // The observer's initial notification often repeats the size measured above. It must
         // not overwrite a respacing handoff's scroll anchor with a fresh follow request.
         if (width === this.hostW && height === this.hostH) return
-        this.instant = true
-        this.followRequest = 'instant'
-        if (width !== this.hostW) this.followXRequest = true
+        // A pending smooth or rewind follow keeps its glide. A new width relayouts the page at
+        // once, before this frame is painted (a fitted page never shows its old scale in the new
+        // width); a new height alone (the cue row opening or closing) glides to the new resting place.
+        if (width !== this.hostW) {
+          this.instant = true
+          this.followXRequest = true
+          this.followRequest ??= 'instant'
+          this.flushNow()
+          return
+        }
+        this.followRequest ??= 'smooth'
         this.schedule()
       })
       this.resize.observe(this.root)
@@ -590,8 +635,11 @@ export class PageView {
   setBrowseEnabled(enabled: boolean): void {
     this.browseEnabled = enabled
     this.root.classList.toggle('pn-browse-enabled', enabled)
+    // Locking the scroller mid-scroll would stop its momentum: the lock waits until it settles.
+    this.lockPending = !enabled && this.userScrolling()
+    if (this.lockPending) return
     this.scroller.classList.toggle('pn-page-locked', !enabled)
-    if (!enabled && this.browsing) this.returnToCurrent()
+    if (!enabled && this.browsing) this.endBrowse()
   }
 
   /**
@@ -616,7 +664,14 @@ export class PageView {
     return null
   }
 
+  /** Asked for (the Return button, a Start, a seek): it also ends a learner's scroll still gliding. */
   returnToCurrent(): void {
+    if (!this.browsing) return
+    this.settleScroll()
+    this.endBrowse()
+  }
+
+  private endBrowse(): void {
     if (!this.browsing) return
     this.browsing = false
     this.root.classList.remove('pn-browsing')
@@ -805,6 +860,7 @@ export class PageView {
     if (this.frame) cancelAnimationFrame(this.frame)
     if (this.corrLeaveTimer) clearTimeout(this.corrLeaveTimer)
     if (this.zoomTimer) clearTimeout(this.zoomTimer)
+    if (this.settleTimer) clearTimeout(this.settleTimer)
     this.glideAnim?.cancel()
     this.resize?.disconnect()
     for (const off of this.cleanup) off()
@@ -851,9 +907,24 @@ export class PageView {
   }
 
   /**
+   * A `fitWidth` page that is not magnified: exactly as wide as its host, so it never scrolls,
+   * drags or bounces sideways (`pn-page-fit`), and the horizontal follow, pan and edge scrolling
+   * are inert.
+   */
+  private fitLocked(): boolean {
+    return !!this.opts.fitWidth && this.magnify === 1
+  }
+
+  /** The page is wider than its host and pans sideways (never while fit-locked). */
+  private wide(): boolean {
+    return !this.fitLocked() && this.sheetWidth() > this.hostW
+  }
+
+  /**
    * A zoom the user (or the owner) asked for: remembered, shown fitted, and reported after the
    * debounce so the owner re-prepares the page at the width that zoom means. A request beyond
-   * the fit changes nothing on screen until that narrower page arrives, so it is still reported.
+   * the fit changes nothing on screen until that narrower page arrives (a scaled preview would
+   * be wider than the host), so it is still reported.
    */
   private userZoom(scale: number): void {
     const z = this.clampZoom(scale)
@@ -942,10 +1013,12 @@ export class PageView {
   }
 
   private sheetWidth(): number {
+    if (this.fitLocked()) return this.hostW
     return Math.max(this.hostW, Math.ceil(this.layout.width * this.scale))
   }
 
   private clampScrollX(x: number): number {
+    if (this.fitLocked()) return 0
     return Math.max(0, Math.min(this.sheetWidth() - this.hostW, x))
   }
 
@@ -988,16 +1061,26 @@ export class PageView {
     const L = this.layout
     const s = this.scale
     const gx = this.gutter()
+    const fit = this.fitLocked()
+    // A learner's scroll keeps its momentum and bounce: no scroll position or sheet size is
+    // written until it settles (`settleScroll` schedules the frame that catches up).
+    const held = this.userScrolling()
     const sheetW = this.sheetWidth()
-    if (sheetW !== this.applied.sheetW) {
-      this.sheet.style.width = `${sheetW}px`
-      this.applied.sheetW = sheetW
-    }
-    this.root.classList.toggle('pn-page-wide', sheetW > this.hostW)
+    // Fitted: the scroller's own width (CSS 100%, clipped in page.css), never a px width that a
+    // resize or a scrollbar could leave wider than the scroller.
+    this.root.classList.toggle('pn-page-fit', fit)
+    this.root.classList.toggle('pn-page-wide', !fit && sheetW > this.hostW)
     const sheetH = this.sheetHeight()
-    if (sheetH !== this.applied.sheetH) {
-      this.sheet.style.height = `${sheetH}px`
-      this.applied.sheetH = sheetH
+    if (!held) {
+      const width = fit ? '' : `${sheetW}px`
+      if (width !== this.applied.sheetW) {
+        this.sheet.style.width = width
+        this.applied.sheetW = width
+      }
+      if (sheetH !== this.applied.sheetH) {
+        this.sheet.style.height = `${sheetH}px`
+        this.applied.sheetH = sheetH
+      }
     }
     const transform = `translate3d(${r2(gx)}px, ${PAGE_PAD_TOP}px, 0) scale(${s})`
     if (transform !== this.applied.transform) {
@@ -1016,30 +1099,14 @@ export class PageView {
     const instantCursor = this.instant || changed || this.following
     this.root.classList.toggle('pn-instant', instantCursor)
     this.instant = false
-    this.panTo(this.clampScrollX(this.scrollX))
-    if ((changed || request) && !this.browsing && !this.handleDrag && !this.cursorDrag?.moved) {
-      const target = this.geo.followScroll(system, {
-        scale: s,
-        padTop: PAGE_PAD_TOP,
-        viewport: this.hostH,
-        max: sheetH - this.hostH,
-        offset: this.followOffset(),
-      })
-      const animate = this.lastSystem >= 0 && request !== 'instant' && !this.reducedMotion
-      const targetX = changed || requestX ? this.followScrollX(true) : this.scrollX
-      // The cursor already belongs to the next system. Panning from the previous system's
-      // right edge would carry that new cursor offscreen, so only the vertical axis glides.
-      this.scrollTo(target, animate, targetX, !changed, request === 'rewind')
-    } else if (
-      this.cursorPos !== this.applied.position &&
-      !this.browsing &&
-      !this.handleDrag &&
-      !this.cursorDrag?.moved
-    ) {
-      // Per-frame playback advances the scroll directly, alongside the cursor, without a
-      // delayed animation that would trail it. An existing vertical glide remains intact.
-      this.panTo(this.followScrollX(false))
-    }
+    if (held) {
+      // Nothing scrolls under the learner's finger or momentum. What the follow owes (the
+      // request, or the new system's resting place) is done once the scroll settles.
+      if (changed || request) {
+        this.followRequest = request ?? 'smooth'
+        this.followXRequest = requestX || changed
+      }
+    } else this.follow(system, changed, request, requestX, sheetH)
     this.applied.position = this.cursorPos
     this.lastSystem = system
 
@@ -1071,6 +1138,36 @@ export class PageView {
     this.reportVisibleLabels()
     this.labelsChanged = false
     if (!done || this.respace) this.schedule()
+  }
+
+  /** The frame's scroll writes: clamp a browsed offset, then follow the cursor unless browsing. */
+  private follow(
+    system: number,
+    changed: boolean,
+    request: 'smooth' | 'instant' | 'rewind' | null,
+    requestX: boolean,
+    sheetH: number,
+  ): void {
+    this.panTo(this.clampScrollX(this.scrollX))
+    if (this.browsing || this.handleDrag || this.cursorDrag?.moved) return
+    if (changed || request) {
+      const target = this.geo.followScroll(system, {
+        scale: this.scale,
+        padTop: PAGE_PAD_TOP,
+        viewport: this.hostH,
+        max: sheetH - this.hostH,
+        offset: this.followOffset(),
+      })
+      const animate = this.lastSystem >= 0 && request !== 'instant' && !this.reducedMotion
+      const targetX = changed || requestX ? this.followScrollX(true) : this.scrollX
+      // The cursor already belongs to the next system. Panning from the previous system's
+      // right edge would carry that new cursor offscreen, so only the vertical axis glides.
+      this.scrollTo(target, animate, targetX, !changed, request === 'rewind')
+    } else if (this.cursorPos !== this.applied.position) {
+      // Per-frame playback advances the scroll directly, alongside the cursor, without a
+      // delayed animation that would trail it. An existing vertical glide remains intact.
+      this.panTo(this.followScrollX(false))
+    }
   }
 
   /** Writes horizontal following without restarting an active system-scroll animation. */
@@ -1151,7 +1248,10 @@ export class PageView {
       this.cursorEl.style.height = `${h}px`
       this.applied.cursorH = h
     }
-    if (this.timingCue.visible) this.timingCue.place(sx - gx + this.screenFrame().dx, this.hostW)
+    // Placed while hidden too (with the row reserved), so the next cue appears in place.
+    if (this.timingCue.active || this.timingCue.visible) {
+      this.timingCue.place(sx - gx + this.screenFrame().dx, this.hostW)
+    }
     this.placeActionButton(span.top, h, margin.top)
   }
 
@@ -1385,9 +1485,15 @@ export class PageView {
       void el.offsetWidth
     }
     const pill = el.firstElementChild as HTMLDivElement
-    if (pill.textContent !== remind) pill.textContent = remind
+    if (pill.textContent !== remind) {
+      pill.textContent = remind
+      this.reminderW = el.offsetWidth
+    }
     const span = this.geo.staffSpan(this.cursor.system)
-    const x = gx + this.cursor.x * this.scale + 18
+    const cx = gx + this.cursor.x * this.scale
+    // Right of the cursor, or left of it where the page's edge would cut the pill off.
+    const right = cx + REMINDER_GAP
+    const x = right + this.reminderW > this.sheetWidth() ? cx - REMINDER_GAP - this.reminderW : right
     const y = PAGE_PAD_TOP + (span.top - L.top) * this.scale - 22
     el.style.transform = `translate(${r2(x)}px, ${r2(y)}px) translateY(-50%)`
     el.classList.add('pn-on')
@@ -1497,10 +1603,35 @@ export class PageView {
 
   private bindEvents(): void {
     this.on(this.scroller, 'scroll', () => this.onScroll(), { passive: true })
-    this.on(this.scroller, 'pointerdown', (e) => this.pointerDown(e))
-    this.on(this.scroller, 'pointermove', (e) => this.pointerMove(e))
-    this.on(this.scroller, 'pointerup', (e) => this.pointerUp(e))
-    this.on(this.scroller, 'pointercancel', (e) => this.pointerUp(e, true))
+    // Where it exists, `scrollend` settles a learner's scroll as soon as its momentum ends.
+    this.on(this.scroller, 'scrollend', () => {
+      if (!this.touching && !this.pressed) this.settleScroll()
+    })
+    // None of these cancel anything: passive, so a touch scroll never waits for the main thread.
+    this.on(this.scroller, 'pointerdown', (e) => this.pointerDown(e), { passive: true })
+    this.on(this.scroller, 'pointermove', (e) => this.pointerMove(e), { passive: true })
+    this.on(this.scroller, 'pointerup', (e) => this.pointerUp(e), { passive: true })
+    this.on(this.scroller, 'pointercancel', (e) => this.pointerUp(e, true), { passive: true })
+    // Touch events say when a finger is down: iOS cancels the pointer once its native scroll
+    // takes over, but still reports the finger lifting.
+    const contact = (e: TouchEvent): void => {
+      this.touching = e.touches.length > 0
+      if (this.touching) this.holdScroll()
+      else this.releaseContact()
+    }
+    this.on(
+      this.scroller,
+      'touchstart',
+      (e) => {
+        this.scrollMoved = false
+        contact(e)
+      },
+      { passive: true },
+    )
+    this.on(this.scroller, 'touchmove', contact, { passive: true })
+    this.on(this.scroller, 'touchend', contact, { passive: true })
+    this.on(this.scroller, 'touchcancel', contact, { passive: true })
+    // Not passive: a ctrl-wheel (a trackpad pinch) zooms the score instead of the app.
     this.on(this.scroller, 'wheel', (e) => this.wheel(e), { passive: false })
     if (this.opts.imageZoom && TOUCH_EVENTS) {
       this.on(this.scroller, 'touchstart', (e) => this.touchPinchStart(e), { passive: true })
@@ -1546,12 +1677,63 @@ export class PageView {
     const x = this.scroller.scrollLeft
     this.scrollY = y
     this.scrollX = x
+    if (this.scrollHold) {
+      this.scrollMoved = true
+      this.holdScroll()
+    }
     if (Math.abs(y - this.writtenY) > 2 || Math.abs(x - this.writtenX) > 2) {
       this.writtenY = y
       this.writtenX = x
       this.beginBrowse()
     }
     this.schedule()
+  }
+
+  /**
+   * The learner drives the scroll (or may at once: a finger or a mouse button is down). iOS
+   * stops a scroll's momentum and bounce on any script write to its position, so `flush` writes
+   * none until the scroll settles.
+   */
+  private holdScroll(): void {
+    this.scrollHold = true
+    this.holdAt = performance.now()
+    if (this.settleTimer) clearTimeout(this.settleTimer)
+    this.settleTimer = setTimeout(this.settleCheck, SCROLL_SETTLE_MS)
+  }
+
+  /** Quiet for `SCROLL_SETTLE_MS`: settled, unless a finger or button is still down. */
+  private readonly settleCheck = (): void => {
+    this.settleTimer = null
+    if ((this.touching || this.pressed) && performance.now() - this.holdAt < CONTACT_LOST_MS) {
+      this.settleTimer = setTimeout(this.settleCheck, SCROLL_SETTLE_MS)
+      return
+    }
+    this.settleScroll()
+  }
+
+  /** A finger or button lifted: a tap settles at once, a scroll waits for its momentum to end. */
+  private releaseContact(): void {
+    if (this.touching || this.pressed || !this.scrollHold) return
+    if (this.scrollMoved) this.holdScroll()
+    else this.settleScroll()
+  }
+
+  /** The learner's scroll is over: catch up on what was held (the lock, the follow, the sheet). */
+  private settleScroll(): void {
+    if (this.settleTimer) clearTimeout(this.settleTimer)
+    this.settleTimer = null
+    this.touching = false
+    this.pressed = false
+    this.scrollMoved = false
+    if (!this.scrollHold) return
+    this.scrollHold = false
+    if (this.lockPending) this.setBrowseEnabled(this.browseEnabled)
+    this.schedule()
+  }
+
+  /** The hold, except during an image-zoom touch pinch: the view's own gesture places the page. */
+  private userScrolling(): boolean {
+    return this.scrollHold && !this.touchPinch
   }
 
   private beginBrowse(): void {
@@ -1562,6 +1744,12 @@ export class PageView {
   }
 
   private pointerDown(e: PointerEvent): void {
+    // A mouse button down may drag the scrollbar (touch contacts come from touch events).
+    if (e.pointerType === 'mouse') {
+      this.pressed = true
+      this.scrollMoved = false
+      this.holdScroll()
+    }
     if ((e.target as Element).closest?.('button')) return
     if (this.cursorDrag) return
     const onGrip =
@@ -1574,7 +1762,7 @@ export class PageView {
         // Synthetic events in tests have no active pointer.
       }
       const system = this.cursor.system
-      if (this.sheetWidth() > this.hostW) this.freezeScroll()
+      if (this.wide()) this.freezeScroll()
       this.cursorDrag = {
         pointerId: e.pointerId,
         startX: e.clientX,
@@ -1597,11 +1785,11 @@ export class PageView {
       // cancels the pointers once the native scroll takes them.
       if (this.opts.imageZoom && e.pointerType === 'touch' && TOUCH_EVENTS) return
       const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }]
-      this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, scale: this.scale }
+      this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: this.requestedZoom, scale: this.scale }
       return
     }
     if (this.pointers.size === 1) {
-      const mouse = e.pointerType === 'mouse' && this.sheetWidth() > this.hostW
+      const mouse = e.pointerType === 'mouse' && this.wide()
       this.gesture = { startX: e.clientX, startY: e.clientY, scrollX: this.scrollX, mouse, moved: false }
       if (mouse) {
         try {
@@ -1632,11 +1820,15 @@ export class PageView {
     }
     if (this.pinch && this.pointers.size >= 2) {
       const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }]
-      const scale = (this.pinch.scale * Math.hypot(a.x - b.x, a.y - b.y)) / this.pinch.dist
+      const k = Math.hypot(a.x - b.x, a.y - b.y) / this.pinch.dist
       if (this.opts.imageZoom) {
         const r = this.root.getBoundingClientRect()
-        this.magnifyTo(scale / this.fitted(this.requestedZoom), (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top)
-      } else this.userZoom(scale)
+        this.magnifyTo(
+          (this.pinch.scale * k) / this.fitted(this.requestedZoom),
+          (a.x + b.x) / 2 - r.left,
+          (a.y + b.y) / 2 - r.top,
+        )
+      } else this.userZoom(zoomBase(k, this.pinch.zoom, this.pinch.scale) * k)
       return
     }
     if (this.touchPinch) return
@@ -1653,6 +1845,10 @@ export class PageView {
   }
 
   private pointerUp(e: PointerEvent, canceled = false): void {
+    if (e.pointerType === 'mouse' && this.pressed) {
+      this.pressed = false
+      this.releaseContact()
+    }
     const d = this.cursorDrag
     if (d && d.pointerId === e.pointerId) {
       this.pointers.delete(e.pointerId)
@@ -1706,7 +1902,7 @@ export class PageView {
   /** A held playhead reaches offscreen notes on its current system without changing its size. */
   private updateCursorScroll(): void {
     const d = this.cursorDrag
-    if (!d?.moved || this.sheetWidth() <= this.hostW) {
+    if (!d?.moved || !this.wide()) {
       this.stopCursorScroll()
       return
     }
@@ -1800,14 +1996,17 @@ export class PageView {
   }
 
   private wheel(e: WheelEvent): void {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault()
-      const scale = this.scale * Math.exp(-e.deltaY * 0.004)
-      if (this.opts.imageZoom) {
-        const r = this.root.getBoundingClientRect()
-        this.magnifyTo(scale / this.fitted(this.requestedZoom), e.clientX - r.left, e.clientY - r.top)
-      } else this.userZoom(scale)
+    if (!(e.ctrlKey || e.metaKey)) {
+      // A wheel or trackpad scroll, momentum included, is the learner's.
+      this.holdScroll()
+      return
     }
+    e.preventDefault()
+    const k = Math.exp(-e.deltaY * 0.004)
+    if (this.opts.imageZoom) {
+      const r = this.root.getBoundingClientRect()
+      this.magnifyTo((this.scale * k) / this.fitted(this.requestedZoom), e.clientX - r.left, e.clientY - r.top)
+    } else this.userZoom(zoomBase(k, this.requestedZoom, this.scale) * k)
   }
 
   /** `imageZoom`: two fingers down start a pinch anchored at the page point under their center. */
@@ -2018,7 +2217,7 @@ export class PageView {
         : horizontal > d.width - HANDLE_SCROLL_ZONE
           ? (HANDLE_SCROLL_ZONE - Math.max(0, d.width - horizontal)) / HANDLE_SCROLL_ZONE
           : 0
-    this.handleScrollSpeedX = this.sheetWidth() > this.hostW ? depthX * HANDLE_SCROLL_SPEED : 0
+    this.handleScrollSpeedX = this.wide() ? depthX * HANDLE_SCROLL_SPEED : 0
     if (!depth && !this.handleScrollSpeedX) this.stopHandleScroll()
     else if (!this.handleScrollFrame) this.handleScrollFrame = requestAnimationFrame(this.handleScrollTick)
   }
@@ -2026,14 +2225,19 @@ export class PageView {
   private readonly handleScrollTick = (now: number): void => {
     this.handleScrollFrame = 0
     if (!this.handleDrag || this.destroyed || (!this.handleScrollSpeed && !this.handleScrollSpeedX)) return
-    const ms = this.handleScrollAt ? Math.min(32, now - this.handleScrollAt) : 16
+    if (!this.handleScrollAt) this.handleScrollAt = now - 16
+    const ms = Math.min(32, now - this.handleScrollAt)
+    const dy = (this.handleScrollSpeed * ms) / 1000
+    const dx = (this.handleScrollSpeedX * ms) / 1000
+    if (Math.abs(dy) < 1 && Math.abs(dx) < 1) {
+      // Not a pixel yet (two frames close together, or a slow zone): the time adds up.
+      this.handleScrollFrame = requestAnimationFrame(this.handleScrollTick)
+      return
+    }
     this.handleScrollAt = now
     const before = this.scrollY
     const beforeX = this.scrollX
-    this.scrollHandleTo(
-      before + (this.handleScrollSpeed * ms) / 1000,
-      this.clampScrollX(beforeX + (this.handleScrollSpeedX * ms) / 1000),
-    )
+    this.scrollHandleTo(before + dy, this.clampScrollX(beforeX + dx))
     if (this.scrollY === before && this.scrollX === beforeX) return
     this.dragHandleTo(true)
     this.flushNow()
@@ -2141,4 +2345,13 @@ export class PageView {
 
 function r2(v: number): number {
   return Math.round(v * 100) / 100
+}
+
+/**
+ * What a pinch or ctrl-wheel by `k` scales: zooming in, the zoom already asked for (`zoom`: a
+ * fitted page shows less until the narrower page arrives, and a trackpad's many small steps add
+ * up); zooming out, the scale shown, so the page shrinks at once.
+ */
+function zoomBase(k: number, zoom: number, scale: number): number {
+  return k >= 1 ? Math.max(zoom, scale) : scale
 }

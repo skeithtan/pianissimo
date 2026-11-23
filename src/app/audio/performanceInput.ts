@@ -1,6 +1,11 @@
 import { waveFile } from '../../core/recording/performance'
 import { msg } from '../../i18n/messages'
 
+/** An error whose message is already written for the player, in the interface language. */
+export class RecordingError extends Error {
+  override name = 'RecordingError'
+}
+
 export interface PerformanceInput {
   readonly label: string
   readonly devices: MediaDeviceInfo[]
@@ -19,7 +24,7 @@ export async function openPerformanceInput(
   preferredName?: string,
 ): Promise<PerformanceInput> {
   if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === 'undefined') {
-    throw new Error(msg('Audio input is unavailable. Open Pianissimo over HTTPS and allow audio access.'))
+    throw new RecordingError(msg('Audio input is unavailable. Open Pianissimo over HTTPS and allow audio access.'))
   }
   const context = new AudioContext()
   let stream: MediaStream | undefined
@@ -53,7 +58,7 @@ export async function openPerformanceInput(
       if (closed || signal.aborted) {
         next.getTracks().forEach((track) => track.stop())
         signal.throwIfAborted()
-        throw new Error(msg('Audio input was interrupted.'))
+        throw new RecordingError(msg('Audio input was interrupted.'))
       }
       return next
     }
@@ -124,7 +129,7 @@ export async function openPerformanceInput(
       },
       start() {
         if (closed || track.readyState !== 'live' || track.muted || context.state !== 'running')
-          throw new Error(msg('Audio input was interrupted.'))
+          throw new RecordingError(msg('Audio input was interrupted.'))
         active = true
         node!.port.postMessage('start')
       },
