@@ -351,8 +351,8 @@ export function comparisonContextOf(
  * with zero wrong attacks, plus the optional total-time tolerance. Assistance (persistent labels,
  * temporary hints, keyboard) is recorded but does not affect the pass (U144). Interrupted and
  * abandoned attempts never pass and carry no completion time. Ordinary-reading traversals
- * ('reading') carry their mistakes, assistance and measure traversals for suggested practice but
- * are not timed.
+ * ('reading') carry their mistakes, per-group outcomes, assistance and measure traversals but are
+ * not timed.
  *
  * Strict transport (rhythm mode): the clock starts at the end of the count-in, the final group's
  * completion or close ends it; passed = completed, zero wrong attacks, no missed group and every
@@ -401,7 +401,7 @@ export function buildAttemptRecord(input: RecordInput): AttemptRecord {
     passed: scored && completion === 'completed' && log.wrongAttacks === 0 && withinTolerance,
     onsets: [...log.onsets],
     measures: [...log.measures],
-    ...(scored ? { groups: log.groupOutcomes() } : {}),
+    groups: log.groupOutcomes(),
     ...(strict !== null ? { rhythm: { toleranceMs: strict.toleranceMs }, missedGroups: log.missedGroups } : {}),
   }
 }

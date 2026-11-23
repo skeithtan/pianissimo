@@ -1,3 +1,5 @@
+import type { RecordingSettings } from '../../core/model/settings'
+import { isRememberedInput } from '../../core/recording/input'
 import { waveFile } from '../../core/recording/performance'
 import { msg } from '../../i18n/messages'
 
@@ -7,7 +9,10 @@ export class RecordingError extends Error {
 }
 
 export interface PerformanceInput {
+  /** Its name, or our own words when the browser gives none. */
   readonly label: string
+  /** The browser's name for it, '' when it gives none. */
+  readonly deviceLabel: string
   readonly devices: MediaDeviceInfo[]
   readonly deviceId: string
   level(): number
@@ -16,17 +21,33 @@ export interface PerformanceInput {
   close(): void
 }
 
+export interface OpenInputOptions {
+  /** Switch to the input with this name, once the browser gives names. */
+  readonly preferredName?: string | undefined
+  /** Open this input and no other (DECISIONS D20): rejects when anything else would be recorded. */
+  readonly remembered?: RecordingSettings | undefined
+  /** A context started inside the tap (the input opens later). It is closed with the input. */
+  readonly context?: AudioContext | undefined
+}
+
+const MISSING: ReadonlySet<string> = new Set(['OverconstrainedError', 'NotFoundError'])
+
+function isMissing(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && MISSING.has(String((error as { name?: unknown }).name))
+}
+
 /** Opens only on a user gesture. No live audio is fed back to the instrument. */
 export async function openPerformanceInput(
   id: string,
   onLost: () => void,
   signal: AbortSignal,
-  preferredName?: string,
+  { preferredName, remembered, context: started }: OpenInputOptions = {},
 ): Promise<PerformanceInput> {
   if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === 'undefined') {
+    void started?.close().catch(() => {})
     throw new RecordingError(msg('Audio input is unavailable. Open Pianissimo over HTTPS and allow audio access.'))
   }
-  const context = new AudioContext()
+  const context = started ?? new AudioContext()
   let stream: MediaStream | undefined
   let node: AudioWorkletNode | undefined
   let active = false
@@ -62,15 +83,29 @@ export async function openPerformanceInput(
       }
       return next
     }
-    stream = await acquire(id)
+    const opened = (from: MediaStream) => {
+      const track = from.getAudioTracks()[0]
+      return { deviceId: track?.getSettings().deviceId ?? '', label: track?.label ?? '' }
+    }
+    stream = await acquire(remembered ? (remembered.inputId ?? '') : id).catch((error: unknown) => {
+      // The remembered ID is gone: the input is unplugged, or the browser has given out new IDs.
+      // Its name tells which, and names can be read only once some input is open.
+      if (!remembered?.inputId || !remembered.inputLabel || !isMissing(error)) throw error
+      return acquire('')
+    })
     const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput')
-    const matching =
-      preferredName && devices.find((d) => d.label.trim().toLowerCase() === preferredName.trim().toLowerCase())
-    if (matching && matching.deviceId && matching.deviceId !== stream.getAudioTracks()[0]?.getSettings().deviceId) {
+    const matching = remembered
+      ? isRememberedInput(remembered, opened(stream))
+        ? undefined
+        : devices.find((d) => isRememberedInput(remembered, d))
+      : preferredName && devices.find((d) => d.label.trim().toLowerCase() === preferredName.trim().toLowerCase())
+    if (matching && matching.deviceId && matching.deviceId !== opened(stream).deviceId) {
       const previous = stream
       stream = await acquire(matching.deviceId)
       previous.getTracks().forEach((track) => track.stop())
     }
+    if (remembered && !isRememberedInput(remembered, opened(stream)))
+      throw new RecordingError(msg('The selected audio input is not available. Choose another input or reconnect it.'))
     await ready
     await context.audioWorklet.addModule(import.meta.env.BASE_URL + 'recording-processor.js')
     signal.throwIfAborted()
@@ -119,6 +154,7 @@ export async function openPerformanceInput(
     }
     return {
       label: track.label || msg('System audio input'),
+      deviceLabel: track.label,
       devices,
       deviceId: track.getSettings().deviceId ?? id,
       level() {
@@ -135,16 +171,19 @@ export async function openPerformanceInput(
       },
       async stop() {
         active = false
-        // A suspended or disconnected audio thread may never acknowledge the final block.
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, 400)
-          stopped = () => {
-            clearTimeout(timer)
-            resolve()
-          }
-          node!.port.postMessage('stop')
-        })
-        close()
+        try {
+          // A suspended or disconnected audio thread may never acknowledge the final block.
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, 400)
+            stopped = () => {
+              clearTimeout(timer)
+              resolve()
+            }
+            node!.port.postMessage('stop')
+          })
+        } finally {
+          close()
+        }
         return waveFile([...blocks, ...parts], total, channels, context.sampleRate)
       },
       close,

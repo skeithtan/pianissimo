@@ -145,7 +145,7 @@ export class PracticeEngine {
   #passTimeTolerance: number | null
   #transportEta: TransportEta | null
   readonly #graceMs: number
-  /** Scored: how long a completed final group stays open for chord slips (P24); 0 = none. */
+  /** How long a completed final group stays open for chord slips (P24, `#holdsFinal`); 0 = none. */
   readonly #finalSlipMs: number
   readonly #timeOrigin: number
   readonly #newId: (n: number, createdAt: number) => string
@@ -175,13 +175,18 @@ export class PracticeEngine {
   #transportGate = -1
   /** Time the latest gate (`#transportGate`) was reached. */
   #gateAt = -Infinity
-  /** Arrival time per gate reached in this attempt/traversal (for per-group lateness). */
+  /**
+   * Arrival time per gate reached in this attempt/traversal (for per-group lateness); the current
+   * group's moves with a pause of ordinary reading.
+   */
   readonly #arrivedAt = new Map<number, number>()
+  /** When ordinary reading last paused. */
+  #pausedAt = 0
   /** Time of the latest group input completion (keeps completion times monotonic). */
   #lastCompleteAt = -Infinity
   /** The group whose input completed last in this attempt/traversal (chord slips, P24); null after a new log. */
   #lastCompletedGroup: number | null = null
-  /** Scored: the completed final group is held open until then for chord slips (`finalSlipMs`). */
+  /** The completed final group is held open until then for chord slips (`finalSlipMs`). */
   #finishAt: number | null = null
   /** The time the held final group would have ended the attempt (its advance time). */
   #finishFrom = 0
@@ -647,7 +652,7 @@ export class PracticeEngine {
       !slipChecked &&
       this.#finalSlipMs > 0 &&
       from === groups.length - 1 &&
-      this.#mode === 'scored' &&
+      this.#holdsFinal &&
       this.#inputComplete
     ) {
       this.#finishAt = now + this.#finalSlipMs
@@ -666,6 +671,11 @@ export class PracticeEngine {
       return
     }
     this.#settlePending(Math.max(now, this.#lastNow), false)
+  }
+
+  /** A pass whose final chord stays open for slips: scored, or a reading of the whole piece (U142). */
+  get #holdsFinal(): boolean {
+    return this.#mode === 'scored' || !this.#timeline.rangeSelected
   }
 
   /** End the attempt the held final group was holding open (see `finalSlipMs`). */
@@ -937,6 +947,7 @@ export class PracticeEngine {
   /** Reading: pause keeps progress and freezes hint timers and fades. Scored: interrupts the attempt. */
   pause(now: number): void {
     this.#now(now)
+    this.#finishHeld()
     if (this.#mode === 'scored') {
       this.interrupt('pause', now)
       return
@@ -1256,10 +1267,24 @@ export class PracticeEngine {
   #setPhase(phase: Phase, now: number): void {
     if (this.#phase === phase) return
     // Only ordinary reading pauses; the active clock (hint lifetimes, fades) is frozen exactly then.
-    if (phase === 'paused') this.#clock.pause(Math.max(now, this.#lastNow))
-    else if (this.#phase === 'paused') this.#clock.resume(Math.max(now, this.#lastNow))
+    const at = Math.max(now, this.#lastNow)
+    if (phase === 'paused') {
+      this.#clock.pause(at)
+      this.#pausedAt = at
+    } else if (this.#phase === 'paused') {
+      this.#clock.resume(at)
+      this.#excludePause(at - this.#pausedAt)
+    }
     this.#phase = phase
     this.#emit({ type: 'phase', phase })
+  }
+
+  /** O(1): a pause is neither lateness nor spread of the group it interrupted (its outcome, E15). */
+  #excludePause(ms: number): void {
+    const at = this.#group === null ? undefined : this.#arrivedAt.get(this.#group)
+    if (at !== undefined) this.#arrivedAt.set(this.#group!, at + ms)
+    this.#firstAcceptAt += ms
+    this.#lastAcceptAt += ms
   }
 
   /** An attempt or traversal is in progress (its log can still change). */
@@ -1306,6 +1331,8 @@ export class PracticeEngine {
     this.#previousWrongKeys = null
     this.#lastCompleteAt = -Infinity
     this.#lastWrongReason = null
+    // A traversal that begins paused shows no label of the one before: the pause would freeze its fade.
+    if (phase === 'paused') this.#hints.clear()
     this.#setPhase(phase, now)
     const n = this.#timeline.groups.length
     const start = n === 0 ? null : Math.max(0, Math.min(Math.trunc(startGroup), n - 1))
@@ -1331,6 +1358,7 @@ export class PracticeEngine {
   /** Reading: a tempo/speed change splits the traversal but keeps the target and its progress. */
   #continueTraversal(now: number): void {
     this.#newLog(now)
+    if (this.#group !== null && !this.#inputComplete) this.#log.reach(this.#group)
     if (this.#keyboard) this.#markKeyboard()
     const h = this.#hints.hint
     const g = this.#currentGroup()

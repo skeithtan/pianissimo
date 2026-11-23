@@ -104,7 +104,7 @@ describe('scorecard', () => {
     )
     expect(row(labeled, 'assistance')).toMatchObject({
       value: 'Note names',
-      detail: 'persistent labels on 3 notes in 2 groups',
+      detail: 'note names on 3 notes in 2 groups',
     })
     expect(labeled.assistance).toMatchObject({ hintRequests: 0, persistentLabelNotes: 3, labelMode: 'conditional' })
 

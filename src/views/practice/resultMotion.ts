@@ -55,7 +55,12 @@ export interface PanelParts {
    * the corners top-left, top-right, bottom-left, bottom-right, then the left and right sides.
    */
   readonly outline: readonly Element[]
+  /** What the pill showed of the card, kept where it was: it fades as the summary comes down over it. */
+  readonly peek?: Element | null
 }
+
+/** The peek fades out over the opening's first third (and back in over a fold's last). */
+const PEEK_FADE: Keyframe[] = [{ opacity: 1 }, { opacity: 0, offset: 0.35 }, { opacity: 0 }]
 
 export interface MotionStep {
   readonly target: Element
@@ -92,7 +97,8 @@ export const CARD_RADIUS = 24
  * The tablet opening: `pill` is the pill's rectangle before expanding, `card` the summary row's
  * (the card's own box) after, `panelTop` the top of the laid-out details, `viewport` the window
  * size (the clips reach that far above the card, over the panel), `contentInset` how far inside the
- * panel's sides its contents begin (their padding).
+ * panel's sides its contents begin (their padding), `summaryShift` how much higher the summary was in
+ * the pill than it is in the row (default: as much as the pill was taller).
  */
 export function panelOpening(
   parts: PanelParts,
@@ -101,6 +107,7 @@ export function panelOpening(
   panelTop: number,
   viewport: { readonly height: number },
   contentInset = 24,
+  summaryShift?: number,
 ): MotionStep[] {
   const left = Math.max(0, pill.left - card.left)
   const right = Math.max(0, card.right - pill.right)
@@ -138,7 +145,8 @@ export function panelOpening(
     { clipPath: `inset(-${top} ${px(right)} 0px ${px(left)} round 0px 0px ${R} ${R})` },
     { clipPath: `inset(-${top} 0px 0px 0px round 0px 0px ${R} ${R})` },
   ])
-  add(parts.summary, [{ transform: `translateY(${px(-shift)})` }, { transform: 'translateY(0px)' }])
+  add(parts.summary, [{ transform: `translateY(${px(-(summaryShift ?? shift))})` }, { transform: 'translateY(0px)' }])
+  add(parts.peek, PEEK_FADE)
   for (const el of parts.start) add(el, [{ transform: `translateX(${px(left)})` }, { transform: 'translateX(0px)' }])
   add(parts.end, [
     { transform: `translateX(${px(-right)})`, opacity: 0 },
@@ -179,6 +187,7 @@ export function screenOpening(
   radius: number,
   content: readonly Element[] = [],
   contentInset = 8,
+  peek: Element | null = null,
 ): MotionStep[] {
   if (!panel) return []
   const height = screen.bottom - screen.top
@@ -204,6 +213,7 @@ export function screenOpening(
   ]
   const clear = clearOfContent(Math.max(left, right), contentInset)
   if (clear > 0) for (const target of content) steps.push({ target, keyframes: fadeInFrom(clear) })
+  if (peek) steps.push({ target: peek, keyframes: PEEK_FADE })
   return steps
 }
 

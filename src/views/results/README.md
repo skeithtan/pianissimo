@@ -1,74 +1,28 @@
-# views/results — Passage Results
+# views/results — the scorecard and history panels
 
-Spec: "Results and timing", "Repeating passages" (pass condition, streaks), "Suggested practice",
-"Persistent score labels" (assistance paragraph). Lazily loaded from `app/views.ts`
-(`ResultsView`). Opened with `openResults({ pieceId, attemptId? })` (`app/navigation.ts`):
-`attemptId` omitted means the most recent stored attempt; with no request at all the view shows
-an empty state linking to the Library. Since U99 nothing in the app opens it (Practice's result
-details open in place, reusing `ScorecardPanel`, `HistoryPanel`, `deriveResults` and
-`loadResultsData` in `views/practice/ResultDetails.tsx`); the route stays for `#/results/…` deep
-links.
+Spec: "Results and timing", "Repeating passages" (pass condition, streaks). The panels and their data, shown
+by Progress (`views/progress`) and by the practice result card (`views/practice/ResultDetails.tsx`). There is
+no Results page (U148); both callers are lazy chunks.
 
-## Layout
+| File | Content |
+| --- | --- |
+| `ScorecardPanel.tsx` | One attempt: completion (with the interruption reason), pass line, wrong-note attacks (+ "N of them too early" when the record carries it), first-pass groups, completion time, expected time, time difference (actual minus expected, seconds and %), full notated duration, practice streak. "How completion time is measured" holds the spec definition. |
+| `HistoryPanel.tsx` | Same comparison context only: best clean card (closest to expected, H5) and streak; clean (ranked), not clean (wrong notes or, in Keep time, missed groups) and incomplete attempts (diagnostics only). Every row opens that attempt's scorecard. |
+| `data.ts` | `loadResultsData(storage, { pieceId, attemptId? })`: flushes the `HistoryWriter` first, then reads the piece, its attempts for the shown score version, and the package's occurrences for bar labels. |
+| `model.ts` | Pure: `deriveResults` (an attempt, its scorecard with the streak as of then, its context's history), `passGroups` (the scored attempts by context, the most recent first), `passageText`, `passReason`. |
+| `format.ts` | Display text: when, speed, hands, mode, a pass in a few words. |
 
-One column on phones and iPad portrait, two columns from 960 px (scorecard + suggestions left,
-history + other settings right).
-
-| Part | File | Content |
-| --- | --- | --- |
-| Context bar | `ResultsView.tsx` | The shown attempt's passage ("Bars 12–16"), hands and speed, "Piano plays the left hand" when accompanied; **Practice again** (`openPractice` with passage, hands and speed preselected, never starts) and **Back to latest**. |
-| Scorecard | `ScorecardPanel.tsx` | Completion (with the interruption reason), pass line ("Pass: completed with no wrong notes" or why not; assistance does not affect it, U144), wrong-note attacks (+ "N of them too early" when the record carries it), first-pass groups, completion time, expected time, time difference (actual minus expected, seconds and %), full notated duration, practice streak, and **assistance** as three separate lines: persistent score labels (setting, notes/groups revealed, rules recorded with the attempt), temporary hints (requests, automatic, groups revealed) and the keyboard guide. "How completion time is measured" holds the spec definition. |
-| History | `HistoryPanel.tsx` | Same comparison context only. Best clean unassisted card (closest to expected, H5) and streak; groups: clean and unassisted (ranked), unassisted with wrong notes, assisted practice (never ranked), incomplete attempts (diagnostics only). Every row opens that attempt's scorecard. The practice result card passes `assistance={false}` to this panel and the scorecard: no Assistance tile, best clean and groups over all completions, assisted or not (U144). |
-| Other settings | `ResultsView.tsx` | Other comparison contexts of the same score version, each with attempts, best clean time and **View latest**. They are never merged. |
-| Suggested practice | `views/shared/suggestions` | The shared list (see its README) wired to `openPractice`, session dismissals and the per-piece switch. |
-
-## Rhythm mode
-
-A strict context reads "Keep time · ±150 ms" (`format.ts` `transportText`, tolerance parsed from
-`matchingRules`) in the context bar. Its scorecard replaces the completion time tiles with the
-timing rows (on-time, early, late, missed groups, average offset, timing window; neutral, no
-coloring), "Not a pass: some groups were missed" is a pass reason, history rows read "38 of 42 on
-time", and the best clean card shows the smallest average offset instead of a time.
-
-## Data flow
-
-`ResultsView` (reads `resultsRequest`) → `loadResultsData(storage, request, sessionDismissals)`
-(`data.ts`: flushes the `HistoryWriter` first, then `getPiece`, the piece's attempts for the
-shown score version, the package's occurrences for bar labels, and `loadSuggestions`) →
-`ResultsPage` (presentation) → `deriveResults` (`model.ts`, pure): picks the attempt, builds
-`buildScorecard(attempt, streakAsOfThen)`, `summarizeByContext` for the context history and the
-other contexts. The page keeps the selected attempt in the loader; nothing else is stored.
+Help is not told apart anywhere (U144, U148). A strict (Keep time) context reads "Keep time · ±150 ms"; its
+scorecard replaces the completion time tiles with the timing rows (on-time, early, late, missed groups,
+average offset, timing window; neutral, no coloring), and its best clean pass has the smallest average offset.
 
 ## Decisions
 
-See DECISIONS RV1–RV9 in the hand-off report; in short:
-
-- Comparison is by `contextKey` only; the history never lists another context's attempts.
-- Timing is shown neutrally (no good/bad coloring): the best clean run is the one closest to the
-  expected time, and the text says faster is not automatically better.
-- An incomplete attempt never shows a completion time or a tempo comparison, even if its record
-  holds a time (`ScorecardPanel` guards it).
-- Single-group passages show errors, assistance and an ungraded "Time to solve", with no expected
-  time or difference.
-- Ordinary-reading attempts (only stored when `keepReadingAttempts` is set) can be viewed but are
-  not compared.
-- An attempt of an earlier score version can be viewed (its bar labels fall back to the bar index
-  once its package is gone) but not practiced again from here.
-
-## Known gaps
-
-- **"Too early" breakdown** comes from `AttemptRecord.earlyAttacks` (engine-counted, RV4);
-  records written before it existed show the total only.
-- No notation preview in suggestion cards (needs a cached `PreparedLayout`).
-- The shell app bar overflows at 360 px (Settings sits beyond the edge); it is not part of this
-  view (see WP12 polish).
+RV1–RV8. In short: comparison is by `contextKey` only; timing is neutral; an incomplete attempt never shows a
+completion time or a tempo comparison, even if its record holds a time; single-group passages show an ungraded
+"Time to solve"; ordinary-reading attempts are never compared.
 
 ## Tests
 
-`model.test.ts` (context separation, best clean versus assisted versus incomplete, streak as of
-an attempt, single group, reading, pass reasons), `ResultsPage.test.tsx` (scorecard rows,
-assistance lines, history filtering, selection, other contexts, actions, suggestions wiring, label
-rules), `ResultsView.test.tsx` (real storage on fake-indexeddb: flush before read, requested
-attempt, Practice again and Practice this passage presets, dismiss / disable / enable, global
-switch, empty and missing states), `tokens.test.ts` (no literal colors). Run
+`model.test.ts`, `passage.test.ts`, `panels.test.tsx`, `tokens.test.ts` (no literal colors). Run
 `npx vitest run src/views/results`.

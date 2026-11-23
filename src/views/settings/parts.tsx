@@ -3,6 +3,20 @@ import type { ComponentChildren } from 'preact'
 import { useId } from 'preact/hooks'
 import styles from './settings.module.css'
 
+/** A named part of a tab: heading, one line about it, then its blocks. */
+export function Section({ title, intro, children }: { title: string; intro?: string; children: ComponentChildren }) {
+  const id = useId()
+  return (
+    <section class={styles.part} aria-labelledby={id}>
+      <header class={styles.sectionHead}>
+        <h3 id={id}>{title}</h3>
+        {intro ? <p>{intro}</p> : null}
+      </header>
+      {children}
+    </section>
+  )
+}
+
 /** A titled block inside a section. */
 export function Group({ title, children }: { title?: string; children: ComponentChildren }) {
   return (

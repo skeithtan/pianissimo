@@ -1,12 +1,11 @@
 import { msg } from '../../i18n/messages'
 /**
- * Pure derivation for the Results view: from the stored attempts of one piece/score version to
- * the selected attempt, its scorecard and the history of its comparison context. No DOM, no
- * storage, no clocks, so it is unit-tested directly.
+ * Pure derivation from the stored attempts of one piece/score version: the selected attempt's
+ * scorecard and the history of its comparison context, for the practice result and Progress, and the
+ * past passes by context (Progress). No DOM, no storage, no clocks, so it is unit-tested directly.
  *
- * Spec "Results and timing": results are compared only within one comparison context; the best
- * clean unassisted run is kept apart from assisted practice; incomplete attempts keep their
- * diagnostics but never enter rankings.
+ * Spec "Results and timing": results are compared only within one comparison context; incomplete
+ * attempts keep their diagnostics but never enter rankings.
  */
 import {
   buildScorecard,
@@ -28,11 +27,11 @@ export interface ResultsInput {
   readonly attemptId?: string | undefined
 }
 
-export interface OtherContext {
+/** The scored attempts of one comparison context. */
+export interface PassGroup {
   readonly results: ContextResults
-  /** Newest scored attempt in that context ("View latest"). */
   readonly latest: AttemptRecord
-  /** Scored attempts in that context. */
+  /** Passes in that context, unfinished ones included. */
   readonly count: number
 }
 
@@ -40,11 +39,6 @@ export interface ResultsModel {
   readonly labeler: BarLabeler
   /** The attempt whose scorecard is shown; null when nothing was recorded yet. */
   readonly attempt: AttemptRecord | null
-  /** The most recent attempt (what "Back to latest" selects). */
-  readonly latest: AttemptRecord | null
-  /** The requested attempt id was not found, so the latest is shown instead. */
-  readonly requestedMissing: boolean
-  readonly isLatest: boolean
   readonly scorecard: Scorecard | null
   /** Streak in the attempt's context as of that attempt. */
   readonly streak: PracticeStreak | null
@@ -52,8 +46,6 @@ export interface ResultsModel {
   readonly history: ContextResults | null
   /** Scored attempts in the attempt's context. */
   readonly historyCount: number
-  /** Other comparison contexts of this score version, most recently practiced first. */
-  readonly others: readonly OtherContext[]
 }
 
 const newest = (a: AttemptRecord, b: AttemptRecord): number => b.createdAt - a.createdAt || b.id.localeCompare(a.id)
@@ -61,23 +53,17 @@ const newest = (a: AttemptRecord, b: AttemptRecord): number => b.createdAt - a.c
 export function deriveResults(input: ResultsInput): ResultsModel {
   const labeler = createBarLabeler(input.occurrences)
   const sorted = [...input.attempts].sort(newest)
-  const latest = sorted[0] ?? null
   const requested = input.attemptId === undefined ? undefined : sorted.find((a) => a.id === input.attemptId)
-  const attempt = requested ?? latest
-  const requestedMissing = input.attemptId !== undefined && requested === undefined && attempt !== null
+  const attempt = requested ?? sorted[0] ?? null
 
   if (attempt === null) {
     return {
       labeler,
       attempt: null,
-      latest: null,
-      requestedMissing: false,
-      isLatest: true,
       scorecard: null,
       streak: null,
       history: null,
       historyCount: 0,
-      others: [],
     }
   }
 
@@ -87,27 +73,23 @@ export function deriveResults(input: ResultsInput): ResultsModel {
   const inContext = attempt.kind === 'scored' ? scored.filter((a) => a.contextKey === attempt.contextKey) : []
   const streak = history ? practiceStreak(inContext.filter((a) => a.createdAt <= attempt.createdAt)) : null
 
-  const others: OtherContext[] = []
-  for (const results of contexts) {
-    if (history !== null && results.contextKey === history.contextKey) continue
-    const mine = scored.filter((a) => a.contextKey === results.contextKey)
-    const first = mine[0]
-    if (first === undefined) continue // sorted newest first
-    others.push({ results, latest: first, count: mine.length })
-  }
-
   return {
     labeler,
     attempt,
-    latest,
-    requestedMissing,
-    isLatest: attempt.id === latest?.id,
     scorecard: buildScorecard(attempt, streak ?? undefined),
     streak,
     history,
     historyCount: inContext.length,
-    others,
   }
+}
+
+/** The scored attempts by comparison context, the most recently practiced first. */
+export function passGroups(attempts: readonly AttemptRecord[]): PassGroup[] {
+  const sorted = attempts.filter((a) => a.kind === 'scored').sort(newest)
+  return summarizeByContext(sorted).flatMap((results) => {
+    const mine = sorted.filter((a) => a.contextKey === results.contextKey)
+    return mine[0] ? [{ results, latest: mine[0], count: mine.length }] : []
+  })
 }
 
 /**

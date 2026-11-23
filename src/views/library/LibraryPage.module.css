@@ -25,6 +25,74 @@
   color: var(--fg-muted);
 }
 
+.search {
+  position: relative;
+  flex: 0 1 18rem;
+  margin-left: auto;
+}
+
+.search input {
+  width: 100%;
+  min-height: var(--touch);
+  padding: 0 calc(var(--touch) + var(--space-1)) 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--touch) / 2);
+  background: var(--bg-elevated);
+  font: inherit;
+  appearance: none;
+}
+
+/* Our own clear button, as large as the others. */
+.search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search button {
+  position: absolute;
+  inset: 0 0 0 auto;
+}
+
+.noMatch {
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Empty, the live region takes no row (and no gap) of the page. */
+.connectSlot:empty {
+  position: absolute;
+}
+
+.connect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+}
+
+.connect h2 {
+  font-size: var(--text-l);
+  font-weight: 500;
+}
+
+.connect p {
+  margin: var(--space-1) 0 0;
+  color: var(--fg-muted);
+}
+
+.connectActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.connectActions:empty {
+  display: none;
+}
+
 .list {
   list-style: none;
   padding: 0;
@@ -76,6 +144,16 @@
 
   .header h1 {
     font-size: 2rem;
+  }
+
+  .connect {
+    padding: var(--space-4);
+  }
+
+  /* A line of its own under the buttons. */
+  .search {
+    order: 1;
+    flex: 1 0 100%;
   }
 
   .empty {

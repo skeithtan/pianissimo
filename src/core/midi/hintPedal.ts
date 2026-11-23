@@ -10,7 +10,7 @@ import { CC_SOSTENUTO, type MidiInputEvent } from './types'
 
 export const NO_MIDDLE_PEDAL_EXPLANATION =
   'Your piano did not send a message for its middle pedal. You can assign another pedal ' +
-  'or enable automatic hints in Settings.'
+  'or enable automatic hints in Reading help.'
 
 export const PEDAL_SOUND_CAVEAT = 'Using a pedal for hints may not stop it from changing the piano’s own sound.'
 

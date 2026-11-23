@@ -36,12 +36,8 @@ test('the library opens without the notation engine or the piano samples', async
 test('adding a score opens Practice ready to listen without a piano, and keeps it after a reload', async ({ page }) => {
   await page.goto('./')
   await importFile(page, fixture('two-hands.musicxml'))
-  await expect(sheet(page).getByRole('button', { name: 'Add and open' })).toBeEnabled()
-  await expect(sheet(page)).toContainText('From the score')
-  await sheet(page).getByRole('button', { name: 'Add and open' }).click()
-  await expect(sheet(page)).toHaveCount(0)
   await expect(page.getByText('“Two Hands” is in your library.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Listen', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toHaveCount(0)
   await expect(page.locator('.pn-strip')).toBeVisible()
   await page.getByRole('button', { name: 'Back to Library' }).click()
@@ -56,7 +52,6 @@ test('adding a score with a connected piano also opens paused', async ({ page })
   await installFakeMidi(page)
   await page.goto('./')
   await importFile(page, fixture('two-hands.musicxml'))
-  await sheet(page).getByRole('button', { name: 'Add and open' }).click()
   await expect(page.locator('.pn-strip')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toHaveCount(0)
@@ -67,7 +62,7 @@ test('the built-in pieces use ordinary actions and stay deleted after reload', a
   for (const { title } of INITIAL_PIECES) {
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: `Practice ${title}`, exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: `Open sheet music for ${title}`, exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: `Options for ${title}`, exact: true })).toBeVisible()
   }
   expect(await idbAll(page, 'pieces')).toHaveLength(INITIAL_PIECES.length)
   await expect(page.locator('main')).not.toContainText(/sample/i)
@@ -84,7 +79,7 @@ test('the built-in pieces use ordinary actions and stay deleted after reload', a
   expect(await idbAll(page, 'pieces')).toHaveLength(0)
 })
 
-test('a tap anywhere on a row opens Practice, but not on Study, Options or inside the open menu', async ({ page }) => {
+test('a tap anywhere on a row opens Practice, but not on Options or inside the open menu', async ({ page }) => {
   await page.goto('./')
   const title = 'Ode to Joy'
   const row = page.locator('article').filter({ has: page.getByRole('heading', { name: title, exact: true }) })
@@ -111,19 +106,17 @@ test('a tap anywhere on a row opens Practice, but not on Study, Options or insid
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
 
-  // Study opens Study, not Practice.
-  await row.getByRole('button', { name: `Open sheet music for ${title}`, exact: true }).click()
-  await expect(view).toHaveAttribute('data-view', 'study')
-  expect(await hash()).toMatch(/^#\/study\//)
-  await page.goBack()
-  await expect(view).toHaveAttribute('data-view', 'library')
-  await expect(row).toContainText('Opened just now')
+  // Options and the row itself: the Sheet music button is gone (U141).
+  await expect(row.getByRole('button')).toHaveCount(2)
 
   // A tap on the title text (under the row's stretched Practice target) opens Practice.
   const heading = (await row.getByRole('heading', { name: title, exact: true }).boundingBox())!
   await page.mouse.click(heading.x + heading.width / 2, heading.y + heading.height / 2)
   await expect(view).toHaveAttribute('data-view', 'practice')
   expect(await hash()).toMatch(/^#\/practice\//)
+  await page.goBack()
+  await expect(view).toHaveAttribute('data-view', 'library')
+  await expect(row).toContainText('Opened just now')
 })
 
 const pieceRow = (page: Page, title: string) =>
@@ -171,15 +164,7 @@ test.describe('on a touch screen', () => {
     const menu = page.getByRole('group', { name: 'Manage Für Elise' })
     await options.tap()
     await expect(menu).toBeVisible()
-    // On another row's Study button: only the menu closes.
-    await page.getByRole('button', { name: 'Open sheet music for Ode to Joy', exact: true }).tap()
-    await expect(menu).toHaveCount(0)
-    await page.waitForTimeout(700) // longer than any delayed touch click
-    await expect(view).toHaveAttribute('data-view', 'library')
-
     // On another row's title: only the menu closes, then the next tap opens Practice.
-    await options.tap()
-    await expect(menu).toBeVisible()
     const other = await titleCenter(page, 'Ode to Joy')
     await page.touchscreen.tap(other.x, other.y)
     await expect(menu).toHaveCount(0)
@@ -216,6 +201,23 @@ test('renaming a piece keeps the new name after a reload', async ({ page }) => {
   expect(renamed).not.toHaveProperty('composer')
 })
 
+test('search finds a piece without its accents, on a line of its own on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('./')
+  await expect(page.getByRole('heading', { name: 'Ode to Joy', exact: true })).toBeVisible()
+  const field = page.getByRole('searchbox', { name: 'Search pieces' })
+  await expect(field).not.toBeFocused()
+  const [box, add] = [await field.boundingBox(), await page.locator('label', { hasText: 'Add score' }).boundingBox()]
+  expect(box!.width).toBeGreaterThan(340)
+  expect(box!.y).toBeGreaterThanOrEqual(add!.y + add!.height)
+  await field.fill('fur elise')
+  await expect(page.locator('article:visible')).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: 'Für Elise', exact: true })).toBeVisible()
+  await field.press('Escape')
+  await expect(field).toHaveValue('')
+  await expect(page.locator('article:visible')).toHaveCount(INITIAL_PIECES.length)
+})
+
 test('a score without a tempo needs one before it can be added', async ({ page }) => {
   await page.goto('./')
   await importFile(page, fixture('no-tempo.musicxml'))
@@ -248,7 +250,7 @@ test('canceling a long import closes it and nothing appears afterwards', async (
   await expect(page.getByRole('heading', { name: 'Ode to Joy', exact: true })).toBeVisible()
   // A new import works afterwards (the old worker was released).
   await importFile(page, fixture('two-hands.musicxml'))
-  await expect(sheet(page).getByRole('button', { name: 'Add and open' })).toBeEnabled()
+  await expect(page.getByText('is in your library')).toBeVisible()
 })
 
 const SHOTS = process.env['LIBRARY_SHOTS']

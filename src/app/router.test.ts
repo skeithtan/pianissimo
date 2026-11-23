@@ -1,19 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  closeConnection,
   closeSettings,
   connectionOpen,
-  studyRequest,
   currentView,
   navigate,
   openConnection,
-  openStudy,
   openPractice,
-  openResults,
   openSettings,
   practiceRequest,
-  resultsRequest,
   settingsOpen,
+  settingsTab,
 } from './navigation'
 import { routeFromSignals, startRouter, type RouterWindow } from './router'
 
@@ -119,10 +115,8 @@ let stop: (() => void) | null = null
 function reset(): void {
   currentView.value = 'library'
   settingsOpen.value = false
-  connectionOpen.value = false
+  settingsTab.value = 'reading'
   practiceRequest.value = null
-  resultsRequest.value = null
-  studyRequest.value = null
 }
 
 function start(hash = '', state: unknown = null): FakeBrowser {
@@ -152,27 +146,58 @@ describe('opening a URL', () => {
     expect(unknown.hashes()).toEqual(['#/']) // rewritten in place, no new entry
   })
 
-  it('reopens a deep-linked piece in Practice and its results in Results', () => {
+  it('reopens a deep-linked piece in Practice, an old link to its results too (U148)', async () => {
     start('#/practice/p1')
     expect(currentView.value).toBe('practice')
     expect(practiceRequest.value).toEqual({ pieceId: 'p1' })
     stop?.()
     reset()
-    start('#/results/p1/a2')
-    expect(currentView.value).toBe('results')
-    expect(resultsRequest.value).toEqual({ pieceId: 'p1', attemptId: 'a2' })
+    const b = start('#/results/p1/a2')
+    expect(currentView.value).toBe('practice')
+    expect(practiceRequest.value).toEqual({ pieceId: 'p1' })
+    await b.settle()
+    expect(b.hashes()).toEqual(['#/practice/p1']) // rewritten in place, no new entry
   })
 
-  it('reopens a deep-linked piece in Study, and its empty state without a piece (U72)', () => {
-    start('#/study/p1')
-    expect(currentView.value).toBe('study')
-    expect(studyRequest.value).toEqual({ pieceId: 'p1' })
-    expect(practiceRequest.value).toBeNull()
+  it.each(['#/study/p1', '#/consult/p1'])('opens the old link %s in Practice, in Listen (U141)', async (hash) => {
+    const b = start(hash)
+    expect(currentView.value).toBe('practice')
+    expect(practiceRequest.value).toEqual({ pieceId: 'p1', mode: 'listen' })
+    await b.settle()
+    expect(b.hashes()).toEqual(['#/practice/p1']) // rewritten in place, no new entry
+    expect(practiceRequest.value).toEqual({ pieceId: 'p1', mode: 'listen' })
+  })
+
+  it('opens an old link without a piece as Practice without one, and keeps an overlay', async () => {
+    start('#/study')
+    expect([currentView.value, practiceRequest.value]).toEqual(['practice', null])
     stop?.()
     reset()
-    start('#/study')
-    expect(currentView.value).toBe('study')
-    expect(studyRequest.value).toBeNull()
+    const b = start('#/study/p1?settings')
+    expect([currentView.value, settingsOpen.value]).toEqual(['practice', true])
+    await b.settle()
+    expect(b.hashes()).toEqual(['#/practice/p1?settings'])
+  })
+
+  it('an old link typed while the same piece is open opens it in Listen; leaving Practice forgets that', async () => {
+    const b = start('#/practice/p1')
+    await b.settle()
+    b.typeHash('#/study/p1')
+    expect(practiceRequest.value).toEqual({ pieceId: 'p1', mode: 'listen' })
+    await b.settle()
+    expect(b.hashes()).toEqual(['#/practice/p1', '#/practice/p1'])
+    // Settings over it and Back keep the screen that is open.
+    const request = practiceRequest.value
+    openSettings()
+    await b.settle()
+    b.history.back()
+    await b.settle()
+    expect(practiceRequest.value).toBe(request)
+    navigate('library')
+    await b.settle()
+    b.history.back()
+    await b.settle()
+    expect([currentView.value, practiceRequest.value]).toEqual(['practice', { pieceId: 'p1' }])
   })
 
   it('ignores a Practice preset in history.state at boot and cleans it (a reload, U98); Back / Forward still apply it', async () => {
@@ -226,9 +251,9 @@ describe('navigation → URL', () => {
     await b.settle()
     expect(b.hashes()).toEqual(['', '#/practice/p1'])
     expect(b.entries[1]!.state).toEqual({ preset })
-    openResults({ pieceId: 'p1', attemptId: 'a1' })
+    openPractice({ pieceId: 'p2' })
     await b.settle()
-    expect(b.hashes()).toEqual(['', '#/practice/p1', '#/results/p1/a1'])
+    expect(b.hashes()).toEqual(['', '#/practice/p1', '#/practice/p2'])
 
     b.userBack()
     expect([currentView.value, practiceRequest.value]).toEqual(['practice', { pieceId: 'p1', preset }])
@@ -255,10 +280,10 @@ describe('navigation → URL', () => {
   it('coalesces several signal writes in one tick into one history step', async () => {
     const b = start()
     openPractice({ pieceId: 'p1' })
-    navigate('results')
-    resultsRequest.value = { pieceId: 'p1' }
+    navigate('library')
+    openPractice({ pieceId: 'p2' })
     await b.settle()
-    expect(b.hashes()).toEqual(['', '#/results/p1'])
+    expect(b.hashes()).toEqual(['', '#/practice/p2'])
   })
 
   it('changing the preset of the open piece rewrites the entry instead of adding one', async () => {
@@ -277,24 +302,10 @@ describe('navigation → URL', () => {
     expect(b.hashes()).toEqual(['#/practice/p1', '#/practice/p2'])
   })
 
-  it('Study is its own page: opening it from the Library pushes, Settings over it is one entry', async () => {
-    const b = start()
-    openStudy({ pieceId: 'p1' })
-    await b.settle()
-    expect(b.hashes()).toEqual(['', '#/study/p1'])
-    openSettings()
-    await b.settle()
-    expect(b.hashes()).toEqual(['', '#/study/p1', '#/study/p1?settings'])
-    navigate('library')
-    await b.settle()
-    expect(currentView.value).toBe('library')
-    expect(b.location.hash).toBe('#/')
-  })
-
   it('a hand-typed hash drives the app', async () => {
     const b = start()
-    b.typeHash('#/results/p9')
-    expect([currentView.value, resultsRequest.value]).toEqual(['results', { pieceId: 'p9' }])
+    b.typeHash('#/practice/p9')
+    expect([currentView.value, practiceRequest.value]).toEqual(['practice', { pieceId: 'p9' }])
     b.typeHash('#/')
     expect(currentView.value).toBe('library')
     await b.settle()
@@ -320,7 +331,7 @@ describe('overlays and Back', () => {
     openConnection()
     await b.settle()
     expect(b.hashes()).toEqual(['', '#/?connection'])
-    closeConnection()
+    closeSettings()
     await b.settle()
     expect(b.index).toBe(0)
     expect(b.location.hash).toBe('')
@@ -328,11 +339,11 @@ describe('overlays and Back', () => {
     expect(b.writes.back).toBe(1)
   })
 
-  it('swapping one overlay for another rewrites the entry', async () => {
+  it('moving between Piano and sound and another tab rewrites the entry', async () => {
     const b = start()
     openConnection()
     await b.settle()
-    openSettings()
+    settingsTab.value = 'app'
     await b.settle()
     expect(b.hashes()).toEqual(['', '#/?settings'])
     expect([settingsOpen.value, connectionOpen.value]).toEqual([true, false])
@@ -341,7 +352,18 @@ describe('overlays and Back', () => {
     expect(b.index).toBe(0)
   })
 
-  it('closeSettings(); openConnection() in one tick is one swap (the "Set up in Connection" path)', async () => {
+  it('opening Settings again returns to Piano and sound when that tab was used last', async () => {
+    const b = start('#/practice/p1')
+    openConnection()
+    await b.settle()
+    closeSettings()
+    await b.settle()
+    openSettings()
+    await b.settle()
+    expect(b.hashes()).toEqual(['#/practice/p1', '#/practice/p1?connection'])
+  })
+
+  it('closeSettings(); openConnection() in one tick is one step', async () => {
     const b = start('#/practice/p1')
     openSettings()
     await b.settle()
@@ -356,7 +378,7 @@ describe('overlays and Back', () => {
 
   it('closing an overlay that came from a deep link rewrites the entry (nothing to go back to)', async () => {
     const b = start('#/practice/p1?connection')
-    closeConnection()
+    closeSettings()
     await b.settle()
     expect(b.hashes()).toEqual(['#/practice/p1'])
     expect(b.writes.back).toBe(0)
@@ -420,10 +442,10 @@ describe('overlays and Back', () => {
     expect(b.writes.replace).toBe(1)
   })
 
-  it('keeps Settings and Connection signals exclusive when the URL changes', () => {
+  it('follows the URL from one tab to the other and out', () => {
     const b = start('#/?settings')
     b.typeHash('#/?connection')
-    expect([settingsOpen.value, connectionOpen.value]).toEqual([false, true])
+    expect([settingsOpen.value, connectionOpen.value]).toEqual([true, true])
     b.typeHash('#/')
     expect([settingsOpen.value, connectionOpen.value]).toEqual([false, false])
   })
@@ -441,7 +463,7 @@ describe('lifecycle', () => {
     expect(b.hashes()).toEqual([''])
   })
 
-  it('routeFromSignals describes the signals, preferring the open overlay', () => {
+  it('routeFromSignals describes the signals, naming Piano and sound apart', () => {
     openPractice({ pieceId: 'p1' })
     openConnection()
     expect(routeFromSignals()).toEqual({ view: 'practice', pieceId: 'p1', overlay: 'connection' })

@@ -1,5 +1,5 @@
 /**
- * Play-through mode (DECISIONS P12): the cursor follows the music and the learner's playing,
+ * Follow (DECISIONS P12): the cursor follows the music and the learner's playing,
  * wrong notes never block, nothing is graded or recorded.
  */
 import { describe, expect, it } from 'vitest'
@@ -22,57 +22,80 @@ const twoHands = buildScore({
   bars: 1,
 })
 
-async function playThrough(h: Harness): Promise<void> {
-  h.session.setPlayThrough(true)
+async function follow(h: Harness): Promise<void> {
+  h.session.setMode('follow')
   await h.session.start()
   h.frames.flush()
 }
 
-describe('Play-through mode', () => {
-  it('toggling it on closes Repeat (the loop stays remembered) and hides the cursor action', () => {
+describe('Follow', () => {
+  it('covers the whole piece with Repeat put away, and leaving brings Repeat back as it was', async () => {
     const h = harness(melody, { range: { fromOcc: 1, toOcc: 1 } })
     expect(h.session.ui.get().repeat).toBe(true)
-    h.session.setPlayThrough(true)
+    h.session.setMode('follow')
     h.frames.flush()
     const ui = h.session.ui.get()
-    expect(ui.playThrough).toBe(true)
-    expect(ui.activity).toBe('playing')
-    expect(ui.repeat).toBe(false)
-    expect(ui.range).toBeNull()
-    expect(ui.startAction).toBe('play')
-    expect(ui.startEnabled).toBe(true)
-    expect(ui.canHint).toBe(false)
+    expect(ui).toMatchObject({
+      mode: 'follow',
+      activity: 'playing',
+      repeat: false,
+      range: null,
+      startAction: 'play',
+      startEnabled: true,
+      canHint: false,
+      canRestartLoop: false,
+    })
     expect(h.session.loop).toEqual({ fromOcc: 1, toOcc: 1 })
+    expect(h.strip.loop).toBeNull()
     expect(h.strip.cursorAction).toBe(false)
     expect(h.strip.loopEditable).toBe(false)
-    h.session.setPlayThrough(false)
+    // It plays past the loop's end... and before its start.
+    await h.session.start()
+    h.session.seek(0)
     h.frames.flush()
-    expect(h.session.ui.get().playThrough).toBe(false)
-    expect(h.strip.cursorAction).toBe(true)
+    expect(h.strip.targets).toEqual([0])
+    h.session.setMode('wait')
+    h.frames.flush()
+    expect(h.session.ui.get()).toMatchObject({ mode: 'wait', repeat: true, range: { fromOcc: 1, toOcc: 1 } })
+    expect(h.strip.loop).toEqual({ fromOcc: 1, toOcc: 1 })
+    // The piece keeps Repeat open throughout.
+    expect(h.saves.some((s) => 'repeatOpen' in s.patch || 'lastPassage' in s.patch)).toBe(false)
   })
 
-  it('is not available while the hands are off (Listen)', () => {
-    const h = harness(melody, { hands: 'none' })
-    h.session.setPlayThrough(true)
-    expect(h.session.ui.get().playThrough).toBe(false)
+  it('leaving brings back nothing when Repeat was closed', () => {
+    const h = harness(melody, { range: { fromOcc: 1, toOcc: 1 } }, { options: { repeat: false } })
+    h.session.setMode('follow')
+    h.session.setMode('listen')
+    expect(h.session.ui.get()).toMatchObject({ repeat: false, range: null })
+    expect(h.session.loop).toEqual({ fromOcc: 1, toOcc: 1 })
   })
 
-  it('turning the hands off or opening Repeat leaves play-through', async () => {
-    const h = harness(melody)
-    await playThrough(h)
+  it('opened in Follow with Repeat open on the piece, Repeat waits for another mode', () => {
+    const range = { fromOcc: 1, toOcc: 1 }
+    const h = harness(melody, { range }, { options: { mode: 'follow', repeat: true } })
+    expect(h.session.ui.get()).toMatchObject({ mode: 'follow', repeat: false, range: null })
+    h.session.setMode('time')
+    expect(h.session.ui.get()).toMatchObject({ mode: 'time', repeat: true, range })
+  })
+
+  it('opens no Repeat: nothing pauses and nothing is saved; a loop cleared meanwhile stays cleared', async () => {
+    const h = harness(melody, { range: { fromOcc: 1, toOcc: 1 } }, { options: { mode: 'follow', repeat: true } })
+    await h.session.start()
     h.session.setRepeatMode(true)
+    h.session.repeatFrom(0)
+    h.session.repeatAtCursor()
     h.frames.flush()
-    expect(h.session.ui.get().playThrough).toBe(false)
-    expect(h.session.ui.get().repeat).toBe(true)
-    h.session.setRepeatMode(false)
-    await playThrough(h)
-    h.session.setSelection({ hands: 'none' })
-    expect(h.session.ui.get().playThrough).toBe(false)
+    expect(h.session.ui.get()).toMatchObject({ mode: 'follow', repeat: false, playing: true })
+    expect(h.saves).toEqual([])
+    h.session.setSelection({ range: null })
+    expect(h.saves.at(-1)).toMatchObject({ patch: { lastPassage: null, repeatOpen: false }, immediate: true })
+    h.session.setMode('wait')
+    expect(h.session.ui.get()).toMatchObject({ repeat: false, range: null })
   })
 
   it('Start runs a gated transport: the cursor waits at the first onset, then follows the music', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     expect(h.session.ui.get().playing).toBe(true)
     expect(h.session.ui.get().phase).toBe('running')
     expect(h.strip.targets).toEqual([0])
@@ -95,7 +118,7 @@ describe('Play-through mode', () => {
     { direction: 'dragging', gap: 1600 },
   ])('shows $direction for a large deviation from the written pace', async ({ direction, gap }) => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.step(2000)
     h.tap(60)
     expect(h.strip.timingCue).toBeNull()
@@ -114,7 +137,7 @@ describe('Play-through mode', () => {
 
   it('changes the live timing display while continuing to follow the piano', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.tap(60)
     h.step(400)
     h.tap(62)
@@ -130,7 +153,7 @@ describe('Play-through mode', () => {
 
   it('clears the cue while held at a gate and starts a fresh comparison after a speed change', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.tap(60)
     h.step(100)
     h.tap(62)
@@ -156,7 +179,7 @@ describe('Play-through mode', () => {
 
   it('a wrong note never blocks: gentle feedback, then the patience releases the gate', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.tap(61)
     expect(h.strip.timingCue).toBeNull()
     expect(h.flash.hits.at(-1)?.soft).toBe(true)
@@ -173,7 +196,7 @@ describe('Play-through mode', () => {
 
   it('a learner who stops playing is waited for (no press, no deadline)', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.tap(60)
     h.step(20000)
     expect(h.strip.cursor).toBeCloseTo(0.25)
@@ -182,7 +205,7 @@ describe('Play-through mode', () => {
 
   it('moving on to a later group releases the skipped gates and continues from there', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     // 64 is the third group: the first two are skipped.
     h.tap(64)
     expect(h.strip.targets).toEqual([3])
@@ -193,7 +216,7 @@ describe('Play-through mode', () => {
 
   it('pause keeps the position and the patience clock stops; Resume continues', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.tap(60)
     h.step(1000)
     h.tap(63)
@@ -218,7 +241,7 @@ describe('Play-through mode', () => {
 
   it('browsing while playing holds until the release (U95)', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.session.browseStarted()
     h.frames.flush()
     // Sound holds, the main button still reads Pause.
@@ -230,7 +253,7 @@ describe('Play-through mode', () => {
 
   it('a seek while playing keeps playing from the first onset at or after it', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.tap(60)
     h.step(200)
     h.session.seek(1)
@@ -245,7 +268,7 @@ describe('Play-through mode', () => {
 
   it('speed changes apply live', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.tap(60)
     h.session.setSelection({ multiplier: 0.5 })
     h.step(1000)
@@ -256,7 +279,7 @@ describe('Play-through mode', () => {
 
   it('rewinds when following reaches the end and waits for Start', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     for (const n of [60, 62, 64, 65, 67, 69, 71]) {
       h.tap(n)
       h.step(1000)
@@ -279,7 +302,7 @@ describe('Play-through mode', () => {
 
   it('the last group waits PATIENCE_LAST_MS after a wrong press', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.session.seek(1)
     for (const n of [67, 69, 71]) {
       h.tap(n)
@@ -292,16 +315,16 @@ describe('Play-through mode', () => {
     expect(h.strip.targets).toEqual([])
   })
 
-  it('toggling off returns to reading at the same position, and nothing was recorded', async () => {
+  it('leaving for Wait keeps the position, and nothing was recorded', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     for (const n of [60, 62, 64]) {
       h.tap(n)
       h.step(1000)
     }
     h.tap(61)
     h.step(2000)
-    h.session.setPlayThrough(false)
+    h.session.setMode('wait')
     h.frames.flush()
     const ui = h.session.ui.get()
     expect(ui.activity).not.toBe('playing')
@@ -316,30 +339,42 @@ describe('Play-through mode', () => {
     expect(h.session.engine.state.groupIndex).toBe(5)
   })
 
-  it('a reading pass before play-through is recorded once; play-through records nothing', async () => {
+  it('a reading pass before Follow is recorded once; Follow records nothing', async () => {
     const h = harness(melody)
     await h.session.start()
     h.play(60, 62)
-    await playThrough(h)
+    await follow(h)
     h.tap(64)
     h.step(500)
-    h.session.setPlayThrough(false)
+    h.session.setMode('wait')
     h.frames.flush()
     expect(h.attempts.map((a) => [a.kind, a.completion])).toEqual([['reading', 'interrupted']])
     expect(h.attempts[0]!.measures.length).toBeGreaterThan(0)
     expect(h.abandons).toHaveLength(0)
   })
 
-  it('saves the resume position like reading', async () => {
-    const h = harness(melody)
-    await playThrough(h)
-    h.tap(60)
-    h.step(1000)
-    h.tap(62)
-    h.step(100)
+  it('never moves the saved position (U72)', async () => {
+    const h = harness(melody, {}, { options: { mode: 'follow' } })
+    await h.session.start()
+    for (const n of [60, 62, 64]) {
+      h.tap(n)
+      h.step(1000)
+    }
+    h.step(6000)
+    h.session.seek(1)
+    h.session.suspend()
     h.session.pause()
-    const resume = h.saves.map((s) => s.patch.resume).filter((r) => r)
-    expect(resume.at(-1)?.group).toBe(2)
+    h.session.seek(0)
+    for (const n of [60, 62, 64, 65, 67, 69, 71, 72]) {
+      await h.session.start()
+      h.tap(n)
+      h.step(1100)
+    }
+    expect(h.session.ui.get().phase).toBe('completed')
+    h.session.dispose()
+    expect(h.saves).toEqual([])
+    expect(h.attempts).toEqual([])
+    expect(h.abandons).toEqual([])
   })
 
   it('the hint pedal names both hands’ notes at the cursor', async () => {
@@ -356,7 +391,7 @@ describe('Play-through mode', () => {
       },
     }
     const h = harness(twoHands, { hands: 'right' }, { settings: testSettings({ pedal }) })
-    await playThrough(h)
+    await follow(h)
     expect(h.strip.opacity.size).toBe(0)
     h.midi.cc(66, 127, h.clock.now)
     h.frames.flush()
@@ -365,15 +400,15 @@ describe('Play-through mode', () => {
 
   it('one hand plays the other hand automatically and needs an output', async () => {
     const h = harness(twoHands, { hands: 'right' })
-    await playThrough(h)
+    await follow(h)
     expect(h.session.ui.get().playing).toBe(true)
     h.tap(60)
     h.step(500)
     expect(h.backend.ons().map((c) => c.note)).toContain(48)
 
-    const quiet = harness(twoHands, { hands: 'right' })
+    const quiet = harness(twoHands, { hands: 'right' }, { options: { mode: 'follow' } })
     quiet.midi.out = null
-    quiet.session.setPlayThrough(true)
+    quiet.session.updateSettings(testSettings())
     quiet.frames.flush()
     const ui = quiet.session.ui.get()
     expect(ui.startAction).toBe('play')
@@ -385,7 +420,7 @@ describe('Play-through mode', () => {
 
   it('new hands rebuild the transport at the same group and keep playing', async () => {
     const h = harness(twoHands)
-    await playThrough(h)
+    await follow(h)
     h.tap(60, 48)
     h.step(1000)
     expect([...h.strip.targets].sort()).toEqual([2, 3])
@@ -393,16 +428,16 @@ describe('Play-through mode', () => {
     await h.session.start()
     h.frames.flush()
     const ui = h.session.ui.get()
-    expect(ui.playThrough).toBe(true)
+    expect(ui.mode).toBe('follow')
     expect(ui.playing).toBe(true)
     // The right hand's note of the same (second) group.
     expect(h.strip.targets).toEqual([2])
     expect(h.strip.cursor).toBeCloseTo(0.25)
   })
 
-  it('a disconnected piano pauses play-through without an interruption banner', async () => {
+  it('a disconnected piano pauses it without an interruption banner', async () => {
     const h = harness(melody)
-    await playThrough(h)
+    await follow(h)
     h.tap(60)
     h.midi.route({ kind: 'input-disconnected' } as never)
     h.frames.flush()

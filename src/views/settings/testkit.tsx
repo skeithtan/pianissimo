@@ -1,6 +1,6 @@
 /** Shared helpers for the Settings component tests (happy-dom). Not imported by production code. */
 import { act } from 'preact/test-utils'
-import { connectionOpen, currentView, openSettings, settingsOpen } from '../../app/navigation'
+import { currentView, openSettings, settingsOpen, settingsTab } from '../../app/navigation'
 import { resetAppStateForTests } from '../../app/state'
 import { detectFeatures, type FeatureReport } from '../../app/features'
 import { $, $$, byLabel, click, mount, type Mounted } from '../shared/testing'
@@ -23,7 +23,7 @@ export function resetSettingsTestState(): void {
   resetAppStateForTests()
   discardLabelDraft()
   settingsOpen.value = false
-  connectionOpen.value = false
+  settingsTab.value = 'reading'
   currentView.value = 'library'
 }
 
@@ -45,6 +45,13 @@ export function openTab(root: ParentNode, name: string): HTMLElement {
   const panel = $(root, `#${tab(root, name).getAttribute('aria-controls')}`)
   if (!panel) throw new Error(`No panel for tab "${name}"`)
   return panel
+}
+
+/** Open a tab and return one of its sections. */
+export function openSection(root: ParentNode, tabName: string, title: string): HTMLElement {
+  const found = $$(openTab(root, tabName), 'section').find((s) => $(s, 'h3')?.textContent === title)
+  if (!found) throw new Error(`No section "${title}" in "${tabName}"`)
+  return found
 }
 
 /** A radio option inside a labeled segmented control. */

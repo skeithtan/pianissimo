@@ -37,8 +37,10 @@ export const ROLL_POLICY_VERSION = 'roll-v1-120ms-half-interval'
 export const MATCHING_RULES_VERSION = 'match-v2-early-grace-120ms'
 
 export type Hand = 'L' | 'R'
-/** Which hands the learner plays. 'none' is Preview. */
+/** Which hands the learner plays; 'none': the app plays everything (Listen, and older records). */
 export type HandSelection = 'both' | 'right' | 'left' | 'none'
+/** The learner's hands: the ones they play, or hear in Listen. At least one. */
+export type LearnerHands = Exclude<HandSelection, 'none'>
 
 /** Clef identity used for conditional label rules: sign + line (+ octave change), e.g. "G2", "F4", "C3", "G2-8". */
 export type ClefKey = string

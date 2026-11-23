@@ -1,5 +1,5 @@
 /**
- * Keep time (rhythm mode, DECISIONS P13) in the real app: the footer menu's switch, the count-in
+ * Keep time (DECISIONS P13, U141) in the real app: the mode's menu rows, the count-in
  * over the stage, then a strict transport that never waits. The fake Web MIDI presses each group
  * at its scheduled time (Two Hands is quarter = 60, so at 100% a beat is exactly one second and
  * bar 1 holds C4+C3, D4, E4, F4 on beats 1 to 4), measured from the moment the count-in goes.
@@ -7,6 +7,7 @@
 import { expect, test } from '../browser-test'
 import { storedSettings } from './app-helpers'
 import {
+  chooseMode,
   installFakeMidi,
   loopWholePiece,
   openFooterMenu,
@@ -34,30 +35,42 @@ test.describe('Keep time', () => {
     await openSeededPractice(page)
   })
 
-  test('Keep time stays in Practice and explains its count-in and tempo', async ({ page }) => {
-    const menu = await openFooterMenu(page)
-    const keep = menu.getByRole('switch', { name: 'Keep time', exact: true })
-    await expect(keep).toHaveAccessibleDescription(/count-in.*set tempo/)
-    await expect(menu.getByRole('switch', { name: 'Play through' })).toHaveCount(0)
-    await expect(keep).not.toBeChecked()
-    await keep.click()
-    await expect(keep).toBeChecked()
+  test('the menu has no Keep time switch or badge, and offers Playback only in Keep time', async ({ page }) => {
+    const playback = async () => {
+      const menu = await openFooterMenu(page)
+      await expect(menu.getByRole('switch', { name: 'Keep time' })).toHaveCount(0)
+      const count = await menu.getByRole('switch', { name: 'Playback' }).count()
+      await page.keyboard.press('Escape')
+      await expect(menu).toHaveCount(0)
+      return count
+    }
+    expect(await playback()).toBe(0)
+    await chooseMode(page, 'Keep time')
+    expect(await playback()).toBe(1)
+    await expect(page.getByTestId('keep-time-badge')).toHaveCount(0)
+    await chooseMode(page, 'Listen')
+    expect(await playback()).toBe(0)
   })
 
   test('plays the full score after the count-in when Playback is enabled', async ({ page }) => {
+    await chooseMode(page, 'Keep time')
     const menu = await openFooterMenu(page)
-    const keepTimeSettings = menu.getByRole('group', { name: 'Keep time settings' })
-    const score = keepTimeSettings.getByRole('switch', { name: 'Playback' })
-    const volume = keepTimeSettings.getByRole('slider', { name: 'Playback volume' })
-    await expect(score).toHaveCount(0)
-    await expect(volume).toHaveCount(0)
-    await keepTimeSettings.getByRole('switch', { name: 'Keep time' }).click()
-    await expect(keepTimeSettings.getByRole('switch', { name: 'Metronome' })).toHaveCount(0)
+    const score = menu.getByRole('switch', { name: 'Playback' })
+    const volume = menu.getByRole('slider', { name: 'Playback volume' })
     await expect(score).not.toBeChecked()
     await expect(score).toHaveAccessibleDescription('Hear both hands while you play.')
-    const keepTimeLabel = await keepTimeSettings.getByText('Keep time', { exact: true }).boundingBox()
-    const scorePlaybackLabel = await keepTimeSettings.getByText('Playback', { exact: true }).boundingBox()
-    expect(scorePlaybackLabel!.x).toBeCloseTo(keepTimeLabel!.x)
+    // The labels line up once the popover has scaled in.
+    await expect
+      .poll(() =>
+        menu.evaluate((el) => {
+          const [playback, metronome] = ['Playback', 'Metronome'].map(
+            (text) =>
+              [...el.querySelectorAll('label span')].find((s) => s.textContent === text)!.getBoundingClientRect().x,
+          )
+          return Math.abs(playback! - metronome!)
+        }),
+      )
+      .toBeLessThan(0.005)
     await expect(volume).toHaveCount(0)
     await score.click()
     await expect(volume).toHaveValue('100')
@@ -89,9 +102,7 @@ test.describe('Keep time', () => {
 
   test('changes Playback during a loop and still reviews its wrong notes and missed beats', async ({ page }) => {
     await loopWholePiece(page)
-    const menu = await openFooterMenu(page)
-    await menu.getByRole('switch', { name: 'Keep time', exact: true }).click()
-    await page.keyboard.press('Escape')
+    await chooseMode(page, 'Keep time')
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     const performance = playAfterCountIn(page, [
       { notes: [60, 48], atMs: 0 },
@@ -120,10 +131,7 @@ test.describe('Keep time', () => {
   })
 
   test('Pause during the count-in cancels it', async ({ page }) => {
-    const menu = await openFooterMenu(page)
-    await menu.getByRole('switch', { name: 'Keep time' }).click()
-    await page.keyboard.press('Escape')
-    await expect(page.getByTestId('keep-time-badge')).toBeVisible()
+    await chooseMode(page, 'Keep time')
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await expect(page.getByTestId('count-in')).toBeVisible()
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
@@ -136,9 +144,7 @@ test.describe('Keep time', () => {
   })
 
   test('shortens the count-in at half speed to two clicks in four seconds', async ({ page }) => {
-    const menu = await openFooterMenu(page)
-    await menu.getByRole('switch', { name: 'Keep time' }).click()
-    await page.keyboard.press('Escape')
+    await chooseMode(page, 'Keep time')
     const speed = page.getByRole('button', { name: /Open speed options/ })
     await speed.click()
     const presets = page.getByRole('dialog', { name: 'Playback speed' })
@@ -159,9 +165,7 @@ test.describe('Keep time', () => {
     test.use({ viewport: { width: 1180, height: 820 }, hasTouch: true })
 
     test('the paused header timeline chooses where the next Keep time attempt starts', async ({ page }) => {
-      const menu = await openFooterMenu(page)
-      await menu.getByRole('switch', { name: 'Keep time' }).click()
-      await page.keyboard.press('Escape')
+      await chooseMode(page, 'Keep time')
       const overview = page.getByRole('slider', { name: 'Piece overview' })
       const start = page.getByRole('button', { name: 'Start', exact: true })
       await start.click()
@@ -199,9 +203,7 @@ test.describe('Keep time', () => {
       await page.setViewportSize({ width: example.width, height: example.height })
       const host = page.getByTestId('strip-host')
       await expect(host).toHaveAttribute('data-mode', example.mode)
-      const menu = await openFooterMenu(page)
-      await menu.getByRole('switch', { name: 'Keep time' }).click()
-      await page.keyboard.press('Escape')
+      await chooseMode(page, 'Keep time')
       // Advance the browser clock between presses so timer jitter cannot change a timing sample.
       await page.clock.install()
       await page.getByRole('button', { name: 'Start', exact: true }).click()
@@ -264,9 +266,7 @@ test.describe('Keep time', () => {
 
   test('stops at the end of a silent bar after the player has started playing', async ({ page }) => {
     await loopWholePiece(page)
-    const menu = await openFooterMenu(page)
-    await menu.getByRole('switch', { name: 'Keep time' }).click()
-    await page.keyboard.press('Escape')
+    await chooseMode(page, 'Keep time')
 
     await page.clock.install()
     const start = page.getByRole('button', { name: 'Start', exact: true })
@@ -289,9 +289,7 @@ test.describe('Keep time', () => {
   })
 
   test('shows timing feedback for attacks about a second ahead and behind the playhead', async ({ page }) => {
-    const menu = await openFooterMenu(page)
-    await menu.getByRole('switch', { name: 'Keep time' }).click()
-    await page.keyboard.press('Escape')
+    await chooseMode(page, 'Keep time')
     await page.clock.install()
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await expect(page.getByTestId('count-in')).toBeVisible()
@@ -331,11 +329,7 @@ test.describe('Keep time', () => {
     await expect(panel.getByRole('group', { name: 'Loop start' })).toContainText('Bar 1')
     await expect(panel.getByRole('group', { name: 'Loop end' })).toContainText('Bar 1')
 
-    const menu = await openFooterMenu(page)
-    await menu.getByRole('switch', { name: 'Keep time' }).click()
-    await expect(menu.getByRole('switch', { name: 'Keep time' })).toBeChecked()
-    await page.keyboard.press('Escape')
-    await expect(menu).toHaveCount(0)
+    await chooseMode(page, 'Keep time')
 
     // First pass: every group on its beat.
     await page.getByRole('button', { name: 'Start', exact: true }).click()
@@ -393,31 +387,39 @@ test.describe('Keep time', () => {
 test.describe('Keep time phone menu', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
-  test('nests Playback under Keep time and hides it when Keep time is off', async ({ page }) => {
+  test('holds Playback and its volume in Keep time only, and remembers them', async ({ page }) => {
     await installFakeMidi(page)
     await seedPiece(page)
     await openSeededPractice(page)
-    const menu = await openFooterMenu(page)
-    const keepTimeSettings = menu.getByRole('group', { name: 'Keep time settings' })
-    const score = keepTimeSettings.getByRole('switch', { name: 'Playback' })
-    const volume = keepTimeSettings.getByRole('slider', { name: 'Playback volume' })
-    await expect(score).toHaveCount(0)
-    await expect(volume).toHaveCount(0)
-    const keepTime = keepTimeSettings.getByRole('switch', { name: 'Keep time' })
-    await keepTime.click()
-    await expect(score).toBeVisible()
-    await expect(volume).toHaveCount(0)
-    await score.click()
-    await volume.fill('40')
-    await score.click()
-    await expect(volume).toHaveCount(0)
-    await score.click()
-    await expect(volume).toHaveValue('40')
-    await keepTime.click()
-    await expect(score).toHaveCount(0)
-    await expect(volume).toHaveCount(0)
-    await keepTime.click()
-    await expect(score).toBeChecked()
-    await expect(volume).toHaveValue('40')
+    const close = async () => {
+      await page.getByRole('dialog', { name: 'Menu' }).getByRole('button', { name: 'Close' }).click()
+      await expect(page.getByRole('dialog', { name: 'Menu' })).toHaveCount(0)
+    }
+    let menu = await openFooterMenu(page)
+    const score = () => menu.getByRole('switch', { name: 'Playback' })
+    const volume = () => menu.getByRole('slider', { name: 'Playback volume' })
+    await expect(score()).toHaveCount(0)
+    await expect(volume()).toHaveCount(0)
+    await close()
+    await chooseMode(page, 'Keep time')
+    menu = await openFooterMenu(page)
+    await expect(score()).toBeVisible()
+    await expect(volume()).toHaveCount(0)
+    await score().click()
+    await volume().fill('40')
+    await score().click()
+    await expect(volume()).toHaveCount(0)
+    await score().click()
+    await expect(volume()).toHaveValue('40')
+    await close()
+    await chooseMode(page, 'Wait')
+    menu = await openFooterMenu(page)
+    await expect(score()).toHaveCount(0)
+    await expect(volume()).toHaveCount(0)
+    await close()
+    await chooseMode(page, 'Keep time')
+    menu = await openFooterMenu(page)
+    await expect(score()).toBeChecked()
+    await expect(volume()).toHaveValue('40')
   })
 })

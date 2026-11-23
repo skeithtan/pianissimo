@@ -8,6 +8,16 @@ import type { HandAssignment, HandSelection } from './score'
 import type { PersistentLabelMode } from './settings'
 
 /**
+ * What the main button does on the score screen, chosen by the learner per piece: the app plays
+ * ('listen'), the score waits for the right notes ('wait'), it keeps going at tempo ('time'), or it
+ * follows the learner's playing ungraded ('follow').
+ */
+export type PracticeMode = (typeof PRACTICE_MODES)[number]
+
+/** Every `PracticeMode`, for code that checks a stored value at run time. */
+export const PRACTICE_MODES = ['listen', 'wait', 'time', 'follow'] as const
+
+/**
  * Inclusive range of measure occurrences (performance order), optionally narrowed to notes
  * inside its boundary bars (note-level loops, DECISIONS U19/U21). Helpers: `./passage.ts`.
  */
@@ -201,8 +211,9 @@ export interface OnsetTimestamp {
 }
 
 /**
- * How one learner onset group went in a scored attempt (groundwork for teacher corrections).
- * Additive: records stored before it have no `groups`.
+ * How one learner onset group went in a scored attempt or an ordinary-reading traversal (the
+ * teacher's corrections, and a Wait run's result). Additive: records stored before it have no
+ * `groups`.
  */
 export interface GroupOutcome {
   /** Engine group index (`timeline.groups`) within the attempt's passage. */
@@ -215,6 +226,7 @@ export interface GroupOutcome {
    * Whole milliseconds from the transport reaching the group's gate to the learner completing
    * the group; 0 when completed before or at arrival, not completed, or without a transport, and
    * always 0 for the attempt's first group (the clock starts with its press; it cannot be late).
+   * A pause of ordinary reading does not count.
    */
   readonly lateMs: number
   /**
@@ -225,7 +237,7 @@ export interface GroupOutcome {
   readonly wrongPitches?: readonly number[]
   /**
    * Whole milliseconds between the first and the last accepted attack of the group: how spread
-   * out a chord was played; 0 for a single note or when absent.
+   * out a chord was played (an ordinary-reading pause aside); 0 for a single note or when absent.
    */
   readonly spreadMs?: number
   /**
@@ -276,9 +288,8 @@ export interface AttemptRecord {
   readonly onsets: readonly OnsetTimestamp[]
   readonly measures: readonly MeasureTraversal[]
   /**
-   * Scored attempts: one entry per group reached in the attempt (completed ones and, when it
-   * ended early, the current one), ascending by group. Absent on reading traversals and on
-   * records stored before it existed.
+   * One entry per group reached in the attempt or traversal (completed ones and, when it ended
+   * early, the current one), ascending by group. Absent on records stored before it existed.
    */
   readonly groups?: readonly GroupOutcome[]
   /** Strict transport (rhythm mode, P13) parameters; absent on gated and free attempts. */

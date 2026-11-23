@@ -7,7 +7,7 @@ import type { RecordingInfo, RecordingFiles } from '../../core/recording/records
 import type { PianissimoStorage } from '../../core/storage'
 import { downloadPair, recordingName, saveBlob } from './downloads'
 import { takePassageLabel, takeScoreVersion } from './passageLabel'
-import { unsaved } from './unsaved'
+import { deletedTake, unsaved } from './unsaved'
 import styles from './recordings.module.css'
 
 export type RecordingStorage = () => Promise<PianissimoStorage>
@@ -122,6 +122,7 @@ function RecordingRow({
     setDeleting(true)
     try {
       await (await storage()).deleteRecording(info.id)
+      deletedTake.value = info.id
       onDeleted()
     } catch {
       setError(msg('Could not delete this recording.'))
@@ -188,20 +189,26 @@ export function handName(hands: RecordingInfo['hands']) {
   return hands === 'both' ? msg('Both hands') : hands === 'left' ? msg('Left hand') : msg('Right hand')
 }
 
-export function RecordingHistory({
-  storage,
-  onClose,
-  pieceId,
-  initialId,
-  model,
-}: {
-  storage: RecordingStorage
-  onClose: () => void
-  initialId?: string | undefined
-  pieceId?: string
-  /** The score already open (Practice, Sheet music): its takes need not load it again. */
-  model?: PassageWords & { readonly scoreVersionId: string }
-}) {
+export interface RecordingListProps {
+  readonly storage: RecordingStorage
+  readonly onDeleted?: ((id: string) => void) | undefined
+  readonly initialId?: string | undefined
+  /** This piece's takes; without it every take, of pieces since deleted included. */
+  readonly pieceId?: string | undefined
+  /** The score already open (Practice): its takes need not load it again. */
+  readonly model?: (PassageWords & { readonly scoreVersionId: string }) | undefined
+}
+
+/** The Recordings sheet. Progress shows the same list in its own (U148). */
+export function RecordingHistory({ onClose, ...list }: RecordingListProps & { onClose: () => void }) {
+  return (
+    <Sheet open title={msg('Recordings')} onClose={onClose}>
+      <RecordingList {...list} />
+    </Sheet>
+  )
+}
+
+export function RecordingList({ storage, onDeleted, pieceId, initialId, model }: RecordingListProps) {
   const [selected, setSelected] = useState(initialId)
   const [rows, setRows] = useState<RecordingInfo[] | null>(null)
   const [failed, setFailed] = useState(false)
@@ -262,60 +269,61 @@ export function RecordingHistory({
   for (const r of rows ?? [])
     if (!r.interrupted) best.set(r.context, Math.max(best.get(r.context) ?? -1, noteAccuracy(r.score)))
   return (
-    <Sheet open title={msg('Recordings')} onClose={onClose}>
-      <div class={styles.detail}>
-        {[...unsaved.values()]
-          .filter((t) => !pieceId || pieceId === t.info.pieceId)
-          .map((t) => (
-            <section key={t.info.id} class={styles.take}>
-              <strong>{t.info.title}</strong>
-              <p>{msg('This take is in memory. Download it or retry saving before closing the page.')}</p>
-              <RecordingLinks info={t.info} files={t.files} />
-              <Button
-                onClick={async () => {
-                  try {
-                    await (await storage()).saveRecording(t.info, t.files)
-                    unsaved.delete(t.info.id)
-                    setReload((n) => n + 1)
-                  } catch {
-                    setFailed(true)
-                  }
+    <div class={styles.detail}>
+      {[...unsaved.values()]
+        .filter((t) => !pieceId || pieceId === t.info.pieceId)
+        .map((t) => (
+          <section key={t.info.id} class={styles.take}>
+            <strong>{t.info.title}</strong>
+            <p>{msg('This take is in memory. Download it or retry saving before closing the page.')}</p>
+            <RecordingLinks info={t.info} files={t.files} />
+            <Button
+              onClick={async () => {
+                try {
+                  await (await storage()).saveRecording(t.info, t.files)
+                  unsaved.delete(t.info.id)
+                  setReload((n) => n + 1)
+                } catch {
+                  setFailed(true)
+                }
+              }}
+            >
+              {msg('Retry saving')}
+            </Button>
+          </section>
+        ))}
+      {failed ? (
+        <Button onClick={() => setReload((n) => n + 1)}>{msg('Retry')}</Button>
+      ) : rows === null ? (
+        <p>{msg('Loading…')}</p>
+      ) : rows.length === 0 ? (
+        <p>{msg('No recordings yet.')}</p>
+      ) : (
+        <>
+          <p>
+            {msg(
+              'The note score compares the notes you played with the score. Missing and extra notes lower it. Best takes share the same piece, passage, and hands.',
+            )}
+          </p>
+          <ul class={styles.list}>
+            {rows.map((r) => (
+              <RecordingRow
+                key={r.id}
+                open={selected === r.id}
+                onToggle={() => setSelected((old) => (old === r.id ? undefined : r.id))}
+                info={r}
+                words={scores.get(takeScoreVersion(r) ?? '')}
+                storage={storage}
+                best={noteAccuracy(r.score) === best.get(r.context)}
+                onDeleted={() => {
+                  setRows((old) => old?.filter((t) => t.id !== r.id) ?? [])
+                  onDeleted?.(r.id)
                 }}
-              >
-                {msg('Retry saving')}
-              </Button>
-            </section>
-          ))}
-        {failed ? (
-          <Button onClick={() => setReload((n) => n + 1)}>{msg('Retry')}</Button>
-        ) : rows === null ? (
-          <p>{msg('Loading…')}</p>
-        ) : rows.length === 0 ? (
-          <p>{msg('No recordings yet.')}</p>
-        ) : (
-          <>
-            <p>
-              {msg(
-                'The note score compares the notes you played with the score. Missing and extra notes lower it. Best takes share the same piece, passage, and hands.',
-              )}
-            </p>
-            <ul class={styles.list}>
-              {rows.map((r) => (
-                <RecordingRow
-                  key={r.id}
-                  open={selected === r.id}
-                  onToggle={() => setSelected((old) => (old === r.id ? undefined : r.id))}
-                  info={r}
-                  words={scores.get(takeScoreVersion(r) ?? '')}
-                  storage={storage}
-                  best={noteAccuracy(r.score) === best.get(r.context)}
-                  onDeleted={() => setRows((old) => old?.filter((t) => t.id !== r.id) ?? [])}
-                />
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
-    </Sheet>
+              />
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   )
 }

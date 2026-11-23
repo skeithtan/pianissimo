@@ -8,54 +8,48 @@ const cases = [
     lang: 'es-ES',
     library: 'Biblioteca',
     settings: 'Ajustes',
-    general: 'General',
+    appTab: 'Aplicación',
     language: 'Idioma',
-    add: 'Añadir y abrir',
   },
   {
     device: 'fr-CA',
     lang: 'fr-CA',
     library: 'Bibliothèque',
     settings: 'Paramètres',
-    general: 'Général',
+    appTab: 'Application',
     language: 'Langue',
-    add: 'Ajouter et ouvrir',
   },
   {
     device: 'fr-BE',
     lang: 'fr-FR',
     library: 'Bibliothèque',
     settings: 'Réglages',
-    general: 'Général',
+    appTab: 'Application',
     language: 'Langue',
-    add: 'Ajouter et ouvrir',
   },
   {
     device: 'tl-PH',
     lang: 'fil-PH',
     library: 'Aklatan',
     settings: 'Mga Setting',
-    general: 'Pangkalahatan',
+    appTab: 'App',
     language: 'Wika',
-    add: 'Idagdag at buksan',
   },
   {
     device: 'ja',
     lang: 'ja-JP',
     library: 'ライブラリ',
     settings: '設定',
-    general: '一般',
+    appTab: 'アプリ',
     language: '言語',
-    add: '追加して開く',
   },
   {
     device: 'de-AT',
     lang: 'en-US',
     library: 'Library',
     settings: 'Settings',
-    general: 'General',
+    appTab: 'App',
     language: 'Language',
-    add: 'Add and open',
   },
 ]
 
@@ -73,14 +67,12 @@ for (const c of cases) {
         .first()
         .setInputFiles({ name: 'Settings.musicxml', mimeType: 'application/xml', buffer: Buffer.from(xml) })
       const sheet = page.locator('dialog[open]')
-      await expect(sheet.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
-      await sheet.getByRole('button', { name: c.add, exact: true }).click()
       await expect(page.locator('.pn-strip').first()).toBeVisible({ timeout: 60000 })
       const url = page.url()
       const menu = ({ 'es-ES': 'Menú', 'ja-JP': 'メニュー' } as Record<string, string>)[c.lang] ?? 'Menu'
       await page.getByRole('button', { name: menu, exact: true }).click()
       await page.getByRole('button', { name: c.settings, exact: true }).click()
-      await sheet.getByRole('tab', { name: c.general, exact: true }).click()
+      await sheet.getByRole('tab', { name: c.appTab, exact: true }).click()
       const select = sheet.getByRole('combobox', { name: c.language, exact: true })
       await expect(select).toHaveValue('system')
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360)
@@ -104,7 +96,7 @@ for (const c of cases) {
       const menuAfterReload = page.getByRole('button', { name: tag === 'fr-CA' ? 'Menu' : 'Menú', exact: true })
       if (await menuAfterReload.isVisible()) await menuAfterReload.click()
       await page.getByRole('button', { name: tag === 'fr-CA' ? 'Paramètres' : 'Ajustes', exact: true }).click()
-      await sheet.getByRole('tab', { name: tag === 'fr-CA' ? 'Général' : 'General', exact: true }).click()
+      await sheet.getByRole('tab', { name: tag === 'fr-CA' ? 'Application' : 'Aplicación', exact: true }).click()
       await sheet.getByRole('combobox', { name: tag === 'fr-CA' ? 'Langue' : 'Idioma' }).selectOption('system')
       await expect(page.locator('html')).toHaveAttribute('lang', c.lang)
     })
@@ -113,7 +105,7 @@ for (const c of cases) {
 
 test.describe('Filipino score workflows', () => {
   test.use({ locale: 'fil-PH', viewport: { width: 820, height: 1180 } })
-  test('explains an import error and opens the translated Study and Results views', async ({ page }) => {
+  test('explains an import error and opens the translated score and Results views', async ({ page }) => {
     await page.goto('./')
     await expect(page.getByRole('heading', { name: 'Aklatan' })).toBeVisible()
     await page.locator('input[type=file]').first().setInputFiles(fixtureFile('unrelated.xml'))
@@ -123,11 +115,11 @@ test.describe('Filipino score workflows', () => {
     await expect(dialog).not.toContainText('not a MusicXML score')
     await expect(dialog.getByRole('button', { name: 'Pumili ng ibang file' })).toBeVisible()
     await dialog.locator('button[aria-label="Isara"]').click()
-    await page.getByRole('button', { name: 'Buksan ang partitura ng Ode to Joy' }).click()
-    await expect(page.getByTestId('study-screen').getByRole('group', { name: 'Partitura', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Sundan ang tugtog ko', exact: true })).toBeVisible()
-    await page.goto('./#/results')
-    await expect(page.getByRole('heading', { name: 'Resulta', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Magsanay sa Ode to Joy' }).click()
+    const modes = page.getByRole('radiogroup', { name: 'Paraan', exact: true })
+    await expect(modes.getByRole('radio')).toHaveText(['Makinig', 'Maghintay', 'Sabayan ang kumpas', 'Sundan'])
+    await expect(modes.getByRole('radio', { name: 'Makinig' })).toBeChecked()
+    await expect(page.getByRole('button', { name: 'Patugtugin', exact: true })).toBeVisible()
   })
 })
 
@@ -161,7 +153,7 @@ for (const [lang, close, start, show, title, clean] of [
     await loopWholePiece(page)
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const sheet = page.getByRole('dialog')
-    await sheet.getByRole('tab', { name: 'General', exact: true }).click()
+    await sheet.getByRole('tab', { name: 'App', exact: true }).click()
     await sheet.getByRole('combobox', { name: 'Language' }).selectOption(lang)
     await sheet.getByRole('button', { name: close, exact: true }).click()
     await page.getByRole('button', { name: start, exact: true }).click()

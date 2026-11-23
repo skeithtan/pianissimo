@@ -66,7 +66,7 @@ describe('KeyboardGuide', () => {
     expect(bar(60)?.closest('[data-part="white-bars"]')).not.toBeNull()
     expect(labelTexts()).toEqual(['C3', 'C4', 'E♭4'])
     expect(host.textContent).not.toMatch(/\b[LR]\b/u)
-    expect(root().getAttribute('aria-label')).toBe('Keyboard guide. Play: C4, E♭4. Sounding: C3.')
+    expect(root().getAttribute('aria-label')).toBe('Keyboard guide. To play: C4, E♭4. Sounding: C3.')
   })
 
   it('marks played, held and wrong keys with shapes, not color alone', async () => {

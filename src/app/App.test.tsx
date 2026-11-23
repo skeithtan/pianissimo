@@ -9,7 +9,7 @@ import { App } from './App'
 import { resetCapabilityBannerForTests } from './CapabilityBanner'
 import { detectFeatures } from './features'
 import { resetViewCacheForTests } from './LazyView'
-import { connectionOpen, currentView, navigate, openConnection, openSettings, settingsOpen } from './navigation'
+import { connectionOpen, currentView, navigate, openConnection, settingsOpen, settingsTab } from './navigation'
 import { applyTheme, startThemeSync } from './theme'
 import {
   connectionStatus,
@@ -38,7 +38,7 @@ beforeEach(() => {
   resetCapabilityBannerForTests()
   discardLabelDraft()
   settingsOpen.value = false
-  connectionOpen.value = false
+  settingsTab.value = 'reading'
   currentView.value = 'library'
 })
 afterEach(() => {
@@ -65,11 +65,11 @@ describe('<App> shell', () => {
 
   it('navigates between views through the registry, lazily', async () => {
     const root = await open()
-    act(() => navigate('results'))
-    // The real Results view is a larger lazy chunk: wait for it rather than a fixed delay.
-    for (let i = 0; i < 100 && !byText(root, 'Results'); i++) await settle()
-    expect(byText(root, 'Results')).not.toBeNull()
-    expect($(root, 'main')?.getAttribute('data-view')).toBe('results')
+    act(() => navigate('practice'))
+    // The real Practice view is a larger lazy chunk: wait for it rather than a fixed delay.
+    for (let i = 0; i < 100 && !byText(root, 'Choose a piece to practice'); i++) await settle()
+    expect(byText(root, 'Choose a piece to practice')).not.toBeNull()
+    expect($(root, 'main')?.getAttribute('data-view')).toBe('practice')
   })
 
   it('gives the practice view the whole viewport: no app bar', async () => {
@@ -83,20 +83,18 @@ describe('<App> shell', () => {
     expect(byText(root, 'Practice')).not.toBeNull()
   })
 
-  it('has an entry for every view: the Library bundled, the others lazy', async () => {
+  it('has an entry for every view: the Library bundled, Practice lazy', async () => {
     expect(typeof views.library.component).toBe('function')
-    for (const name of ['practice', 'results'] as const) {
-      const entry = views[name]
-      expect(entry.component === undefined ? typeof entry.load : 'component').toBe('function')
-    }
-    // The Connection setup is a lazy modal screen, not a view.
+    const entry = views.practice
+    expect(entry.component === undefined ? typeof entry.load : 'component').toBe('function')
+    // The piano setup is a lazy screen inside Settings, not a view.
     expect('connection' in views).toBe(false)
     expect(typeof overlayScreens.connection.load).toBe('function')
   })
 
   it('moves focus into the new view after navigation', async () => {
     const root = await open()
-    act(() => navigate('results'))
+    act(() => navigate('practice'))
     await settle()
     expect(document.activeElement).toBe($(root, 'main'))
   })
@@ -107,7 +105,7 @@ describe('<App> shell', () => {
     click(byLabel(root, 'Settings'))
     await settle()
     expect(settingsOpen.value).toBe(true)
-    expect($(root, 'dialog[open]')?.querySelectorAll('[role="tab"]').length).toBe(8)
+    expect($(root, 'dialog[open]')?.querySelectorAll('[role="tab"]').length).toBe(4)
     expect(byText(root, 'Library')).toBe(heading) // same node: view stayed mounted
     click(byLabel($(root, 'dialog[open]')!, 'Close'))
     expect(currentView.value).toBe('library')
@@ -115,14 +113,14 @@ describe('<App> shell', () => {
   })
 })
 
-describe('connection setup modal', () => {
+describe('piano setup', () => {
   it('opens over the current view, loads its content lazily, and closes with the close button', async () => {
     const root = await open()
     const heading = byText(root, 'Library')
     expect($(root, 'dialog[open]')).toBeNull()
     act(() => openConnection())
     for (let i = 0; i < 100 && !$(root, 'section[data-step="piano"]'); i++) await settle()
-    expect($(root, 'dialog[open]')?.getAttribute('aria-label')).toBe('Connection and Pedal Setup')
+    expect($(root, 'dialog[open]')?.getAttribute('aria-label')).toBe('Settings')
     expect($(root, 'section[data-step="piano"]')).not.toBeNull()
     expect(currentView.value).toBe('library') // not a page: the view stays
     expect(byText(root, 'Library')).toBe(heading)
@@ -132,7 +130,7 @@ describe('connection setup modal', () => {
     expect($(root, 'dialog[open]')).toBeNull()
   })
 
-  it('keeps navigate("connection") working as an alias that opens the modal', async () => {
+  it('keeps navigate("connection") working as an alias that opens the piano setup', async () => {
     currentView.value = 'practice'
     const root = await open()
     act(() => navigate('connection'))
@@ -142,15 +140,10 @@ describe('connection setup modal', () => {
     expect($(root, 'main')?.getAttribute('data-view')).toBe('practice')
   })
 
-  it('is one overlay at a time: Settings replaces it and a page change closes it', async () => {
+  it('closes when the page changes', async () => {
     await open()
     act(() => openConnection())
-    expect(connectionOpen.value).toBe(true)
-    act(() => openSettings())
-    expect([settingsOpen.value, connectionOpen.value]).toEqual([true, false])
-    act(() => openConnection())
-    expect([settingsOpen.value, connectionOpen.value]).toEqual([false, true])
-    act(() => navigate('results'))
+    act(() => navigate('practice'))
     expect([settingsOpen.value, connectionOpen.value]).toEqual([false, false])
   })
 })
@@ -183,7 +176,7 @@ describe('connection chip', () => {
     expect(chip(root).getAttribute('data-tone')).toBe('warn')
   })
 
-  it('opens the Connection setup modal when tapped, over the current view', async () => {
+  it('opens Settings on Piano and sound when tapped, over the current view', async () => {
     const root = await open()
     click(chip(root))
     await settle()

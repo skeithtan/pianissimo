@@ -20,16 +20,7 @@ const paths: Record<string, () => JSX.Element> = {
   listen: () => (
     <path d="M4 15v-3a8 8 0 0 1 16 0v3M4 15a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2zm16 0a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2z" />
   ),
-  /** Play-through (DECISIONS P12): a play triangle followed by two forward chevrons. */
-  flow: () => <path d="M3 6.5v11l7-5.5zM13 7l4.5 5-4.5 5M17.5 7l4.5 5-4.5 5" />,
   mic: () => <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" />,
-  /** Keep time (rhythm mode): a metronome with its pendulum swung to the side. */
-  metronome: () => (
-    <g>
-      <path d="M9.5 3h5L18 21H6z" />
-      <path d="M12 16l5.5-9.5M8 16h8" />
-    </g>
-  ),
   repeat: () => <path d="M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4" />,
   hint: () => (
     <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1.1 1.3 1.1 2.2h5c0-.9.5-1.7 1.1-2.2A6 6 0 0 0 12 3z" />
@@ -49,6 +40,7 @@ const paths: Record<string, () => JSX.Element> = {
   ),
   back: () => <path d="M15 18l-6-6 6-6" />,
   menu: () => <path d="M4 7h16M4 12h16M4 17h16" />,
+  list: () => <path d="M9 6.5h11M9 12h11M9 17.5h11M4.5 6.5v.01M4.5 12v.01M4.5 17.5v.01" />,
   more: () => (
     <g fill="currentColor" stroke="none">
       <circle cx="5" cy="12" r="2" />

@@ -69,7 +69,8 @@ recency. At most three are shown; session-dismissed ones are skipped before cutt
 Results. Comparison is by `contextKey`; ordinary reading and Preview never appear. The best
 clean unassisted run is the one whose completion time is closest to the expected time
 (absolute difference; a faster time is not automatically better). Assisted runs, runs with
-wrong attacks and incomplete attempts are listed separately and never ranked.
+wrong attacks and incomplete attempts are listed separately and never ranked. The views use
+`cleanCompletions` and `notClean`, which do not tell help apart (U144).
 
 ## Decisions and interpretations
 

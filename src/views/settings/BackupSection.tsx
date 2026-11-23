@@ -17,7 +17,8 @@ import { describeRestore, LibraryModel, type RestoreOutcome } from '../library/l
 import { Group, Help } from './parts'
 import styles from './settings.module.css'
 
-export function BackupSection() {
+/** `recordingsOpen`: the recordings list is over Settings, and may be deleting takes. */
+export function BackupSection({ recordingsOpen }: { recordingsOpen: boolean }) {
   const deps = useLibraryDeps()
   const model = useMemo(() => new LibraryModel(deps), [deps])
   const [exporting, setExporting] = useState(false)
@@ -29,8 +30,10 @@ export function BackupSection() {
   useEffect(() => {
     void model.refresh()
     void model.refreshStorageStatus()
-    void model.refreshRecordings()
   }, [model])
+  useEffect(() => {
+    if (!recordingsOpen) void model.refreshRecordings()
+  }, [model, recordingsOpen])
 
   const disabled = model.state.value.status === 'unavailable'
   const recordings = model.recordings.value
@@ -102,7 +105,7 @@ export function BackupSection() {
           <>
             <Help>
               {msg(
-                "Pieces, results and practice history from the backup are added to this device. Nothing here is deleted, and where both have the same piece the more recent one is kept. Settings are replaced by the backup's, except this device's piano connection and metronome output.",
+                "Pieces, results and practice history from the backup are added to this device. Nothing here is deleted, and where both have the same piece the more recent one is kept. Settings are replaced by the backup's, except this device's piano connection, metronome output and recording input.",
               )}
             </Help>
             <div class={styles.backupActions}>

@@ -7,7 +7,7 @@ import { msg } from '../../i18n/messages'
  * records only, so opening the library stays cheap however large the scores are.
  */
 import { signal, type Signal } from '@preact/signals'
-import { openStudy, openPractice, type PracticeRequest } from '../../app/navigation'
+import { openPractice, type PracticeRequest } from '../../app/navigation'
 import { BackupError } from '../../core/storage/errors'
 import { backupFileName } from '../../core/storage/backupFormat'
 import { estimateStorage, isStoragePersistent, isQuotaError } from '../../core/storage/persist'
@@ -121,7 +121,7 @@ export class LibraryModel {
     }
   }
 
-  /** Open a piece in Practice (optionally with a preset), marking it as opened. */
+  /** Open a piece in Practice, in its own mode (optionally with a preset), marking it as opened. */
   async open(
     pieceId: string,
     preset?: PracticeRequest['preset'],
@@ -129,12 +129,6 @@ export class LibraryModel {
   ): Promise<void> {
     await this.markOpened(pieceId)
     go(preset ? { pieceId, preset } : { pieceId })
-  }
-
-  /** Study a piece (U72): listen and read, nothing practiced. */
-  async study(pieceId: string): Promise<void> {
-    await this.markOpened(pieceId)
-    openStudy({ pieceId })
   }
 
   /**
@@ -309,7 +303,9 @@ export function describeRestore(report: RestoreReport): string[] {
   if (report.manifest.recordingsExcluded) lines.push(msg('The backup did not include recordings.'))
   lines.push(
     report.settings === 'restored'
-      ? msg('Settings were restored from the backup (this device keeps its own piano connection and metronome output).')
+      ? msg(
+          'Settings were restored from the backup (this device keeps its own piano connection, metronome output and recording input).',
+        )
       : report.settings === 'kept'
         ? msg('Settings on this device were kept.')
         : msg('The backup had no settings. Yours were kept.'),

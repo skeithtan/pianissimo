@@ -60,7 +60,7 @@ function open(
 ): Harness {
   return harness(model, selection, {
     settings: opts.settings ?? testSettings(),
-    options: { rhythm: true, ...opts.options },
+    options: { mode: 'time', ...opts.options },
     deps: { loadMetronome: async () => metronomeModule(rec), ...opts.deps },
   })
 }
@@ -189,6 +189,21 @@ describe('Keep time: a completed pass is kept on every path but the unattended s
     expect(ui(h)).toMatchObject({ playing: false, corrections: 0, lastResult: { id: h.attempts[0]!.id } })
     expect(h.strip.corrections).toEqual([])
   })
+
+  it.each(['listen', 'wait', 'follow'] as const)(
+    'changing to %s keeps the record, with no result card',
+    async (mode) => {
+      const h = await completedBeforeLastBar()
+      h.session.setMode(mode)
+      expect(h.attempts).toHaveLength(1)
+      expect(h.attempts[0]).toMatchObject({ completion: 'completed' })
+      h.frames.flush()
+      expect(ui(h)).toMatchObject({ mode, playing: false, lastResult: null, corrections: 0, reviewing: false })
+      at(h, RUN + 30_000)
+      expect(h.attempts).toHaveLength(1)
+      expect(ui(h)).toMatchObject({ mode, playing: false, lastResult: null })
+    },
+  )
 
   it('leaving the view keeps the record and publishes nothing afterwards', async () => {
     const h = await completedBeforeLastBar()
@@ -362,7 +377,7 @@ describe('Keep time: the first downbeat may come up to the tolerance early', () 
   })
 
   it('gated practice is unchanged: the first press after Ready starts the clock', async () => {
-    const h = open(melody, { range: LOOP }, { options: { rhythm: false } })
+    const h = open(melody, { range: LOOP }, { options: { mode: 'wait' } })
     await begin(h)
     expect(h.session.engine.state.phase).toBe('ready')
     at(h, T0 + 500)
@@ -481,15 +496,15 @@ describe('Keep time in Repeat: back to the loop after a seek outside it', () => 
     expect(h.session.engine.state.groupIndex).toBe(0)
   })
 
-  it('switching Keep time off after such a seek returns to the loop timeline at its start', () => {
+  it('switching to Wait after such a seek keeps the cursor there: a lead-in, as a seek in Wait sets up', () => {
     const h = open(melody, { range: LOOP })
     h.session.seekPosition(rat(3, 2))
     h.frames.flush()
-    h.session.setRhythmMode(false)
+    h.session.setMode('wait')
     h.frames.flush()
-    expect(h.session.engine.timeline).toBe(h.session.timeline)
-    expect(h.session.engine.state.position).toEqual(ZERO)
-    expect(h.strip.cursor).toBe(0)
+    expect(ui(h)).toMatchObject({ leadIn: true, repeat: true, playing: false })
+    expect(h.session.engine.state.position).toEqual(rat(3, 2))
+    expect(h.strip.cursor).toBe(1.5)
   })
 })
 
@@ -572,21 +587,21 @@ describe('The timing cue row is reserved by the setting, not the phase (U122)', 
     expect(h.strip.timingCalls.every((c) => c.enabled)).toBe(true)
   })
 
-  it('stays reserved through ordinary reading and play-through, and is off in Listen or with cues off', async () => {
-    const h = open(melody, {}, { options: { rhythm: false } })
+  it('stays reserved through Wait and Follow, and is off in Listen or with cues off', async () => {
+    const h = open(melody, {}, { options: { mode: 'wait' } })
     await begin(h)
     h.session.pause()
     h.frames.flush()
     expect(h.session.engine.state.phase).toBe('paused')
-    h.session.setPlayThrough(true)
+    h.session.setMode('follow')
     await begin(h)
     h.session.pause()
     h.frames.flush()
     expect(h.strip.timingCalls.every((c) => c.enabled)).toBe(true)
-    h.session.setSelection({ hands: 'none' })
+    h.session.setMode('listen')
     h.frames.flush()
     expect(h.strip.timingEnabled).toBe(false)
-    h.session.setSelection({ hands: 'both' })
+    h.session.setMode('wait')
     h.frames.flush()
     expect(h.strip.timingEnabled).toBe(true)
     h.session.updateSettings(testSettings({ hints: { ...DEFAULT_SETTINGS.hints, showTimingCues: false } }))

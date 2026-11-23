@@ -1,0 +1,64 @@
+/* The contents of Progress. Theme tokens only (src/ui/global.css). */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.section > h3 {
+  font-size: var(--text-l);
+}
+.muted {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.groups {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.group {
+  border-top: 1px solid var(--border);
+}
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--touch);
+  padding: var(--space-3) 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.words {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.words small {
+  color: var(--fg-muted);
+}
+.chevron {
+  display: grid;
+  flex: none;
+  color: var(--fg-muted);
+}
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+}

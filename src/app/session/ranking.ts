@@ -5,13 +5,14 @@ import { msg } from '../../i18n/messages'
  * result) so it loads with the card, on its first expansion, not with Practice.
  */
 import { barLabel, type Timeline } from '../../core/engine'
-import type { AttemptRecord, GroupOutcome } from '../../core/model/practice'
+import type { GroupOutcome } from '../../core/model/practice'
 import type { ScoreModel } from '../../core/model/score'
 import type { NamingSettings } from '../../core/model/settings'
 import { diatonicIndex, type Spelling } from '../../core/music/pitch'
 import { NATURAL, accidentalGlyph, contextAlter, labelFor, labelForMidi, spellMidi } from '../../core/naming'
 import type { GhostNote } from '../../render/excerpt'
 import { COUNTS, LETTERS, REPEATED_MISTAKE_PASSES, pressNames, sameLetterSpelling, standInFor } from './mistakes'
+import type { PassRecord } from './run'
 
 type Group = Timeline['groups'][number]
 
@@ -101,27 +102,29 @@ function wrongKeys(g: GroupOutcome): number[] {
 
 /**
  * The latest pass's mistakes ranked by severity (`MistakeLevel`), for the expanded result card.
- * Uses only `records` (the session's last scored records, oldest first; only those of the latest
+ * Uses only `records` (the session's last passes, oldest first; only those of the latest
  * record's comparison context count) and the group marks of the latest record. Within a level:
  * more passes first (repeated, habit), more passes wrong at the place (trouble), more wrong keys,
  * then score order. A group with neither a wrong key nor a mark is left out.
  */
 export function rankMistakes(
-  records: readonly AttemptRecord[],
+  records: readonly PassRecord[],
   timeline: Timeline,
   model: Pick<ScoreModel, 'notes' | 'occurrences'>,
   marks: ReadonlyMap<number, GroupMark>,
 ): RankedMistake[] {
   const latest = records.at(-1)
-  if (!latest || latest.kind !== 'scored' || !latest.groups) return []
-  const run = records.filter((r) => r.kind === 'scored' && r.groups && r.contextKey === latest.contextKey)
+  if (!latest || latest.kind === 'reading' || !latest.groups) return []
+  const run = records.filter((r) => r.kind !== 'reading' && r.groups && r.contextKey === latest.contextKey)
+  // By group: a pass can be a whole piece.
+  const byGroup = run.map((r) => new Map(r.groups!.map((g) => [g.group, g])))
   const out: RankedMistake[] = []
   for (const outcome of latest.groups) {
     const group = timeline.groups[outcome.group]
     if (!group) continue
     const mark = marks.get(outcome.group) ?? null
     const keys = wrongKeys(outcome)
-    const earlier = run.map((r) => r.groups!.find((g) => g.group === outcome.group))
+    const earlier = byGroup.map((groups) => groups.get(outcome.group))
     const presses: WrongPress[] = keys.map((pitch) => {
       let passes = 0
       for (let i = earlier.length - 1; i >= 0; i--) {

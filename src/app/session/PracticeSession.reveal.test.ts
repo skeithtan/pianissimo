@@ -27,7 +27,7 @@ const FADE = DEFAULT_SETTINGS.hints.fadeMs
 
 describe('revealAtCursor (Study mode)', () => {
   it('names every note of the group at the cursor, in Listen, with no attempt running', () => {
-    const h = harness(chords, { hands: 'none' })
+    const h = harness(chords, {}, { options: { mode: 'listen' } })
     expect(h.session.ui.get().activity).toBe('idle')
     expect(h.strip.opacity.size).toBe(0)
     expect(h.session.revealAtCursor()).toBe(true)
@@ -40,7 +40,7 @@ describe('revealAtCursor (Study mode)', () => {
 
   it('keeps the names for the hint lifetime, then fades them out over fadeMs', () => {
     const settings = testSettings({ hints: { ...DEFAULT_SETTINGS.hints, lifetime: 2 } })
-    const h = harness(melody, { hands: 'none' }, { settings })
+    const h = harness(melody, {}, { options: { mode: 'listen' }, settings })
     h.session.revealAtCursor()
     expect(h.strip.opacity.get(0)).toBe(1)
     h.step(1900)
@@ -57,7 +57,7 @@ describe('revealAtCursor (Study mode)', () => {
 
   it('uses a short fixed time when hints are set to last until the correct note', () => {
     const settings = testSettings({ hints: { ...DEFAULT_SETTINGS.hints, lifetime: 'until-correct' } })
-    const h = harness(melody, { hands: 'none' }, { settings })
+    const h = harness(melody, {}, { options: { mode: 'listen' }, settings })
     h.session.revealAtCursor()
     h.step(REVEAL_FALLBACK_S * 1000 - 10)
     expect(h.strip.opacity.get(0)).toBe(1)
@@ -67,7 +67,7 @@ describe('revealAtCursor (Study mode)', () => {
 
   it('names the notes under the cursor after a seek, and merges with persistent labels', () => {
     const settings = testSettings({ labels: { ...DEFAULT_SETTINGS.labels, mode: 'all' } })
-    const h = harness(melody, { hands: 'none' }, { settings })
+    const h = harness(melody, {}, { options: { mode: 'listen' }, settings })
     h.session.seek(1)
     h.frames.flush()
     expect(h.session.revealAtCursor()).toBe(true)
@@ -77,14 +77,14 @@ describe('revealAtCursor (Study mode)', () => {
   })
 
   it('returns false with no note at the cursor', () => {
-    const h = harness(buildScore({ notes: [], bars: 1 }), { hands: 'none' })
+    const h = harness(buildScore({ notes: [], bars: 1 }), {}, { options: { mode: 'listen' } })
     expect(h.session.revealAtCursor()).toBe(false)
     expect(h.strip.opacity.size).toBe(0)
   })
 
   it('a second request restarts the time from the new cursor group', () => {
     const settings = testSettings({ hints: { ...DEFAULT_SETTINGS.hints, lifetime: 1 } })
-    const h = harness(melody, { hands: 'none' }, { settings })
+    const h = harness(melody, {}, { options: { mode: 'listen' }, settings })
     h.session.revealAtCursor()
     h.step(800)
     h.session.seek(1)
@@ -95,17 +95,17 @@ describe('revealAtCursor (Study mode)', () => {
   })
 })
 
-describe('cursorAction option', () => {
-  it('never shows the cursor repeat button when false', () => {
-    const h = harness(melody, { hands: 'none' }, { options: { cursorAction: false } })
-    expect(h.strip.cursorAction).toBe(false)
+describe('the cursor’s repeat button', () => {
+  it.each([
+    ['listen', true],
+    ['wait', true],
+    ['time', true],
+    ['follow', false],
+  ] as const)('in %s: %s', (mode, shown) => {
+    const h = harness(melody, {}, { options: { mode } })
+    expect(h.strip.cursorAction).toBe(shown)
     h.session.setChromeRevealed(false)
     h.session.setChromeRevealed(true)
-    expect(h.strip.cursorAction).toBe(false)
-  })
-
-  it('shows it by default outside Repeat mode', () => {
-    const h = harness(melody, { hands: 'none' })
-    expect(h.strip.cursorAction).toBe(true)
+    expect(h.strip.cursorAction).toBe(shown)
   })
 })

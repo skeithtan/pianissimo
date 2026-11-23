@@ -1,17 +1,18 @@
 import { useRecordingDialog } from '../recordings/useRecordingDialog'
 import { msg, messageLanguage } from '../../i18n/messages'
 /**
- * The practice screen (spec "Practice screen"; DECISIONS U1–U14): a header that blends into the
- * background (back, title, connection, Settings), the full-width score overview (which never
- * recedes), the
- * full-width notation stage with its overlays (Repeat panel in Repeat mode, banners, correction cue), the
- * keyboard-guide panel and the footer (Speed | hand toggles around Start / Pause / Listen |
- * Menu). While playing, the chrome recedes (U13).
+ * The score screen (spec "Practice screen"; DECISIONS U1–U14, U141): one screen per piece, in the
+ * mode the learner chooses (Listen, Wait, Keep time or Follow). A header that blends into the
+ * background (back, title, the mode, connection, Settings), the full-width score overview (which
+ * never recedes), the full-width notation stage with its overlays (Repeat panel in Repeat mode,
+ * banners, correction cue), the keyboard-guide panel and the footer (Speed | hand toggles around
+ * Start / Pause / Play | Menu). While playing, the chrome recedes (U13), except in Listen.
  *
  * On a phone-size screen (`usePhone`, U80) there is no header and no footer: one top bar holds
- * Back, the title (or, with the phone on its side, the piece overview), the hand toggles around
- * Start and a Menu button whose sheet holds Speed, Note names, Keep time, Show keys
- * (not on its side: no keyboard guide there), the connection status and Settings. The score takes the rest, and in portrait the page is engraved
+ * Back, the title with the mode under it (or, with the phone on its side, the piece overview and a
+ * mode button), the hand toggles around Start and a Menu button whose sheet holds Speed, the
+ * mode's rows, Show keys (not on its side: no keyboard guide there), the connection status and
+ * Settings. The score takes the rest, and in portrait the page is engraved
  * to the stage's width and fitted to it (R17, as on every device). In focus mode the bar slides up
  * and fades, its row giving the score its height; any press on the score brings it back, and that
  * press does not seek (U93). A tablet's or desktop's header stays in focus mode.
@@ -22,16 +23,29 @@ import { msg, messageLanguage } from '../../i18n/messages'
  */
 import type { RefObject } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { effect, untracked } from '@preact/signals'
-import { connectionOpen, navigate, openSettings, settingsOpen, type PracticePreset } from '../../app/navigation'
+import { effect, signal, untracked } from '@preact/signals'
+import { createMicFollowerDep, microphoneSupported } from '../../app/audio/micFollower'
+import {
+  navigate,
+  openConnection,
+  openNoteRules,
+  openSettings,
+  settingsOpen,
+  type PracticePreset,
+} from '../../app/navigation'
 import {
   PracticeSession,
   createPieceSaver,
+  isPractice,
+  learnerHands,
   metronomeOn,
   metronomePatch,
+  openingMode,
   practiceModel,
   type PieceSaver,
+  type OpeningEnv,
   type SessionSettings,
+  type AttemptSummary,
 } from '../../app/session'
 import {
   applyLabelSettings,
@@ -41,7 +55,9 @@ import {
   settings,
   updateSettings,
 } from '../../app/state'
+import type { Suggestion } from '../../core/history'
 import { passageBounds, positionText } from '../../core/model/passage'
+import type { PracticeMode } from '../../core/model/practice'
 import type { ScorePackage } from '../../core/model/score'
 import type { PersistentLabelMode } from '../../core/model/settings'
 import { effectiveTempoAt, hasTempo } from '../../core/music/tempo'
@@ -55,6 +71,7 @@ import { Icon } from '../../ui/icons'
 import { TempoControl } from '../../ui/TempoControl'
 import { WrongNoteFlash } from '../../ui/WrongNoteFlash'
 import { ConnectionChip } from '../shared/ConnectionChip'
+import { ProgressSheet } from '../progress/ProgressSheet'
 import { usePhone, usePhoneLandscape } from '../shared/usePhone'
 import { pageWidthFor } from '../../render/page/geometry'
 import type { LabelRoom, PreparedLayout, PrepareOptions } from '../../render'
@@ -63,26 +80,31 @@ import type { PracticeEnv, StripHandle } from './env'
 import { GuidePanel, OverviewBar, StageCue } from './live'
 import { AttemptResult, Banners } from './Banners'
 import { ResultDetailsLoader } from './ResultDetailsLoader'
+import { ResultPeek } from './ResultPeek'
 import { CountIn } from './CountIn'
-import { Footer, HANDS_UNAVAILABLE, HANDS_UNAVAILABLE_NOTICE } from './Footer'
+import { Footer, StartReason, handToggles } from './Footer'
 import { KEEPS_AHEAD, PracticeMenuItems, type MetronomeRow } from './FooterMenu'
+import { ModeButton, ModeChoice, ModeSheet, ModeTitle } from './ModeControl'
+import { OtherHandSheet } from './OtherHandSheet'
 import { RepeatOptions, RepeatPanel } from './RepeatPanel'
 import { ScoreSkeleton } from './ScoreSkeleton'
 import { TempoSheet } from './TempoSheet'
 import { useBrowsedBar } from './browse'
+import { useModeFit } from './modeFit'
 import { useRecede } from './recede'
 import { useReviewInset } from './reviewInset'
 import { useOrientation, useStageWidth } from './useOrientation'
 import { useStore } from './useStore'
+import modeStyles from './ModeControl.module.css'
 import styles from './practice.module.css'
 
 export interface PracticeScreenProps {
   readonly env: PracticeEnv
   readonly piece: PieceRecord
   readonly pkg: ScorePackage
-  readonly autoStart?: boolean | undefined
-  readonly onAutoStart?: (() => void) | undefined
   readonly preset?: PracticePreset | undefined
+  /** Opens in this mode whatever the piece's own is, which stays as it is (an old study link). */
+  readonly openIn?: PracticeMode | undefined
   readonly onTempoSaved: (tempo: UserTempo) => Promise<void>
 }
 
@@ -237,7 +259,17 @@ function pickSettings(): SessionSettings {
   }
 }
 
-export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart, onTempoSaved }: PracticeScreenProps) {
+/** What the mode a piece opens in depends on. */
+function openingEnv(): OpeningEnv {
+  const connection = connectionStatus.peek().state
+  return {
+    pianoConnected: connection === 'connected',
+    pianoRemembered: settings.peek().route.inputId !== null,
+    midiSupported: connection !== 'unsupported',
+  }
+}
+
+export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }: PracticeScreenProps) {
   const model = useMemo(() => practiceModel(pkg.model, piece.userTempo), [pkg, piece.userTempo])
   const [saver] = useState<PieceSaver>(() =>
     createPieceSaver(async (patch) => (await env.storage()).updatePiece(piece.id, patch), env.timers),
@@ -251,12 +283,14 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     const repeat = preset ? presetRange !== null : piece.repeatOpen === true && piece.lastPassage !== null
     const resume = !preset && !repeat && piece.resume ? piece.resume : null
     const multiplier = preset?.multiplier ?? piece.lastMultiplier ?? 1
+    const mode = openIn ?? openingMode(piece, openingEnv(), preset !== undefined)
     const created = new PracticeSession(
       {
         pieceId: piece.id,
         model,
+        mode,
         selection: {
-          hands: preset?.hands ?? piece.lastHands ?? 'both',
+          hands: learnerHands(preset?.hands ?? piece.lastHands ?? 'both'),
           range: preset ? presetRange : piece.lastPassage,
           multiplier: Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1,
         },
@@ -264,7 +298,6 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         startPosition: resume?.position ?? null,
         repeatTarget: piece.repeatTarget,
         ladder: piece.ladder ?? null,
-        rhythm: piece.rhythm === true,
         repeat,
       },
       {
@@ -278,6 +311,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         },
         piece: saver,
         timeOrigin: env.timeOrigin,
+        createMicFollower: env.createMicFollower ?? createMicFollowerDep,
+        micSupported: env.micSupported ?? microphoneSupported,
         ...(env.loadBrowserAudio ? { loadBrowserAudio: env.loadBrowserAudio } : {}),
         ...(env.hasWebAudio ? { hasWebAudio: env.hasWebAudio } : {}),
         ...(env.loadMetronome ? { loadMetronome: env.loadMetronome } : {}),
@@ -292,6 +327,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           lastHands: created.selection.hands,
           lastMultiplier: created.selection.multiplier,
           repeatOpen: presetRange !== null,
+          ...(mode === 'wait' ? { mode } : {}),
         },
         true,
       )
@@ -299,11 +335,15 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     return created
   })
   const ui = useStore(session.ui)
-  const recorder = useRecordingDialog()
+  const [progressOpen] = useState(() => signal(false))
+  const recorder = useRecordingDialog(ui.playing, progressOpen.value)
   const appSettings = settings.value
   const [prep, setPrep] = useState<Prep>({ state: 'preparing', fraction: 0 })
   const [tempoOpen, setTempoOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [modeOpen, setModeOpen] = useState(false)
+  /** The start that waits for where the other hand should sound (U149); the sheet is open meanwhile. */
+  const [askedStart] = useState(() => signal<(() => void) | null>(null))
   // A phone-size screen: one top bar and a menu sheet instead of the header and footer (U80).
   const phone = usePhone()
   const sideways = usePhoneLandscape()
@@ -317,7 +357,6 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const magnifyRef = useRef(1)
   /** The press now on the score brought a phone's hidden top bar back: its tap does not seek (U93). */
   const revealOnlyTap = useRef(false)
-  const autoStarted = useRef(false)
   const maxChars = maxLabelWidthChars(appSettings.naming)
   // Labels Off engraves tight, with room for hints only; a mode showing names leaves room for all
   // of them (DECISIONS R3 revised).
@@ -384,12 +423,18 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   }, [ui.playing, phone])
   // Focus mode waits for the review to end (U102), even when Repeat at Ready counts as playing.
   const recede = useRecede(ui.playing && !ui.reviewing, env.timers)
+  // In Listen the controls stay where they are (U72). Only the cursor's repeat button goes.
+  const receded = recede.receded && ui.mode !== 'listen'
   // Focus mode hides the top bar of a phone only (U93): a tablet's or desktop's header has room to
   // stay, faded when upright (U147). While recording, a phone on its side keeps Stop and the status
   // pills in its bar; an upright phone has them in its footer.
-  const recordingInBar = phone && sideways && recorder.isOpen
-  const barInert = recede.receded && !recordingInBar
+  const recordingInBar = phone && sideways && recorder.showing
+  const barInert = receded && !recordingInBar
+  const header = useRef<HTMLElement>(null)
+  /** The press now on the header brought its receded mode control back: its click changes nothing. */
+  const revealOnlyPress = useRef(false)
   const headerRevealTap = useRef(false)
+  const fits = useModeFit(header, !phone)
   // An upright phone gives the Repeat controls a row of their own that folds away while playing;
   // elsewhere they float over the score (U14, U80, revised 15 November 2026). Their options open
   // in a sheet on a phone, which closes when playback starts, like the menu.
@@ -431,9 +476,12 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       void saver.flush()
     }
     window.addEventListener('pagehide', onPageHide)
-    // Settings and Connection open over Practice: keys belong to them while they are open.
-    const offOverlay = effect(() => session.holdInput(settingsOpen.value || connectionOpen.value))
-    // Without a connected piano the learner cannot play a hand: Listen only (U27).
+    // Settings (with the piano setup), the other-hand question and Progress open over Practice: keys
+    // belong to them while they are open (the test notes may come back as keys).
+    const offOverlay = effect(() =>
+      session.holdInput(settingsOpen.value || askedStart.value !== null || progressOpen.value),
+    )
+    // Without a connected piano, Wait and Keep time cannot start, and Follow uses the microphone.
     const offInput = effect(() => session.setInputAvailable(connectionStatus.value.state === 'connected'))
     const portrait = typeof matchMedia === 'function' ? matchMedia('(orientation: portrait)') : null
     const onOrientation = () => session.viewChanged()
@@ -662,20 +710,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
     [session],
   )
 
-  // Add to library starts once the score is ready. Consume the request so history navigation
-  // cannot start it again, and never retry automatically after a pause or an output failure.
-  useEffect(() => {
-    if (!autoStart || autoStarted.current || prep.state !== 'ready' || !ui.startEnabled) return
-    autoStarted.current = true
-    onAutoStart?.()
-    // Never opens the microphone by itself (DECISIONS P22): a microphone play-through waits for
-    // the learner's own Start (and the browser's prompt then).
-    if (ui.startAction === 'play' && ui.follow === 'mic') return
-    void session.start()
-  }, [autoStart, prep.state, ui.startEnabled, session, onAutoStart])
-
   const openRecorder = () => {
-    if (recorder.isOpen) return
+    if (recorder.busy) return
     if (session.ui.get().playing) session.pause()
     setMenuOpen(false)
     void recorder.open(env.storage, {
@@ -683,9 +719,22 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       title: piece.title,
       model,
       env,
-      hands: ui.hands === 'none' ? 'both' : ui.hands,
+      hands: ui.hands,
       range: ui.repeat ? ui.range : null,
     })
+  }
+  const openProgress = () => {
+    setMenuOpen(false)
+    progressOpen.value = true
+  }
+  const closeProgress = () => {
+    progressOpen.value = false
+  }
+  const practiceSuggestion = (s: Suggestion) => {
+    closeProgress()
+    // As a suggestion opens from the Library, except that Wait and Keep time always stay.
+    const mode = isPractice(ui.mode) ? ui.mode : openingMode({ mode: ui.mode, lastHands: ui.hands }, openingEnv(), true)
+    session.practiceBars(s.passage, learnerHands(s.hands), s.multiplier, mode)
   }
   const tempo = model.tempo
   const startPos = passageBounds(model, ui.range).start
@@ -718,27 +767,39 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   const onLabels = (mode: PersistentLabelMode) => {
     applyLabelSettings({ ...settings.peek().labels, mode })
   }
-  // Play-through (DECISIONS P12) uses reading's words: Start, Pause, Resume when paused mid-piece.
-  const playLabel =
-    ui.activity === 'playing'
-      ? ui.playing
-        ? msg('Pause')
-        : ui.phase === 'paused'
-          ? msg('Resume')
-          : msg('Start')
-      : ui.playing && ui.activity === 'listening'
-        ? msg('Pause')
-        : ui.activity === 'listening'
-          ? msg('Play')
-          : ui.playing
-            ? msg('Pause')
-            : ui.startAction === 'listen'
-              ? msg('Listen')
-              : ui.activity === 'reading' &&
-                  (ui.phase === 'paused' || ui.interruption?.reason === 'disconnect') &&
-                  ui.startAction !== 'scored'
-                ? msg('Resume')
-                : msg('Start')
+  // The app plays in Listen, the learner in the other modes: Play there, else Start or Resume.
+  const resumes =
+    ui.mode === 'follow'
+      ? ui.phase === 'paused'
+      : ui.activity === 'reading' &&
+        (ui.phase === 'paused' || ui.interruption?.reason === 'disconnect') &&
+        ui.startAction !== 'scored'
+  const playLabel = ui.playing
+    ? msg('Pause')
+    : ui.mode === 'listen'
+      ? msg('Play')
+      : resumes
+        ? msg('Resume')
+        : msg('Start')
+  const playDisabled = !ui.playing && !ui.startEnabled && !ui.otherHand && ui.activity !== 'listening'
+  // One hand, and the app does not know where the other should sound: the press asks first (U149).
+  const asking = (start: () => void) => () => {
+    if (ui.otherHand && !ui.playing) askedStart.value = start
+    else start()
+  }
+  const onPlayPause = asking(() => session.togglePlay())
+  const startAsked = () => {
+    const start = askedStart.peek()
+    // Keys are the session's again before it starts, still inside the tap.
+    askedStart.value = null
+    start?.()
+  }
+  // The disconnect banner is about a piano the mode is played on (U71): not in Listen, and not in
+  // Follow over the microphone. While it shows it is the only word about the piano.
+  const disconnected = ui.inputDisconnected && ui.mode !== 'listen' && !(ui.mode === 'follow' && ui.follow === 'mic')
+  const startReason = disconnected ? null : <StartReason ui={ui} phone={phone} onConnect={openConnection} />
+  const onMode = (next: PracticeMode) => session.setMode(next)
+  const modeButton = { mode: ui.mode, open: modeOpen, onOpen: () => setModeOpen(true) }
 
   const back = (
     <button
@@ -767,14 +828,11 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   )
   const hands = (
     <HandToggles
-      hands={ui.hands}
-      onHandsChange={(hands) => session.setSelection({ hands })}
-      handsUnavailable={ui.handsAvailable ? undefined : msg(HANDS_UNAVAILABLE)}
-      onHandsUnavailable={() => pushNotice({ kind: 'info', text: msg(HANDS_UNAVAILABLE_NOTICE) })}
+      {...handToggles(ui, session)}
       playing={ui.playing}
-      onPlayPause={() => session.togglePlay()}
+      onPlayPause={onPlayPause}
       playLabel={playLabel}
-      playDisabled={!ui.playing && !ui.startEnabled && ui.activity !== 'listening'}
+      playDisabled={playDisabled}
       handClass={styles.recedes}
       compact
     />
@@ -788,6 +846,15 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       </button>
     ) : null
 
+  const detailsOf = (result: AttemptSummary) => ({
+    session,
+    result,
+    model,
+    naming: appSettings.naming,
+    pieceId: piece.id,
+    layout: layoutRef.current,
+    goal: ui.repeat ? ui.repeatTarget : null,
+  })
   const resultDockEl = (
     <div
       ref={resultDock}
@@ -802,20 +869,11 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         model={model}
         naming={appSettings.naming}
         phone={phone}
-        onRestart={() => session.restart()}
+        onRestart={() => void session.again()}
+        onLoop={() => session.loopRoughBars()}
         // The details open in place over Practice (U99): nothing here leaves the screen.
-        details={(r) => (
-          <ResultDetailsLoader
-            key={r.id}
-            session={session}
-            result={r}
-            model={model}
-            naming={appSettings.naming}
-            pieceId={piece.id}
-            layout={layoutRef.current}
-            goal={ui.repeat ? ui.repeatTarget : null}
-          />
-        )}
+        details={(r, actions) => <ResultDetailsLoader key={r.id} {...detailsOf(r)} actions={actions} />}
+        peek={(r, state) => <ResultPeek {...detailsOf(r)} {...state} />}
         onDismiss={() => session.dismissResult()}
         expandedId={expandedResult}
         onExpandedChange={(id) => {
@@ -831,7 +889,8 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       class={styles.screen}
       data-activity={ui.activity}
       data-phase={ui.phase ?? ''}
-      data-recede={recede.receded ? 'true' : undefined}
+      data-mode={ui.mode}
+      data-recede={receded ? 'true' : undefined}
       data-recording-header={recordingInBar || undefined}
       data-compact={phone ? 'true' : undefined}
       data-sideways={sideways ? 'true' : undefined}
@@ -848,15 +907,19 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
                 <>
                   <h1 class={styles.srOnly}>{piece.title}</h1>
                   <OverviewBar session={session} model={model} range={ui.range} view={stripRef} inline />
+                  <ModeButton {...modeButton} class={`${styles.barMode} ${styles.recedes}`} />
                 </>
               ) : (
-                titleText
+                <>
+                  <h1 class={styles.srOnly}>{piece.title}</h1>
+                  <ModeTitle {...modeButton} title={piece.title} class={`${styles.barTitle} ${styles.recedes}`} />
+                </>
               )}
               {hands}
               {recorder.controls(openRecorder, sideways)}
               <button
                 type="button"
-                class={`${styles.iconButton} ${styles.menuButton} ${styles.recedes}`}
+                class={`${styles.iconButton} ${styles.recedes}`}
                 aria-label={msg('Menu')}
                 data-keeps-ahead
                 title={msg('Menu')}
@@ -865,11 +928,6 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
                 onClick={() => setMenuOpen(true)}
               >
                 <Icon name="menu" size={22} />
-                {ui.rhythm ? (
-                  <span class={styles.menuBadge} data-testid="keep-time-badge" aria-hidden="true">
-                    <Icon name="metronome" size={12} />
-                  </span>
-                ) : null}
               </button>
             </div>
           </div>
@@ -878,16 +936,19 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         // A tablet's or desktop's header keeps its place in focus mode: there is room. Upright, its
         // contents fade (U147); a take in progress keeps its controls and the connection pill.
         <header
+          ref={header}
           class={styles.header}
           data-testid="practice-header"
+          data-modes={fits.modes ? 'all' : 'one'}
           data-fades={mode === 'page' || undefined}
-          data-recording={recorder.isOpen || undefined}
+          data-recording={recorder.showing || undefined}
           {...recede.zone}
           // The touch that brings a faded header back must not also press what it uncovers; a take's
-          // own controls never fade, so they act at once.
+          // own controls never fade, so they act at once. The mode control guards its own press.
           onPointerDownCapture={(event) => {
             const kept = (event.target as Element).closest('button') !== null
-            headerRevealTap.current = mode === 'page' && recede.receded && !kept
+            revealOnlyPress.current = receded
+            headerRevealTap.current = mode === 'page' && receded && !kept
           }}
           onClickCapture={(event) => {
             if (headerRevealTap.current) event.stopPropagation()
@@ -898,9 +959,27 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             {back}
             {titleText}
           </div>
-          <div class={styles.headerTools}>
+          {/* The mode dims with the footer's tools while playing, and a brush then changes nothing: the
+              press brings it back before a touch's click arrives (a key's click has no detail). */}
+          <div
+            class={`${styles.modes} ${styles.recedes}`}
+            data-testid="practice-modes"
+            inert={receded}
+            onClickCapture={(event) => {
+              if (revealOnlyPress.current && event.detail > 0) event.stopPropagation()
+              revealOnlyPress.current = false
+            }}
+          >
+            <div class={modeStyles.choice} data-mode-choice data-measure={fits.modes ? undefined : ''}>
+              <div>
+                <ModeChoice mode={ui.mode} onMode={onMode} />
+              </div>
+            </div>
+            {fits.modes ? null : <ModeButton {...modeButton} />}
+          </div>
+          <div class={styles.headerTools} data-header-tools>
             {recorder.controls(openRecorder)}
-            <ConnectionChip compact="narrow" />
+            <ConnectionChip dot={!fits.chip} />
             <button
               type="button"
               class={`${styles.iconButton} ${styles.settingsButton}`}
@@ -921,7 +1000,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           class={styles.repeatSlot}
           data-testid="repeat-slot"
           data-leaving={repeatPresence.phase === 'leaving' || undefined}
-          inert={recede.receded}
+          inert={receded}
           {...recede.zone}
         >
           <div class={styles.repeatSlotClip}>
@@ -953,7 +1032,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         // the strip, but on a phone a tap that brings the hidden bar back does not seek (U93 e):
         // set in the capture phase, before the view's own handlers, for its tap on release.
         onPointerDownCapture={() => {
-          revealOnlyTap.current = phone && ui.playing && recede.receded
+          revealOnlyTap.current = phone && ui.playing && receded
         }}
         onPointerMove={(event) => {
           if (ui.playing && nearCursor(event, stripRef.current)) recede.zone.onPointerMove()
@@ -972,11 +1051,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         ) : null}
         <StageCue session={session} />
         <CountIn beats={ui.countIn} />
-        {phone && !ui.playing && ui.startReason ? (
-          <p class={styles.stageNote} role="note">
-            {ui.startReason}
-          </p>
-        ) : null}
+        {phone ? startReason : null}
         <div ref={topOverlays} class={styles.banners}>
           {repeatPresence.mounted && !dockedRepeat ? (
             <RepeatPanel
@@ -997,9 +1072,9 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             />
           ) : null}
           <Banners
-            ui={ui}
-            onRestart={() => session.restart()}
-            onResume={() => session.resume()}
+            ui={{ ...ui, inputDisconnected: disconnected }}
+            onRestart={asking(() => session.restart())}
+            onResume={asking(() => session.resume())}
             onConnection={() => navigate('connection')}
           />
         </div>
@@ -1018,16 +1093,22 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
         </>
       ) : (
         <Footer
+          onProgress={openProgress}
           onRecord={openRecorder}
           recordingOpen={recorder.isOpen}
+          recordDisabled={recorder.busy}
           ui={ui}
           session={session}
           zone={recede.zone}
-          receded={recede.receded}
+          receded={receded}
+          onPlayPause={onPlayPause}
           playLabel={playLabel}
+          playDisabled={playDisabled}
+          startReason={startReason}
           tempo={source}
           labels={appSettings.labels.mode}
           onLabels={onLabels}
+          onNoteRules={openNoteRules}
           onRequestTempo={() => setTempoOpen(true)}
           scorePlayback={scorePlayback}
           metronome={metronome}
@@ -1043,6 +1124,32 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
       >
         <RepeatOptions session={session} repeatTarget={ui.repeatTarget} multiplier={ui.multiplier} ladder={ui.ladder} />
       </Sheet>
+
+      <OtherHandSheet
+        open={askedStart.value !== null}
+        sound={ui.otherHand ?? { piano: false, device: false }}
+        hand={ui.hands === 'right' ? 'left' : 'right'}
+        testNotes={env.testNotes ?? (async () => null)}
+        onPiano={startAsked}
+        onDevice={() => {
+          env.primeAudio?.()
+          updateSettings({ sound: { destination: 'browser' } })
+          pushNotice({
+            kind: 'info',
+            text: msg('The app’s sound now comes from this device. You can change it in Settings.'),
+          })
+          startAsked()
+        }}
+        onHelp={() => {
+          askedStart.value = null
+          openConnection()
+        }}
+        onClose={() => {
+          askedStart.value = null
+        }}
+      />
+
+      <ModeSheet mode={ui.mode} onMode={onMode} open={modeOpen} onClose={() => setModeOpen(false)} />
 
       <Sheet title={msg('Menu')} untitled floating open={phone && menuOpen} onClose={() => setMenuOpen(false)}>
         <div class={styles.menu}>
@@ -1062,11 +1169,17 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             />
           </div>
           <PracticeMenuItems
+            onProgress={openProgress}
             onRecord={openRecorder}
+            recordDisabled={recorder.busy}
             ui={ui}
             session={session}
             labels={appSettings.labels.mode}
             onLabels={onLabels}
+            onNoteRules={() => {
+              setMenuOpen(false)
+              openNoteRules()
+            }}
             hasTempo={source !== null}
             scorePlayback={scorePlayback}
             metronome={metronome}
@@ -1098,6 +1211,19 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           </div>
         </div>
       </Sheet>
+
+      <ProgressSheet
+        open={progressOpen.value}
+        onClose={closeProgress}
+        pieceId={piece.id}
+        storage={env.storage}
+        model={model}
+        onPractice={practiceSuggestion}
+        onOpenSettings={() => {
+          closeProgress()
+          openSettings()
+        }}
+      />
 
       <WrongNoteFlash onReady={(handle) => session.attachFlash(handle)} />
       {recorder.dialog}

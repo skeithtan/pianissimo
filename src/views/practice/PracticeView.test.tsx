@@ -1,130 +1,21 @@
 // @vitest-environment happy-dom
-import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
-import { connectionOpen, currentView, practiceRequest, resultsRequest, settingsOpen } from '../../app/navigation'
-import { connectionStatus, notices, resetAppStateForTests, settings, updateSettings } from '../../app/state'
-import { FakeMidi, FakeStrip, ManualFrames } from '../../app/session/testkit'
-import { newPieceRecord } from '../../core/storage/records'
-import { openFresh } from '../../core/storage/testkit'
-import type { PianissimoStorage } from '../../core/storage'
+import { currentView, practiceRequest, settingsOpen, settingsTab } from '../../app/navigation'
+import { connectionStatus, resetAppStateForTests, settings, updateSettings } from '../../app/state'
 import type { PreparedLayout } from '../../render'
-import { ManualClock } from '../../core/playback/testkit'
-import { importFixture } from '../../../tests/unit/import/fixtures'
 import { $, $$, byLabel, byText, click, hasRecordIcon, mount, press, type Mounted } from '../shared/testing'
-import type { PracticeEnv, PracticeStripOptions, StripHandle } from './env'
-import type { RespaceSnapshot } from '../../render'
+import type { PracticeEnv } from './env'
 import { PREPARE_AHEAD_MS, prepareAheadDelay, REPEAT_PANEL_FADE_MS } from './PracticeScreen'
 import { PHONE_LANDSCAPE_QUERY, PHONE_QUERY } from '../shared/usePhone'
 import { PracticeViewWith } from './PracticeView'
 import { RECEDE_DELAY_MS, REVEAL_MS } from './recede'
-
-class TestStrip extends FakeStrip implements StripHandle {
-  destroyed = false
-  options: PracticeStripOptions = {}
-  browsing = false
-  browsedOcc = 0
-  override isBrowsing(): boolean {
-    return this.browsing
-  }
-  occAt(): number {
-    return this.browsedOcc
-  }
-  returned = 0
-  setZoom(): void {}
-  returnToCurrent(): void {
-    this.returned++
-    this.browsing = false
-  }
-  destroy(): void {
-    this.destroyed = true
-  }
-  held: boolean[] = []
-  holdLabels(on: boolean): void {
-    this.held.push(on)
-  }
-  readonly snapshot = { from: this } as unknown as RespaceSnapshot
-  respaceSnapshot(): RespaceSnapshot | null {
-    return this.snapshot
-  }
-  respacedFrom: (RespaceSnapshot | null)[] = []
-  respacing = Promise.resolve()
-  whenRespaced(): Promise<void> {
-    return this.respacing
-  }
-  respaceFrom(prev: RespaceSnapshot | null): void {
-    this.respacedFrom.push(prev)
-  }
-}
-
-interface Rig {
-  env: PracticeEnv
-  storage: PianissimoStorage
-  clock: ManualClock
-  frames: ManualFrames
-  midi: FakeMidi
-  strips: TestStrip[]
-  /** The label room of every preparation, in order. */
-  rooms: (string | undefined)[]
-  pieceId: string
-}
-
-async function rig(): Promise<Rig> {
-  const storage = await openFresh()
-  const built = await importFixture('two-hands.musicxml')
-  const piece = newPieceRecord(built.package, { id: 'piece-1', now: 1 })
-  await storage.commitImport({ source: built.source, pkg: built.package, piece })
-  const clock = new ManualClock()
-  clock.now = 1000
-  const frames = new ManualFrames(clock.clock)
-  const midi = new FakeMidi()
-  const strips: TestStrip[] = []
-  const rooms: (string | undefined)[] = []
-  const env: PracticeEnv = {
-    storage: async () => storage,
-    midi: () => midi,
-    clock: clock.clock,
-    timers: clock,
-    frames,
-    timeOrigin: 0,
-    prepare: async (_s, _i, options) => {
-      rooms.push(options.labels.room)
-      return { key: 'fake' } as unknown as PreparedLayout
-    },
-    createStrip: (_host, _layout, options) => {
-      const s = new TestStrip()
-      s.options = options
-      strips.push(s)
-      return s
-    },
-  }
-  return { env, storage, clock, frames, midi, strips, rooms, pieceId: piece.id }
-}
+import { onScreen, rig, settle, tap, type Rig } from './viewTestkit'
 
 /** Wait out the Repeat panel's fade-out (real timers), then settle. */
 async function faded(): Promise<void> {
   await act(async () => {
     await new Promise((res) => setTimeout(res, REPEAT_PANEL_FADE_MS + 60))
-  })
-}
-
-/** Let promises (storage, preparation) settle, then run a frame. */
-async function settle(r: Rig, rounds = 6): Promise<void> {
-  for (let i = 0; i < rounds; i++) {
-    await act(async () => {
-      await new Promise((res) => setTimeout(res, 0))
-    })
-  }
-  act(() => r.frames.flush())
-}
-
-function tap(r: Rig, ...notes: number[]): void {
-  act(() => {
-    for (const n of notes) {
-      r.midi.on(n, r.clock.now)
-      r.midi.off(n, r.clock.now)
-    }
-    r.frames.flush()
   })
 }
 
@@ -158,12 +49,11 @@ let view: Mounted | null = null
 
 beforeEach(() => {
   resetAppStateForTests()
-  // A piano is connected unless a test says otherwise: without one the hands are unavailable (U27).
+  // A piano is connected unless a test says otherwise: without one a piece opens in Listen (U141).
   connectionStatus.value = { state: 'connected', inputName: 'Test piano' }
   practiceRequest.value = null
-  resultsRequest.value = null
   settingsOpen.value = false
-  connectionOpen.value = false
+  settingsTab.value = 'reading'
 })
 
 afterEach(() => {
@@ -219,19 +109,6 @@ describe('PracticeView', () => {
     await settle(r, 2)
     expect(view.container.textContent).not.toContain('Wrong key')
     expect($(view.container, '[data-testid="stage-cue"]')).toBeNull()
-  })
-
-  it('Add to library starts once the score is prepared and consumes the request', async () => {
-    const r = await rig()
-    practiceRequest.value = { pieceId: r.pieceId, autoStart: true }
-    view = mount(<PracticeViewWith env={r.env} />)
-    await settle(r)
-    expect($(view.container, '[data-activity]')?.dataset['activity']).toBe('reading')
-    expect(byLabel(view.container, 'Pause')).not.toBeNull()
-    expect(practiceRequest.value).toEqual({ pieceId: r.pieceId })
-    click(byLabel(view.container, 'Pause'))
-    await settle(r)
-    expect(byLabel(view.container, 'Resume')).not.toBeNull()
   })
 
   it('shows only an arrow at the cursor for a correct pitch class in the wrong octave', async () => {
@@ -373,7 +250,7 @@ describe('PracticeView', () => {
     view = mount(<PracticeViewWith env={r.env} />)
     await settle(r)
     expect($(view.container, '[data-activity]')?.dataset['activity']).toBe('idle')
-    // "Practice this passage" opens Repeat mode with that loop (U10).
+    // A suggestion opens Repeat mode with that loop (U10).
     expect($(view.container, '[data-testid="repeat-controls"]')).not.toBeNull()
     expect(byLabel(view.container, 'Loop start')?.textContent).toContain('Bar 1')
     expect(byLabel(view.container, 'Loop end')?.textContent).toContain('Bar 1')
@@ -398,12 +275,11 @@ describe('PracticeView', () => {
     click(byLabel(card!, 'Show details of this pass'))
     await vi.waitFor(() => expect($(view!.container, '[data-testid="result-verdict"]')).not.toBeNull())
     expect($(view.container, '[data-testid="result-details"]')?.textContent).toContain('No mistakes in this pass.')
-    expect(currentView.value).not.toBe('results')
-    expect(resultsRequest.value).toBeNull()
+    expect(currentView.value).not.toBe('library')
     expect(r.strips[0]!.reviewing).toBe(true)
     click(byLabel(card!, 'Hide details'))
     expect(byLabel(card!, 'Show details of this pass')?.getAttribute('aria-expanded')).toBe('false')
-    expect(currentView.value).not.toBe('results')
+    expect(currentView.value).not.toBe('library')
   })
 
   it('the same wrong key three passes running shows on the result pill, following the naming settings (P24, U97)', async () => {
@@ -779,7 +655,7 @@ describe('PracticeView', () => {
     expect(byLabel(view.container, 'Pause')).not.toBeNull()
   })
 
-  it('the Labels control applies label settings; both hands off turns Start into Listen', async () => {
+  it('the Labels control applies label settings', async () => {
     const r = await rig()
     practiceRequest.value = { pieceId: r.pieceId }
     view = mount(<PracticeViewWith env={r.env} />)
@@ -798,19 +674,6 @@ describe('PracticeView', () => {
     act(() => r.clock.advance(400))
     act(() => r.frames.flush())
     expect(r.strips[1]!.opacity.size).toBeGreaterThan(0)
-    click(byLabel(view.container, 'Left hand'))
-    await settle(r, 1)
-    click(byLabel(view.container, 'Right hand'))
-    await settle(r, 1)
-    // Both hands off is Listen mode (U9): the main button is Listen; there is no part filter (U12).
-    expect(byLabel(view.container, 'Listen')).not.toBeNull()
-    expect(byLabel(view.container, 'Hear')).toBeNull()
-    // No separate footer Listen tool any more.
-    expect($$(view.container, 'footer button').filter((b) => b.textContent?.trim() === 'Listen')).toHaveLength(0)
-    click(byLabel(view.container, 'Right hand'))
-    await settle(r, 1)
-    expect(byLabel(view.container, 'Start')).not.toBeNull()
-    expect($(view.container, '[data-activity]')?.dataset['activity']).toBe('idle')
   })
 
   it('loop controls appear only in Repeat mode: the cursor button opens it, the strip ✕ closes it (U17)', async () => {
@@ -1026,70 +889,6 @@ describe('PracticeView', () => {
     expect(strip.cursorAction).toBe(false)
   })
 
-  it('without a piano Practice offers Listen, directs following to Study, and restores the hands on connection', async () => {
-    connectionStatus.value = { state: 'disconnected' }
-    const r = await rig()
-    practiceRequest.value = { pieceId: r.pieceId }
-    view = mount(<PracticeViewWith env={{ ...r.env, micSupported: () => false }} />)
-    await settle(r)
-    const left = byLabel(view.container, 'Left hand')!
-    expect(left.getAttribute('aria-pressed')).toBe('false')
-    expect(byLabel(view.container, 'Right hand')?.getAttribute('aria-pressed')).toBe('false')
-    expect(left.getAttribute('aria-disabled')).toBe('true')
-    expect(left.getAttribute('title')).toContain('Piano not connected')
-    expect(byLabel(view.container, 'Listen')).not.toBeNull()
-    click(left)
-    await settle(r, 1)
-    expect(notices.value.some((n) => n.text.includes('Open Sheet music'))).toBe(true)
-    expect(byLabel(view.container, 'Left hand')?.getAttribute('aria-pressed')).toBe('false')
-    // The piano arrives: the piece's remembered hands (both) come back without a save.
-    act(() => {
-      connectionStatus.value = { state: 'connected', inputName: 'Piano' }
-    })
-    await settle(r, 1)
-    expect(byLabel(view.container, 'Left hand')?.getAttribute('aria-pressed')).toBe('true')
-    expect(byLabel(view.container, 'Left hand')?.hasAttribute('aria-disabled')).toBe(false)
-    expect(byLabel(view.container, 'Start')).not.toBeNull()
-  })
-
-  it('the Keep time switch: a badge on Menu, Start counts in over the stage (P13)', async () => {
-    const r = await rig()
-    practiceRequest.value = { pieceId: r.pieceId }
-    view = mount(<PracticeViewWith env={r.env} />)
-    await settle(r)
-    const keep = () => menuSwitch(view!.container, 'Keep time')
-    const badge = () => $(view!.container, '[data-testid="keep-time-badge"]')
-    expect(keep().checked).toBe(false)
-    expect(keep().disabled).toBe(false)
-    expect(badge()).toBeNull()
-    click(keep())
-    await settle(r, 1)
-    expect(keep().checked).toBe(true)
-    expect(badge()).not.toBeNull()
-    // Saved on the piece through the debounced piece saver.
-    act(() => r.clock.advance(1100))
-    await settle(r)
-    expect((await r.storage.getPiece(r.pieceId))?.rhythm).toBe(true)
-    click(byLabel(view.container, 'Start'))
-    await settle(r)
-    const countIn = $(view.container, '[data-testid="count-in"]')
-    expect(countIn).not.toBeNull()
-    expect(countIn?.getAttribute('role')).toBe('status')
-    expect(Number(countIn?.textContent)).toBeGreaterThan(0)
-    // The count-in sits on the stage, never over the footer's hand toggles.
-    expect(countIn?.closest('footer')).toBeNull()
-    expect($(view.container, '[data-testid="ready"]')).toBeNull()
-    expect(byLabel(view.container, 'Pause')).not.toBeNull()
-    click(byLabel(view.container, 'Pause'))
-    await settle(r, 1)
-    expect($(view.container, '[data-testid="count-in"]')).toBeNull()
-    expect(byLabel(view.container, 'Start')).not.toBeNull()
-    click(keep())
-    await settle(r, 1)
-    expect(keep().checked).toBe(false)
-    expect(badge()).toBeNull()
-  })
-
   describe('the Metronome switch (U87, P20)', () => {
     async function opened(env?: Partial<PracticeEnv>) {
       const r = await rig()
@@ -1118,11 +917,14 @@ describe('PracticeView', () => {
       expect(primed).toBe(1)
     })
 
-    it('with Keep time on it shows and edits the Keep time preference; the general one returns when it is off', async () => {
+    it('in Keep time it shows and edits that preference; the general one returns in another mode', async () => {
       const r = await opened()
+      const mode = (name: string) => {
+        click($$(view!.container, '[data-mode-choice] [role="radio"]').find((el) => el.textContent === name))
+        return settle(r, 1)
+      }
       expect(metronome().checked).toBe(false)
-      click(menuSwitch(view!.container, 'Keep time'))
-      await settle(r, 1)
+      await mode('Keep time')
       expect(metronome().checked).toBe(true)
       click(metronome())
       await settle(r, 1)
@@ -1131,8 +933,7 @@ describe('PracticeView', () => {
       click(metronome())
       await settle(r, 1)
       expect(settings.value.metronome).toMatchObject({ enabled: false, keepTime: true })
-      click(menuSwitch(view!.container, 'Keep time'))
-      await settle(r, 1)
+      await mode('Listen')
       expect(metronome().checked).toBe(false)
       expect(settings.value.metronome.enabled).toBe(false)
     })
@@ -1143,13 +944,7 @@ describe('PracticeView', () => {
     })
 
     it('is in the phone menu sheet too', async () => {
-      const original = window.matchMedia
-      window.matchMedia = ((query: string) => ({
-        matches: query === PHONE_QUERY || query.includes('portrait'),
-        media: query,
-        addEventListener: () => undefined,
-        removeEventListener: () => undefined,
-      })) as unknown as typeof window.matchMedia
+      const restore = onScreen('phone')
       try {
         let primed = 0
         const r = await opened({ primeAudio: () => primed++ })
@@ -1164,7 +959,7 @@ describe('PracticeView', () => {
         expect(settings.value.metronome.enabled).toBe(true)
         expect(primed).toBe(1)
       } finally {
-        window.matchMedia = original
+        restore()
       }
     })
   })
@@ -1186,7 +981,7 @@ describe('PracticeView', () => {
       return r
     }
 
-    it('opens a popover dialog with Note names, Keep time, Metronome and Show keys; aria-expanded follows', async () => {
+    it('opens a popover dialog with Note names, Metronome and Show keys; aria-expanded follows', async () => {
       await opened()
       const button = menuButton()
       expect(button.getAttribute('aria-haspopup')).toBe('dialog')
@@ -1199,13 +994,13 @@ describe('PracticeView', () => {
       expect(dialog.getAttribute('aria-modal')).toBeNull()
       expect(
         [...dialog.children].map(
-          (row) => row.textContent?.trim().match(/^(Note names|Keep time|Metronome|Show keys|Record performance)/)?.[0],
+          (row) => row.textContent?.trim().match(/^(Note names|Metronome|Show keys|Progress|Record performance)/)?.[0],
         ),
-      ).toEqual(['Note names', 'Keep time', 'Metronome', 'Show keys', 'Record performance'])
+      ).toEqual(['Note names', 'Metronome', 'Show keys', 'Progress', 'Record performance'])
       expect(hasRecordIcon(byLabel(dialog, 'Record performance'))).toBe(true)
       expect(byLabel(dialog, 'Faster by 5 percent')).toBeNull()
       expect(byLabel(dialog, 'Note names on the score')).not.toBeNull()
-      expect(accessibleMenuSwitches(dialog)).toHaveLength(3)
+      expect(accessibleMenuSwitches(dialog)).toHaveLength(2)
       expect(dialog.contains(document.activeElement)).toBe(true)
       // The Menu button again closes it.
       click(button)
@@ -1585,7 +1380,7 @@ describe('PracticeView', () => {
       expect(menu.textContent).toContain('Speed')
       expect(byLabel(menu, 'Note names on the score')).not.toBeNull()
       const switches = accessibleMenuSwitches(menu).map(switchName)
-      expect(switches).toEqual(['Keep time', 'Metronome', 'Show keys'])
+      expect(switches).toEqual(['Metronome', 'Show keys'])
       expect(hasRecordIcon(byLabel(menu, 'Record performance'))).toBe(true)
       expect(menu.textContent).toContain('Connected · Test piano')
       expect(byLabel(menu, 'Settings')).not.toBeNull()
@@ -1615,7 +1410,7 @@ describe('PracticeView', () => {
       await settle(r, 1)
       const menu = dialog()!
       const switches = accessibleMenuSwitches(menu).map(switchName)
-      expect(switches).toEqual(['Keep time', 'Metronome'])
+      expect(switches).toEqual(['Metronome'])
       expect(menu.textContent).toContain('Connected · Test piano')
       expect($(root, '[data-testid="guide-slot"]')?.dataset['open']).toBe('false')
     })

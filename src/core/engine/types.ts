@@ -113,10 +113,11 @@ export interface EngineConfig {
   /** Early-press grace in real milliseconds (default `EARLY_PRESS_GRACE_MS` = 120; not tempo-scaled). */
   readonly earlyGraceMs?: number
   /**
-   * Scored: real milliseconds a completed final group stays current before the attempt ends, so
-   * a wrong key pressed with the final chord is still its wrong attack (chord slips, DECISIONS
-   * P24). The completion time is unchanged. Default 0 (ends at once); the session passes
-   * `CHORD_SLIP_MS`. Restart, seek, reconfigure and interruptions end the held attempt first.
+   * Scored, and ordinary reading of the whole piece (U142): real milliseconds a completed final
+   * group stays current before the attempt ends, so a wrong key pressed with the final chord is
+   * still its wrong attack (chord slips, DECISIONS P24). The completion time is unchanged. Default 0
+   * (ends at once); the session passes `CHORD_SLIP_MS`. Pause, restart, seek, reconfigure and
+   * interruptions end the held attempt first. A reading passage (a lead-in) is never held.
    */
   readonly finalSlipMs?: number
   /**

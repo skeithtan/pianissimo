@@ -1,8 +1,7 @@
-import { msg, decimal } from '../../i18n/messages'
-/** Display text for the Results view. Pure; locale-dependent only in `whenText`. */
+import { msg, decimal, plural } from '../../i18n/messages'
+/** Display text for the scorecard, the history and Progress. Pure; locale-dependent only in `whenText`. */
 import { formatSeconds, timeDifferenceSec, timingAccuracy } from '../../core/history'
 import type { AttemptRecord, ComparisonContext, InterruptReason } from '../../core/model/practice'
-import type { PersistentLabelMode } from '../../core/model/settings'
 
 export function whenText(ms: number, now: number = Date.now()): string {
   const date = new Date(ms)
@@ -38,14 +37,6 @@ export function incompleteReason(a: AttemptRecord): string {
   return a.completion === 'abandoned' ? msg('Abandoned') : msg('Interrupted')
 }
 
-export const LABEL_MODE_TEXT: Readonly<Record<PersistentLabelMode, string>> = {
-  off: 'Off',
-  all: 'All notes',
-  conditional: 'Conditional',
-}
-
-export { plural } from '../../i18n/messages'
-
 /** "+1.2 s" / "-0.4 s" for an attempt with scored timing, otherwise null. */
 export function signedTime(a: AttemptRecord): string | null {
   if (a.context.transport === 'strict') return null
@@ -64,11 +55,24 @@ export function timeText(a: AttemptRecord): string {
   return diff === null ? base : `${base} (${diff})`
 }
 
+/** A pass in a few words: "8.4 s (+0.4 s)", "38 of 42 on time · 2 wrong attacks", "Paused · 1 wrong attack". */
+export function attemptText(a: AttemptRecord): string {
+  const parts = [a.completion === 'completed' ? timeText(a) : incompleteReason(a)]
+  if (a.completion !== 'completed' || a.wrongAttacks > 0) parts.push(plural(a.wrongAttacks, 'wrong attack'))
+  return parts.join(' · ')
+}
+
+/** What ranks a clean pass: its completion time or, in Keep time, its average offset ("±30 ms"). */
+export function cleanText(a: AttemptRecord): string {
+  if (a.context.transport === 'strict') return `±${Math.round(timingAccuracy(a)?.meanAbsOffsetMs ?? 0)} ms`
+  return a.completionTimeSec === undefined ? '—' : formatSeconds(a.completionTimeSec)
+}
+
 export function speedText(multiplier: number): string {
   return `${decimal(Number(multiplier.toFixed(2)))}×`
 }
 
-const HANDS = { both: 'Both hands', right: 'Right hand', left: 'Left hand', none: 'Preview' } as const
+const HANDS = { both: 'Both hands', right: 'Right hand', left: 'Left hand', none: 'Listen' } as const
 
 /** The tolerance of a strict context, from its matching rules (`strict-v1-tol-150ms`). */
 export function strictToleranceMs(c: ComparisonContext): number | null {
@@ -77,21 +81,15 @@ export function strictToleranceMs(c: ComparisonContext): number | null {
 }
 
 /** "Keep time · ±150 ms" for a rhythm mode context. */
-export function rhythmText(c: ComparisonContext): string {
+function rhythmText(c: ComparisonContext): string {
   const tol = strictToleranceMs(c)
   const label = tol === null ? msg('Keep time') : msg('Keep time · ±{0} ms', tol)
   return c.scorePlayback ? msg('{0} · Playback', label) : label
 }
 
-/** What the piano does for the other hand in this context. */
-export function transportText(c: ComparisonContext): string | null {
-  if (c.transport === 'strict') return rhythmText(c)
-  if (c.transport !== 'accompaniment') return null
-  return c.hands === 'right'
-    ? msg('Piano plays the left hand')
-    : c.hands === 'left'
-      ? msg('Piano plays the right hand')
-      : msg('Piano accompanies')
+/** "Wait", or "Keep time · ±150 ms · Playback". */
+export function modeText(c: ComparisonContext): string {
+  return c.transport === 'strict' ? rhythmText(c) : msg('Wait')
 }
 
 /** "Right hand at 0.75×" */

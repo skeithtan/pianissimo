@@ -386,7 +386,7 @@ describe('Per-group outcomes in the attempt record', () => {
     })
   })
 
-  it('without a transport (free mode) nothing is late; reading traversals carry no groups', () => {
+  it('without a transport (free mode) nothing is late', () => {
     const t = buildTimeline(model, { hands: 'both', range: { fromOcc: 0, toOcc: 1 }, multiplier: 1 })
     const d = new EngineDriver(t, { mode: 'scored', pieceId: 'p', prepared: true })
     for (const g of t.groups) {
@@ -397,10 +397,5 @@ describe('Per-group outcomes in the attempt record', () => {
     expect(r!.completion).toBe('completed')
     expect(r!.groups).toHaveLength(t.groups.length)
     expect(r!.groups!.every((g) => g.lateMs === 0 && g.wrongAttacks === 0)).toBe(true)
-
-    const reading = new EngineDriver(t, { mode: 'reading', pieceId: 'p' })
-    reading.tap(...t.groups[0]!.pitches)
-    reading.engine.interrupt('user-stop', reading.now)
-    expect(reading.records()[0]!.groups).toBeUndefined()
   })
 })

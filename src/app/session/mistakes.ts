@@ -1,15 +1,15 @@
 import { msg } from '../../i18n/messages'
 /**
- * Repeated mistakes (DECISIONS P24): the same wrong key at the same place of a loop, pass after
- * pass, found in the per-group outcomes of the session's recent scored attempts (pure). The
+ * Repeated mistakes (DECISIONS P24): the same wrong key at the same place of a loop or the piece,
+ * pass after pass, found in the per-group outcomes of the session's recent passes (pure). The
  * session computes them in its frame, never in the MIDI input path, and hands them to the result
  * card as `AttemptSummary.repeatedMistakes`; `repeatedMistakeLine` words one for it.
  */
 import { barLabel, type Timeline } from '../../core/engine'
-import type { AttemptRecord } from '../../core/model/practice'
 import type { ScoreModel } from '../../core/model/score'
 import type { NamingSettings } from '../../core/model/settings'
 import { NATURAL, labelFor, labelForMidi, type NoteLabel } from '../../core/naming'
+import type { PassRecord } from './run'
 
 /**
  * Passes in a row with the same wrong key at the same group before it counts as a habit: three,
@@ -17,7 +17,7 @@ import { NATURAL, labelFor, labelForMidi, type NoteLabel } from '../../core/nami
  * (three clean passes). Two can be chance; a third is a pattern worth naming.
  */
 export const REPEATED_MISTAKE_PASSES = 3
-/** Recent scored attempts the session keeps to look for them. */
+/** Recent passes (scored attempts, Wait runs) the session keeps to look for them. */
 export const REPEATED_MISTAKE_HISTORY = 8
 
 export interface RepeatedMistake {
@@ -42,21 +42,21 @@ export interface RepeatedMistake {
 /**
  * The repeated mistakes of the latest attempt in `records` (oldest first): each wrong pitch of
  * its per-group outcomes that also occurred at the same group in the passes before it, counted
- * back while each earlier attempt of the same comparison context that reached the group had it.
- * An attempt that did not reach the group (stopped earlier) is skipped; one that reached it
- * without that wrong key ends the count. Only scored attempts with per-group outcomes count, and
- * the timeline must be the one the latest attempt ran on. Sorted by passes (most first), then
- * by group.
+ * back while each earlier pass of the same comparison context that reached the group had it.
+ * A pass that did not reach the group (stopped earlier, jumped over) is skipped; one that reached
+ * it without that wrong key ends the count. Only scored attempts and Wait runs with per-group
+ * outcomes count (never one reading traversal), and the timeline must be the one the latest pass
+ * ran on. Sorted by passes (most first), then by group.
  */
 export function repeatedMistakes(
-  records: readonly AttemptRecord[],
+  records: readonly PassRecord[],
   timeline: Timeline,
   model: Pick<ScoreModel, 'notes' | 'occurrences'>,
   minPasses: number = REPEATED_MISTAKE_PASSES,
 ): RepeatedMistake[] {
   const latest = records.at(-1)
-  if (!latest || latest.kind !== 'scored' || !latest.groups) return []
-  const run = records.filter((r) => r.kind === 'scored' && r.groups && r.contextKey === latest.contextKey)
+  if (!latest || latest.kind === 'reading' || !latest.groups) return []
+  const run = records.filter((r) => r.kind !== 'reading' && r.groups && r.contextKey === latest.contextKey)
   const out: RepeatedMistake[] = []
   for (const outcome of latest.groups) {
     const group = timeline.groups[outcome.group]

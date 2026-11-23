@@ -89,8 +89,43 @@ export async function installFakeMidi(page: Page): Promise<void> {
 
 export const PIECE_ID = 'e2e-two-hands'
 
-/** Seeds the app database (created by the app on first boot) and reloads. */
+/** The stored settings still hold what was seeded (each seeded group, field by field). */
+async function keptSettings(page: Page, seeded: Partial<AppSettings>): Promise<boolean> {
+  const stored = await page.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('pianissimo')
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+    const settings = await new Promise<Record<string, Record<string, unknown>>>((resolve, reject) => {
+      const req = db.transaction('settings').objectStore('settings').get('app')
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+    db.close()
+    return settings
+  })
+  return Object.entries(seeded).every(([group, fields]) =>
+    Object.entries(fields as object).every(
+      ([key, value]) => JSON.stringify(stored[group]?.[key]) === JSON.stringify(value),
+    ),
+  )
+}
+
+/**
+ * Seeds the app database (created by the app on first boot) and reloads. The app saves the route it
+ * connects by itself, debounced and as the page goes, and that save can land after the seed: then
+ * the seed is written again.
+ */
 export async function seedPiece(page: Page, settingsPatch: Partial<AppSettings> = {}): Promise<void> {
+  for (let tries = 0; tries < 3; tries++) {
+    const { route } = await seedOnce(page, settingsPatch)
+    if (await keptSettings(page, { route, ...settingsPatch })) return
+  }
+  throw new Error('The seeded settings were overwritten three times')
+}
+
+async function seedOnce(page: Page, settingsPatch: Partial<AppSettings>): Promise<AppSettings> {
   const built = await importFixture('two-hands.musicxml')
   const piece = newPieceRecord(built.package, { id: PIECE_ID, now: Date.now() })
   const settings: AppSettings = {
@@ -140,11 +175,37 @@ export async function seedPiece(page: Page, settingsPatch: Partial<AppSettings> 
     },
   )
   await page.reload()
+  return settings
+}
+
+export type ModeName = 'Listen' | 'Wait' | 'Keep time' | 'Follow'
+
+/** The Practice screen in this mode (`data-mode` of its root). */
+export async function expectMode(page: Page, name: ModeName): Promise<void> {
+  const mode = { Listen: 'listen', Wait: 'wait', 'Keep time': 'time', Follow: 'follow' }[name]
+  await expect(page.locator('[data-activity]')).toHaveAttribute('data-mode', mode)
 }
 
 /**
- * Opens the Practice footer menu (DECISIONS U76), the popover that holds Note names, Play through
- * and Show keys, unless it is already open, and returns it. On a phone-size screen (U80) the
+ * Chooses the mode (DECISIONS U141): in the header's control, or from the sheet of the one button
+ * that names it (a phone, or a header with no room for the four).
+ */
+export async function chooseMode(page: Page, name: ModeName): Promise<void> {
+  const button = page.getByRole('button', { name: /^Mode: / })
+  if (await button.count()) {
+    const sheet = page.getByRole('dialog', { name: 'Mode', exact: true })
+    await button.click()
+    await sheet.getByRole('radio', { name, exact: true }).click()
+    await expect(sheet).toHaveCount(0)
+  } else {
+    await page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name, exact: true }).click()
+  }
+  await expectMode(page, name)
+}
+
+/**
+ * Opens the Practice footer menu (DECISIONS U76), the popover that holds the mode's rows, unless it
+ * is already open, and returns it. On a phone-size screen (U80) the
  * same rows (plus Speed) are in the menu sheet opened from the top bar.
  */
 export async function openFooterMenu(page: Page): Promise<Locator> {

@@ -4,13 +4,11 @@ import { mergeSettings, type SettingsPatch } from '../settingsMerge'
 import { metronomeOn, metronomePatch, metronomeScope } from './metronome'
 
 describe('metronome scope (DECISIONS P20)', () => {
-  it('uses the Keep time preference only with Keep time on and a hand selected', () => {
-    expect(metronomeScope(true, 'both')).toBe('keepTime')
-    expect(metronomeScope(true, 'right')).toBe('keepTime')
-    expect(metronomeScope(true, 'left')).toBe('keepTime')
-    expect(metronomeScope(true, 'none')).toBe('general')
-    expect(metronomeScope(false, 'both')).toBe('general')
-    expect(metronomeScope(false, 'none')).toBe('general')
+  it('uses the Keep time preference only in Keep time', () => {
+    expect(metronomeScope('time')).toBe('keepTime')
+    expect(metronomeScope('wait')).toBe('general')
+    expect(metronomeScope('listen')).toBe('general')
+    expect(metronomeScope('follow')).toBe('general')
   })
 
   it('reads the scope’s own switch', () => {

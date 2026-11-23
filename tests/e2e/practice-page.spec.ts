@@ -10,7 +10,7 @@ import { newPieceRecord } from '../../src/core/storage/records'
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { importBytes } from '../unit/import/fixtures'
 import { storedSettings } from './app-helpers'
-import { SHOT_DIR, installFakeMidi, play } from './practice-helpers'
+import { chooseMode, SHOT_DIR, installFakeMidi, play } from './practice-helpers'
 
 const PIECE_ID = 'e2e-page'
 const TITLE = 'Page Mode Etude'
@@ -118,9 +118,8 @@ test.describe('practice page mode (portrait)', () => {
     await seedLongPiece(page)
     await page.getByRole('button', { name: `Practice ${TITLE}` }).click()
     await expect(page.locator('.pn-page')).toBeVisible({ timeout: 60_000 })
-    await page.getByRole('button', { name: 'Left hand', exact: true }).click()
-    await page.getByRole('button', { name: 'Right hand', exact: true }).click()
-    await page.getByRole('button', { name: 'Listen', exact: true }).click()
+    await chooseMode(page, 'Listen')
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
     const scroller = page.getByTestId('page-scroll')
     const stage = (await scroller.boundingBox())!

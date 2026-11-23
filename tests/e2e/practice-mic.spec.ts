@@ -1,5 +1,5 @@
 /**
- * Follow my playing through the microphone in Study (P15, P16, P22). The real AudioWorklet,
+ * Follow through the microphone (P15, P16, P22). The real AudioWorklet,
  * follower worker and session run without MIDI or a Settings visit. Only the microphone is
  * replaced: `getUserMedia` returns a stream that plays a synthesized performance of the seeded
  * piece, with a stop in the middle, so the cursor has both something to follow and something to
@@ -11,7 +11,7 @@ import { attackGroups } from '../../src/core/audio/templates'
 import { renderNotes } from '../../src/core/audio/testkit'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { importFixture } from '../unit/import/fixtures'
-import { seedPiece } from './practice-helpers'
+import { chooseMode, openFooterMenu, openSeededPractice, seedPiece } from './practice-helpers'
 
 const SAMPLE_RATE = 48000
 /** Seconds of silence before the first note, and of the stop before the fourth group. */
@@ -129,17 +129,16 @@ test('the cursor follows an acoustic piano through the microphone and waits whil
   // No MIDI anywhere and the default settings (the metronome on, to check it stays silent): the
   // microphone stands in for the piano without a visit to Settings.
   await seedPiece(page, { metronome: { ...DEFAULT_SETTINGS.metronome, enabled: true } })
-  await page.getByRole('button', { name: 'Open sheet music for Two Hands' }).click()
-  await expect(page.getByTestId('study-screen')).toBeVisible()
-  await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
-  await page.getByRole('button', { name: 'Menu', exact: true }).click()
-  const menu = page.getByRole('dialog', { name: 'Sheet music menu' })
+  await openSeededPractice(page)
+  await chooseMode(page, 'Follow')
+  const menu = await openFooterMenu(page)
   await expect(menu.getByRole('radio', { name: 'Microphone' })).toHaveAttribute('aria-checked', 'true')
   await expect(menu.getByRole('radio', { name: 'Piano' })).toBeDisabled()
+  await expect(menu.getByText('Silent while the microphone follows.')).toBeVisible()
   await page.keyboard.press('Escape')
-  const follow = page.getByRole('button', { name: 'Follow my playing', exact: true })
-  await expect(follow).toBeEnabled()
-  await follow.click()
+  const start = page.getByRole('button', { name: 'Start', exact: true })
+  await expect(start).toBeEnabled()
+  await start.click()
   await expect(page.getByRole('status').filter({ hasText: 'Following through the microphone.' })).toBeVisible()
 
   // Each poll keeps the snapshot it took, so the checks after it look at the sample that ended it
@@ -168,6 +167,6 @@ test('the cursor follows an acoustic piano through the microphone and waits whil
   await expect.poll(async () => (await take()).targets, OFTEN).toEqual(groups[4])
   expect(now.timingDirection).toBeNull()
   await expect.poll(async () => (await take()).targets, { timeout: 20_000 }).toEqual(groups[5])
-  await expect(follow).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
+  await expect(start).toBeVisible({ timeout: 20_000 })
   expect((await take()).heard).toBeGreaterThan(times[5]!)
 })

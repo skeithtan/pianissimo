@@ -52,7 +52,7 @@ function pendingSound() {
 
 describe('Start at the visible cursor after browsing', () => {
   it('counts in Keep time at the browsed note once Repeat is closed', async () => {
-    const h = harness(melody, {}, { options: { rhythm: true } })
+    const h = harness(melody, {}, { options: { mode: 'time' } })
     browse(h, rat(3, 4))
     await h.session.start()
     h.frames.flush()
@@ -62,8 +62,13 @@ describe('Start at the visible cursor after browsing', () => {
     expect(h.session.ui.get().countIn).toBe(4)
   })
 
-  it.each(['both', 'right', 'none'] as const)('starts and resumes %s from the visible onset', async (hands) => {
-    const h = harness(melody, { hands })
+  it.each([
+    { mode: 'wait', hands: 'both' },
+    { mode: 'wait', hands: 'right' },
+    { mode: 'listen', hands: 'both' },
+    { mode: 'listen', hands: 'right' },
+  ] as const)('starts and resumes $mode, $hands, from the visible onset', async ({ mode, hands }) => {
+    const h = harness(melody, { hands }, { options: { mode } })
     for (const position of [rat(1, 2), rat(1, 4)]) {
       browse(h, position)
       const before = h.backend.ons().length
@@ -73,7 +78,7 @@ describe('Start at the visible cursor after browsing', () => {
       expect(h.strip.cursor).toBe(position.n / position.d)
       expect(h.session.progress.get().position).toBe(h.strip.cursor)
       const note = position.n / position.d === 0.5 ? 64 : 62
-      if (hands === 'none')
+      if (mode === 'listen')
         expect(
           h.backend
             .ons()
@@ -150,7 +155,7 @@ describe('Start at the visible cursor after browsing', () => {
   })
 
   it('resumes following in page view without replacing its moving cursor position', async () => {
-    const h = harness(melody, { hands: 'none' })
+    const h = harness(melody, {}, { options: { mode: 'listen' } })
     h.session.seekPosition(rat(1, 2))
     await h.session.start()
     h.step(500)
@@ -165,7 +170,7 @@ describe('Start at the visible cursor after browsing', () => {
 
   it.each([false, true])('Listen honors an intra-loop cursor with an existing transport: %s', async (started) => {
     const loop = { fromOcc: 1, toOcc: 1 }
-    const h = harness(melody, { hands: 'none', range: loop })
+    const h = harness(melody, { range: loop }, { options: { mode: 'listen' } })
     if (started) {
       await h.session.start()
       h.step(2500)
@@ -188,7 +193,7 @@ describe('Start at the visible cursor after browsing', () => {
   it.each([false, true])(
     'Listen keeps an outside-loop cursor at its range with an existing transport: %s',
     async (started) => {
-      const h = harness(melody, { hands: 'none', range: { fromOcc: 1, toOcc: 1 } })
+      const h = harness(melody, { range: { fromOcc: 1, toOcc: 1 } }, { options: { mode: 'listen' } })
       if (started) {
         await h.session.start()
         h.step(1500)
@@ -210,7 +215,7 @@ describe('Start at the visible cursor after browsing', () => {
 
   it.each(['browse', 'seek'] as const)('takes the latest %s while browser sound loads', async (change) => {
     const sound = pendingSound()
-    const h = harness(melody, { hands: 'none' }, { deps: sound.deps })
+    const h = harness(melody, {}, { options: { mode: 'listen' }, deps: sound.deps })
     h.midi.out = null
     browse(h, rat(1, 2))
     const starting = h.session.start()
@@ -230,7 +235,7 @@ describe('Start at the visible cursor after browsing', () => {
     'a %s during an output change replaces the saved Listen position',
     async (change) => {
       const sound = pendingSound()
-      const h = harness(melody, { hands: 'none' }, { deps: sound.deps })
+      const h = harness(melody, {}, { options: { mode: 'listen' }, deps: sound.deps })
       h.session.seekPosition(rat(1))
       await h.session.start()
       h.step(500)

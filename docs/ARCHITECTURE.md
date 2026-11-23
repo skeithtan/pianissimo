@@ -35,7 +35,7 @@ file picker ──► import worker (core/import) ──► ScorePackage {model,
 | `src/core/music/pitch.ts` | `Spelling` (step, alter, octave), MIDI conversion. |
 | `src/core/music/tempo.ts` | `TempoMapData`, seconds ↔ positions, multiplier math, BPM entry. |
 | `src/core/model/score.ts` | `ScoreModel`, `PerformedNote`, ottava/arpeggio/pedal/dynamics, `ScorePackage`. |
-| `src/core/model/settings.ts` | `AppSettings` and spec defaults (`SETTINGS_VERSION` 2: sound destination `'auto'`, S4; `metronome.keepTime` and `metronome.outputId` added without a bump, P20 and U114). |
+| `src/core/model/settings.ts` | `AppSettings` and spec defaults (`SETTINGS_VERSION` 2: sound destination `'auto'`, S4; `metronome.keepTime`, `metronome.outputId` and `recording` added without a bump, P20, U114 and D20). |
 | `src/core/model/practice.ts` | Comparison contexts, `AttemptRecord`, `MeasureTraversal`, passages; `TRANSPORT_KINDS` (the runtime list `TransportKind` is derived from). |
 | `src/core/midi/types.ts` | `MidiInputEvent` (decoded, sequenced, consumed once). |
 
@@ -91,12 +91,12 @@ MIDI events and `now` (performance.now() timebase). Details and state diagram:
   Free (both-hands) mode ignores arrivals.
 - Labels: `temporaryLabelOpacity(now)` per frame (eased, active time); the renderer combines it
   with persistent labels by max. `fadeOutOpacity` is the shared smoothstep fade curve.
-- Records: `attempt-ended {AttemptRecord}` (kind scored | reading), `measure`, `abandon`,
+- Records: `attempt-ended {AttemptRecord}` (kind scored | reading, both with per-group outcomes), `measure`, `abandon`,
   `attempt-discarded` (ended before the first press). `exposure-reset` → re-report visible
   labels. The session calls `markPrepared` only after persistent-label fades finish.
 - Scored: Preparing → Ready (prepared, keys and 64/66 released, hint fades done) → Running
   (first fresh press, even wrong) → Completed → restart. Reading: Running ⇄ Paused.
-- `PlayFollower` (`follow.ts`, P12): the play-through follower over the same `Timeline`, beside
+- `PlayFollower` (`follow.ts`, P12): the follower of Follow over the same `Timeline`, beside
   the unchanged engine. `input(ev)`, `tick(now)` / `nextDeadline()` (the patience release),
   `transportArrived(i, now)`, `pause` / `resume` (paused time never counts), `seek`,
   `reconfigure(timeline, now)` (speed or hands), `resetPhysical`, readonly `state` +
@@ -128,7 +128,7 @@ record stores the completion offset for grading and an optional differing first-
 offset for the review strip. The event never releases a gate in strict mode.
 
 ### core/audio (worker-safe)
-The audio score follower behind play-through on an acoustic piano (DECISIONS P14 spike, P15
+The audio score follower behind Follow on an acoustic piano (DECISIONS P14 spike, P15
 wiring, P16 redesign). It follows attacks, not time: the position moves only when something is
 struck that fits an onset group near it, so a player who stops is waited for and no tempo is
 involved. `features.ts` (`SemitoneAnalyzer`) turns mono samples into the energy of each piano
@@ -154,9 +154,9 @@ follower worker; estimates reach the session's `#onMicEstimate`, a capture that 
 or a failing worker reaches `#onMicLost`. `SessionDeps.createMicFollower` injects it (tests use
 a fake), with the selected hand (P22: one hand follows that hand's groups);
 `microphoneSupported()` (`SessionDeps.micSupported`) says whether the browser can open one at
-all. The session owns its lifetime: opened on Start in a play-through that follows the
+all. The session owns its lifetime: opened on Start in a Follow that uses the
 microphone (always without a piano input, with one when `settings.mic.follow`), closed when
-play-through ends, the hands change or the source changes.
+Follow is left (also while it still opens), the hands change or the source changes.
 
 ### core/naming
 `labelFor(note, naming)` → `{name, accidental, octave, text}` from the resolved sounding pitch
@@ -171,7 +171,7 @@ Settings helpers: `validateRule`, `describeRule`, `sampleRule`, `parseSpelling` 
 
 ### Performance recordings
 
-Practice and Sheet music load `views/recordings` on demand. The recorder subscribes to the
+Practice loads `views/recordings` on demand. The recorder subscribes to the
 selected MIDI input and opens a separate, unmonitored Web Audio capture graph. Its worklet
 transfers interleaved 16-bit PCM blocks. Stop writes a standard MIDI track and WAV header and
 sends the played attacks to a worker for comparison with the selected practice timeline.
@@ -200,9 +200,18 @@ stored. A take warns once at 20 minutes and stops by itself at 60 (saved as if S
 timed by the recorder's elapsed-time poll, never in the MIDI path; the 4 GB WAV guard stays. The
 header, or a footer on portrait phones, hosts the live timer and Stop control only while a take
 is in progress (a take starts from the menus' Record performance) while the recorder keeps
-ownership of both input streams. Full backups include takes unless the player turns off "Include
+ownership of both input streams. `useRecordingDialog` owns that place and the recorder's phase
+(`busy`: opening, recording or saving; `showing`: a take or the saved pill is in the place; `isOpen`:
+everything but the pill, which closes the menu). With `settings.recording` set and a piano connected
+it starts a one-tap take (D20): an AudioContext resumed inside the tap goes to the lazily loaded
+`Recorder`, which opens the remembered input (`openPerformanceInput` with `remembered`, checked with
+`core/recording/input`) and begins at once, or falls back to the setup sheet with the reason. A take
+that starts from the sheet writes `settings.recording`. After Stop, `SavedTakePill` draws the pill into
+the same place; its player holds a blob URL of the take's audio from the first Listen until the pill
+goes (closed, another take, the score starting, the screen left). Full backups include takes unless the player turns off "Include
 recordings" (see core/storage) and merge immutable recordings by ID. Deleting a score leaves its
-recorded performances available in Library → Recordings.
+recorded performances available in the list of all takes (`RecordingHistory` without a piece). `RecordingList`
+is that list without its sheet; Progress shows it for one piece.
 
 ### core/midi and core/playback
 core/midi: `MidiAdapter` (main thread) runs `onmidimessage` → `MidiDecoder` (monotonic `seq`,
@@ -224,7 +233,7 @@ while the human holds that pitch on a route verified echo-free, cleanup on the a
 browser-audio backend (one AudioContext, Salamander bank ≤ 32 MiB decoded, synth fallback).
 The metronome is clicks scheduled by the same transport (free mode: click-only transport
 started at the first press). `AppSettings.metronome` (P20): `enabled` (default off) is the click in
-Listen, reading, scored practice and play-through; `keepTime` (default on, absent in older stored
+Listen, Wait and Follow; `keepTime` (default on, absent in older stored
 settings = on) is the click in a Keep time attempt after its count-in; the count-in always clicks.
 `outputId` defaults to system audio. A separately selected browser audio output uses its own
 context so Listen, accompaniment, and monitoring can continue using their own destinations. The
@@ -268,8 +277,8 @@ everything first (`BackupError`, nothing written on failure), merges library, re
 and settings by id in one transaction, then restores each take in its own transactions, reading
 its audio a block at a time; a take that cannot be stored is skipped and reported
 (`RestoreReport.recordings` added / skipped as already present / failed, plus a warning) and
-never undoes the rest. Settings restore keeps this device's MIDI route and metronome output
-device unless `route: 'backup'`. Details: `src/core/storage/README.md`.
+never undoes the rest. Settings restore keeps this device's MIDI route, metronome output device
+and recording input unless `route: 'backup'`. Details: `src/core/storage/README.md`.
 
 Rhythm mode results (core/history, views/results, app/session/corrections): `timingAccuracy(record)`
 summarizes a strict record's per-group `offsetMs` / `missed` against `rhythm.toleranceMs` (on
@@ -277,7 +286,7 @@ time, early, late, missed, mean and mean absolute offset). A clean unassisted co
 zero missed groups in every context, and strict clean runs rank by mean absolute offset.
 `buildScorecard` gives completed strict records `timing: 'rhythm'` and timing rows (on-time
 groups, early, late, missed, average offset, timing window) instead of completion, expected and
-difference rows. The Results view names a strict context "Keep time · ±N ms". Teacher
+difference rows. Progress names a strict context "Keep time · ±N ms". Teacher
 corrections add a `'missed'` mark (`CorrectionMark.kind`) and judge lateness against the
 record's tolerance for strict records.
 
@@ -330,9 +339,8 @@ Fixed height, width from its container. Hide with `visible=false` and keep it mo
 ### app/ and views/
 `app/App.tsx` is the shell: current view from `app/views.ts`, compact app bar (non-practice
 views), toasts, Settings overlay. `views.ts` is the only place mapping a `ViewName` (`library`,
-`practice`, `results`, `study`) to a component: `component` (static) or `load: () =>
-import(...)` (lazy), and `chrome: 'bar' | 'none'` ('none' gives Practice and Sheet music the whole
-viewport). Navigation is `app/navigation.ts`;
+`practice`) to a component: `component` (static) or `load: () =>
+import(...)` (lazy), and `chrome: 'bar' | 'none'` ('none' gives Practice the whole viewport). Navigation is `app/navigation.ts`;
 Settings is an overlay over the mounted view, so the score and passage are never lost.
 `app/state.ts` holds coarse signals only: `settings` (`updateSettings(patch)`, immutable deep
 merge, per-clef rules merged per key), `connectionStatus`, `notices` (`pushNotice`). Storage
@@ -342,7 +350,8 @@ pagehide). Label changes go through `applyLabelSettings(next)`, which runs
 attempt); naming-only changes use `updateSettings` and never interrupt.
 `app/features.ts`: `getFeatures()` (MIDI, audio, module workers, IndexedDB, persist(), wake
 lock, each with an explanation). `app/wakeLock.ts`: `wakeLock.hold(owner)` / `drop(owner)`.
-`views/settings`: Settings tabs (label rules staged in a draft, applied explicitly).
+`views/settings`: the four Settings tabs (U143; Note names rules staged in a draft, applied explicitly).
+`views/connection`: the piano setup, a lazy chunk mounted only while Piano and sound is shown.
 `views/shared`: ConnectionChip, `suggestions/`, test helpers. `ui/`: tokens (motion, type,
 spacing, elevation), controls, fades (`useFadePresence`), `WrongNoteFlash` (stationary damage
 vignette, U2/U30), `HandToggles` (U4), `ScoreOverview` + `LoopSteppers` (U6), `TempoControl` (U7),
@@ -370,22 +379,22 @@ panel (`LiveMonitor`, O(1) per event).
 `views/library` (bundled, first screen; never imports OSMD, samples or the `core/import` index):
 `LibraryModel` (piece list from `listPieces`, open → `openPractice`, delete, clear history,
 export, restore + settings reload) and `ImportFlow` (read → `inspect` → score/part choice when
-needed → `build` → summary review → `commitImport` → `requestPersistentStorage` once). Each async
+needed → `build` → summary review, skipped when `needsNoAnswer` (L12) → `commitImport` → `requestPersistentStorage` once). Each async
 step carries a job token; cancel/close bump it and dispose the client, so a canceled job never
 updates the UI. `review.ts` applies `applyHandAssignment` / `withUserTempo` and re-checks
-`summarizeImport(...).readiness`; only ready packages are stored (L1). Per-piece suggestions: `PieceSuggestionsModel`
-(`loadSuggestions` + `sessionDismissals`, per-piece disable, Practice this passage →
-`openPractice` preset, refresh on `history.subscribe`) rendered by the shared `SuggestionList`.
+`summarizeImport(...).readiness`; only ready packages are stored (L1). The Continue card alone reads the
+piece's suggestions (`PieceSuggestionsModel`, one "Work on bars …" button → `openPractice` preset); no row
+reads attempts. Options → Progress… opens the piece's Progress (below).
 The Library shows compact ordinary rows, with a Continue practice feature only for a recent
 piece with a saved resume position or active Repeat. Stored ranges are normalized before
-labeling. Each card owns one suggestions model; empty/disabled suggestion state is checked
-before loading a package/history, and useful content renders outside management Options.
+labeling.
 Import review keeps the ready summary compact and technical checks under Import details;
-blockers and consequential warnings remain visible. Add and open saves then navigates to
+blockers and consequential warnings remain visible. Saving navigates to
 Practice paused; the later Start/Play gesture owns audio and microphone activation. Duplicate
 imports offer Open existing piece and a secondary Add another copy with shared reviewed metadata.
+Search (L13) filters the piece records only (`search.ts`). `ConnectPianoCard` is the first-time piano setup (U149): `MidiService.connectOnBoot` and `selectPiano`.
 Dependencies are injectable via `LibraryDeps` (tests: `views/library/testkit.ts`). Export and
-restore are in Settings → Backup (`views/settings/BackupSection`, its own `LibraryModel`); the
+restore are in Settings → Data (`views/settings/BackupSection`, its own `LibraryModel`); the
 Library refreshes its list when Settings close (L7). When there are takes, Backup shows an
 "Include recordings" switch (on by default) with their number and total size
 (`LibraryModel.recordings` from `storage.recordingsSummary()`, `formatBytes`), and the restore
@@ -397,8 +406,9 @@ changes wait for one rAF frame (strip targets, accepted notes, wrong marker, ott
 cursor, flash, label opacity = max(temporary, persistent), and keyboard guide).
 The view subscribes to four stores: `ui` (coarse), `progress`, `feedback`, `guide` (each at most
 once per frame). All practice uses a gated musical transport (P9), silent for both hands and
-playing the automatic part for one hand. It runs from Ready, holds at missing learner attacks,
-and preserves the first-human-press attempt clock. Preview has no engine attempt. Feedback
+playing the automatic part for one hand. Where it may sound is asked at Start (`ui.otherHand`,
+`OtherHandSheet`, U149) while the route is not verified echo-free. It runs from Ready, holds at missing learner attacks,
+and preserves the first-human-press attempt clock. Listen has no engine attempt. Feedback
 includes an icon-only octave direction for same-pitch-class errors (U30); no generic error text.
 Hiding the page saves progress without stopping playback (P10). Leaving the view ends a running
 attempt as a user stop and a paused reading pass as `'suspend'`, so both are recorded (P18). A
@@ -422,14 +432,22 @@ before the first pass. Practice floats Restart loop at the score's bottom left. 
 pill shape of Return to current position and uses a neutral fill. `session.restartLoop()`
 restores score following and uses the Start path for a fresh pass or Listen at the selection
 boundary (U118).
-Play-through (P12): `setPlayThrough(on)` closes Repeat mode and pauses reading; Start builds a
+Modes (U141): `PracticeMode` (`core/model/practice.ts`) is `'listen' | 'wait' | 'time' | 'follow'`,
+the learner's choice, published as `ui.mode` and changed only by `PracticeSession.setMode(mode)`,
+which saves `PieceRecord.mode`. It ends what the old mode does (recorded by Wait and Keep time),
+keeps the cursor at the next playable onset and starts nothing. Hands are `LearnerHands` (both, left
+or right) in every mode: the ones the learner plays or, in Listen, hears (`listenFilter`). Listen and
+Follow record nothing and never save the resume position. `openingMode(piece, env)` derives the mode
+of older records (`rhythm`, `lastHands: 'none'`), which nothing writes any more. A piano that goes
+away only blocks Start in Wait and Keep time (`startPlan`).
+Follow (P12): Start builds a
 `#play` slot beside the engine, like Listen's: a gated transport over the whole piece (silent
 for both hands, the automatic part for one) and a `PlayFollower`. Human events then go to the
 follower instead of the engine (`#onMidi`), follower `release` events release transport gates,
 `onGateReached` → `follower.transportArrived`, and the frame draws the follower's group, the
 transport position, the timing cue and the guide. `ui.activity` is
-`'playing'`, `ui.playThrough` true, `startAction` `'play'`; the engine records nothing while the
-mode is on and resumes reading at the follower's group when it is switched off.
+`'playing'`, `startAction` `'play'`; the engine waits paused. Repeat is put away meanwhile and comes
+back as it was when Follow is left.
 For MIDI input, `PerformanceTiming` compares the first attacks of consecutive recognized
 groups to their written gap at the selected speed (U111). Both score layouts show the same
 transient cue as Keep time.
@@ -438,22 +456,18 @@ Ordinary Practice and gated Repeat use the same comparison on the first accepted
 each group (U129). A correct pitch rejected as early shows Rushing immediately. The session
 clears the cue on a phase change or new traversal and schedules its expiry even while the
 transport waits at a gate.
-What it follows (P22): without a piano input the microphone, and play-through is then on and
-locked while a hand is selected (`#syncPlayMode`; `ui.playThroughLocked`); with one, the keys
-unless `settings.mic.follow` (`ui.follow`, the menu's Follow choice, U92). While the microphone
+What it follows (P22): without a piano input the microphone; with one, the keys
+unless `settings.mic.follow` (`ui.follow`, U92). While the microphone
 follows, the transport is silent for any hand (no accompaniment, no click) and MIDI notes never
-reach the follower; a change of source pauses a started play-through (`#syncFollowSource`) and
-the next Start rebuilds it. The hands are held off (U27) only without a piano and without a
-usable microphone.
+reach the follower; a change of source pauses a started Follow (`#syncFollowSource`) and
+the next Start rebuilds it.
 Repeat mode across reloads (U98): `PieceRecord.repeatOpen` (optional; absent = closed) is saved
 by the session whenever Repeat opens or closes (at once, with loop edits, the Repeat-until target
 and the ladder settings; never from the MIDI input path) and read by `PracticeScreen`, which
 opens the session with `repeat: true` over `lastPassage`, paused at the loop start, instead of
 from the resume position. A preset's opening state is saved on the piece when it opens, and
 `startRouter` does not apply a `history.state` preset at boot, so a reload reopens the stored
-state. Repeat closed by the no-piano rule is held, not saved (`#repeatHeld`), and reopens in
-`setInputAvailable(true)`: a reload always passes through "no piano" before the piano connects.
-Results, corrections, the streak and Play through are never stored.
+state. Results, corrections and the streak are never stored.
 Speed ladder (U77, U124): the piece's `ladder` (`LadderSettings { goal, step }`, null = off) is
 stored on `PieceRecord` and opened into `PracticeSession`, which publishes `ui.ladder`
 (`{ goal, step, done }`). The pure rules are in `app/session/ladder.ts`. After each completed
@@ -464,8 +478,7 @@ through the ordinary speed-change path. `AttemptSummary.ladder` tells the result
 happened. The options
 default to a 100% goal (U116). Selecting it at or above 100% makes `setLadder` start a fresh
 ladder at 75% through the manual tempo-change path.
-Keep time (rhythm mode, P13, U78): `PracticeSession.setRhythmMode` (saved per piece as
-`PieceRecord.rhythm`) turns every Start into a scored attempt on the engine's strict transport,
+Keep time (P13, U78): every Start is a scored attempt on the engine's strict transport,
 with `rhythm.toleranceMs` from `AppSettings.rhythm`. Outside Repeat, the attempt runs from
 the playable onset at the cursor to the piece end (U128). The strict engine, count-in,
 accompaniment, and results use that passage. In Repeat they use the selected loop. A header
@@ -477,7 +490,7 @@ two subdivisions of the entry beat. The count-in always clicks. A Metronome swit
 meanwhile cancels the sink, so the session schedules the remaining clicks again. The
 attempt itself clicks per `metronome.keepTime` (P20; `app/session/metronome.ts`: `metronomeScope`,
 `metronomeOn`, `metronomePatch`; `ui.metronomeScope` names the switch the current mode uses and
-`ui.metronomeMuted` is true in play-through while the microphone follows). Start creates the shared
+`ui.metronomeMuted` is true in Follow while the microphone follows). Start creates the shared
 AudioContext synchronously inside the tap when it will click (iPadOS gesture rule); at the end it calls `engine.startRunning(t)` and
 `transport.play(t)` with one timestamp after releasing every gate, so the music never holds. The
 transport reports each arrival (`transportArrived`); the engine judges, closes missed groups and
@@ -524,75 +537,84 @@ the comparison context for passes that use it above 0% (at 0% Playback counts as
 the Start plan's output check). Result and per-measure keys append the playback
 mode only when it is present, preserving existing keys.
 
-The Playback volume slider reuses the Keep time reveal animation in both menu layouts.
+The Playback volume slider slides open under its switch in both menu layouts.
 The transport applies the current volume to upcoming full-score attacks and omits score events at 0%.
 The review keeps the completed record, matching timeline, and recent records for that comparison
 context, so a later interrupted repeat can never replace the pass shown on the card.
 
-Keep time is exclusive with play-through and disables Repeat lead-ins. The view adds a
-footer-menu switch with a badge on the Menu button, the `CountIn` overlay on the stage and
-the tolerance choice in Settings →
-Hints (`KeepTimeGroup`).
+Keep time has no Repeat lead-ins. The view adds the `CountIn` overlay on the stage and the tolerance
+choice in Settings → Reading help → Hints (`KeepTimeGroup`).
 `views/practice/`: `PracticeView` reads `practiceRequest`, loads piece and package, builds the
 session and `StripView` (`prepareLayout` + IndexedDB layout cache; re-prepared when
 `maxLabelWidthChars` changes). The `PracticeEnv` seam is injectable for tests.
-The Practice menu offers Keep time. The ungraded follower is started from Sheet music (U105, U106).
+The mode (U141) is in the header (`ModeControl.tsx`): all four centered, or one button that opens
+`ModeSheet` where they do not fit. `modeFit.ts` decides, measuring the header, the modes' natural
+width (kept in the DOM unseen while the button shows) and a take's controls or pill; the same
+measure drops the connection chip to its dot. A phone has the button in its bar (upright it is the
+title). `PracticeMenuItems` shows the mode's rows, and `StartReason` (`Footer.tsx`) the reason the main
+button is unavailable with Connect piano when only a piano is missing. The disconnect banner shows
+only where the mode is played on the piano. `views/shared/modes.ts` has the modes' words.
 Focus mode collapses a phone's top bar (U93) and, on windows of 640 px or less, the wrapped footer-tools row, using CSS grid tracks (U60); a tablet's or desktop's header stays, upright or on its side, and a tablet's footer is one row in both orientations whose tools dim in place (U88).
 Only the stage height changes, so the existing score view remeasures without re-engraving.
 `useRecede` restores chrome on pause, pointer/touch interaction, or keyboard navigation; it is
-held off while `SessionUi.reviewing` (the review after a completed pass, U102).
-`views/study` (U72): `StudyView` reads `studyRequest` (`openStudy({pieceId})`, route
-`#/study/<pieceId>`) and runs a `PracticeSession` in Listen (`hands: 'none'`,
-`cursorAction: false`, no-op history and piece sinks) over the same score views, layouts and
-`PracticeEnv` as Practice: playback, Note names and the keyboard guide, on any device including a phone. Listen is the default transport.
-Follow my playing enables the existing ungraded follower, with source and hand choices in the
-Sheet music menu (U105, U106). The two actions switch at the score cursor using the same session, without
-writing practice history or piece state. On phone-size screens (`views/shared/usePhone`) both Practice
-and Sheet music trade their header and footer for one top bar and a menu sheet (U74, U80); on tablets
-and desktops Sheet music uses Practice's footer shell (`FooterBar`, `FooterMenuPopover`)
-with Listen, Follow my playing and the menu (U90, U106). On every device the
+held off while `SessionUi.reviewing` (the review after a completed pass, U102). In Listen nothing
+recedes (U72); only the cursor's repeat button goes while it plays.
+On phone-size screens (`views/shared/usePhone`) Practice trades its header and footer for one top bar
+and a menu sheet (U80). On every device the
 portrait page is capped at the stage's width and fitted to it (`pageMaxWidth`, `fitWidth`, R17);
 on a phone a pinch magnifies the page as engraved (`imageZoom`, 1× to 4×, never saved, U83) and the
 app itself never zooms (`gesture*` events canceled in `app/boot.ts`, `touch-action` on the root).
-`views/results`: `ResultsView` reads `resultsRequest` and calls `loadResultsData(storage,
-request, sessionDismissals)` (flush the history writer, read the piece, its attempts for one
-score version, the package occurrences, `loadSuggestions`). `deriveResults` (pure) picks the
-attempt, builds `buildScorecard(attempt, streakAsOfThen)` and splits `summarizeByContext` into the
-attempt's context history and "other settings". `ScorecardPanel` and `HistoryPanel` are
-presentational. "Practice again" / "Practice this passage" call `openPractice` with
-`{passage, hands, multiplier}` and never start practice.
+`views/progress` (U148): `ProgressSheet` (in the Library's and Practice's bundles) is the sheet, at the end
+side on tablets, and imports `ProgressPanel` on its first opening: Work on next (`PieceSuggestionsModel` +
+`SuggestionList`), Past passes (`loadResultsData` → `passGroups`, a row unfolding to `HistoryPanel` and from
+there `ScorecardPanel`) and Recordings (`RecordingList`). It knows no session: `onPractice(suggestion)` is
+its caller's. Over the score that is `PracticeSession.practiceBars` (pause, mode, Repeat over the bars, their
+hands and speed; nothing starts); from the Library `openPractice` with a preset. Practice holds input while
+it is open (`holdInput`), as for Settings.
+`views/results`: the panels and their data, for Progress and the practice result. `loadResultsData(storage,
+{ pieceId, attemptId? })` (flush the history writer, read the piece, its attempts for one score version, the
+package occurrences). `deriveResults` (pure) picks the attempt, builds `buildScorecard(attempt,
+streakAsOfThen)` and its context's history; `passGroups` (pure) lists the scored attempts by context.
+`ScorecardPanel` and `HistoryPanel` are presentational and leave help out (U144).
 `views/shared/suggestions`: presentational `SuggestionList` / `SuggestionCard` (props:
-`suggestions`, `improved`, `disabled`, `compact`, `headingLevel`, `title`, `showHeading`, `hideEmpty`, `onPractice`,
-`onDismiss`, `onDisableSuggestions`, `onEnableSuggestions`, `disableLabel`, `renderPreview`), text
-helpers, and `sessionDismissals`, the shared `SessionDismissals` instance used by Library and
-Results.
-Navigation requests: `openPractice({ pieceId, preset?, autoStart? })` sets `practiceRequest`;
-`autoStart` remains a one-shot request consumed after notation preparation; Library imports
-no longer send it (L6).
-`openResults({ pieceId, attemptId? })` sets `resultsRequest` (both in `app/navigation.ts`); since
-U99 nothing in the app calls it (the Results route stays for `#/results/…` deep links).
+`suggestions`, `improved`, `disabled`, `compact`, `headingLevel`, `title`, `onPractice`,
+`onDismiss`, `onDisableSuggestions`, `onEnableSuggestions`, `disableLabel`, `renderPreview`),
+`PieceSuggestionsModel` (`loadSuggestions` + `sessionDismissals`, the per-piece switch, refresh on
+`history.subscribe`), text helpers, and the shared `sessionDismissals`.
+Navigation requests: `openPractice({ pieceId, preset? })` sets `practiceRequest`. A request's `mode`
+(only from an old `#/study/…` or `#/consult/…` link, which the router rewrites to `#/practice/…`)
+opens the piece in it and saves nothing; it is forgotten once Practice is left.
+`#/results/<piece>[/<attempt>]` (the Results page until U148) is rewritten to `#/practice/<piece>`.
 
 **Only Back leaves Practice (U99).** Practice's exits are its Back button (to the Library) and the
-overlays over it (Settings, the Connection setup, sheets and popovers). The result's details open
-in place: tap the whole pill or swipe up (U110). The collapsed pill shows a clipped,
-fading preview of pass facts from the same formatters as the expanded details.
+overlays over it (Settings, sheets and popovers). The result's details open
+in place: tap the whole pill or swipe up (U110). The collapsed pill has no actions and is the top of
+the card, cut off (`ResultPeek`, U142): the first mistake's excerpt, drawn at rest by the details module
+(fetched then), or the facts. The card's actions (Loop, Again) are under its verdict.
 `AttemptResult` (`views/practice/Banners.tsx`) expands the pill into a card whose details
 sit over the score and never change the dock's height (so `reviewInset`/`setReviewInset` never
 see them): on a tablet a panel above the pill (up to 900 × 880 px, 16 px of margin on every
-side); on a phone (`usePhone`) a fixed full-screen dialog with its own sticky header (U99); its contents load on the first expansion
+side); on a phone (`usePhone`) a fixed full-screen dialog with its own sticky header (U99); its contents load at the first rest after a result, or on the first expansion
 (`ResultDetailsLoader` → `ResultDetails.tsx`). Swiping down on the pill or the phone's expanded
 header calls `dismissResult`, which clears the result and marks and restores the playing zoom.
 `PracticeSession.resultDetails()` hands over the last
-result's inputs on demand; the card ranks them (`app/session/ranking.ts` `rankMistakes`, loaded with the card, fed by the last scored
-records of the context and `correctionMarksByGroup`), never in the input path.
+result's inputs on demand; the card ranks them (`app/session/ranking.ts` `rankMistakes`, loaded with the card, fed by the last
+passes of the context and `correctionMarksByGroup`), never in the input path.
+**Result after a run (U142).** A Wait run outside Repeat that reaches the end of the piece shows the same
+result: `app/session/run.ts` folds its reading traversals as they end (per onset group the latest time
+it was played) into an in-memory `RunRecord`, which is a pass for the pill, the card, the marks and the
+repeated-mistake check and is never stored; the traversals go to the history as ever. Outside Repeat
+`app/session/rough.ts` finds the bars a Wait run or Keep time pass went worst in
+(`AttemptSummary.rough`), which the card's Loop action opens Repeat over (`loopRoughBars`).
 `render/excerpt.ts` (pure, string SVG) cuts one bar of the shown `PreparedLayout` (strip or page)
 out of its segment markup with the signatures in front, the correction rings
 (`shared/corrections.ts`) and ghost noteheads (`GhostNote`, placed by `pressGhost` relative to the
-written note a wrong key stood for); it changes no render contract. The card reuses the Results
+written note a wrong key stood for); it changes no render contract. The card reuses
 `ScorecardPanel`, `HistoryPanel`, `deriveResults` and `loadResultsData`.
-Mistake playback (U100, `app/session/snippets.ts`): `PassCapture` keeps a scored pass's key
-and pedal events (sustain, sostenuto, soft; never the hint pedal; U101) in memory (one bounded
-append per event in the input path, the last completed pass only, never stored);
+Mistake playback (U100, `app/session/snippets.ts`): `PassCapture` keeps a scored pass's or Wait run's
+key and pedal events (sustain, sostenuto, soft; never the hint pedal; U101) in memory (one bounded
+append per event in the input path, the oldest going in blocks past 16,384, the last completed pass
+only, never stored);
 `playedSnippet` builds a bar from the learner's presses and pedals, shortening pauses in waiting
 practice. `writtenSnippet` uses the score and its pedal marks at the pass's speed. Every pedal
 is released by the end. `SnippetPlayer` hands them to the practice output when due and
@@ -608,13 +630,12 @@ plays), and any other key stops it before being handled as usual.
   action button live in a screen-space layer (R13). Label font is loaded before metrics (R14).
 - Practice: no PassageBar; `views/practice` footer holds Speed on the start side, the hand
   toggles + play in the middle, and a Menu button on the end side (an anchored popover,
-  `FooterMenu.tsx`, with Note names, Keep time, Metronome and Show keys, U76 and U105; the shell is `FooterBar` and
-  `FooterMenuPopover`, which Sheet music shares, U90); a Repeat panel (`RepeatPanel.tsx`:
+  `FooterMenu.tsx`, with the mode's rows, U76 and U141); a Repeat panel (`RepeatPanel.tsx`:
   passage selector `LoopSteppers`, goal popover or phone sheet `RepeatOptions`, Exit repeat) floats over
   the Stage in Repeat mode, or has its own folding row under the overview on an upright phone (U12–U14, U89).
   `render/keyboard` draws all 88 keys (U15). `app/session/output.ts` resolves Auto (S4).
 - Routing: `app/routes.ts` (parse/format) and `app/router.ts` (signal ⇄ URL sync, started in
-  `boot.ts`) (A10). Connection setup is `views/connection/ConnectionModal.tsx` over any view (C8).
+  `boot.ts`) (A10). `?connection` is Settings on Piano and sound (`connectionOpen`, C8, U143).
   Portrait page mode (U40): `render/page/PageView` implements the same strip contract over a
   page layout (`PrepareOptions.mode: 'page'`, one segment per system); `views/practice/useOrientation`
   picks the view, and a rotation re-prepares and recreates it at the current position.
@@ -631,7 +652,7 @@ plays), and any other key stops it before being handled as usual.
   unreleased gate is emitted, so the automatic part sounds with the press, and an early release
   within the 120 ms grace fast-forwards the transport (P9, E12). In Repeat mode a seek before
   the loop sets up a lead-in on one transport that hands over to the scored attempt at the loop
-  start (U38, `SessionUi.leadIn`). Completed scored records carry per-group outcomes (E15) that
+  start (U38, `SessionUi.leadIn`). Records carry per-group outcomes (E15), which for a completed attempt or Wait run
   `app/session/corrections.ts` turns into `StripView.setCorrections` marks (U39); a wrong key
   pressed with a chord (within `CHORD_SLIP_MS`, also after a pass's final chord) is that chord's,
   and `app/session/mistakes.ts` finds the same wrong key at the same group three passes running
@@ -662,8 +683,7 @@ plays), and any other key stops it before being handled as usual.
   `--bg-sunken` / `--bg-raised`) that steps lighter with elevation in dark mode, and the accent
   as text (`--accent`) versus fill (`--accent-fill` + `--accent-fg`) (A12, A17, Olive U49).
   Hand controls have separate dark contrast tokens; `--practice-surface` keeps their surface
-  themed when score paper is pinned light, with semantic light inks scoped to the score. Without a
-  connected piano the session holds the hands in Listen (`setInputAvailable`, U27). Code style:
+  themed when score paper is pinned light, with semantic light inks scoped to the score. Code style:
   Prettier without semicolons (D11).
 - Performance (PF1–PF4): `ScoreOverview` `follow` (live position without renders),
   `useStoreValue` for coarse subscriptions, `StripView.flushFrame()` called at the end of the
@@ -721,5 +741,5 @@ plays), and any other key stops it before being handled as usual.
 - `src/app/pwa.ts` (`startPwa()` from `main.tsx`, production only): registers `sw.js` with
   `updateViaCache: 'none'` after `load`, calls `registration.update()` at launch, on `online`
   and when shown again; on `controllerchange` asks the new worker whether this page's build is
-  its own and, if not, reloads through `createReloader` only when not on Practice or Sheet music and
+  its own and, if not, reloads through `createReloader` only when not on Practice and
   no `dialog` is open, after flushing settings and the history writer.

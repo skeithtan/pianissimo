@@ -43,7 +43,7 @@ describe('detectFeatures', () => {
     expect(midi.explanation).toMatch(/Safari/u)
     expect(midi.explanation).toMatch(/MIDIWeb/u)
     expect(midi.explanation).toMatch(/Chrome/u)
-    expect(midi.explanation).toMatch(/view scores/u)
+    expect(midi.explanation).toMatch(/Listen still works/u)
     expect(midi.severity).toBe('important')
     expect(report.features.webAudio.supported).toBe(true)
   })

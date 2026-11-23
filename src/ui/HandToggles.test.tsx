@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { HandSelection } from '../core/model/score'
+import type { LearnerHands } from '../core/model/score'
 import { byLabel, click, mount, type Mounted } from '../views/shared/testing'
 import { untranslatedText, usePseudoCatalog } from '../views/shared/catalogTesting'
 import { msg } from '../i18n/messages'
-import { HandToggles, handsFromToggles, playButtonLabel } from './HandToggles'
+import { HandToggles, toggledHands, type HandTogglesProps } from './HandToggles'
 
 let view: Mounted | null = null
 afterEach(() => {
@@ -12,30 +12,32 @@ afterEach(() => {
   view = null
 })
 
-function setup(hands: HandSelection, extra: Partial<Parameters<typeof HandToggles>[0]> = {}) {
-  const onHandsChange = vi.fn()
-  const onPlayPause = vi.fn()
-  view = mount(
-    <HandToggles hands={hands} onHandsChange={onHandsChange} playing={false} onPlayPause={onPlayPause} {...extra} />,
-  )
-  return { onHandsChange, onPlayPause, root: view.container }
+const PROPS: HandTogglesProps = {
+  hands: 'both',
+  onHandsChange: () => undefined,
+  onOnlyHand: () => undefined,
+  onText: 'you play it',
+  offText: 'the piano plays it',
+  playing: false,
+  onPlayPause: () => undefined,
+  playLabel: 'Start',
 }
 
-describe('hand selection mapping', () => {
-  it('maps toggle pairs to a selection', () => {
-    expect(handsFromToggles(true, true)).toBe('both')
-    expect(handsFromToggles(true, false)).toBe('left')
-    expect(handsFromToggles(false, true)).toBe('right')
-    expect(handsFromToggles(false, false)).toBe('none')
-  })
+function setup(hands: LearnerHands, extra: Partial<HandTogglesProps> = {}) {
+  const onHandsChange = vi.fn()
+  const onOnlyHand = vi.fn()
+  const onPlayPause = vi.fn()
+  view = mount(<HandToggles {...PROPS} {...{ hands, onHandsChange, onOnlyHand, onPlayPause }} {...extra} />)
+  return { onHandsChange, onOnlyHand, onPlayPause, root: view.container }
+}
 
-  it('labels the primary button Start, Pause or Listen', () => {
-    expect(playButtonLabel('both', false)).toBe('Start')
-    expect(playButtonLabel('right', false)).toBe('Start')
-    expect(playButtonLabel('none', false)).toBe('Listen')
-    expect(playButtonLabel('none', true)).toBe('Pause')
-    expect(playButtonLabel('both', true)).toBe('Pause')
-  })
+it('a tap turns a hand off or on, except the only one on', () => {
+  expect(toggledHands('both', 'left')).toBe('right')
+  expect(toggledHands('both', 'right')).toBe('left')
+  expect(toggledHands('left', 'right')).toBe('both')
+  expect(toggledHands('right', 'left')).toBe('both')
+  expect(toggledHands('left', 'left')).toBeNull()
+  expect(toggledHands('right', 'right')).toBeNull()
 })
 
 describe('<HandToggles>', () => {
@@ -43,14 +45,13 @@ describe('<HandToggles>', () => {
     ['both', 'true', 'true'],
     ['left', 'true', 'false'],
     ['right', 'false', 'true'],
-    ['none', 'false', 'false'],
   ] as const)('reflects %s in aria-pressed', (hands, left, right) => {
     const { root } = setup(hands)
     expect(byLabel(root, 'Left hand')?.getAttribute('aria-pressed')).toBe(left)
     expect(byLabel(root, 'Right hand')?.getAttribute('aria-pressed')).toBe(right)
   })
 
-  it('turns hands on and off into the four selections', () => {
+  it('turns hands on and off', () => {
     let { onHandsChange, root } = setup('both')
     click(byLabel(root, 'Left hand'))
     expect(onHandsChange).toHaveBeenLastCalledWith('right')
@@ -59,17 +60,16 @@ describe('<HandToggles>', () => {
     view?.unmount()
 
     ;({ onHandsChange, root } = setup('right'))
-    click(byLabel(root, 'Right hand'))
-    expect(onHandsChange).toHaveBeenLastCalledWith('none')
     click(byLabel(root, 'Left hand'))
     expect(onHandsChange).toHaveBeenLastCalledWith('both')
-    view?.unmount()
+  })
 
-    ;({ onHandsChange, root } = setup('none'))
-    click(byLabel(root, 'Left hand'))
-    expect(onHandsChange).toHaveBeenLastCalledWith('left')
+  it('a tap on the only lit hand leaves it on and says so (U141)', () => {
+    const { onHandsChange, onOnlyHand, root } = setup('right')
     click(byLabel(root, 'Right hand'))
-    expect(onHandsChange).toHaveBeenLastCalledWith('right')
+    expect(onHandsChange).not.toHaveBeenCalled()
+    expect(onOnlyHand).toHaveBeenCalledOnce()
+    expect(byLabel(root, 'Right hand')?.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('shows a visible L / R cue and says who plays each hand, with no caption (U12)', () => {
@@ -83,21 +83,13 @@ describe('<HandToggles>', () => {
     expect(byLabel(root, 'Start')?.classList.contains('fades')).toBe(false)
   })
 
-  it('runs the primary action with the right label', () => {
-    const { onPlayPause, root } = setup('none')
-    click(byLabel(root, 'Listen'))
+  it('runs the primary action with the label it is given', () => {
+    const { onPlayPause, root } = setup('both', { playLabel: 'Play' })
+    click(byLabel(root, 'Play'))
     expect(onPlayPause).toHaveBeenCalledOnce()
-    view?.rerender(<HandToggles hands="both" onHandsChange={() => undefined} playing onPlayPause={onPlayPause} />)
+    view?.rerender(<HandToggles {...PROPS} playing playLabel="Pause" />)
     expect(byLabel(root, 'Pause')).not.toBeNull()
-    view?.rerender(
-      <HandToggles
-        hands="both"
-        onHandsChange={() => undefined}
-        playing={false}
-        onPlayPause={onPlayPause}
-        playLabel="Resume"
-      />,
-    )
+    view?.rerender(<HandToggles {...PROPS} playLabel="Resume" />)
     expect(byLabel(root, 'Resume')).not.toBeNull()
   })
 
@@ -106,31 +98,9 @@ describe('<HandToggles>', () => {
     expect((byLabel(root, 'Left hand') as HTMLButtonElement).disabled).toBe(true)
     expect((byLabel(root, 'Right hand') as HTMLButtonElement).disabled).toBe(true)
     expect((byLabel(root, 'Start') as HTMLButtonElement).disabled).toBe(false)
-    view?.rerender(
-      <HandToggles
-        hands="both"
-        onHandsChange={() => undefined}
-        playing={false}
-        onPlayPause={() => undefined}
-        playDisabled
-      />,
-    )
+    view?.rerender(<HandToggles {...PROPS} playDisabled />)
     expect((byLabel(root, 'Start') as HTMLButtonElement).disabled).toBe(true)
     expect((byLabel(root, 'Left hand') as HTMLButtonElement).disabled).toBe(false)
-  })
-
-  it('unavailable hands show off, carry the reason, and a tap explains instead of toggling', () => {
-    const onHandsUnavailable = vi.fn()
-    const { root, onHandsChange } = setup('both', { handsUnavailable: 'Piano not connected', onHandsUnavailable })
-    const left = byLabel(root, 'Left hand') as HTMLButtonElement
-    expect(left.getAttribute('aria-pressed')).toBe('false')
-    expect(byLabel(root, 'Right hand')?.getAttribute('aria-pressed')).toBe('false')
-    expect(left.getAttribute('aria-disabled')).toBe('true')
-    expect(left.disabled).toBe(false)
-    expect(left.title).toBe('Left hand: Piano not connected')
-    click(left)
-    expect(onHandsChange).not.toHaveBeenCalled()
-    expect(onHandsUnavailable).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -138,16 +108,15 @@ describe('<HandToggles> translation coverage', () => {
   it('shows no text that bypasses the catalogs', () => {
     const restore = usePseudoCatalog()
     try {
-      for (const hands of ['both', 'left', 'right', 'none'] as const) {
-        const { root } = setup(hands)
+      for (const hands of ['both', 'left', 'right'] as const) {
+        const { root } = setup(hands, {
+          onText: msg('you play it'),
+          offText: msg('the piano plays it'),
+          playLabel: msg('Start'),
+        })
         expect(untranslatedText(root)).toEqual([])
         view?.unmount()
       }
-      const { root } = setup('both', {
-        handsUnavailable: msg('Piano not connected'),
-        onHandsUnavailable: () => undefined,
-      })
-      expect(untranslatedText(root)).toEqual([])
     } finally {
       restore()
     }

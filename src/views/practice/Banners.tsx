@@ -2,9 +2,10 @@ import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * Status over the preserved score: a piano disconnect, sound loading, interruptions,
  * Ready/waiting (`Banners`, rendered into the stage's top overlay column, under the Repeat panel;
- * never recedes, U13), and the compact result after each attempt (`AttemptResult`, spec
- * "Repeating passages": "After each attempt, show a compact result while preserving the score"),
- * docked at the bottom of the stage, clear of the passage the strip reviews (U97).
+ * never recedes, U13), and the compact result after each pass (`AttemptResult`, spec
+ * "Repeating passages": "After each attempt, show a compact result while preserving the score"; also
+ * after a Wait run that reaches the end of the piece, U142), docked at the bottom of the stage, clear
+ * of the passage the strip reviews (U97). The pill has no actions: they are in its details (U142).
  *
  * One disconnect notice at a time: while the piano input is gone, its banner shows and nothing
  * else about the disconnect does (no sound-status line for the lost output, no "Piano
@@ -16,6 +17,7 @@ import { msg, messageLanguage } from '../../i18n/messages'
 import type { ComponentChildren, RefObject } from 'preact'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { repeatedMistakeLine, type AttemptSummary, type SessionUi } from '../../app/session'
+import { barsShortText } from '../../core/model/passage'
 import type { ScoreModel } from '../../core/model/score'
 import type { NamingSettings } from '../../core/model/settings'
 import { Button } from '../../ui/controls'
@@ -23,7 +25,8 @@ import { useFadePresence, type FadePhase } from '../../ui/fade'
 import { Icon } from '../../ui/icons'
 import { prefersReducedMotion } from '../../ui/motion'
 import { formatSpeedPercent } from '../../ui/speed'
-import { passFacts, timingText, wrongText } from './format'
+import { PeekFacts } from './ResultPeek'
+import { timingText, wrongText } from './format'
 import {
   QUICK_FOLD_MS,
   joinMotion,
@@ -61,7 +64,7 @@ export function Banners(p: BannersProps) {
         <div class={`${styles.banner} ${styles.bannerWarn}`} role="alert" data-testid="input-disconnected">
           <Icon name="plug" size={20} />
           <span>{msg('Piano disconnected. Reconnect it to continue.')}</span>
-          <Button onClick={p.onConnection}>{msg('Connection')}</Button>
+          <Button onClick={p.onConnection}>{msg('Connect piano')}</Button>
         </div>
       ) : null}
       {ui.soundStatus && !ui.inputDisconnected ? (
@@ -100,7 +103,7 @@ export function Banners(p: BannersProps) {
         </div>
       ) : null}
       {/* Keep time counts in instead (`CountIn` over the stage): its clock never waits for a note. */}
-      {ui.phase === 'ready' && ui.activity === 'scored' && !r && !ui.rhythm ? (
+      {ui.phase === 'ready' && ui.activity === 'scored' && !r && ui.mode !== 'time' ? (
         <div class={`${styles.banner} ${styles.bannerReady}`} role="status" data-testid="ready">
           <Icon name="target" size={20} />
           <span>{msg('Ready. The clock starts with your first note.')}</span>
@@ -136,15 +139,24 @@ export function resultTitle(r: AttemptSummary): string {
 
 export interface AttemptResultProps {
   readonly ui: SessionUi
-  /** The practiced score and the naming settings word a repeated mistake (P24) on the card. */
-  readonly model: Pick<ScoreModel, 'notes'>
+  /** The practiced score and the naming settings word a repeated mistake (P24) and the Loop action. */
+  readonly model: Pick<ScoreModel, 'notes' | 'occurrences'>
   readonly naming: NamingSettings
   /**
    * What the expanded card holds (U99), rendered only while it is expanded; absent: no Details
-   * control. Nothing in it may leave Practice.
+   * control. Nothing in it may leave Practice. `actions`: what the card offers to do next, for its
+   * place under the verdict (U142).
    */
-  readonly details?: (r: AttemptSummary) => ComponentChildren
+  readonly details?: (r: AttemptSummary, actions: ComponentChildren) => ComponentChildren
+  /**
+   * What the pill shows of the card (`ResultPeek`, U142); absent: the pass's facts. `marked`: the pass
+   * has something to correct; `idle`: nothing is being played, so its excerpt may be drawn.
+   */
+  readonly peek?: (r: AttemptSummary, state: { marked: boolean; idle: boolean }) => ComponentChildren
+  /** Again. */
   readonly onRestart: () => void
+  /** Outside Repeat, for a run with mistakes: loop its rough bars (U142); absent: no Loop action. */
+  readonly onLoop?: () => void
   readonly onDismiss: () => void
   /**
    * The expanded result, held by the owner so a rotation that moves the dock (strip ↔ page)
@@ -185,6 +197,8 @@ interface ResultOpening {
   /** The pill's rectangle and corner radius when it was tapped: the opening starts from them. */
   readonly bounds: DOMRect
   readonly radius: number
+  /** The top of the summary in it (its badge and headline). */
+  readonly summaryTop: number
 }
 
 /**
@@ -208,6 +222,15 @@ export function AttemptResult(p: AttemptResultProps) {
   const dimmed = lastDimmed.current
   const exit = r ? null : ui.resultExit
   const shown = r ?? last.current
+  // Whether it had something to correct when it came (its marks go with Start or a seek, U39).
+  const marked = useRef<{ id: string; marked: boolean } | null>(null)
+  if (r && marked.current?.id !== r.id)
+    marked.current = { id: r.id, marked: r.wrongAttacks > 0 || (r.timing?.missed ?? 0) > 0 || ui.corrections > 0 }
+  // The excerpt is drawn at rest: never while a pass is played or its count-in ends.
+  const idle = !!r && ui.phase !== 'running' && !ui.resultDimmed && (ui.countIn === null || ui.countIn > 2)
+  // A result that Repeat opening (its Loop action) sends away leaves as it was.
+  const inRepeat = useRef(ui.repeat)
+  if (r) inRepeat.current = ui.repeat
   const seenResult = useRef(r?.id)
   const [introId, setIntroId] = useState<string | null>(null)
   useLayoutEffect(() => {
@@ -284,7 +307,13 @@ export function AttemptResult(p: AttemptResultProps) {
     const radius = row ? parseFloat(getComputedStyle(row).borderBottomLeftRadius) : NaN
     setOpening(
       bounds && bounds.width > 0 && !prefersReducedMotion()
-        ? { id: r.id, phone, bounds, radius: Number.isFinite(radius) ? radius : 22 }
+        ? {
+            id: r.id,
+            phone,
+            bounds,
+            radius: Number.isFinite(radius) ? radius : 22,
+            summaryTop: pill?.querySelector(`.${styles.resultSummary}`)?.getBoundingClientRect().top ?? bounds.top,
+          }
         : null,
     )
     setMaxHeight(null)
@@ -297,6 +326,14 @@ export function AttemptResult(p: AttemptResultProps) {
   }
 
   if (!presence.mounted || !shown) return null
+  const actions = (
+    <ResultChoices
+      bars={shown.rough && p.onLoop ? barsShortText(p.model, shown.rough) : null}
+      again={!inRepeat.current || shown.targetReached}
+      onLoop={p.onLoop}
+      onAgain={p.onRestart}
+    />
+  )
   return (
     <ResultCard
       r={shown}
@@ -306,8 +343,7 @@ export function AttemptResult(p: AttemptResultProps) {
       exit={exit}
       onRestore={restore}
       multiplier={ui.multiplier}
-      goal={ui.repeat ? ui.repeatTarget : null}
-      showAgain={!ui.repeat || shown.targetReached}
+      goal={inRepeat.current ? ui.repeatTarget : null}
       expanded={expanded}
       intro={!!r && introId === r.id && !expanded && !ui.resultDimmed}
       opening={shown.id === opening?.id && opening.phone === phone ? opening : null}
@@ -319,12 +355,51 @@ export function AttemptResult(p: AttemptResultProps) {
       toggleRef={toggleButton}
       phone={phone}
       unfold={unfold.mounted ? unfold.phase : null}
-      details={p.details && unfold.mounted ? p.details(shown) : null}
+      details={p.details && unfold.mounted ? p.details(shown, actions) : null}
+      peek={
+        p.details && shown.groupsTotal > 0
+          ? (p.peek?.(shown, { marked: marked.current?.id === shown.id && marked.current.marked, idle }) ?? (
+              <PeekFacts result={shown} goal={inRepeat.current ? ui.repeatTarget : null} marked={false} />
+            ))
+          : null
+      }
       hasDetails={!!p.details}
       onToggle={toggle}
-      onRestart={p.onRestart}
       onDismiss={p.onDismiss}
     />
+  )
+}
+
+/**
+ * What the expanded card offers to do next, one row under its verdict (U142): loop the run's rough
+ * bars, and play it again. Nothing when there is neither.
+ */
+function ResultChoices({
+  bars,
+  again,
+  onLoop,
+  onAgain,
+}: {
+  /** The bars Loop loops ("9–12"), or null without it. */
+  bars: string | null
+  again: boolean
+  onLoop: (() => void) | undefined
+  onAgain: () => void
+}) {
+  if (bars === null && !again) return null
+  return (
+    <div class={styles.resultChoices} data-testid="result-choices">
+      {bars !== null ? (
+        <Button variant="primary" icon="repeat" data-testid="result-loop" onClick={onLoop}>
+          {msg('Loop {0}', bars)}
+        </Button>
+      ) : null}
+      {again ? (
+        <Button variant={bars === null ? 'primary' : 'secondary'} icon="restart" onClick={onAgain}>
+          {msg('Again')}
+        </Button>
+      ) : null}
+    </div>
   )
 }
 
@@ -410,7 +485,8 @@ export function wrapTab(panel: HTMLElement, event: { shiftKey: boolean }, active
  * One slim row: a badge (a check for a clean pass, else the number of wrong notes), the headline
  * with the Repeat goal as dots, one status line (Keep time's timing, the streak, what the speed
  * ladder did, the goal reached), an optional second line (`note`: the latest pass's most repeated
- * mistake (P24), and the Again and Hide actions. A clipped preview shows actual pass facts.
+ * mistake (P24), and Hide. No other action (U142): under it the pill is the top of its card, cut off
+ * partway (`ResultPeek`), and all of it opens the card.
  * The summary is one large expand control and stays in place when the details open above it.
  */
 function ResultCard({
@@ -422,7 +498,6 @@ function ResultCard({
   onRestore,
   multiplier,
   goal,
-  showAgain,
   expanded,
   intro,
   opening,
@@ -434,9 +509,9 @@ function ResultCard({
   toggleRef,
   phone,
   details,
+  peek,
   hasDetails,
   onToggle,
-  onRestart,
   onDismiss,
 }: {
   r: AttemptSummary
@@ -451,7 +526,6 @@ function ResultCard({
   multiplier: number
   /** The Repeat target ("until N clean") shown as dots, or null. */
   goal: number | null
-  showAgain: boolean
   expanded: boolean
   intro: boolean
   /** Where the pill was when it was tapped (null: no motion, as with reduced motion). */
@@ -468,9 +542,10 @@ function ResultCard({
   /** Phone-size screen: the expanded result is full screen with its own header. */
   phone: boolean
   details: ComponentChildren
+  /** The top of the card, cut off at the pill's bottom edge (null: none). */
+  peek: ComponentChildren
   hasDetails: boolean
   onToggle: () => void
-  onRestart: () => void
   onDismiss: () => void
 }) {
   const detailsId = useId()
@@ -518,10 +593,11 @@ function ResultCard({
     // growing clip is clear of their padding. Measured once, here.
     const content = Array.from(section.children)
     const inset = paddedInset(section, content)
-    if (from.phone)
-      return screenOpening(section, from.bounds, section.getBoundingClientRect(), from.radius, content, inset)
     const summary = row.current?.querySelector(`.${styles.resultSummary}`) ?? null
+    const peeked = row.current?.querySelector(`.${styles.resultPeek}`) ?? null
     const starts = [`.${styles.resultBadge}`, `.${styles.resultText}`].map((q) => summary?.querySelector(q))
+    if (from.phone)
+      return screenOpening(section, from.bounds, section.getBoundingClientRect(), from.radius, content, inset, peeked)
     const box = (row.current ?? card).getBoundingClientRect()
     const panelTop = section.getBoundingClientRect().top
     // The outline spans the expanded card, from the panel's top to the row's bottom.
@@ -535,6 +611,7 @@ function ResultCard({
         summary,
         start: starts.filter((el): el is Element => !!el),
         end: summary?.querySelector(`.${styles.resultActions}`) ?? null,
+        peek: peeked,
         outline: Array.from(outline.current?.children ?? []),
       },
       from.bounds,
@@ -542,6 +619,7 @@ function ResultCard({
       panelTop,
       { height: window.innerHeight },
       inset,
+      (summary?.getBoundingClientRect().top ?? box.top) - from.summaryTop,
     )
   }
   useLayoutEffect(() => {
@@ -630,7 +708,9 @@ function ResultCard({
   const dots = goal !== null && goal > 1 ? goal : null
   const filled = dots === null ? 0 : r.targetReached ? dots : Math.min(r.streak, dots)
   const tone = r.passed ? 'clean' : r.wrongAttacks > 0 ? 'wrong' : 'plain'
-  const hasPreview = hasDetails && r.groupsTotal > 0
+  const hasPreview = peek !== null
+  // Grown from the pill, the peek stays a moment where it was and fades (under the panel on a phone).
+  const ghost = open && !!opening
   const status = [
     timing ? (
       <span key="timing" data-testid="timing-result">
@@ -664,6 +744,7 @@ function ResultCard({
         '--result-open-duration': `${DETAILS_FOLD_MS}ms`,
         '--result-details-max': `${maxHeight}px`,
         '--result-preview-duration': `${RESULT_PREVIEW_MS}ms`,
+        '--result-pill-width': opening ? `${opening.bounds.width}px` : undefined,
       }}
       // Dimmed, the first tap only brings the pill back: its controls do not act on it.
       onClickCapture={(event) => {
@@ -724,11 +805,6 @@ function ResultCard({
                   </span>
                 ) : null}
               </h2>
-              {showAgain ? (
-                <Button variant="primary" icon="restart" class={styles.resultAgain} onClick={onRestart}>
-                  {msg('Again')}
-                </Button>
-              ) : null}
               <button
                 type="button"
                 class={styles.resultIconButton}
@@ -794,11 +870,6 @@ function ResultCard({
             ) : null}
           </div>
           <div class={styles.resultActions}>
-            {showAgain ? (
-              <Button variant="primary" icon="restart" class={styles.resultAgain} onClick={onRestart}>
-                {msg('Again')}
-              </Button>
-            ) : null}
             {hasDetails ? (
               <button
                 ref={toggleRef}
@@ -820,7 +891,7 @@ function ResultCard({
                   </>
                 ) : (
                   <span class={styles.resultLift} aria-hidden="true">
-                    <Icon name="up" size={20} />
+                    <Icon name="up" size={24} />
                   </span>
                 )}
               </button>
@@ -836,14 +907,15 @@ function ResultCard({
             </button>
           </div>
         </div>
-        {hasPreview && !open ? (
-          <ul class={styles.resultPreview} data-testid="result-details-preview" aria-hidden="true">
-            {passFacts(r, goal)
-              .slice(0, 2)
-              .map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-          </ul>
+        {hasPreview && (!open || ghost) ? (
+          <div
+            class={styles.resultPeek}
+            data-ghost={ghost || undefined}
+            data-testid={open ? undefined : 'result-details-preview'}
+            aria-hidden="true"
+          >
+            <div class={styles.resultPeekContent}>{peek}</div>
+          </div>
         ) : null}
       </div>
     </div>

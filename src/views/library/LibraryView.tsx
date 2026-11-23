@@ -1,15 +1,15 @@
-import { useRecordingDialog } from '../recordings/useRecordingDialog'
 import { msg } from '../../i18n/messages'
 /**
  * Library and Import (spec "Main user journey" 1–2, "MusicXML score import", "Storage and
- * recovery", "Suggested practice" in the Library). The first screen, bundled with the shell:
+ * recovery"). The first screen, bundled with the shell:
  * it imports neither the notation engine nor the piano samples (spec "Deferred assets"); the
  * importer runs in its worker. Backup and restore live in Settings (`views/settings/BackupSection`).
  */
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import { openPractice, settingsOpen } from '../../app/navigation'
 import { pushNotice } from '../../app/state'
-import { Button, Notice } from '../../ui/controls'
+import { Notice } from '../../ui/controls'
+import { ConnectPianoCard } from './ConnectPianoCard'
 import { LibraryDepsContext, defaultLibraryDeps, useLibraryDeps, type LibraryDeps } from './deps'
 import { FileButton, SCORE_ACCEPT } from './FileButton'
 import { ImportFlow } from './importFlow'
@@ -17,7 +17,12 @@ import { ImportSheet } from './ImportSheet'
 import { LibraryModel } from './libraryModel'
 import { PieceCard } from './PieceCard'
 import { continuingPiece } from './continuation'
+import { matchesSearch, searchWords } from './search'
+import { SearchField } from './SearchField'
 import styles from './LibraryPage.module.css'
+
+/** The search field shows with more pieces than this (L13). */
+const SEARCH_ABOVE = 6
 
 /** The registered view (no props). */
 export function LibraryView() {
@@ -37,6 +42,7 @@ function LibraryPage() {
   const deps = useLibraryDeps()
   const model = useMemo(() => new LibraryModel(deps), [deps])
   const [flow, setFlow] = useState<ImportFlow | null>(null)
+  const [query, setQuery] = useState('')
 
   // A restore in Settings (Backup) can add pieces: the list refreshes whenever Settings close.
   const settingsShown = settingsOpen.value
@@ -48,17 +54,21 @@ function LibraryPage() {
   // Release the import worker if the view goes away mid-import.
   useEffect(() => () => flow?.close(), [flow])
 
-  const recorder = useRecordingDialog()
   const state = model.state.value
   const pieces = state.status === 'ready' ? state.pieces : []
   const continuing = continuingPiece(pieces)
-  const ordered = continuing ? [continuing, ...pieces.filter((piece) => piece.id !== continuing.id)] : pieces
+  const searchable = pieces.length > SEARCH_ABOVE
+  const words = searchable ? searchWords(query) : []
+  const searching = words.length > 0
+  const found = searching ? new Set(pieces.filter((piece) => matchesSearch(piece, words))) : null
+  const ordered =
+    continuing && !searching ? [continuing, ...pieces.filter((piece) => piece.id !== continuing.id)] : pieces
 
   const startImport = (file: File) => {
     flow?.close()
     const next = new ImportFlow(deps, (piece) => {
       pushNotice({ kind: 'success', text: msg('“{0}” is in your library.', piece.title) })
-      // Add and open opens the piece: its row says "Opened", like every other way of opening it.
+      // Adding a score opens it: its row says "Opened", like every other way of opening it.
       void model.markOpened(piece.id, piece.createdAt + 1).then(() => {
         void model.refresh()
         openPractice({ pieceId: piece.id })
@@ -82,8 +92,8 @@ function LibraryPage() {
     <div class={styles.page}>
       <header class={styles.header}>
         <h1>{msg('Library')}</h1>
+        {searchable ? <SearchField query={query} onQuery={setQuery} /> : null}
         <div class={styles.libraryActions}>
-          <Button onClick={() => void recorder.open(deps.getStorage)}>{msg('Recordings')}</Button>
           {pieces.length > 0 ? (
             <FileButton
               variant="secondary"
@@ -98,6 +108,8 @@ function LibraryPage() {
         </div>
       </header>
 
+      <ConnectPianoCard />
+
       {state.status === 'loading' ? <p class={styles.loading}>{msg('Opening your library…')}</p> : null}
       {state.status === 'unavailable' ? <Notice tone="warning">{msg(state.message)}</Notice> : null}
 
@@ -105,15 +117,26 @@ function LibraryPage() {
         <EmptyState accept={accept} disabled={unavailable} onFile={(f) => startImport(f)} />
       ) : null}
 
+      <p class="visually-hidden" role="status" data-testid="search-status">
+        {found ? msg(found.size === 1 ? '{0} piece found.' : '{0} pieces found.', found.size) : ''}
+      </p>
+      {found?.size === 0 ? <p class={styles.noMatch}>{msg('No pieces match “{0}”.', query.trim())}</p> : null}
+
       {pieces.length > 0 ? (
         <ul class={styles.list} aria-label={msg('Pieces')}>
           {ordered.map((piece) => (
-            <PieceCard key={piece.id} piece={piece} model={model} featured={continuing?.id === piece.id} />
+            <PieceCard
+              key={piece.id}
+              piece={piece}
+              model={model}
+              featured={continuing?.id === piece.id}
+              searching={searching}
+              hidden={found !== null && !found.has(piece)}
+            />
           ))}
         </ul>
       ) : null}
 
-      {recorder.dialog}
       <ImportSheet
         flow={flow}
         pieces={pieces}
@@ -147,7 +170,7 @@ function EmptyState({
       <details class={styles.help}>
         <summary>{msg('Help adding a score')}</summary>
         <p>{msg('Most notation programs export MusicXML from File → Export. A PDF or photo cannot be imported.')}</p>
-        <p>{msg('Moving from another device? Restore a backup from Settings → Backup.')}</p>
+        <p>{msg('Moving from another device? Restore a backup from Settings → Data.')}</p>
       </details>
     </section>
   )

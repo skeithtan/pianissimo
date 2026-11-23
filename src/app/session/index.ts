@@ -8,7 +8,9 @@ export { accompanimentAllowed, hasSoundOutput } from './output'
 export { metronomeOn, metronomePatch, metronomeScope, type MetronomeScope } from './metronome'
 export { createPieceSaver, type PieceSaver } from './persistence'
 export { practiceModel, practiceTempoMissing } from './model'
+export { isPractice, learnerHands, openingMode, type OpeningEnv } from './openingMode'
 export { REPEATED_MISTAKE_PASSES, repeatedMistakeLine, repeatedMistakes, type RepeatedMistake } from './mistakes'
+export type { PassRecord, RunRecord } from './run'
 export type { GroupMark, MistakeLevel, PressKind, RankedMistake, WrongPress } from './ranking'
 export {
   HAND_TEXT,

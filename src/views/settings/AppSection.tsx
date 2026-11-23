@@ -1,4 +1,4 @@
-/** General: suggested practice and theme. */
+/** App: language, theme, score paper and suggested practice. */
 import { LANGUAGES, type LanguagePreference } from '../../core/model/language'
 import { msg } from '../../i18n/messages'
 import styles from './settings.module.css'
@@ -6,7 +6,7 @@ import { flushSettings, settings, updateSettings } from '../../app/state'
 import { Segmented, Toggle } from '../../ui/controls'
 import { Group, Setting } from './parts'
 
-export function GeneralSection() {
+export function AppSection() {
   const { suggestions, view } = settings.value
   return (
     <>
@@ -29,17 +29,7 @@ export function GeneralSection() {
           </select>
         </label>
       </Group>
-      <Group title={msg('Suggested practice')}>
-        <Toggle
-          label={msg('Suggest passages to practice')}
-          description={msg(
-            'Offers bars that keep going wrong, in the Library and in results. Suggestions never interrupt a performance.',
-          )}
-          checked={suggestions.enabled}
-          onChange={(enabled) => updateSettings({ suggestions: { enabled } })}
-        />
-      </Group>
-      <Group title={msg('Display')}>
+      <Group>
         <Setting label={msg('Theme')} description={msg("System follows the device's light or dark setting.")}>
           <Segmented
             label={msg('Theme')}
@@ -52,6 +42,8 @@ export function GeneralSection() {
             onChange={(theme) => updateSettings({ view: { theme } })}
           />
         </Setting>
+      </Group>
+      <Group>
         <Setting
           label={msg('Score paper')}
           description={msg(
@@ -68,6 +60,16 @@ export function GeneralSection() {
             onChange={(scorePaper) => updateSettings({ view: { scorePaper } })}
           />
         </Setting>
+      </Group>
+      <Group title={msg('Suggested practice')}>
+        <Toggle
+          label={msg('Suggest passages to practice')}
+          description={msg(
+            'Offers bars that keep going wrong, in Progress. Suggestions never interrupt a performance.',
+          )}
+          checked={suggestions.enabled}
+          onChange={(enabled) => updateSettings({ suggestions: { enabled } })}
+        />
       </Group>
     </>
   )

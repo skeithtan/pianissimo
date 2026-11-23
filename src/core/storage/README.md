@@ -37,11 +37,13 @@ Opening also removes the blocks of takes whose save a closed page left unfinishe
 
 `PieceRecord`: `id`, `title`, `composer?`, `scoreVersionId`, `createdAt`, `lastOpenedAt`,
 `lastMultiplier` (last speed for the piece), `userTempo?` (`{ beatBpm, beatUnit }`),
-`lastHands`, `resume` (`{ occ, position, group?, hands, multiplier, savedAt }` or null; the
+`mode?` (the learner's mode, `PracticeMode`; absent on older records, where the session derives it
+with `openingMode`; validated on restore), `lastHands` (both, left or right; 'none' only on older
+records, where it meant Listen), `resume` (`{ occ, position, group?, hands, multiplier, savedAt }` or null; the
 `position` Rational is authoritative), `lastPassage`, `repeatTarget`, `ladder?` (the speed
 ladder, `LadderSettings { goal, step }` multipliers or null; absent on records written before it,
 validated on restore: finite, goal in [0.05, 10], step in (0, 1]; `newPieceRecord` sets null),
-`rhythm?` (Keep time on for the piece, a boolean; absent = off, validated on restore),
+`rhythm?` (older records only: Keep time was on; never written, validated on restore),
 `repeatOpen?` (Repeat mode was on when the piece was last practiced, DECISIONS U98: Practice
 reopens it over `lastPassage`; a boolean, absent on older records = closed, validated on restore;
 `newPieceRecord` leaves it absent). Attempt
@@ -196,8 +198,9 @@ directory itself, from a picked File by slices or from bytes. Restore:
    merge is the backup's record), and a replaced package drops the version's cached layouts. Pieces whose package is in neither the
    backup nor this browser are skipped with a warning, with their records.
 3. **Settings** are replaced by the backup's (`settings: 'keep'` leaves local ones alone).
-   The MIDI **route** (port ids, output verification, echo result) and the metronome's audio
-   output device (`metronome.outputId`) are device-specific, so this browser's are kept
+   The MIDI **route** (port ids, output verification, echo result), the metronome's audio
+   output device (`metronome.outputId`) and the remembered recording input (`recording`) are
+   device-specific, so this browser's are kept
    (`route: 'backup'` restores them too).
 4. **Takes**, after that transaction has committed, each in its own transactions, reading its
    audio from the file a block at a time. A take already here (same id) is kept; one that

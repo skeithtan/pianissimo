@@ -80,6 +80,34 @@
   background: var(--bg);
 }
 
+/* The pill's peek at the first excerpt (U142): its caption on one line, then its music. */
+.peek {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.peek > .caption {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.peek .reason {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.peek > .music {
+  overflow: hidden;
+  background: var(--score-paper);
+}
+.peek > .music > :is(.score, .timedScore) {
+  /* Smaller than in the card: enough of the staff shows to read as music. */
+  max-width: calc(var(--excerpt-w) * 0.8);
+  min-width: 0;
+}
+.peek > .music svg {
+  display: block;
+  margin-top: calc(-1 * var(--peek-skip));
+}
+
 .caption {
   display: flex;
   flex-wrap: wrap;

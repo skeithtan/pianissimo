@@ -6,12 +6,10 @@
  * | ------------------------------------- | ---------------------------------------------------- |
  * | `#/` (or empty)                       | Library                                              |
  * | `#/practice/<pieceId>`                | Practice that piece (`#/practice` = its empty state) |
- * | `#/results/<pieceId>`                 | Results for the piece's latest attempt               |
- * | `#/results/<pieceId>/<attemptId>`     | Results showing that attempt                         |
- * | `#/study/<pieceId>`                   | Study that piece (`#/study` = its empty state)       |
- * | `#/consult/<pieceId>`                 | The same (its name before U79; `formatHash` never emits it) |
- * | any of the above + `?settings`        | Settings overlay open over that view                 |
- * | any of the above + `?connection`      | Connection setup modal open over that view           |
+ * | `#/study/<pieceId>`, `#/consult/<pieceId>` | That piece in Listen: old links to the Sheet music screen (U141), rewritten to `#/practice/<pieceId>` |
+ * | `#/results/<pieceId>[/<attemptId>]`   | That piece: old links to the Results page (U148), rewritten likewise |
+ * | any of the above + `?settings`        | Settings open over that view, on the last-used tab   |
+ * | any of the above + `?connection`      | Settings open over that view, on Piano and sound     |
  * | `#/settings`, `#/connection`          | Aliases: the overlay over the Library                |
  *
  * Anything unrecognized is the Library. Overlays are part of the route so Back closes them and a
@@ -19,7 +17,7 @@
  * `history.state` (see `HistoryState`) for Back / Forward within the page; a reload does not apply
  * it again (the piece's stored state already holds it, DECISIONS U98).
  */
-import type { PassageRange } from '../core/model/practice'
+import type { PassageRange, PracticeMode } from '../core/model/practice'
 import type { Rational } from '../core/music/rational'
 import type { HandSelection } from '../core/model/score'
 import type { PracticePreset, ViewName } from './navigation'
@@ -28,16 +26,16 @@ export type OverlayName = 'settings' | 'connection'
 
 export interface Route {
   readonly view: ViewName
-  /** Practice, Results and Study only. */
+  /** Practice only. */
   readonly pieceId?: string
-  /** Results only. */
-  readonly attemptId?: string
+  /** Practice only: opens the piece in this mode. Never part of the URL that is written. */
+  readonly mode?: PracticeMode
   readonly overlay: OverlayName | null
 }
 
 /** What the app keeps in `history.state` (structured-cloneable, validated on read). */
 export interface HistoryState {
-  /** Preselection for a Practice entry (from a suggestion or Results); ignored at boot (U98). */
+  /** Preselection for a Practice entry (from a suggestion); ignored at boot (U98). */
   readonly preset?: PracticePreset
   /**
    * This entry is an overlay opened on top of an entry holding the same route without the
@@ -76,18 +74,14 @@ export function parseHash(hash: string): Route {
     if (found) overlay = found
   }
 
-  const [head, id, attempt] = segments
+  const [head, id] = segments
   switch (head) {
     case 'practice':
+    case 'results': // the Results page until 23 November 2026 (U148)
       return id ? { view: 'practice', pieceId: id, overlay } : { view: 'practice', overlay }
-    case 'results':
-      if (!id) return { view: 'results', overlay }
-      return attempt
-        ? { view: 'results', pieceId: id, attemptId: attempt, overlay }
-        : { view: 'results', pieceId: id, overlay }
     case 'study':
-    case 'consult': // the view's name until 7 November 2026 (U79); old links still open it
-      return id ? { view: 'study', pieceId: id, overlay } : { view: 'study', overlay }
+    case 'consult': // the Sheet music screen until 23 November 2026 (U141), and its name before U79
+      return id ? { view: 'practice', pieceId: id, mode: 'listen', overlay } : { view: 'practice', overlay }
     case 'settings':
     case 'connection':
       return { view: 'library', overlay: head }
@@ -101,11 +95,6 @@ export function formatHash(route: Route): string {
   let path = '/'
   if (route.view === 'practice') {
     path = route.pieceId ? `/practice/${encodeURIComponent(route.pieceId)}` : '/practice'
-  } else if (route.view === 'results') {
-    path = route.pieceId ? `/results/${encodeURIComponent(route.pieceId)}` : '/results'
-    if (route.pieceId && route.attemptId) path += `/${encodeURIComponent(route.attemptId)}`
-  } else if (route.view === 'study') {
-    path = route.pieceId ? `/study/${encodeURIComponent(route.pieceId)}` : '/study'
   }
   return `#${path}${route.overlay ? `?${route.overlay}` : ''}`
 }
@@ -114,7 +103,7 @@ export function formatHash(route: Route): string {
 export function sameBase(a: Route, b: Route): boolean {
   if (a.view !== b.view) return false
   if (a.view === 'library') return true
-  return a.pieceId === b.pieceId && (a.view !== 'results' || a.attemptId === b.attemptId)
+  return a.pieceId === b.pieceId
 }
 
 export function sameRoute(a: Route, b: Route): boolean {

@@ -342,9 +342,10 @@ describe('PracticeSession: continuous practice timing', () => {
   })
 
   it('ignores loss of a previously used output during silent both-hand practice', async () => {
-    const h = harness(melody, { hands: 'none' })
+    const h = harness(melody, {}, { options: { mode: 'listen' } })
     await h.session.start()
-    h.session.setSelection({ hands: 'both' })
+    h.session.setMode('wait')
+    h.session.seek(0)
     await h.session.start()
     h.tap(60)
     h.step(250)
@@ -407,7 +408,7 @@ describe('PracticeSession: continuous practice timing', () => {
   })
 
   it('keeps Listen running when the page is hidden', async () => {
-    const h = harness(melody, { hands: 'none' })
+    const h = harness(melody, {}, { options: { mode: 'listen' } })
     await h.session.start()
     h.step(500)
     h.session.suspend()
@@ -901,8 +902,11 @@ describe('PracticeSession: one-hand accompaniment', () => {
       route: { ...DEFAULT_SETTINGS.route, outputId: 'out-1', outputVerified: true, echo: 'echo-detected' },
     })
     const h = harness(twoHands, { hands: 'right' }, { settings })
-    expect(h.session.ui.get().startEnabled).toBe(false)
-    expect(h.session.ui.get().startReason).toMatch(/echo/)
+    expect(h.session.ui.get()).toMatchObject({
+      startEnabled: false,
+      startReason: null,
+      otherHand: { piano: true, device: false },
+    })
   })
 
   it('forwards human input to the MIDI backend guard', async () => {
@@ -923,9 +927,9 @@ describe('PracticeSession: one-hand accompaniment', () => {
   })
 })
 
-describe('PracticeSession: Preview', () => {
+describe('PracticeSession: Listen', () => {
   it('rewinds Listen at the end even when a loop is saved but inactive', async () => {
-    const h = harness(melody, { hands: 'none', range: { fromOcc: 1, toOcc: 1 } }, { options: { repeat: false } })
+    const h = harness(melody, { range: { fromOcc: 1, toOcc: 1 } }, { options: { mode: 'listen', repeat: false } })
     h.session.seek(1)
     await h.session.start()
     h.step(4500)
@@ -940,7 +944,7 @@ describe('PracticeSession: Preview', () => {
   })
 
   it.each([false, true])('Listen starts at a backward cursor seek with an existing transport: %s', async (started) => {
-    const h = harness(twoHands, { hands: 'none' })
+    const h = harness(twoHands, {}, { options: { mode: 'listen' } })
     h.session.seekPosition(rat(1, 2))
     if (started) {
       await h.session.start()
@@ -968,7 +972,7 @@ describe('PracticeSession: Preview', () => {
   })
 
   it('Listen plays both parts without an engine attempt and moves the cursor with the transport', async () => {
-    const h = harness(twoHands, { hands: 'none' })
+    const h = harness(twoHands, {}, { options: { mode: 'listen' } })
     expect(h.session.ui.get().startAction).toBe('listen')
     await h.session.start()
     h.frames.flush()
@@ -984,18 +988,18 @@ describe('PracticeSession: Preview', () => {
     h.session.pause()
     h.frames.flush()
     expect(h.session.ui.get().playing).toBe(false)
-    // A hand back on leaves Listen and returns to practice, without starting.
-    h.session.setSelection({ hands: 'both' })
+    // Another mode leaves Listen, without starting.
+    h.session.setMode('wait')
     h.frames.flush()
     expect(h.session.ui.get().activity).toBe('idle')
     expect(h.session.ui.get()).toMatchObject({ startAction: 'reading', playing: false })
     expect(h.attempts).toHaveLength(0)
   })
 
-  it('both hands off is Listen mode at once: no targets, Start becomes Listen, nothing plays by itself', async () => {
+  it('choosing Listen takes the targets away at once, Start becomes Listen, and nothing plays by itself', async () => {
     const h = harness(twoHands)
     expect(h.strip.targets.length).toBeGreaterThan(0)
-    h.session.setSelection({ hands: 'none' })
+    h.session.setMode('listen')
     h.frames.flush()
     expect(h.session.ui.get()).toMatchObject({
       startAction: 'listen',
@@ -1008,22 +1012,10 @@ describe('PracticeSession: Preview', () => {
     await h.session.start()
     h.step(500)
     expect(h.session.ui.get()).toMatchObject({ activity: 'listening', playing: true })
-    h.session.setSelection({ hands: 'right' })
+    h.session.setMode('wait')
     h.step(500)
-    expect(h.session.ui.get()).toMatchObject({
-      activity: 'idle',
-      playing: false,
-      hands: 'right',
-      startAction: 'reading',
-    })
+    expect(h.session.ui.get()).toMatchObject({ activity: 'idle', playing: false, startAction: 'reading' })
     expect(h.strip.targets.length).toBeGreaterThan(0)
-  })
-
-  it('Listen plays both hands: there is no part filter (U12)', async () => {
-    const h = harness(twoHands, { hands: 'none' })
-    await h.session.start()
-    h.step(3500)
-    expect(h.backend.ons().map((c) => c.note)).toEqual(expect.arrayContaining([60, 48]))
   })
 })
 
@@ -1036,7 +1028,11 @@ describe('PracticeSession: sound destination Auto (S4)', () => {
 
   it('plays Listen through this device when no piano output is there, with no note', async () => {
     const sound = deviceSound()
-    const h = harness(twoHands, { hands: 'none' }, { deps: { loadBrowserAudio: sound.load, hasWebAudio: () => true } })
+    const h = harness(
+      twoHands,
+      {},
+      { options: { mode: 'listen' }, deps: { loadBrowserAudio: sound.load, hasWebAudio: () => true } },
+    )
     h.midi.out = null // no Web MIDI, no permission, or nothing connected
     h.session.updateSettings(testSettings())
     expect(h.session.ui.get()).toMatchObject({ startAction: 'listen', startEnabled: true })
@@ -1046,9 +1042,9 @@ describe('PracticeSession: sound destination Auto (S4)', () => {
     expect(sound.backend.ons().map((c) => c.note)).toEqual(expect.arrayContaining([48, 60]))
     expect(h.session.ui.get()).toMatchObject({ activity: 'listening', soundStatus: null })
     // Back to practice and to Listen again: the device sound stays loaded (loaded once).
-    h.session.setSelection({ hands: 'both' })
+    h.session.setMode('wait')
     h.frames.flush()
-    h.session.setSelection({ hands: 'none' })
+    h.session.setMode('listen')
     await h.session.start()
     h.step(500)
     expect(sound.load).toHaveBeenCalledOnce()
@@ -1072,7 +1068,11 @@ describe('PracticeSession: sound destination Auto (S4)', () => {
 
   it('"Connected piano" plays nothing without an output and says why', () => {
     const sound = deviceSound()
-    const h = harness(twoHands, { hands: 'none' }, { deps: { loadBrowserAudio: sound.load, hasWebAudio: () => true } })
+    const h = harness(
+      twoHands,
+      {},
+      { options: { mode: 'listen' }, deps: { loadBrowserAudio: sound.load, hasWebAudio: () => true } },
+    )
     h.midi.out = null
     h.session.updateSettings(testSettings({ sound: { ...DEFAULT_SETTINGS.sound, destination: 'midi' } }))
     h.frames.flush()
@@ -1083,7 +1083,11 @@ describe('PracticeSession: sound destination Auto (S4)', () => {
 
   it('uses the connected piano and never loads the sample bank when an output is there', async () => {
     const sound = deviceSound()
-    const h = harness(twoHands, { hands: 'none' }, { deps: { loadBrowserAudio: sound.load, hasWebAudio: () => true } })
+    const h = harness(
+      twoHands,
+      {},
+      { options: { mode: 'listen' }, deps: { loadBrowserAudio: sound.load, hasWebAudio: () => true } },
+    )
     await h.session.start()
     h.step(1500)
     expect(sound.load).not.toHaveBeenCalled()
@@ -1094,8 +1098,8 @@ describe('PracticeSession: sound destination Auto (S4)', () => {
   it('is disabled with a reason only when there is neither a piano nor device sound', () => {
     const h = harness(
       twoHands,
-      { hands: 'none' },
-      { deps: { loadBrowserAudio: deviceSound().load, hasWebAudio: () => false } },
+      {},
+      { options: { mode: 'listen' }, deps: { loadBrowserAudio: deviceSound().load, hasWebAudio: () => false } },
     )
     h.midi.out = null
     h.session.updateSettings(testSettings())
@@ -1119,7 +1123,11 @@ describe('PracticeSession: sound destination Auto (S4)', () => {
 
   it('a piano that connects while Auto uses this device stops it cleanly; the next Play uses the piano', async () => {
     const sound = deviceSound()
-    const h = harness(twoHands, { hands: 'none' }, { deps: { loadBrowserAudio: sound.load, hasWebAudio: () => true } })
+    const h = harness(
+      twoHands,
+      {},
+      { options: { mode: 'listen' }, deps: { loadBrowserAudio: sound.load, hasWebAudio: () => true } },
+    )
     const out = h.midi.out
     h.midi.out = null
     h.session.updateSettings(testSettings())
@@ -1139,7 +1147,11 @@ describe('PracticeSession: sound destination Auto (S4)', () => {
 
   it('a piano that disconnects while Listen plays on it pauses; the next Play continues on this device', async () => {
     const sound = deviceSound()
-    const h = harness(twoHands, { hands: 'none' }, { deps: { loadBrowserAudio: sound.load, hasWebAudio: () => true } })
+    const h = harness(
+      twoHands,
+      {},
+      { options: { mode: 'listen' }, deps: { loadBrowserAudio: sound.load, hasWebAudio: () => true } },
+    )
     await h.session.start()
     h.step(500)
     h.midi.out = null
@@ -1251,19 +1263,24 @@ describe('PracticeSession: Repeat mode (U10)', () => {
     expect(h.strip.loop).toEqual({ fromOcc: 1, toOcc: 1 })
   })
 
-  it('without a piano input the hands are held in Listen, unsaved, and come back with the piano (U27)', () => {
+  it('without a piano input nothing changes but Start, which says why (revises U27)', () => {
     const h = harness(melody, { hands: 'right' })
-    expect(h.session.ui.get()).toMatchObject({ hands: 'right', handsAvailable: true })
+    expect(h.session.ui.get()).toMatchObject({ hands: 'right', startEnabled: true })
     h.session.setInputAvailable(false)
     h.frames.flush()
-    expect(h.session.ui.get()).toMatchObject({ hands: 'none', handsAvailable: false, startAction: 'listen' })
-    // Not the learner's choice: the piece keeps its remembered hands.
-    expect(h.saves.some((s) => s.patch.lastHands === 'none')).toBe(false)
+    expect(h.session.ui.get()).toMatchObject({
+      mode: 'wait',
+      hands: 'right',
+      pianoConnected: false,
+      startAction: 'reading',
+      startEnabled: false,
+      startReason: 'Wait needs a connected piano.',
+    })
     h.session.setInputAvailable(false) // again: nothing changes
     h.session.setInputAvailable(true)
     h.frames.flush()
-    expect(h.session.ui.get()).toMatchObject({ hands: 'right', handsAvailable: true, startAction: 'reading' })
-    expect(h.saves.some((s) => s.patch.lastHands !== undefined)).toBe(false)
+    expect(h.session.ui.get()).toMatchObject({ mode: 'wait', hands: 'right', startEnabled: true, startReason: null })
+    expect(h.saves).toEqual([])
   })
 
   it('closing it during a scored attempt interrupts the attempt and returns to reading without starting', async () => {
@@ -1777,7 +1794,7 @@ describe('PracticeSession: seeking while Repeat plays (U70)', () => {
 
 describe('PracticeSession: Listen speed', () => {
   it('a speed change while listening reschedules live', async () => {
-    const h = harness(twoHands, { hands: 'none' })
+    const h = harness(twoHands, {}, { options: { mode: 'listen' } })
     await h.session.start()
     h.step(500)
     h.session.setSelection({ multiplier: 2 })
@@ -1862,8 +1879,14 @@ describe('PracticeSession: hints and labels', () => {
   })
 
   it('the keyboard guide shows both hands whatever hands are selected (U20)', () => {
-    for (const hands of ['both', 'right', 'left', 'none'] as const) {
-      const h = harness(twoHands, { hands })
+    for (const [mode, hands] of [
+      ['wait', 'both'],
+      ['wait', 'right'],
+      ['wait', 'left'],
+      ['listen', 'both'],
+      ['listen', 'left'],
+    ] as const) {
+      const h = harness(twoHands, { hands }, { options: { mode } })
       h.session.setKeyboardVisible(true)
       h.frames.flush()
       expect(h.session.guide.get().keys.map((k) => [k.midi, k.state, k.hand])).toEqual([
@@ -1874,7 +1897,7 @@ describe('PracticeSession: hints and labels', () => {
   })
 
   it('the keyboard guide shows what Listen sounds while it plays (U15)', async () => {
-    const h = harness(twoHands, { hands: 'none' })
+    const h = harness(twoHands, {}, { options: { mode: 'listen' } })
     h.session.setKeyboardVisible(true)
     h.frames.flush()
     await h.session.start()
@@ -2009,7 +2032,7 @@ describe('PracticeSession: key feedback while nothing plays (U31) and the option
 
     h.press(67)
     expect(h.strip.accepted).toEqual([4])
-    h.session.setSelection({ hands: 'none' })
+    h.session.setMode('listen')
     h.frames.flush()
     expect(h.strip.accepted).toEqual([])
     h.release(67)

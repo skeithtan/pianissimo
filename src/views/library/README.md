@@ -1,7 +1,6 @@
 # views/library — Library and Import
 
-Spec: "Main user journey" 1–2, "MusicXML score import", "Storage and recovery", "Suggested
-practice" (Library section), acceptance rows Supported file formats, MusicXML import validation,
+Spec: "Main user journey" 1–2, "MusicXML score import", "Storage and recovery", acceptance rows Supported file formats, MusicXML import validation,
 MusicXML timing, Import mapping, Deferred assets, Import memory lifecycle.
 
 The first screen, **bundled** with the shell (`app/views.ts`: `component: LibraryView`). It
@@ -15,17 +14,16 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 - **Header**: Library, with a secondary Add score action when pieces exist (no piece count,
   no caption). The empty state gives Add score the primary emphasis and points to Settings →
   Backup.
-- **Ordinary rows**: title, composer and a status line on the left; Sheet music (music note and the
-  word), an icon-only Options button (`more`; name "Options for …", `aria-expanded` /
+- **Ordinary rows**: title, composer and a status line on the left; an icon-only Options button (`more`; name "Options for …", `aria-expanded` /
   `aria-controls`) and a chevron on the right, on one line at every width (the chevron glyph
   is hidden at ≤480px; its button stays, 4 px wide, never zero: Voice Control, screen-reader
   focus and automated clicks act on its own frame). All entries use the same controls,
   including the pieces initially provided by `app/initialPieces`. Options hold Rename,
-  hands/tempo review, suggestion preferences, clear history, and Delete.
-- **The whole row opens Practice** (`model.open`, like Continue practice). Nothing is nested:
+  Progress (U148), hands/tempo review, clear history, and Delete.
+- **The whole row opens Practice** (`model.open`, like Continue practice) in the piece's own mode. Nothing is nested:
   one real button per card, the chevron ("Practice …") or Continue practice, carries a
-  `::after` that covers the card (stretched target). Sheet music, the Options wrapper (and its menu)
-  and the suggestions block are `position: relative; z-index: 1`, so their own dead space
+  `::after` that covers the card (stretched target). The Options wrapper (and its menu)
+  and the Continue card's suggestion button are `position: relative; z-index: 1`, so their own dead space
   never opens Practice; an open menu's wrapper rises to z-index 20 so it paints over the next
   rows. Hover (`hover: hover`) and press tint the card with `--hover`; keyboard focus on the
   stretched button rings the whole card (`:has(:focus-visible)`, the global focus ring). The
@@ -35,7 +33,7 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
   the rows' targets cover nearly the whole list. The outside `pointerdown` that closes the menu
   arms `swallowNextClick` (`PieceCard.tsx`): a capture-phase `click` listener on `document`
   stops and cancels the click that ends that press, before any handler or default action, so
-  the tap opens no row, Sheet music, Add score or Settings. Exception: another row's Options button
+  the tap opens no row, Add score or Settings. Exception: another row's Options button
   (`data-piece-options`) is not swallowed, so it closes this menu and opens its own in one tap;
   the same row's button still toggles its menu closed, and Escape is unchanged. The mark ends
   with that click, the next `pointerdown`, a `pointercancel` (the press became a scroll), 500 ms
@@ -45,10 +43,9 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
   `openedStatus` in `continuation.ts`. "Not opened yet" while `lastOpenedAt <= createdAt`
   (`neverOpened`): an import or a copy stores both times equal and the initial pieces store
   `lastOpenedAt` a little earlier; every open stores a later time (`markOpened` from Practice,
-  Sheet music, a suggestion, Open existing piece; the Practice and Sheet music views also bump it when they
-  load). Add and open calls `markOpened(id, createdAt + 1)` before opening Practice, so it
+  a suggestion, Open existing piece; the Practice view also bumps it when it loads). Adding a score calls `markOpened(id, createdAt + 1)` before opening Practice, so it
   counts even when the clock has not moved since the commit. Otherwise "Opened yesterday",
-  "Opened 3 days ago" (`formatRelativeTime`); never "practiced", since Sheet music opens too (L9).
+  "Opened 3 days ago" (`formatRelativeTime`); never "practiced", since an opening to listen counts too (L9).
 - **Rename**: "Rename piece" edits the library entry's title (required) and composer (optional;
   empty removes it). Both are trimmed, inner whitespace collapsed and capped at 120 characters
   (`normalizePieceName`); Save needs a non-empty title and a real change. Only the piece record
@@ -60,22 +57,30 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
   filled back in from the backup's record of the same score version.
 - **Continue practice**: the most recently opened piece with a saved resume position or active
   Repeat receives the primary action (its stretched target; no chevron) and one context line,
-  its status (`continuationContext`, no "Opened …" line): where it resumes ("From the start"
+  its status (`continuationContext`, no "Opened …" line): the mode unless it is Wait ("Listen", "Keep
+  time", "Follow", U141), where it resumes ("From the start"
   at position 0, "From bar 9", "From bar 9, beat 3" off the first beat, "Repeat bars 5–8"),
-  the hands in lower case ("both hands", "right hand", "left hand", "listening"), and the speed
+  the hands in lower case ("both hands", "right hand", "left hand"), and the speed
   unless it reads 100% ("80% speed"). Only that piece's package is loaded to resolve printed
-  bar/pass labels; no engraving runs here. Sheet music also updates lastOpenedAt, so the Library
+  bar/pass labels; no engraving runs here. Listening also updates lastOpenedAt, so the Library
   never describes it as "last practiced."
-- **Suggestions**: useful active/Improved suggestions appear outside management Options.
-  Empty explanations are omitted; Options retain per-piece enable/disable controls.
-- **Import sheet**: Add score shows progress/cancel, movement or part choices when needed,
-  then a compact piece/hands/tempo summary. Import details holds counts and successful checks.
+- **Suggestions**: only the Continue card shows one, the piece's first, as a secondary button ("Work on bars
+  10–11") that opens Practice with its bars, hands and speed; the rest is in Progress. Other rows read no
+  suggestions, and no row reads attempts.
+- **Search** (`SearchField`, `search.ts`, L13): above six pieces. Rows not found are hidden, not removed,
+  so clearing the search reads nothing again; the number found is announced.
+- **Connect your piano** (`ConnectPianoCard`, U149): a card above the list while this browser has Web
+  MIDI, no piano is connected and none is remembered (hidden while settings load or the browser asks).
+  Connect takes the only piano, lists several, or says what is missing; the first key ends it.
+- **Import sheet**: Add score shows progress/cancel, movement or part choices when needed. A score
+  that needs no answer (`needsNoAnswer` in `review.ts`, no choice offered, not stored yet) is then
+  saved and opened at once (L12; a failed save shows the review). Otherwise it asks in a compact piece/hands/tempo summary. Import details holds counts and successful checks.
   Genuine blockers and consequential warnings remain visible; hand/tempo review is retained.
   **Add and open** commits the ready piece, closes the sheet, and opens Practice paused.
   The subsequent Start or Play owns audio unlocking and microphone permission.
 - **Duplicates**: Open existing piece is primary. Add another copy is secondary, uses the
   stored package's reviewed hands and tempo, and offers no edits that would be ignored.
-- Backup/restore and storage status remain in Settings → Backup; closing Settings refreshes
+- Backup/restore and storage status remain in Settings → Data; closing Settings refreshes
   the Library. Delete and clear history retain their existing confirmations.
 
 ## Files
@@ -86,16 +91,16 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 | `deps.ts` | `LibraryDeps` (storage, import client factory, `navigator.storage`, clock, download, settings flush/reload, iPad detection) + context. |
 | `libraryModel.ts` | Piece list signal, open / `rename` / delete / clear history / export / restore, storage status, `loadReview` / `saveReview` (stored-piece review). `describeRestore` for the merge report. Pure `normalizePieceName` with `TITLE_MAX_LENGTH` / `COMPOSER_MAX_LENGTH`. |
 | `importFlow.ts` | `ImportFlow` state machine (below). |
+| `search.ts`, `SearchField.tsx` | Pure `searchWords` / `matchesSearch` (title and composer, no case or diacritics) and the header's field (L13). |
 | `selection.ts` | Pure: when to ask for the score/parts (`needsChoice`), `selectionProblem` (mirror of I8), `togglePart`. |
 | `review.ts` | Pure: `ReviewDraft` (hands per voice, confirmation, typed tempo + beat unit), `reviewGate` (what blocks saving; `tempoEntry` when the tempo is typed), `finalizeImport` (`applyHandAssignment` + `withUserTempo`, re-checked with `summarizeImport`), `defaultBeatUnit` from the meter. Stored pieces: `storedDraft`, `storedReviewChanges`, `finalizeStoredReview`. |
 | `ImportSummary.tsx` | The summary: facts (bars, notes, chords, voices, ties, tuplets), **Hands** ("Right hand: voices …" lines from the score with cross-staff notes; Change hands opens per-voice L/R; a split voice is tagged and needs Confirm hands; `editHands` shows the controls from the start for the stored-piece review), **Tempo** (from the score with beat unit, changes and conflicts; or a required practice tempo entry), **Score check** (compact import keeps successful checks under Import details; errors, unsupported passages, timing issues, ottavas, rolls, repeats, key/meter/clef changes, warnings, importer notes). |
 | `ImportSheet.tsx` | Phase rendering; `StorageStatusLine`. |
+| `ConnectPianoCard.tsx` | `ConnectPianoCard` (nothing without Web MIDI) around `ConnectPiano({ service })`, the first-time piano card (U149). |
 | `ReviewSheet.tsx` | "Hands and tempo of “title”" for a stored piece (L5): loads the package, shows `ImportSummaryView` with every voice's hand editable and, when the user entered the tempo at import, that practice tempo; Save changes only when something changed and the L1 gate passes. |
-| `PieceCard.tsx` | Card (stretched Practice target, status line, Sheet music, icon-only Options) + delete and clear-history confirmation sheets. |
+| `PieceCard.tsx` | Card (stretched Practice target, status line, icon-only Options) + delete and clear-history confirmation sheets. |
 | `continuation.ts` | Pure: which piece is featured (`continuingPiece`), its context line (`continuationContext`), and an ordinary row's status (`neverOpened`, `openedStatus`). |
 | `RenameSheet.tsx` | "Rename piece": a form with Title and Composer fields, prefilled from the piece on every open, the title focused and selected; Enter or Save calls `model.rename`, a failure shows in the sheet. |
-| `PieceSuggestions.tsx` | Shared `SuggestionList` bound to the per-piece model, with useful content outside Options and preference controls in Options. |
-| `suggestionsData.ts` | `PieceSuggestionsModel`: load, dismiss for the session, per-piece disable, Practice this passage, refresh on history flushes. `sessionDismissals`. |
 | `FileButton.tsx` | `<label>` around a hidden file input (picker opens from the user's own tap, also inside sheets and on iPad). |
 | `format.ts` | Relative dates, speed, bytes. |
 | `testkit.ts` | Tests only: `FakeImportClient` (pure pipeline in-process, `hold` / `lateResults`), `FakeStorageManager`, `testDeps()`. |
@@ -104,7 +109,7 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 
 `openFile` → size check (32 MiB, before reading) → `working: reading` → `inspect` (worker,
 progress) → `choose` when there are several scores or more playable parts than the suggestion,
-else straight to `build` → `review` → `save(draft)` (or duplicate `saveCopy(pieceId)`) → `idle` + `onSaved`. A build failure after a choice
+else straight to `build` → `working: saving` when nothing needs an answer (L12), else `review` → `save(draft)` (or duplicate `saveCopy(pieceId)`) → `idle` + `onSaved`. A build failure after a choice
 returns to `choose` with the reason.
 
 - Every async step carries a job token; `cancel()` / `close()` abort the job and bump the token,
@@ -135,16 +140,6 @@ new tempo a new `tempoMapId`, so either starts a separate comparison context (Q3
 results stay untouched. A new assignment also clears the version's cached layouts (inside `commitImport`), which carry
 each note's hand (`data-h`, used to subdue a hand).
 
-## Suggestions (swap to the shared component)
-
-`PieceSuggestions.tsx` renders the active list (bars with difficult vs context chips, hand and
-speed label, evidence sentence, "n of 3 clean passes", Practice this passage, Dismiss for now),
-Improved (collapsed); the per-piece / Settings off controls appear in Options. All behavior is in
-`PieceSuggestionsModel`, so swapping in `views/shared/suggestions`' `SuggestionList` is
-presentational: map `onPractice → model.practice(s)`, `onDismiss → model.dismiss(s.id)`,
-`onDisableSuggestions → model.setDisabled(true)`, `onEnableSuggestions → model.setDisabled(false)`,
-and point `sessionDismissals` at the shared singleton (one line, see `suggestionsData.ts`).
-
 ## Tests
 
 - `helpers.test.ts` (node): format, iPad detection, selection rules on fixtures, review gate
@@ -157,31 +152,31 @@ and point `sessionDismissals` at the shared singleton (one line, see `suggestion
   keeps order, resume, version and the package's own title, removes an empty composer, refuses
   an empty title, and reports a deleted piece.
 - `continuation.test.ts` (node): featured piece choice; context line wording (from the start,
-  bar alone on beat 1 and with the beat otherwise, printed passes, lower-case hands, speed
+  bar alone on beat 1 and with the beat otherwise, printed passes, the mode first, lower-case hands, speed
   omitted at 100%, restored positions outside the score); status line (never opened while
   `lastOpenedAt <= createdAt`, relative "Opened …" times).
 - `LibraryView.test.tsx` (happy-dom): empty state, iPad accept, list + open → Practice (no
-  piece count or Study caption; status lines; chevron with no visible word and the "Practice …"
+  piece count; status lines; chevron with no visible word and the "Practice …"
   name), "Not opened yet", featured context line without "Opened …", icon-only Options keeps
-  its name and menu link, a tap outside an open menu only closes it (on another row's Sheet music or
+  its name and menu link, a tap outside an open menu only closes it (on another row's
   Practice target; the next tap opens Practice; another row's Options button switches menus in
   one tap; a press that turns into a scroll swallows nothing), storage unavailable, rename
   (first option, prefilled each open, title focused and selected,
   Save gating, submit updates the row and its labels, storage failure keeps the sheet open),
   delete and clear-history confirmations (with/without results), the
-  import UI for ready (Add and open marks the piece opened) / cross-staff / no-tempo / two-part
+  import UI for ready (saved and opened at once, marked opened) / cross-staff / no-tempo / two-part
   scores, cancel, rejection + re-pick,
   review hands and tempo (hand change keeps the version and clears layouts; practice
-  tempo change validated), suggestions (evidence, context bars, preset, session dismissal,
-  per-piece and Settings off), refresh when Settings close.
+  tempo change validated), the Continue card's suggestion and
+  Progress from Options (presets; no suggestion or attempt reads by other rows), refresh when Settings close.
 - `tests/e2e/library.spec.ts` (Chromium + WebKit, production build): no OSMD / sample
-  requests, real-worker import persisted across reload, tempo entry, unrelated XML, canceling
+  requests, real-worker import opened at once and persisted across reload, tempo entry, unrelated XML, canceling
   a 3000-bar import, rename (title selected on open, Enter saves, kept across reload), a tap on
-  a row's title opens Practice while Sheet music, Options and empty space in the open menu do not,
+  a row's title opens Practice while Options and empty space in the open menu do not,
   a click or touch tap outside an open menu only closes it (no late touch click) and the next
   one opens the row, another row's Options button switches menus. `LIBRARY_SHOTS=<dir>` also saves light/dark screenshots at 1180×820, 820×1180 and 360×740.
 
 ## Known gaps
 
-- No score preview in the summary and no notation preview in suggestions (L4).
+- No score preview in the summary and no notation anywhere in the Library (L4).
 

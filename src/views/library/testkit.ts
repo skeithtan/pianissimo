@@ -17,6 +17,7 @@ import { openFresh } from '../../core/storage/testkit'
 import type { PianissimoStorage } from '../../core/storage/storage'
 import type { StorageManagerLike } from '../../core/storage/persist'
 import type { LibraryDeps } from './deps'
+import type { ImportFlow } from './importFlow'
 
 export type FileLike = Pick<File, 'name' | 'size' | 'arrayBuffer'>
 
@@ -154,6 +155,24 @@ export async function testDeps(storage?: PianissimoStorage): Promise<TestDeps> {
     isAppleMobile: () => false,
   }
   return deps
+}
+
+/** The review of a score, also of one that needs no answer and would be saved at once (L12). */
+export async function showReview(flow: ImportFlow, client: FakeImportClient, file: FileLike): Promise<void> {
+  const inspect = await client.inspect({ name: file.name, bytes: await file.arrayBuffer() })
+  const { id, suggestedParts } = inspect.candidates[0]!
+  const result = await client.build({ candidate: id, partIds: suggestedParts })
+  flow.phase.value = {
+    kind: 'review',
+    fileName: file.name,
+    inspect,
+    result,
+    candidateId: id,
+    partIds: suggestedParts,
+    choiceOffered: false,
+    saving: false,
+    saveError: null,
+  }
 }
 
 /** Let promises and short timers settle. */

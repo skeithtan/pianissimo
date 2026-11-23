@@ -1,6 +1,6 @@
 import { msg } from '../../i18n/messages'
 /** Plain-language description of the learned hint pedal (spec "MIDI input, output, and pedal controls"). */
-import type { HintPedalMapping, PedalSettings } from '../../core/model/settings'
+import type { HintPedalMapping } from '../../core/model/settings'
 
 const CONTROLLER_NAMES: Readonly<Record<number, string>> = {
   64: 'sustain (right pedal)',
@@ -17,7 +17,7 @@ export function controllerName(controller: number): string {
 export function describeHintPedal(mapping: HintPedalMapping | null): string {
   if (mapping === null) {
     return msg(
-      'No hint pedal is set. Set one up in Connection to reveal names with your foot, or enable automatic hints in Settings.',
+      'No hint pedal is set. Set one to reveal hints with your foot, or enable automatic hints in Reading help.',
     )
   }
   const channel = mapping.channel === null ? msg('any channel') : msg('channel {0}', mapping.channel + 1)
@@ -31,12 +31,6 @@ export function describeHintPedal(mapping: HintPedalMapping | null): string {
     mapping.threshold,
     verified,
   )
-}
-
-/** Observed pedals as a short list, or null when none were seen. */
-export function describeObservedPedals(pedal: PedalSettings): string | null {
-  if (pedal.observedControllers.length === 0) return null
-  return pedal.observedControllers.map(controllerName).join(', ')
 }
 
 function capitalize(text: string): string {

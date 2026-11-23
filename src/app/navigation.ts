@@ -1,27 +1,27 @@
 /**
- * View navigation. Four main views (Library, Practice, Results; spec "Main user journey"; and
- * Study, playback and reading only, DECISIONS U72) and two overlays, Settings and the
- * Connection setup modal. Overlays sit on top of the mounted view
- * so opening one never loses the selected score or passage; at most one is open at a time.
+ * View navigation. Two main views (Library and Practice; spec "Main user journey") and the
+ * Settings overlay, which holds the piano setup (Piano and sound, U143). It sits on top of the
+ * mounted view, so opening it never loses the selected score or passage.
  *
  * These signals are the source of truth for what is on screen. `router.ts` mirrors them to the URL
  * hash and back (Back/Forward, reload, deep links); nothing here touches `history` itself.
  *
- * Practice and Results take a request naming the piece (and, for Practice, an optional
- * preselection from a suggestion or Results). Set them through `openPractice` / `openResults`;
- * the views read the signals and keep their own state once opened.
+ * Practice takes a request naming the piece (and an optional preselection from a suggestion). Set it
+ * through `openPractice`; the view reads the signal and keeps its own state once opened.
  */
-import { batch, signal } from '@preact/signals'
-import type { PassageRange } from '../core/model/practice'
+import { batch, computed, signal } from '@preact/signals'
+import type { PassageRange, PracticeMode } from '../core/model/practice'
 import type { HandSelection } from '../core/model/score'
 
-export type ViewName = 'library' | 'practice' | 'results' | 'study'
+export type ViewName = 'library' | 'practice'
 
 /**
  * What `navigate` accepts. `'connection'` is kept so older callers keep working: it opens the
- * Connection setup modal (`openConnection`) and leaves the current view in place.
+ * piano setup (`openConnection`) and leaves the current view in place.
  */
 export type NavigationTarget = ViewName | 'connection'
+
+export type SettingsTab = 'reading' | 'piano' | 'app' | 'data'
 
 export interface PracticePreset {
   readonly passage?: PassageRange
@@ -33,29 +33,21 @@ export interface PracticeRequest {
   readonly pieceId: string
   /** Preselects range, hands and speed. Never starts practice automatically (spec). */
   readonly preset?: PracticePreset
-  /** Start once the newly imported score is ready; consumed by the Practice view. */
-  readonly autoStart?: boolean
-}
-
-export interface ResultsRequest {
-  readonly pieceId: string
-  /** The attempt to show as the latest scorecard; omitted → the most recent stored attempt. */
-  readonly attemptId?: string
-}
-
-/** Study a piece (U72): playback and the score, no practice. Nothing to preselect. */
-export interface StudyRequest {
-  readonly pieceId: string
+  /** Opens in this mode, leaving the piece's own as it is (an old study link, `routes.ts`). */
+  readonly mode?: PracticeMode
 }
 
 export const currentView = signal<ViewName>('library')
 export const settingsOpen = signal(false)
-export const connectionOpen = signal(false)
+/** The Settings tab on show. Kept while Settings is closed: opening it returns to the last-used tab. */
+export const settingsTab = signal<SettingsTab>('reading')
+/** Settings was asked for at the Note names rules; it clears this once they are in view. */
+export const noteRulesRequested = signal(false)
+/** Settings is open on the piano setup: its own name in the URL (`?connection`). */
+export const connectionOpen = computed(() => settingsOpen.value && settingsTab.value === 'piano')
 export const practiceRequest = signal<PracticeRequest | null>(null)
-export const resultsRequest = signal<ResultsRequest | null>(null)
-export const studyRequest = signal<StudyRequest | null>(null)
 
-/** Show a main view. Closes any overlay (leaving a page is leaving its overlays). */
+/** Show a main view. Closes Settings (leaving a page is leaving its overlay). */
 export function navigate(target: NavigationTarget): void {
   if (target === 'connection') {
     openConnection()
@@ -63,8 +55,7 @@ export function navigate(target: NavigationTarget): void {
   }
   batch(() => {
     currentView.value = target
-    settingsOpen.value = false
-    connectionOpen.value = false
+    closeSettings()
   })
 }
 
@@ -75,40 +66,31 @@ export function openPractice(request: PracticeRequest): void {
   })
 }
 
-export function openResults(request: ResultsRequest): void {
-  batch(() => {
-    resultsRequest.value = request
-    navigate('results')
-  })
-}
-
-export function openStudy(request: StudyRequest): void {
-  batch(() => {
-    studyRequest.value = request
-    navigate('study')
-  })
-}
-
-/** Open Settings over the current view (replacing the Connection modal if that is open). */
+/** Open Settings over the current view, on the tab used last. */
 export function openSettings(): void {
+  settingsOpen.value = true
+}
+
+export function closeSettings(): void {
   batch(() => {
-    connectionOpen.value = false
+    settingsOpen.value = false
+    noteRulesRequested.value = false
+  })
+}
+
+/** Open Settings on Piano and sound, at its top: the piano setup. */
+export function openConnection(): void {
+  batch(() => {
+    settingsTab.value = 'piano'
     settingsOpen.value = true
   })
 }
 
-export function closeSettings(): void {
-  settingsOpen.value = false
-}
-
-/** Open the Connection setup modal over the current view (replacing Settings if open). */
-export function openConnection(): void {
+/** Open Settings on Reading help with the Note names rules in view and focused. */
+export function openNoteRules(): void {
   batch(() => {
-    settingsOpen.value = false
-    connectionOpen.value = true
+    settingsTab.value = 'reading'
+    noteRulesRequested.value = true
+    settingsOpen.value = true
   })
-}
-
-export function closeConnection(): void {
-  connectionOpen.value = false
 }

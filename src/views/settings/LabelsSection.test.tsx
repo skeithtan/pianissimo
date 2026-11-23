@@ -5,7 +5,7 @@ import { onBeforeApplyLabels, settings, updateSettings } from '../../app/state'
 import { $, $$, byLabel, click, type, type Mounted } from '../shared/testing'
 import { currentLabels, isLabelDraftDirty } from './labelDraft'
 import { PICKER_OCTAVE_MAX, PICKER_OCTAVE_MIN, pickSpelling } from './PitchInput'
-import { openOverlay, openTab, radio, resetSettingsTestState, toggle } from './testkit'
+import { openOverlay, openSection, openTab, radio, resetSettingsTestState, toggle } from './testkit'
 
 let view: Mounted | null = null
 beforeEach(() => {
@@ -16,11 +16,11 @@ afterEach(() => {
   view = null
 })
 
-/** Open Settings on the Score labels tab. */
+/** Open Settings on the Note names section. */
 function openLabels(): HTMLElement {
   const opened = openOverlay()
   view = opened.view
-  return openTab(opened.root, 'Score labels')
+  return openSection(opened.root, 'Reading help', 'Note names')
 }
 
 const pitch = (panel: HTMLElement, name: string) => $(panel, `input[aria-label="${name}"]`) as HTMLInputElement
@@ -28,8 +28,8 @@ const trebleBelow = (panel: HTMLElement) => pitch(panel, 'Treble (G) show below 
 const trebleAbove = (panel: HTMLElement) => pitch(panel, 'Treble (G) show above pitch')
 const bassBelow = (panel: HTMLElement) => pitch(panel, 'Bass (F) show below pitch')
 const bassAbove = (panel: HTMLElement) => pitch(panel, 'Bass (F) show above pitch')
-const bassRule = (panel: HTMLElement) => $(panel, '[role="group"][aria-label="Bass (F) label rule"]')!
-const apply = (panel: HTMLElement) => byLabel(panel, 'Apply label changes') as HTMLButtonElement
+const bassRule = (panel: HTMLElement) => $(panel, '[role="group"][aria-label="Bass (F) note name rule"]')!
+const apply = (panel: HTMLElement) => byLabel(panel, 'Apply note name changes') as HTMLButtonElement
 const summary = (panel: HTMLElement, clef: string) => $(panel, `[data-testid="summary-${clef}"]`)?.textContent ?? ''
 const sampleLabels = (panel: HTMLElement, clef: string) =>
   $$(panel, `[aria-label="Sample notes for ${clef}"] li`).map((li) => ({
@@ -47,7 +47,7 @@ const labeledTexts = (panel: HTMLElement, clef: string) =>
 describe('mode', () => {
   it('starts Off with no rule editors, per the spec default', () => {
     const panel = openLabels()
-    expect(radio(panel, 'Persistent labels', 'Off').getAttribute('aria-checked')).toBe('true')
+    expect(radio(panel, 'Note names on the score', 'Off').getAttribute('aria-checked')).toBe('true')
     expect($$(panel, '[role="group"][aria-label$="label rule"]')).toHaveLength(0)
     expect(apply(panel).disabled).toBe(true)
   })
@@ -56,7 +56,7 @@ describe('mode', () => {
     const calls: string[] = []
     onBeforeApplyLabels((next) => calls.push(`hook ${settings.peek().labels.mode} -> ${next.mode}`))
     const panel = openLabels()
-    click(radio(panel, 'Persistent labels', 'All notes'))
+    click(radio(panel, 'Note names on the score', 'All'))
     expect(settings.value.labels.mode).toBe('off') // staged, not applied
     expect(calls).toEqual([])
     expect(apply(panel).disabled).toBe(false)
@@ -64,14 +64,14 @@ describe('mode', () => {
     click(apply(panel))
     expect(calls).toEqual(['hook off -> all'])
     expect(settings.value.labels.mode).toBe('all')
-    expect(panel.textContent).toContain('Label settings applied')
+    expect(panel.textContent).toContain('Note names applied')
     expect(apply(panel).disabled).toBe(true)
   })
 
   it('offers "Label tied notes" outside Off, off by default, staged until Apply (U69)', () => {
     const panel = openLabels()
     expect(() => toggle(panel, 'Label tied notes')).toThrow()
-    click(radio(panel, 'Persistent labels', 'All notes'))
+    click(radio(panel, 'Note names on the score', 'All'))
     expect(toggle(panel, 'Label tied notes').checked).toBe(false)
     click(toggle(panel, 'Label tied notes'))
     expect(currentLabels().tiedContinuations).toBe(true)
@@ -84,9 +84,9 @@ describe('mode', () => {
     const hook = vi.fn()
     onBeforeApplyLabels(hook)
     const panel = openLabels()
-    click(radio(panel, 'Persistent labels', 'All notes'))
+    click(radio(panel, 'Note names on the score', 'All'))
     click(byLabel(panel, 'Discard changes'))
-    expect(radio(panel, 'Persistent labels', 'Off').getAttribute('aria-checked')).toBe('true')
+    expect(radio(panel, 'Note names on the score', 'Off').getAttribute('aria-checked')).toBe('true')
     expect(isLabelDraftDirty()).toBe(false)
     expect(hook).not.toHaveBeenCalled()
     expect(settings.value.labels.mode).toBe('off')
@@ -94,8 +94,8 @@ describe('mode', () => {
 
   it('switching back to the applied mode clears the staged state', () => {
     const panel = openLabels()
-    click(radio(panel, 'Persistent labels', 'All notes'))
-    click(radio(panel, 'Persistent labels', 'Off'))
+    click(radio(panel, 'Note names on the score', 'All'))
+    click(radio(panel, 'Note names on the score', 'Off'))
     expect(isLabelDraftDirty()).toBe(false)
     expect(apply(panel).disabled).toBe(true)
   })
@@ -104,7 +104,7 @@ describe('mode', () => {
 describe('conditional rules', () => {
   function openConditional(): HTMLElement {
     const panel = openLabels()
-    click(radio(panel, 'Persistent labels', 'Conditional'))
+    click(radio(panel, 'Note names on the score', 'Conditional'))
     return panel
   }
 
@@ -304,11 +304,11 @@ describe('conditional rules', () => {
   it('keeps typed text and staged edits when switching tabs', () => {
     const opened = openOverlay()
     view = opened.view
-    const panel = openTab(opened.root, 'Score labels')
-    click(radio(panel, 'Persistent labels', 'Conditional'))
+    const panel = openSection(opened.root, 'Reading help', 'Note names')
+    click(radio(panel, 'Note names on the score', 'Conditional'))
     type(trebleBelow(panel), 'A3')
-    openTab(opened.root, 'Hints')
-    const back = openTab(opened.root, 'Score labels')
+    openTab(opened.root, 'App')
+    const back = openSection(opened.root, 'Reading help', 'Note names')
     expect(trebleBelow(back).value).toBe('A3')
     expect(isLabelDraftDirty()).toBe(true)
   })
@@ -316,9 +316,9 @@ describe('conditional rules', () => {
   it('only validates rules in Conditional mode, and ignores text of a disabled condition', () => {
     const panel = openConditional()
     type(bassAbove(panel), 'xx')
-    click(radio(panel, 'Persistent labels', 'All notes'))
+    click(radio(panel, 'Note names on the score', 'All'))
     expect(apply(panel).disabled).toBe(false) // rules do not matter outside Conditional
-    click(radio(panel, 'Persistent labels', 'Conditional'))
+    click(radio(panel, 'Note names on the score', 'Conditional'))
     expect(apply(panel).disabled).toBe(false) // the bass condition is off, so its text is ignored
   })
 })

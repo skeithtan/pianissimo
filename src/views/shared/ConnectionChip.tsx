@@ -1,8 +1,8 @@
 import { msg } from '../../i18n/messages'
 /**
  * MIDI connection status chip, driven by the `connectionStatus` signal. A dot, a short label and
- * the text itself carry the state (color is never the only cue). Tapping it opens the Connection
- * setup modal over the current view. Used by the app bar and by the Practice header.
+ * the text itself carry the state (color is never the only cue). Tapping it opens Settings on Piano
+ * and sound over the current view. Used by the app bar and by the Practice header.
  */
 import { connectionStatus, type ConnectionState, type ConnectionStatus } from '../../app/state'
 import { getFeatures } from '../../app/features'
@@ -38,25 +38,26 @@ export function connectionLabel(status: ConnectionStatus): string {
 
 export interface ConnectionChipProps {
   readonly onOpen?: () => void
-  /** `'narrow'`: on phone-width screens only the dot shows (the label stays for assistive technology). */
-  readonly compact?: 'narrow'
+  /** Only the dot shows (the label stays for assistive technology): the header has no room for words. */
+  readonly dot?: boolean
 }
 
-export function ConnectionChip({ onOpen = openConnection, compact }: ConnectionChipProps) {
+export function ConnectionChip({ onOpen = openConnection, dot = false }: ConnectionChipProps) {
   const status = connectionStatus.value
   const label = connectionLabel(status)
   return (
     <button
       type="button"
-      class={[pill.pill, pill.action, styles.chip, compact === 'narrow' && styles.narrow].filter(Boolean).join(' ')}
+      class={`${pill.pill} ${pill.action} ${styles.chip}`}
       data-tone={TONE[status.state]}
       data-state={status.state}
+      data-dot={dot || undefined}
       title={
         status.state === 'unsupported'
           ? (getFeatures().features.webMidi.explanation ?? label)
           : msg(status.detail ?? label)
       }
-      aria-label={msg('MIDI status: {0}. Open connection setup', label)}
+      aria-label={msg('MIDI status: {0}. Open Piano and sound', label)}
       onClick={onOpen}
     >
       <span class={pill.dot} data-status-dot aria-hidden="true" />

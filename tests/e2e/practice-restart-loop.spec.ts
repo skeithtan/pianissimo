@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { expect, test } from '../browser-test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
-import { installFakeMidi, openFooterMenu, play, playWhenDue, seedPiece, waitForOnset } from './practice-helpers'
+import { chooseMode, installFakeMidi, play, playWhenDue, seedPiece, waitForOnset } from './practice-helpers'
 
 const shots = process.env['PW_RESTART_SHOTS']
 const layouts = [
@@ -87,9 +87,7 @@ test.describe('Repeat playback and results', () => {
 
   test('Keep time restarts with a fresh count-in after pausing before or during playback', async ({ page }) => {
     await page.getByRole('button', { name: 'Repeat from here' }).click()
-    const menu = await openFooterMenu(page)
-    await menu.getByRole('switch', { name: 'Keep time' }).click()
-    await page.keyboard.press('Escape')
+    await chooseMode(page, 'Keep time')
     await page.clock.install()
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     const countIn = page.getByTestId('count-in')
@@ -113,8 +111,7 @@ test.describe('Repeat playback and results', () => {
   })
 
   test('Restart loop plays Listen from the beginning before and after pausing', async ({ page }) => {
-    await page.getByRole('button', { name: 'Left hand', exact: true }).click()
-    await page.getByRole('button', { name: 'Right hand', exact: true }).click()
+    await chooseMode(page, 'Listen')
     await page.getByRole('button', { name: 'Repeat from here' }).click()
     const sentNote = (pitch: number) =>
       page.evaluate(

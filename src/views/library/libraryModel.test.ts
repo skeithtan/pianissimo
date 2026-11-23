@@ -219,9 +219,9 @@ describe('describeRestore', () => {
     ])
   })
 
-  it('says that restored settings leave out the piano connection and the metronome output', () => {
+  it('says that restored settings leave out the piano connection, the metronome output and the recording input', () => {
     expect(describeRestore(report({ settings: 'restored' })).at(-1)).toBe(
-      'Settings were restored from the backup (this device keeps its own piano connection and metronome output).',
+      'Settings were restored from the backup (this device keeps its own piano connection, metronome output and recording input).',
     )
   })
 

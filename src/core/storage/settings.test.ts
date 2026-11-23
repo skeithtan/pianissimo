@@ -60,6 +60,7 @@ const custom: AppSettings = {
   metronome: { enabled: true, keepTime: false, volume: 0.1, outputId: 'usb-output' },
   rhythm: { toleranceMs: 250, scorePlayback: true, scorePlaybackVolume: 0.45 },
   mic: { follow: true },
+  recording: { inputId: 'usb-input', inputLabel: 'USB Audio' },
   view: { language: 'es-ES', zoom: 1.75, pageZoom: 1.25, theme: 'dark', scorePaper: 'light' },
   suggestions: { enabled: false },
 }
@@ -82,11 +83,12 @@ describe('normalizeSettings', () => {
   })
 
   it('fills fields missing from an older version with defaults', () => {
-    const { metronome: _m, view: _v, suggestions: _s, rhythm: _r, mic: _mic, ...older } = custom
+    const { metronome: _m, view: _v, suggestions: _s, rhythm: _r, mic: _mic, recording: _rec, ...older } = custom
     const loaded = normalizeSettings(older)
     expect(loaded.metronome).toEqual(DEFAULT_SETTINGS.metronome)
     expect(loaded.rhythm).toEqual(DEFAULT_SETTINGS.rhythm)
     expect(loaded.mic).toEqual({ follow: false })
+    expect(loaded.recording).toEqual({ inputId: null, inputLabel: null })
     expect(loaded.view).toEqual(DEFAULT_SETTINGS.view)
     expect(loaded.suggestions).toEqual(DEFAULT_SETTINGS.suggestions)
     expect(loaded.naming).toEqual(custom.naming)
@@ -108,6 +110,21 @@ describe('normalizeSettings', () => {
     })
     expect(normalizeSettings({ metronome: { keepTime: false } }).metronome.keepTime).toBe(false)
     expect(normalizeSettings({ metronome: { keepTime: 'no' } }).metronome.keepTime).toBe(true)
+  })
+
+  it('reads the recording input (DECISIONS D20): nothing remembered for anything but text', () => {
+    expect(DEFAULT_SETTINGS.recording).toEqual({ inputId: null, inputLabel: null })
+    expect(normalizeSettings({ recording: { inputId: 'usb', inputLabel: 'USB Audio' } }).recording).toEqual({
+      inputId: 'usb',
+      inputLabel: 'USB Audio',
+    })
+    expect(normalizeSettings({ recording: { inputLabel: 'USB Audio' } }).recording).toEqual({
+      inputId: null,
+      inputLabel: 'USB Audio',
+    })
+    for (const recording of ['usb', null, { inputId: 3, inputLabel: {} }, { inputId: '', inputLabel: '' }]) {
+      expect(normalizeSettings({ recording }).recording).toEqual({ inputId: null, inputLabel: null })
+    }
   })
 
   it('reads the page zoom additively: absent (older settings) means 1, out of range falls back', () => {

@@ -1,49 +1,36 @@
-import { msg, percentage } from '../../i18n/messages'
+import { msg } from '../../i18n/messages'
 /**
  * Step 2, playback to the piano (spec "MIDI input, output, and pedal controls"): list outputs
  * separately, choose one and the piano's receive channel, then Play test notes followed by
  * "Did the piano sound?" — a visible output port is not proof the instrument can sound it.
  * The test notes are the echo probe (`runEchoTest`, DECISIONS MI1 / C11): the same tap checks
  * that the app's notes do not come back on the input as if the learner had played them. If they
- * do, graded one-hand practice is off for the route until it is fixed; Preview still works and
+ * do, graded one-hand practice is off for the route until it is fixed; Listen still works and
  * never forwards returned notes. Physical-piano playback is required for one-hand practice and
- * Preview; browser sound is an explicit alternative that never silently replaces the piano.
+ * Listen; browser sound is an explicit alternative that never silently replaces the piano.
  *
- * Below the test: accompaniment level (scales only app-generated velocity), score pedals in
- * one-hand practice (sent only when verified to affect the automatic part alone; default off)
+ * Below the test: score pedals in one-hand practice (sent only when verified to affect the automatic part alone; default off)
  * and Stop sound (stuck-note recovery on the app's output route only).
  */
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { MidiService, MidiSnapshot, StopSoundResult } from '../../app/services'
 import { settings, updateSettings } from '../../app/state'
-import { openSettings } from '../../app/navigation'
-import { echoSetting, runEchoTest, type EchoTestResult } from '../../core/midi/echo'
+import type { EchoTestResult } from '../../core/midi/echo'
 import type { MidiRouteSettings } from '../../core/model/settings'
-import { Button, Slider, Toggle } from '../../ui/controls'
+import { Button, Toggle } from '../../ui/controls'
 import { Callout, Help, PortList, Step } from './parts'
 import { channelLabel, type StepStatus } from './status'
+import { playTestNotes, testedRoute, type EchoClock } from './testNotes'
 import styles from './connection.module.css'
 
-export interface EchoClock {
-  now(): number
-  setTimeout(fn: () => void, ms: number): unknown
-}
-
-const realClock: EchoClock = {
-  now: () => performance.now(),
-  setTimeout: (fn, ms) => setTimeout(fn, ms),
-}
-
 type TestState = 'idle' | 'asking' | 'heard' | 'silent' | 'failed'
-
-const percent = (v: number): string => percentage(Math.round(v * 100) / 100)
 
 export function PlaybackStep({
   index,
   status,
   snap,
   service,
-  clock = realClock,
+  clock,
 }: {
   index: number
   status: StepStatus
@@ -69,41 +56,22 @@ export function PlaybackStep({
 
   // The answer and the echo result belong to the whole route (input, output, channel): a
   // different route forgets them, and a probe that finishes after a change is not stored.
-  const routeKey = `${snap.input?.id ?? ''}:${snap.output?.id ?? ''}:${route.outputChannel}`
-  const currentRoute = useRef(routeKey)
-  currentRoute.current = routeKey
+  const routeKey = testedRoute(service)
   useEffect(() => {
     setTest('idle')
     setEcho(null)
   }, [routeKey])
 
   const play = () => {
-    const adapter = service.adapter
-    const output = adapter.output
-    if (!output || listening) return
-    const startedOn = routeKey
-    const checkEcho = inputConnected
+    if (!service.adapter.output || listening) return
     setEcho(null)
     setListening(true)
     setTest('asking')
-    runEchoTest(
-      {
-        send: (data, time) => output.send(data, time),
-        subscribe: (fn) => adapter.subscribe(fn),
-        now: () => clock.now(),
-        setTimeout: (fn, ms) => clock.setTimeout(fn, ms),
-      },
-      { channel: route.outputChannel },
-    ).then(
+    playTestNotes(service, clock).then(
       (result) => {
-        if (currentRoute.current !== startedOn) return
-        if (checkEcho) {
-          const setting = echoSetting(result.verdict)
-          if (setting) updateSettings({ route: { echo: setting } })
-        }
         if (!mounted.current) return
         setListening(false)
-        setEcho(result)
+        if (result) setEcho(result)
       },
       () => {
         if (!mounted.current) return
@@ -124,7 +92,7 @@ export function PlaybackStep({
       index={index}
       title={msg('Playback to the piano')}
       status={status}
-      lead={msg('The piano plays the hand you are not playing, and both hands in Preview.')}
+      lead={msg('The piano plays the hand you are not playing, and the score in Listen.')}
     >
       {!granted ? (
         <Help>{msg('Allow MIDI access first.')}</Help>
@@ -184,29 +152,14 @@ export function PlaybackStep({
 
       <Help>
         {msg(
-          'One-hand practice and Preview need the piano itself to play. If it cannot, they stay off. Browser sound (',
+          'One-hand practice and Listen need the piano itself to play. If it cannot, they stay off. Browser sound, under Sound below, is a separate choice and never replaces the piano without you choosing it.',
         )}
-        <button type="button" class={styles.linkButton} onClick={openSettings}>
-          {msg('Settings → Sound')}
-        </button>
-        {msg(') is a separate choice and never replaces the piano without you choosing it.')}
         {sound.destination === 'browser'
-          ? msg(' It is selected now, so Preview and accompaniment play through this device instead.')
+          ? msg(' It is selected now, so Listen and accompaniment play through this device instead.')
           : ''}
       </Help>
 
       <div class={styles.options}>
-        <Slider
-          label={msg('Accompaniment level')}
-          min={0}
-          max={1}
-          step={0.05}
-          value={route.accompanimentLevel}
-          format={percent}
-          onChange={(accompanimentLevel) => updateSettings({ route: { accompanimentLevel } })}
-        />
-        <Help>{msg('Scales how hard the app plays its notes. Your own keys are never changed.')}</Help>
-
         <Toggle
           label={msg('Send score pedals in one-hand practice')}
           description={msg(
@@ -217,7 +170,7 @@ export function PlaybackStep({
         />
         <Help>
           {msg(
-            'While you play one hand, your own feet control the shared pedals, so two pedal sources never fight over the same sound. Preview always plays the score’s pedals.',
+            'While you play one hand, your own feet control the shared pedals, so two pedal sources never fight over the same sound. Listen always plays the score’s pedals.',
           )}
         </Help>
       </div>
@@ -304,9 +257,9 @@ function TestFeedback({
         <p>
           {route.echo === 'none'
             ? msg(
-                'Accompaniment and Preview play on the piano, and its notes do not come back as if you had played them, so one-hand practice can grade you. ',
+                'Accompaniment and Listen play on the piano, and its notes do not come back as if you had played them, so one-hand practice can grade you. ',
               )
-            : msg('Accompaniment and Preview play on the piano. ')}
+            : msg('Accompaniment and Listen play on the piano. ')}
           {msg('Choosing another output or channel needs a new test.')}
         </p>
       </Callout>
@@ -346,7 +299,7 @@ function EchoFeedback({
           {msg('Notes the app plays come back from the piano')}
           {result?.latencyMs != null ? msg(' (after {0} ms)', Math.round(result.latencyMs)) : ''}
           {msg(
-            '. They would look like your own playing, so graded one-hand practice is off for this route until it is fixed. Preview still works, and the app never sends returned notes back to the piano.',
+            '. They would look like your own playing, so graded one-hand practice is off for this route until it is fixed. Listen still works, and the app never sends returned notes back to the piano.',
           )}
         </p>
         <p>

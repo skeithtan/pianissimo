@@ -1,10 +1,10 @@
 import { msg } from '../../i18n/messages'
 /**
- * Step 5, "Set hint pedal" (spec "MIDI input, output, and pedal controls"): press the desired
+ * Step 3, "Set hint pedal" (spec "MIDI input, output, and pedal controls"): press the desired
  * pedal, the app observes its message, a test press confirms the mapping (one press = one
  * hint; holding never retriggers), then save it. Prefer the middle pedal when it sends a usable
  * message; if the piano does not transmit it, explain the alternative hint options.
- * Advanced: inversion and threshold. The pedal's action mirrors Settings → Pedal.
+ * Advanced: inversion and threshold. The pedal's action (Note names or Show keys) is set here only.
  */
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { MidiService, MidiSnapshot } from '../../app/services'
@@ -173,7 +173,7 @@ export function HintPedalStep({
       ) : null}
 
       <Help>
-        {msg('You can enable automatic hints in Settings without a pedal.')} {msg(PEDAL_SOUND_CAVEAT)}
+        {msg('You can enable automatic hints in Reading help without a pedal.')} {msg(PEDAL_SOUND_CAVEAT)}
       </Help>
     </Step>
   )
@@ -219,7 +219,7 @@ function FlowPanel({
         <Callout tone="warning" title={msg('No pedal message yet')}>
           <p>
             {msg(
-              'If you are pressing the middle pedal, your piano may not send it. Try another pedal, or enable automatic hints in Settings.',
+              'If you are pressing the middle pedal, your piano may not send it. Try another pedal, or enable automatic hints in Reading help.',
             )}
           </p>
         </Callout>

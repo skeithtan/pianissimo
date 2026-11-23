@@ -1,13 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { detectFeatures } from '../../app/features'
-import { connectionOpen, currentView, settingsOpen } from '../../app/navigation'
 import { settings, updateSettings } from '../../app/state'
 import { APP_VERSION } from '../../app/version'
-import { $, $$, byLabel, click, type, type Mounted } from '../shared/testing'
+import { $, $$, byLabel, click, flush, type, type Mounted } from '../shared/testing'
 import { useCatalog } from '../shared/catalogTesting'
 import { msg, percentage } from '../../i18n/messages'
-import { ALL_FEATURES, openOverlay, openTab, radio, resetSettingsTestState, toggle } from './testkit'
+import { ALL_FEATURES, openOverlay, openSection, openTab, radio, resetSettingsTestState, toggle } from './testkit'
 import { SALAMANDER_LICENSE_URL } from './AboutSection'
 
 let view: Mounted | null = null
@@ -29,9 +28,9 @@ const DEFAULT_HINTS = settings.peek().hints
 
 const example = (panel: HTMLElement, id: string) => $(panel, `[data-testid="example-${id}"]`)?.textContent
 
-describe('Note names', () => {
+describe('Naming style', () => {
   it('shows the spec examples under the default naming', () => {
-    const panel = openTab(open(), 'Note names')
+    const panel = openSection(open(), 'Reading help', 'Naming style')
     expect(example(panel, 'b-sharp-c-sharp-major')).toBe('B♯4')
     expect(example(panel, 'c-sharp-d-major')).toBe('C♯4')
     expect(example(panel, 'f-double-sharp')).toBe('F𝄪4')
@@ -39,7 +38,7 @@ describe('Note names', () => {
   })
 
   it('defaults: effective accidentals on, simplify off, octave on, letter names', () => {
-    const panel = openTab(open(), 'Note names')
+    const panel = openSection(open(), 'Reading help', 'Naming style')
     expect(toggle(panel, 'Always show effective accidentals').checked).toBe(true)
     expect(toggle(panel, 'Simplify enharmonic names').checked).toBe(false)
     expect(toggle(panel, 'Show octave number').checked).toBe(true)
@@ -47,7 +46,7 @@ describe('Note names', () => {
   })
 
   it('updates the examples at once as options change, and applies them to settings immediately', () => {
-    const panel = openTab(open(), 'Note names')
+    const panel = openSection(open(), 'Reading help', 'Naming style')
     click(toggle(panel, 'Simplify enharmonic names'))
     expect(settings.value.naming.simplifyEnharmonics).toBe(true)
     expect(example(panel, 'b-sharp-c-sharp-major')).toBe('C5')
@@ -63,7 +62,7 @@ describe('Note names', () => {
   })
 
   it('switches to fixed do with a si/ti choice and hides octaves on request', () => {
-    const panel = openTab(open(), 'Note names')
+    const panel = openSection(open(), 'Reading help', 'Naming style')
     expect($$(panel, '[role="radiogroup"]').some((g) => g.getAttribute('aria-label') === 'Seventh note')).toBe(false)
     click(radio(panel, 'Naming system', 'Fixed do'))
     expect(settings.value.naming.system).toBe('fixed-do')
@@ -78,7 +77,7 @@ describe('Note names', () => {
 
   it('does not touch label rules or interrupt anything', () => {
     const before = settings.value.labels
-    const panel = openTab(open(), 'Note names')
+    const panel = openSection(open(), 'Reading help', 'Naming style')
     click(radio(panel, 'Naming system', 'Fixed do'))
     expect(settings.value.labels).toBe(before)
   })
@@ -89,14 +88,14 @@ describe('Hints', () => {
     $(panel, `input[aria-label="${label}"]`) as HTMLInputElement
 
   it('defaults to one mistake, 30 seconds and a 300 ms fade', () => {
-    const panel = openTab(open(), 'Hints')
+    const panel = openSection(open(), 'Reading help', 'Hints')
     expect(radio(panel, 'Show note names automatically', '1 mistake').getAttribute('aria-checked')).toBe('true')
     expect(radio(panel, 'Hint lifetime', '30 s').getAttribute('aria-checked')).toBe('true')
     expect($(panel, 'output')?.textContent).toBe('300 ms')
   })
 
   it('chooses 1, 2, 3 or off for the automatic threshold', () => {
-    const panel = openTab(open(), 'Hints')
+    const panel = openSection(open(), 'Reading help', 'Hints')
     click(radio(panel, 'Show note names automatically', '1 mistake'))
     expect(settings.value.hints.autoThreshold).toBe(1)
     click(radio(panel, 'Show note names automatically', '3 mistakes'))
@@ -107,7 +106,7 @@ describe('Hints', () => {
   })
 
   it('accepts a custom positive threshold and rejects zero, negatives and text', () => {
-    const panel = openTab(open(), 'Hints')
+    const panel = openSection(open(), 'Reading help', 'Hints')
     click(radio(panel, 'Show note names automatically', 'Custom'))
     const input = numberInput(panel, 'Custom number of wrong attacks')
     type(input, '5')
@@ -127,7 +126,7 @@ describe('Hints', () => {
   })
 
   it('keeps Custom selected while the typed value equals a preset', () => {
-    const panel = openTab(open(), 'Hints')
+    const panel = openSection(open(), 'Reading help', 'Hints')
     click(radio(panel, 'Show note names automatically', 'Custom'))
     type(numberInput(panel, 'Custom number of wrong attacks'), '3')
     expect(radio(panel, 'Show note names automatically', 'Custom').getAttribute('aria-checked')).toBe('true')
@@ -136,13 +135,13 @@ describe('Hints', () => {
 
   it('shows a stored non-preset threshold as Custom', () => {
     updateSettings({ hints: { autoThreshold: 6 } })
-    const panel = openTab(open(), 'Hints')
+    const panel = openSection(open(), 'Reading help', 'Hints')
     expect(radio(panel, 'Show note names automatically', 'Custom').getAttribute('aria-checked')).toBe('true')
     expect(numberInput(panel, 'Custom number of wrong attacks').value).toBe('6')
   })
 
   it('chooses the lifetime: 10 / 20 / 30 / 60 s, custom, or until correct', () => {
-    const panel = openTab(open(), 'Hints')
+    const panel = openSection(open(), 'Reading help', 'Hints')
     for (const [label, expected] of [
       ['10 s', 10],
       ['20 s', 20],
@@ -168,14 +167,14 @@ describe('Hints', () => {
   })
 
   it('changes the fade duration from the slider', () => {
-    const panel = openTab(open(), 'Hints')
+    const panel = openSection(open(), 'Reading help', 'Hints')
     type($(panel, 'input[type="range"]'), '500')
     expect(settings.value.hints.fadeMs).toBe(500)
     expect($(panel, 'output')?.textContent).toBe('500 ms')
   })
 
   it('turns the red flash on a wrong note off and on (on by default)', () => {
-    const panel = openTab(open(), 'Hints')
+    const panel = openSection(open(), 'Reading help', 'Hints')
     const flash = toggle(panel, 'Red flash on a wrong note')
     expect(flash.checked).toBe(true)
     expect(panel.textContent).toContain('Flash the screen edges red when you play a wrong note.')
@@ -190,7 +189,7 @@ describe('Hints', () => {
 
 describe('Keep time', () => {
   it('chooses the timing window: Tight, Normal (the default) or Loose', () => {
-    const panel = openTab(open(), 'Hints')
+    const panel = openSection(open(), 'Reading help', 'Hints')
     expect(panel.textContent).toContain('Keep time')
     expect(radio(panel, 'Keep time window', 'Normal ±150 ms').getAttribute('aria-checked')).toBe('true')
     click(radio(panel, 'Keep time window', 'Tight ±80 ms'))
@@ -203,7 +202,7 @@ describe('Keep time', () => {
 
   it('shows a stored window that is not a preset in words, with no choice selected', () => {
     updateSettings({ rhythm: { toleranceMs: 120 } })
-    const panel = openTab(open(), 'Hints')
+    const panel = openSection(open(), 'Reading help', 'Hints')
     for (const label of ['Tight ±80 ms', 'Normal ±150 ms', 'Loose ±250 ms']) {
       expect(radio(panel, 'Keep time window', label).getAttribute('aria-checked')).toBe('false')
     }
@@ -211,56 +210,9 @@ describe('Keep time', () => {
   })
 })
 
-describe('Pedal', () => {
-  it('chooses what the hint pedal reveals', () => {
-    const panel = openTab(open(), 'Pedal')
-    expect(radio(panel, 'Hint pedal action', 'Note names').getAttribute('aria-checked')).toBe('true')
-    click(radio(panel, 'Hint pedal action', 'Show keys'))
-    expect(settings.value.pedal.hintPedalAction).toBe('keys')
-  })
-
-  it('says plainly that no pedal is set', () => {
-    const panel = openTab(open(), 'Pedal')
-    expect($(panel, '[data-testid="pedal-summary"]')?.textContent).toMatch(/No hint pedal is set/u)
-  })
-
-  it('summarizes the learned mapping from settings', () => {
-    updateSettings({
-      pedal: {
-        hintPedal: {
-          channel: 0,
-          controller: 66,
-          threshold: 64,
-          inverted: false,
-          observedMin: 0,
-          observedMax: 127,
-          verified: true,
-        },
-        observedControllers: [64, 66],
-      },
-    })
-    const panel = openTab(open(), 'Pedal')
-    const text = $(panel, '[data-testid="pedal-summary"]')?.textContent ?? ''
-    expect(text).toMatch(/Sostenuto \(middle pedal\)/u)
-    expect(text).toMatch(/channel 1/u)
-    expect(text).toMatch(/at or above 64/u)
-    expect(text).toMatch(/Tested/u)
-    expect(panel.textContent).toMatch(/sustain \(right pedal\), sostenuto \(middle pedal\)/u)
-  })
-
-  it('closes Settings and opens Connection from Set up in Connection', () => {
-    currentView.value = 'practice'
-    const panel = openTab(open(), 'Pedal')
-    click(byLabel(panel, 'Set up in Connection'))
-    expect(settingsOpen.value).toBe(false)
-    expect(connectionOpen.value).toBe(true) // the Connection setup modal opens over the same view
-    expect(currentView.value).toBe('practice')
-  })
-})
-
 describe('Sound', () => {
   it('defaults to Auto: the piano when connected, otherwise this device (S4)', () => {
-    const panel = openTab(open(), 'Sound')
+    const panel = openTab(open(), 'Piano and sound')
     expect(radio(panel, 'Sound destination', 'Auto').getAttribute('aria-checked')).toBe('true')
     expect(panel.textContent).toMatch(
       /connected piano plays when there is one\. Otherwise sound comes from this device/u,
@@ -268,7 +220,7 @@ describe('Sound', () => {
   })
 
   it('pins the piano or browser sound by explicit choice', () => {
-    const panel = openTab(open(), 'Sound')
+    const panel = openTab(open(), 'Piano and sound')
     click(radio(panel, 'Sound destination', 'Browser sound'))
     expect(settings.value.sound.destination).toBe('browser')
     expect(panel.textContent).toMatch(/always comes from this device's speakers/u)
@@ -280,7 +232,7 @@ describe('Sound', () => {
   })
 
   it('adjusts browser volume and accompaniment level', () => {
-    const panel = openTab(open(), 'Sound')
+    const panel = openTab(open(), 'Piano and sound')
     const sliders = $$(panel, 'input[type="range"]')
     type(sliders[0], '0.5')
     expect(settings.value.sound.browserVolume).toBe(0.5)
@@ -289,7 +241,7 @@ describe('Sound', () => {
   })
 
   it('toggles the metronome and its volume, off by default', () => {
-    const panel = openTab(open(), 'Sound')
+    const panel = openTab(open(), 'Piano and sound')
     expect(toggle(panel, 'Metronome click').checked).toBe(false)
     const volume = $$(panel, 'input[type="range"]')[2] as HTMLInputElement
     // Keep time's click is on by default, so the volume still applies.
@@ -302,7 +254,7 @@ describe('Sound', () => {
   })
 
   it('has its own Keep time click switch (on by default); the volume is disabled only when both are off (P20)', () => {
-    const panel = openTab(open(), 'Sound')
+    const panel = openTab(open(), 'Piano and sound')
     const volume = $$(panel, 'input[type="range"]')[2] as HTMLInputElement
     expect(toggle(panel, 'Click in Keep time').checked).toBe(true)
     click(toggle(panel, 'Click in Keep time'))
@@ -318,32 +270,50 @@ describe('Sound', () => {
   })
 
   it('keeps monitoring through browser sound off by default', () => {
-    const panel = openTab(open(), 'Sound')
+    const panel = openTab(open(), 'Piano and sound')
     expect(toggle(panel, 'Hear my keys through browser sound').checked).toBe(false)
     click(toggle(panel, 'Hear my keys through browser sound'))
     expect(settings.value.sound.monitorInput).toBe(true)
   })
 
   it('warns when browser sound is chosen but Web Audio is missing', () => {
-    const panel = openTab(open(detectFeatures({})), 'Sound')
+    const panel = openTab(open(detectFeatures({})), 'Piano and sound')
     expect($$(panel, '[role="status"]').some((n) => /metronome click are unavailable/u.test(n.textContent ?? ''))).toBe(
       false,
     )
     click(radio(panel, 'Sound destination', 'Browser sound'))
     expect(panel.textContent).toMatch(/cannot play sound itself/u)
   })
+
+  it('names the remembered recording input, and Choose again forgets it (D20)', () => {
+    updateSettings({ recording: { inputId: 'usb', inputLabel: 'USB Audio' } })
+    const group = openSection(open(), 'Piano and sound', 'Performance recording')
+    expect(group.textContent).toContain('USB Audio')
+    click(byLabel(group, 'Choose again'))
+    expect(settings.value.recording).toEqual({ inputId: null, inputLabel: null })
+    expect(group.textContent).not.toContain('USB Audio')
+    expect(byLabel(group, 'Choose again')).toBeNull()
+    expect(group.textContent).toContain('You choose the audio input the next time you record.')
+  })
+
+  it('says when the recording input is chosen while none is remembered, and names one without a name', () => {
+    const group = openSection(open(), 'Piano and sound', 'Performance recording')
+    expect(group.textContent).toContain('You choose the audio input the next time you record.')
+    flush(() => updateSettings({ recording: { inputId: 'usb', inputLabel: null } }))
+    expect(group.textContent).toContain('System audio input')
+  })
 })
 
-describe('General', () => {
+describe('App', () => {
   it('toggles suggestions, enabled by default', () => {
-    const panel = openTab(open(), 'General')
+    const panel = openTab(open(), 'App')
     expect(toggle(panel, 'Suggest passages to practice').checked).toBe(true)
     click(toggle(panel, 'Suggest passages to practice'))
     expect(settings.value.suggestions.enabled).toBe(false)
   })
 
   it('chooses the theme', () => {
-    const panel = openTab(open(), 'General')
+    const panel = openTab(open(), 'App')
     expect(radio(panel, 'Theme', 'System').getAttribute('aria-checked')).toBe('true')
     click(radio(panel, 'Theme', 'Light'))
     expect(settings.value.view.theme).toBe('light')
@@ -354,7 +324,7 @@ describe('General', () => {
 
 describe('About', () => {
   it('shows the version, MusicXML-only import, data locality and credits', () => {
-    const panel = openTab(open(), 'About')
+    const panel = openTab(open(), 'Data')
     expect(panel.textContent).toContain(`version ${APP_VERSION}`)
     expect(panel.textContent).toMatch(/MusicXML is the only score format/u)
     expect(panel.textContent).toMatch(/never\s+uploaded/u)
@@ -368,11 +338,11 @@ describe('About', () => {
   })
 
   it('lists what this browser supports with the explanation for anything missing', () => {
-    const panel = openTab(open(detectFeatures({})), 'About')
+    const panel = openTab(open(detectFeatures({})), 'Data')
     expect(panel.textContent).toMatch(/Web MIDI/u)
     expect(panel.textContent).toMatch(/Safari does not offer it/u)
     expect(panel.textContent).toMatch(/MIDIWeb/u)
-    const supported = openTab(open(ALL_FEATURES), 'About')
+    const supported = openTab(open(ALL_FEATURES), 'Data')
     expect($$(supported, '[data-supported="false"]')).toHaveLength(0)
   })
 })
@@ -387,10 +357,10 @@ describe('numbers in other languages', () => {
       const restore = useCatalog(language)
       try {
         const root = open()
-        const outputs = $$(openTab(root, msg('Sound')), 'output').map((o) => o.textContent)
+        const outputs = $$(openTab(root, msg('Piano and sound')), 'output').map((o) => o.textContent)
         expect(outputs).toContain(percentage(settings.value.sound.browserVolume))
         expect(outputs).toContain(percentage(settings.value.metronome.volume))
-        expect(radio(openTab(root, msg('Hints')), msg('Hint lifetime'), seconds)).toBeTruthy()
+        expect(radio(openTab(root, msg('Reading help')), msg('Hint lifetime'), seconds)).toBeTruthy()
       } finally {
         restore()
       }

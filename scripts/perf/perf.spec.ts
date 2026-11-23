@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test, type Browser, type CDPSession, type Page } from '../../tests/browser-test'
 import { generateLongScore } from '../../tests/fixtures/generate-long-score'
-import { installFakeMidi, setShowKeys, openFooterMenu } from '../../tests/e2e/practice-helpers'
+import { chooseMode, installFakeMidi, setShowKeys, openFooterMenu } from '../../tests/e2e/practice-helpers'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { dist, frameStats, installPageProbe, perFrame, topSelf, traceSplit, type TraceSplit } from './lib'
 
@@ -125,10 +125,10 @@ test('perf walk', async ({ page, browser, browserName }) => {
   // ── Listen ──────────────────────────────────────────────────────────────────────────────
   if (STEPS.has('listen'))
     await test.step('listen', async () => {
-      await setHands(page, false)
-      await expect(page.getByRole('button', { name: 'Listen', exact: true })).toBeVisible()
+      await chooseMode(page, 'Listen')
+      await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
       results['listen'] = await measure(page, browser, cdp, 'listen', LISTEN_MS, async () => {
-        await page.getByRole('button', { name: 'Listen', exact: true }).click()
+        await page.getByRole('button', { name: 'Play', exact: true }).click()
       })
       await page.getByRole('button', { name: 'Pause', exact: true }).click()
       await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
@@ -157,7 +157,7 @@ test('perf walk', async ({ page, browser, browserName }) => {
   if (STEPS.has('practice'))
     await test.step('practice with MIDI', async () => {
       // Both hands, reading from bar 1.
-      await setHands(page, true)
+      await chooseMode(page, 'Wait')
       await page.getByRole('slider', { name: 'Piece overview' }).focus()
       await page.keyboard.press('Home')
       await page.waitForTimeout(300)
@@ -281,7 +281,7 @@ test('perf walk', async ({ page, browser, browserName }) => {
         const mt = String(reference['title'])
         results['reference'] = { title: mt, import: reference, prepare: await prepareColdWarm(page, mt) }
         // Listen on the reference piece too: a real score's density.
-        await setHands(page, false)
+        await chooseMode(page, 'Listen')
         ;(results['reference'] as Json)['listen'] = await measure(
           page,
           browser,
@@ -289,7 +289,7 @@ test('perf walk', async ({ page, browser, browserName }) => {
           'reference-listen',
           LISTEN_MS / 2,
           async () => {
-            await page.getByRole('button', { name: 'Listen', exact: true }).click()
+            await page.getByRole('button', { name: 'Play', exact: true }).click()
           },
         )
         await page.getByRole('button', { name: 'Pause', exact: true }).click()
@@ -313,15 +313,6 @@ async function setSpeed(page: Page, preset: string): Promise<void> {
   await dialog.getByRole('group', { name: 'Speed presets' }).getByRole('button', { name: preset, exact: true }).click()
   await page.getByRole('button', { name: /Open speed options/ }).click()
   await expect(dialog).toHaveCount(0)
-}
-
-/** Both hand toggles on (practice both hands) or off (Listen, U9). */
-async function setHands(page: Page, on: boolean): Promise<void> {
-  for (const name of ['Left hand', 'Right hand']) {
-    const toggle = page.getByRole('button', { name, exact: true })
-    if ((await toggle.getAttribute('aria-pressed')) !== String(on)) await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-pressed', String(on))
-  }
 }
 
 /**

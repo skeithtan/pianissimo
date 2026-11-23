@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { createPortal } from 'preact/compat'
 import { Icon } from '../../ui/icons'
 import pill from '../../ui/statusPill.module.css'
@@ -6,26 +6,46 @@ import control from './recordingControl.module.css'
 import { Button, Sheet } from '../../ui/controls'
 import { msg } from '../../i18n/messages'
 import { openConnection } from '../../app/navigation'
-import { connectionStatus, pushNotice } from '../../app/state'
+import { connectionStatus, pushNotice, updateSettings } from '../../app/state'
 import { openPerformanceInput, type PerformanceInput } from '../../app/audio/performanceInput'
 import { describePassage } from '../../core/model/passage'
+import { rememberInput } from '../../core/recording/input'
 import { RecordingHistory, handName } from './History'
+import { SavedTakePill, savedTakeText } from './SavedTakePill'
 import { recorderErrorText } from './errors'
 import { beginTake, type TakeTarget } from './take'
 import { TAKE_LIMIT_MS, TAKE_WARNING_MS, startTakeClock } from './takeClock'
+import { deletedTake, type SavedTake } from './unsaved'
+import type { OneTap, TakePhase } from './useRecordingDialog'
 import styles from './recordings.module.css'
 
+/** `enabling` and `ready` are the setup sheet's; `opening` is a one-tap take's, without a sheet. */
+type Phase = 'setup' | 'enabling' | 'ready' | Exclude<TakePhase, 'setup'>
+
+/**
+ * One take, from its setup sheet (or at once, `oneTap`, DECISIONS D20) to its saved pill. It owns
+ * the audio input and, until it is saved, the take.
+ */
 export function Recorder({
   target,
+  oneTap,
   onClose,
+  onPhase,
   controlsHost,
+  covered = false,
 }: {
   target: TakeTarget
+  oneTap: OneTap | null
   onClose: () => void
+  onPhase: (phase: TakePhase) => void
   controlsHost: HTMLElement | null
+  /** Progress is open over the score. */
+  covered?: boolean
 }) {
-  const [phase, setPhase] = useState<'setup' | 'opening' | 'ready' | 'recording' | 'saving' | 'history'>('setup')
-  const [savedId, setSavedId] = useState<string>()
+  const [phase, setPhase] = useState<Phase>(oneTap ? 'opening' : 'setup')
+  const [saved, setSaved] = useState<SavedTake | null>(null)
+  /** The Recordings list, opened from the saved take's pill, which stays under it. */
+  const [listOpen, setListOpen] = useState(false)
   const [error, setError] = useState('')
   const [input, setInput] = useState<PerformanceInput | null>(null)
   const [seconds, setSeconds] = useState(0)
@@ -35,7 +55,19 @@ export function Recorder({
   const recording = useRef<ReturnType<typeof beginTake> | null>(null)
   const saving = useRef(false)
   const mounted = useRef(true)
+  /** Where the take's controls are drawn now (a closure may hold the place before a rotation). */
+  const host = useRef(controlsHost)
+  host.current = controlsHost
+  const stopHadFocus = useRef(false)
+  const savedDeleted = useRef(false)
   const connection = connectionStatus.value
+  const reported: TakePhase = phase === 'enabling' || phase === 'ready' ? 'setup' : listOpen ? 'list' : phase
+  useLayoutEffect(() => onPhase(reported), [reported])
+  const deletedId = deletedTake.value
+  useEffect(() => {
+    // Deleted in Progress (the list here closes the pill itself).
+    if (saved && !listOpen && deletedId === saved.info.id) onClose()
+  }, [deletedId])
   async function finish(interrupted: boolean) {
     const take = recording.current
     if (!take) return
@@ -44,20 +76,25 @@ export function Recorder({
     saving.current = true
     owned.current = null
     if (mounted.current) {
+      stopHadFocus.current = !!host.current?.contains(document.activeElement)
       setPhase('saving')
       setInput(null)
     }
     try {
-      const saved = await take.stop(interrupted)
-      if (mounted.current) setSavedId(saved.info.id)
+      const kept = await take.stop(interrupted)
+      if (mounted.current) {
+        setSaved(kept)
+        setPhase('saved')
+      }
     } catch {
       pushNotice({
         kind: 'warning',
         text: msg('Recording could not be saved. Open Recordings to download it or retry.'),
       })
+      // It exists only in memory: the list, over the score, offers Retry saving and the download.
+      if (mounted.current) setPhase('list')
     } finally {
       saving.current = false
-      if (mounted.current) setPhase('history')
     }
   }
   function release() {
@@ -79,7 +116,8 @@ export function Recorder({
       setPhase('setup')
     }
   }
-  useEffect(() => {
+  // A layout effect: its cleanup runs as the recorder goes, before a late input could start a take.
+  useLayoutEffect(() => {
     mounted.current = true
     const hidden = () => {
       if (document.hidden) lost()
@@ -138,16 +176,43 @@ export function Recorder({
       },
     )
   }, [phase])
+  useLayoutEffect(() => {
+    if (oneTap) void startAtOnce(oneTap)
+  }, [])
+  /** The remembered input, and only that one, records as soon as it is open. */
+  async function startAtOnce({ input: remembered, context }: OneTap) {
+    const controller = new AbortController()
+    request.current = controller
+    try {
+      const next = await openPerformanceInput('', lost, controller.signal, { remembered, context })
+      if (controller.signal.aborted) {
+        next.close()
+        return
+      }
+      owned.current = next
+      // The piano may be gone by now. The setup sheet says what to do.
+      if (connectionStatus.peek().state !== 'connected') giveUp('')
+      else begin(next)
+    } catch (e) {
+      if (!controller.signal.aborted) giveUp(recorderErrorText(e, owned.current ? 'start' : 'open'))
+    }
+  }
+  /** A one-tap take that could not start: the setup sheet, with the reason, as for a first take. */
+  function giveUp(reason: string) {
+    release()
+    setError(reason)
+    setPhase('setup')
+  }
   async function open(id = '', preferPiano = false) {
     release()
     const controller = new AbortController()
     request.current = controller
     setError('')
-    setPhase('opening')
+    setPhase('enabling')
     setInput(null)
     try {
-      const preferred = preferPiano && connection.state === 'connected' ? connection.inputName : undefined
-      const next = await openPerformanceInput(id, lost, controller.signal, preferred)
+      const preferredName = preferPiano && connection.state === 'connected' ? connection.inputName : undefined
+      const next = await openPerformanceInput(id, lost, controller.signal, { preferredName })
       if (controller.signal.aborted) {
         next.close()
         return
@@ -163,30 +228,91 @@ export function Recorder({
       }
     }
   }
+  function begin(next: PerformanceInput) {
+    recording.current = beginTake(target, next, lost)
+    setSeconds(0)
+    setPhase('recording')
+  }
   function start() {
-    if (!owned.current || recording.current) return
+    const next = owned.current
+    if (!next || recording.current) return
     try {
-      recording.current = beginTake(target, owned.current, lost)
-      setSeconds(0)
-      setPhase('recording')
+      begin(next)
+      // Chosen: the next take starts from it in one tap.
+      updateSettings({ recording: rememberInput({ deviceId: next.deviceId, label: next.deviceLabel }) })
     } catch (e) {
       setError(recorderErrorText(e, 'start'))
     }
   }
-  if (phase === 'history')
+  const list = (
+    <RecordingHistory
+      initialId={saved?.info.id}
+      storage={target.env.storage}
+      pieceId={target.pieceId}
+      model={target.model}
+      onDeleted={(id) => {
+        if (id === saved?.info.id) savedDeleted.current = true
+      }}
+      onClose={() => {
+        if (listOpen && !savedDeleted.current) setListOpen(false)
+        else onClose()
+      }}
+    />
+  )
+  if (phase === 'list') return list
+  if (phase === 'opening' || phase === 'recording' || phase === 'saving' || phase === 'saved')
     return (
-      <RecordingHistory
-        initialId={savedId}
-        storage={target.env.storage}
-        pieceId={target.pieceId}
-        model={target.model}
-        onClose={onClose}
-      />
+      <>
+        {/* On the page before the pill is, so that the change is announced. */}
+        <span class={styles.announcer} role="status">
+          {saved ? savedTakeText(saved.info) : ''}
+        </span>
+        {saved ? (
+          <SavedTakePill
+            take={saved}
+            host={controlsHost}
+            listOpen={listOpen}
+            covered={covered}
+            takeFocus={stopHadFocus.current}
+            onRecordings={() => setListOpen(true)}
+            onClose={onClose}
+          />
+        ) : (
+          controlsHost && createPortal(transport(), controlsHost)
+        )}
+        {listOpen ? list : null}
+      </>
     )
-  if (phase === 'recording' || phase === 'saving') {
-    if (!controlsHost) return null
+  /** The take's place while its input opens, then its timer and Stop. */
+  function transport() {
+    if (phase === 'opening')
+      return (
+        <span
+          class={`${pill.pill} ${control.opening}`}
+          role="group"
+          aria-label={msg('Opening audio input…')}
+          aria-busy="true"
+        >
+          <span class={control.text}>
+            <span class={`${pill.dot} ${control.pulse}`} aria-hidden="true" />
+            <span class={control.words}>{msg('Opening audio input…')}</span>
+          </span>
+          <button
+            type="button"
+            class={`${pill.action} ${control.icon}`}
+            aria-label={msg('Cancel')}
+            title={msg('Cancel')}
+            onClick={() => {
+              release()
+              onClose()
+            }}
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </span>
+      )
     const savingTake = phase === 'saving'
-    return createPortal(
+    return (
       <span
         class={`${pill.pill} ${control.transport}`}
         role="group"
@@ -209,8 +335,7 @@ export function Recorder({
           <Icon name="stop" size={17} />
           <span class={control.label}>{savingTake ? msg('Saving…') : msg('Stop')}</span>
         </button>
-      </span>,
-      controlsHost,
+      </span>
     )
   }
   return (
@@ -231,7 +356,7 @@ export function Recorder({
                 openConnection()
               }}
             >
-              {msg('Connection')}
+              {msg('Connect piano')}
             </Button>
           </div>
         )}
@@ -259,6 +384,7 @@ export function Recorder({
               <meter ref={meter} min={0} max={1} value={0} aria-label={msg('Audio level')} />
             </>
           )}
+          <p>{msg('This choice is kept for next time.')}</p>
         </div>
         {error && <p role="alert">{error}</p>}
         <div class={styles.actions}>
@@ -272,17 +398,17 @@ export function Recorder({
           ) : (
             <Button
               variant="primary"
-              disabled={phase === 'opening' || connection.state !== 'connected'}
+              disabled={phase === 'enabling' || connection.state !== 'connected'}
               onClick={() => void open('', true)}
             >
-              {phase === 'opening' ? msg('Opening audio input…') : msg('Enable audio input')}
+              {phase === 'enabling' ? msg('Opening audio input…') : msg('Enable audio input')}
             </Button>
           )}
           <Button
             variant="ghost"
             onClick={() => {
               release()
-              setPhase('history')
+              setPhase('list')
             }}
           >
             {msg('Recordings')}

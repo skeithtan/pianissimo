@@ -15,6 +15,7 @@ import {
   type TimerApi,
 } from '../../core/playback'
 import type { BrowserAudioModule, MetronomeModule } from '../../core/playback'
+import type { EchoTestResult } from '../../core/midi/echo'
 import type { PianissimoStorage } from '../../core/storage'
 import {
   OsmdRenderer,
@@ -31,6 +32,7 @@ import {
   type RespaceSnapshot,
   type StripOptions,
 } from '../../render'
+import { playTestNotes } from '../connection/testNotes'
 
 /**
  * Strip options, incl. the cursor action (round repeat button on the cursor line, U14) and the
@@ -109,10 +111,11 @@ export interface PracticeEnv {
    * click module would otherwise create it after an awaited import. Never throws.
    */
   readonly primeAudio?: () => void
+  /** Plays the test notes on the piano and listens for them (U149). */
+  readonly testNotes?: () => Promise<EchoTestResult | null>
   /**
-   * The microphone follower and whether this browser can open a microphone (DECISIONS P22), read by
-   * Sheet music's live following (`views/study`, U105); Practice follows no microphone. Absent: the
-   * real ones (`app/audio/micFollower.ts`); view tests inject fakes.
+   * The microphone follower and whether this browser can open a microphone (DECISIONS P22), for
+   * Follow. Absent: the real ones (`app/audio/micFollower.ts`); view tests inject fakes.
    */
   readonly createMicFollower?: CreateMicFollower
   readonly micSupported?: () => boolean
@@ -165,5 +168,6 @@ export function defaultPracticeEnv(): PracticeEnv {
         // Unavailable sound is reported where the click would play; the switch still saves.
       }
     },
+    testNotes: () => playTestNotes(getMidiService()),
   }
 }

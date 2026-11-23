@@ -147,6 +147,8 @@ export interface ExcerptMarkup {
   readonly height: number
   /** Add this to an engraving x coordinate to get its position within the excerpt. */
   readonly offsetX: number
+  /** Where the top staff begins, from the excerpt's top. */
+  readonly staffTop: number
 }
 
 export interface ExcerptOptions {
@@ -231,7 +233,7 @@ export function excerptMarkup(layout: PreparedLayout, occ: number, opts: Excerpt
       `</svg>`,
   )
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" class="pn-excerpt-svg" viewBox="0 ${r2(y0)} ${w} ${h}" width="${w}" height="${h}">${parts.join('')}</svg>`
-  return { svg, width: w, height: h, offsetX: pw - x0 }
+  return { svg, width: w, height: h, offsetX: pw - x0, staffTop: Math.min(...staves.map((s) => s.top)) - y0 }
 }
 
 /**

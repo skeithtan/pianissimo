@@ -1,20 +1,19 @@
 import { msg, percentage } from '../../i18n/messages'
 /**
- * The Practice footer menu (DECISIONS U76): one Menu button at the footer's end edge (U88), across
- * from the always-visible Speed control, that opens an anchored popover (never a modal sheet) holding Note
- * names, Keep time, Playback, Metronome and Show keys. The Menu button carries a small
- * metronome badge while Keep time is on. The popover opens upward, stays on screen (`placePopover`)
- * and fades. It
+ * The Practice footer menu (DECISIONS U76, U141): one Menu button at the footer's end edge (U88),
+ * across from the always-visible Speed control, that opens an anchored popover (never a modal sheet)
+ * holding the mode's rows. The popover opens upward, stays on screen (`placePopover`) and fades. It
  * closes on Escape, a press outside it, the Menu button again, when playback starts and when the
- * chrome recedes. Focus moves into the panel on open and back to the button on close.
+ * chrome recedes; in Listen, whose chrome never recedes, it stays open while the piece plays. Focus
+ * moves into the panel on open and back to the button on close.
  *
- * `FooterMenuPopover` is that button and popover with any rows: Practice's `FooterMenu` fills it
- * with `PracticeMenuItems`, Study's footer (DECISIONS U90) with Note names, Metronome and Show keys.
- * Study's never closes on its own when playback starts (its chrome never recedes, U72).
+ * `PracticeMenuItems` are the rows, in the popover and in a phone's menu sheet: Note names; Playback
+ * (Keep time); Follow input (Follow); Metronome; Show keys; Progress; Record performance.
  */
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { PracticeSession, SessionUi } from '../../app/session'
+import { updateSettings } from '../../app/state'
 import type { PersistentLabelMode } from '../../core/model/settings'
 import { Button, Segmented, Slider, Toggle } from '../../ui/controls'
 import { useFadePresence } from '../../ui/fade'
@@ -23,14 +22,12 @@ import { usePopoverPlacement } from '../../ui/usePopoverPlacement'
 import menuStyles from './FooterMenu.module.css'
 import styles from './practice.module.css'
 
-/** The Note names choices (Practice and Study menus). */
-export const LABEL_OPTIONS = [
-  { value: 'off', label: 'Off', title: 'No persistent note names' },
+/** The Note names choices. */
+const LABEL_OPTIONS = [
+  { value: 'off', label: 'Off', title: 'No note names on the score' },
   { value: 'conditional', label: 'Conditional', title: 'Name notes outside your chosen range' },
   { value: 'all', label: 'All', title: 'Name every note' },
 ] as const
-
-const KEEP_TIME_DESCRIPTION = 'After a count-in, the score keeps moving at the set tempo, even if you miss notes.'
 
 /** The Metronome row's state, computed once by the screen (DECISIONS U87, P20). */
 export interface MetronomeRow {
@@ -41,14 +38,20 @@ export interface MetronomeRow {
 }
 
 export interface FooterMenuProps {
+  readonly onProgress?: (() => void) | undefined
   readonly onRecord?: (() => void) | undefined
+  /** The recorder has the learner's attention: the menu closes. */
   readonly recordingOpen?: boolean | undefined
+  /** A take is opening, recording or saving. */
+  readonly recordDisabled?: boolean | undefined
   readonly ui: SessionUi
   readonly session: PracticeSession
   readonly receded: boolean
   readonly labels: PersistentLabelMode
   readonly onLabels: (mode: PersistentLabelMode) => void
-  /** The score (or the piece) has a numerical tempo: Keep time needs one. */
+  /** Opens the Note names rules, offered in Conditional. */
+  readonly onNoteRules: () => void
+  /** The score (or the piece) has a numerical tempo: Playback needs one. */
   readonly hasTempo: boolean
   readonly scorePlayback: {
     readonly on: boolean
@@ -80,11 +83,14 @@ function MenuReveal({ open, children }: { readonly open: boolean; readonly child
  * sheet hides Show keys in landscape, where there is no keyboard guide (U80).
  */
 export function PracticeMenuItems({
+  onProgress,
   onRecord,
+  recordDisabled,
   ui,
   session,
   labels,
   onLabels,
+  onNoteRules,
   hasTempo,
   scorePlayback,
   metronome,
@@ -95,46 +101,43 @@ export function PracticeMenuItems({
   toggleClass,
 }: Pick<
   FooterMenuProps,
-  'ui' | 'session' | 'labels' | 'onLabels' | 'hasTempo' | 'scorePlayback' | 'metronome' | 'onMetronome'
+  'ui' | 'session' | 'labels' | 'onLabels' | 'onNoteRules' | 'hasTempo' | 'scorePlayback' | 'metronome' | 'onMetronome'
 > & {
+  readonly onProgress?: (() => void) | undefined
   readonly onRecord?: (() => void) | undefined
+  readonly recordDisabled?: boolean | undefined
   readonly showKeys?: boolean
   readonly rowClass: string | undefined
   readonly labelClass: string | undefined
   readonly toggleClass: string | undefined
 }) {
   const toggleRow = [rowClass, toggleClass].filter(Boolean).join(' ')
-  const showScorePlayback = ui.rhythm && ui.hands !== 'none' && ui.pianoConnected && hasTempo
+  const showScorePlayback = ui.mode === 'time' && ui.pianoConnected && hasTempo
   return (
     <>
-      <div class={rowClass} data-keeps-ahead>
-        <span class={labelClass} aria-hidden="true">
-          {msg('Note names')}
-        </span>
-        <Segmented<PersistentLabelMode>
-          label={msg('Note names on the score')}
-          value={labels}
-          options={LABEL_OPTIONS.map((o) => ({ ...o, label: msg(o.label), title: msg(o.title) }))}
-          onChange={onLabels}
-          compact
-        />
+      <div class={menuStyles.group}>
+        <div class={rowClass} data-keeps-ahead>
+          <span class={labelClass} aria-hidden="true">
+            {msg('Note names')}
+          </span>
+          <Segmented<PersistentLabelMode>
+            label={msg('Note names on the score')}
+            value={labels}
+            options={LABEL_OPTIONS.map((o) => ({ ...o, label: msg(o.label), title: msg(o.title) }))}
+            onChange={onLabels}
+            compact
+          />
+        </div>
+        <MenuReveal open={labels === 'conditional'}>
+          <button type="button" class={menuStyles.link} onClick={onNoteRules}>
+            {msg('Choose which notes')}
+          </button>
+        </MenuReveal>
       </div>
-      <div class={menuStyles.keepTimeGroup} role="group" aria-label={msg('Keep time settings')}>
-        <Toggle
-          class={toggleRow}
-          label={msg('Keep time')}
-          checked={ui.rhythm}
-          disabled={!ui.handsAvailable || ui.hands === 'none' || !hasTempo || !ui.pianoConnected}
-          description={
-            ui.pianoConnected
-              ? msg(KEEP_TIME_DESCRIPTION)
-              : msg('{0} Needs a connected piano.', msg(KEEP_TIME_DESCRIPTION))
-          }
-          onChange={(on) => session.setRhythmMode(on)}
-        />
-        <MenuReveal open={showScorePlayback}>
+      {showScorePlayback ? (
+        <div class={menuStyles.group}>
           <Toggle
-            class={`${toggleRow} ${menuStyles.scorePlayback}`}
+            class={toggleRow}
             label={msg('Playback')}
             description={msg('Hear both hands while you play.')}
             checked={scorePlayback.on}
@@ -153,8 +156,30 @@ export function PracticeMenuItems({
               />
             </div>
           </MenuReveal>
-        </MenuReveal>
-      </div>
+        </div>
+      ) : null}
+      {ui.mode === 'follow' && ui.micSupported ? (
+        <div class={rowClass}>
+          <span class={labelClass} aria-hidden="true">
+            {msg('Follow input')}
+          </span>
+          <Segmented
+            label={msg('Follow input')}
+            value={ui.follow}
+            options={[
+              {
+                value: 'piano',
+                label: msg('Piano'),
+                title: ui.pianoConnected ? msg('Follow the connected piano') : msg('Piano not connected'),
+                disabled: !ui.pianoConnected,
+              },
+              { value: 'mic', label: msg('Microphone'), title: msg('Follow what this device’s microphone hears') },
+            ]}
+            onChange={(follow) => updateSettings({ mic: { follow: follow === 'mic' } })}
+            compact
+          />
+        </div>
+      ) : null}
       <Toggle
         class={toggleRow}
         label={msg('Metronome')}
@@ -171,8 +196,13 @@ export function PracticeMenuItems({
           onChange={(on) => session.setKeyboardVisible(on)}
         />
       ) : null}
+      {onProgress && (
+        <Button icon="chart" onClick={onProgress}>
+          {msg('Progress')}
+        </Button>
+      )}
       {onRecord && (
-        <Button icon="record" onClick={onRecord}>
+        <Button icon="record" disabled={recordDisabled} onClick={onRecord}>
           {msg('Record performance')}
         </Button>
       )}
@@ -180,25 +210,10 @@ export function PracticeMenuItems({
   )
 }
 
-export interface FooterMenuPopoverProps {
-  /** The popover's accessible name ("Practice menu", "Study menu"). */
-  readonly label: string
-  /**
-   * Closes the menu when it turns true (Practice: playback starting, the chrome receding, the
-   * recorder opening). It can be opened again while it stays true, as Playback changes live.
-   */
-  readonly closed?: boolean
-  /** Shown on the Menu button's corner (Practice: the Keep time metronome). */
-  readonly badge?: ComponentChildren
-  /** The rows (built with `footerMenuClasses`). */
-  readonly children: ComponentChildren
-}
-
-/** The popover's row classes, for the hosts' rows (`row`, `label`, `toggle`). */
-export const footerMenuClasses = { row: menuStyles.row, label: menuStyles.label, toggle: menuStyles.toggle } as const
-
-/** The footer's Menu button and its anchored popover (U76), whatever rows it holds. */
-export function FooterMenuPopover({ label, closed = false, badge, children }: FooterMenuPopoverProps) {
+export function FooterMenu({ ui, receded, recordingOpen, onNoteRules, onProgress, ...items }: FooterMenuProps) {
+  // Closes when playback starts (Listen's does not recede and stays), the chrome recedes or the
+  // recorder opens. It can be opened again while that lasts, as Playback changes live.
+  const closed = (ui.playing && ui.mode !== 'listen') || receded || !!recordingOpen
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
@@ -253,14 +268,13 @@ export function FooterMenuPopover({ label, closed = false, badge, children }: Fo
         onClick={() => setOpen((o) => !o)}
       >
         <Icon name="menu" size={24} />
-        {badge}
       </button>
       {popover.mounted ? (
         <div
           ref={panel}
           class={`${menuStyles.popover} ${side === 'up' ? menuStyles.up : ''}`}
           role="dialog"
-          aria-label={label}
+          aria-label={msg('Practice menu')}
           tabIndex={-1}
           data-side={side}
           style={{
@@ -269,52 +283,30 @@ export function FooterMenuPopover({ label, closed = false, badge, children }: Fo
             ...(fit?.maxHeight != null ? { maxHeight: `${fit.maxHeight}px`, overflowY: 'auto' } : {}),
           }}
         >
-          {children}
+          <PracticeMenuItems
+            {...items}
+            onProgress={
+              onProgress &&
+              (() => {
+                // Focus returns to this button when the sheet closes.
+                setOpen(false)
+                button.current?.focus()
+                onProgress()
+              })
+            }
+            ui={ui}
+            onNoteRules={() => {
+              // Settings returns the focus to what had it: the button, not a menu that is going.
+              setOpen(false)
+              button.current?.focus()
+              onNoteRules()
+            }}
+            rowClass={menuStyles.row}
+            labelClass={menuStyles.label}
+            toggleClass={menuStyles.toggle}
+          />
         </div>
       ) : null}
     </div>
-  )
-}
-
-export function FooterMenu({
-  onRecord,
-  recordingOpen,
-  ui,
-  session,
-  receded,
-  labels,
-  onLabels,
-  hasTempo,
-  scorePlayback,
-  metronome,
-  onMetronome,
-}: FooterMenuProps) {
-  return (
-    <FooterMenuPopover
-      label={msg('Practice menu')}
-      closed={ui.playing || receded || !!recordingOpen}
-      badge={
-        ui.rhythm ? (
-          <span class={menuStyles.badge} data-testid="keep-time-badge" aria-hidden="true">
-            <Icon name="metronome" size={14} />
-          </span>
-        ) : null
-      }
-    >
-      <PracticeMenuItems
-        onRecord={onRecord}
-        ui={ui}
-        session={session}
-        labels={labels}
-        onLabels={onLabels}
-        hasTempo={hasTempo}
-        scorePlayback={scorePlayback}
-        metronome={metronome}
-        onMetronome={onMetronome}
-        rowClass={menuStyles.row}
-        labelClass={menuStyles.label}
-        toggleClass={menuStyles.toggle}
-      />
-    </FooterMenuPopover>
   )
 }

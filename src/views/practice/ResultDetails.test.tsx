@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { currentView, resultsRequest } from '../../app/navigation'
+import type { ComponentChildren } from 'preact'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { currentView } from '../../app/navigation'
 import {
   Store,
   type AttemptSummary,
@@ -20,10 +21,13 @@ import ja from '../../i18n/locales/ja-JP.json'
 import { readMessagesWith } from '../../i18n/messages'
 import { $, $$, byText, click, mount, type Mounted } from '../shared/testing'
 import type { ResultsData } from '../results/data'
-import { ResultDetails, verdict } from './ResultDetails'
-import { passFacts } from './format'
+import { ResultDetails } from './ResultDetails'
+import { passFacts, verdict } from './format'
 
 let view: Mounted | null = null
+beforeEach(() => {
+  currentView.value = 'practice'
+})
 afterEach(() => {
   view?.unmount()
   view = null
@@ -77,7 +81,8 @@ function render(
   mistakes: RankedMistake[],
   result: AttemptSummary = RESULT,
   goal: number | null = 3,
-  history: ResultsData | null = null,
+  loadHistory: () => Promise<ResultsData | null> = () => Promise.resolve(null),
+  actions?: ComponentChildren,
 ) {
   const details: Details = { attemptId: result.id, records: [], timeline, marks: new Map() }
   const snippet = new Store<SnippetState | null>(null)
@@ -105,7 +110,8 @@ function render(
       layout={null}
       goal={goal}
       rank={() => mistakes}
-      loadHistory={() => Promise.resolve(history)}
+      loadHistory={loadHistory}
+      actions={actions}
     />,
   )
   return session
@@ -121,6 +127,41 @@ describe('ResultDetails (U99)', () => {
     expect(facts).toContain('Took 6.5 s; the music lasts 6.0 s at this speed (+0.5 s)')
     expect(facts).toContain('Right the first time at 5 of 5 places')
     expect(facts).toContain('2 of 3 clean in a row toward the goal')
+  })
+
+  it('a Wait run has neither all the numbers nor earlier passes: it is not stored (U142)', async () => {
+    const loadHistory = vi.fn(() => Promise.resolve(null))
+    const run: AttemptSummary = { ...RESULT, run: true, completionTimeSec: null, expectedTimeSec: null }
+    render([mistake(1, 0, 'replaced')], run, null, loadHistory)
+    await Promise.resolve()
+    expect(loadHistory).not.toHaveBeenCalled()
+    expect($(view!.container, '[data-testid="result-verdict"]')?.textContent).toBe('Not clean: 3 wrong notes.')
+    expect($$(view!.container, '[data-testid="result-excerpt"]')).toHaveLength(1)
+    const facts = $(view!.container, '[data-testid="result-facts"]')!
+    expect(Array.from(facts.querySelectorAll('li'), (li) => li.textContent)).toEqual([
+      'Right the first time at 2 of 5 places',
+    ])
+    expect(view!.container.textContent).not.toMatch(/earlier passes|All the numbers/i)
+  })
+
+  it('puts the actions directly under the verdict, then what the pill peeked at (U142)', () => {
+    const actions = <p data-testid="actions">Loop, Again</p>
+    const order = () =>
+      Array.from(
+        view!.container.querySelectorAll('[data-testid]'),
+        (el) => (el as HTMLElement).dataset['testid'],
+      ).filter((id) => ['result-verdict', 'actions', 'result-clean', 'result-excerpt', 'result-facts'].includes(id!))
+    render([mistake(1, 0, 'replaced')], RESULT, null, undefined, actions)
+    expect(order()).toEqual(['result-verdict', 'actions', 'result-excerpt', 'result-facts'])
+    // Alone, the list needs no heading to be seen; assistive technology keeps it.
+    expect(byText(view!.container, 'In this pass')?.className).toBe('visually-hidden')
+    view!.unmount()
+    render([], { ...RESULT, passed: true, wrongAttacks: 0, groupsFirstPass: 5 }, null, undefined, actions)
+    expect(order()).toEqual(['result-verdict', 'actions', 'result-clean', 'result-facts'])
+    // Clean with a mark (a hesitation): the facts still come first, as the pill peeks at them.
+    view!.unmount()
+    render([mistake(1, 0, 'timing')], { ...RESULT, passed: true, wrongAttacks: 0 }, null, undefined, actions)
+    expect(order()).toEqual(['result-verdict', 'actions', 'result-facts', 'result-excerpt'])
   })
 
   it('never calls a pass free of marks when its summary contains wrong or missed notes', () => {
@@ -172,8 +213,7 @@ describe('ResultDetails (U99)', () => {
     expect($$(view!.container, '[data-testid="result-excerpt"]')).toHaveLength(6)
     expect(byText(view!.container, 'Show 2 more bars')).toBeNull()
     for (const el of $$(view!.container, '[data-testid="result-excerpt"]')) click(el)
-    expect(currentView.value).not.toBe('results')
-    expect(resultsRequest.value).toBeNull()
+    expect(currentView.value).not.toBe('library')
   })
 
   it('each bar plays what you played and as written; the one sounding shows Stop; folding stops it (U100)', async () => {
@@ -194,7 +234,7 @@ describe('ResultDetails (U99)', () => {
     click(button(first!, 'played')) // Stop
     expect(session.stopSnippet).toHaveBeenCalled()
     await vi.waitFor(() => expect(button(first!, 'played').getAttribute('aria-pressed')).toBe('false'))
-    expect(currentView.value).not.toBe('results')
+    expect(currentView.value).not.toBe('library')
 
     click(button(second!, 'written'))
     await vi.waitFor(() => expect(session.playSnippet).toHaveBeenCalledWith('a3', 1, 'written'))
@@ -238,10 +278,9 @@ describe('ResultDetails (U99)', () => {
       piece: makePiece(pkg, { title: 'Minuet' }),
       attempts,
       occurrences: occurrences(40),
-      suggestions: { active: [], improved: [], disabled: false },
     }
     const passed = { ...RESULT, passed: true, wrongAttacks: 0, groupsFirstPass: 5, streak: 2 }
-    render([], passed, 3, data)
+    render([], passed, 3, () => Promise.resolve(data))
     const root = view!.container
     const row = (id: string) => $(root, `[data-attempt="${id}"]`)
     await vi.waitFor(() => expect(row('a3')).not.toBeNull())

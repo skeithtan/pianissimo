@@ -4,14 +4,15 @@
  *
  * - **URL → signals** on `popstate` / `hashchange`: Back, Forward, a typed hash, a link.
  * - **Signals → URL** after any navigation signal changes, coalesced per microtask so that, for
- *   example, `closeSettings(); openConnection()` is one overlay swap rather than two steps.
+ *   example, `closeSettings(); openConnection()` is one step rather than two.
  *
  * History rules (so Back does what people expect):
  * - Showing another page pushes an entry.
  * - Opening an overlay pushes an entry (marked `overlayFrom`); closing it goes back, so Back,
  *   Escape and ✕ all leave the history in the same place (Forward would reopen the overlay).
- * - Swapping one overlay for another, closing an overlay that came from a deep link or reload,
- *   and changing a Practice preset in place rewrite the current entry instead.
+ * - Moving between Piano and sound (`?connection`) and the other Settings tabs (`?settings`),
+ *   closing an overlay that came from a deep link or reload, and changing a Practice preset in
+ *   place rewrite the current entry instead.
  * - `history.back()` is asynchronous. While it is pending nothing else is written; when its
  *   `popstate` arrives the signals (which may have moved on) are written to the URL again.
  *
@@ -23,11 +24,10 @@
 import { batch, effect } from '@preact/signals'
 import {
   connectionOpen,
-  studyRequest,
   currentView,
   practiceRequest,
-  resultsRequest,
   settingsOpen,
+  settingsTab,
   type PracticePreset,
 } from './navigation'
 import {
@@ -65,17 +65,6 @@ export function routeFromSignals(): Route {
       const request = practiceRequest.value
       return request ? { view: 'practice', pieceId: request.pieceId, overlay } : { view: 'practice', overlay }
     }
-    case 'results': {
-      const request = resultsRequest.value
-      if (!request) return { view: 'results', overlay }
-      return request.attemptId
-        ? { view: 'results', pieceId: request.pieceId, attemptId: request.attemptId, overlay }
-        : { view: 'results', pieceId: request.pieceId, overlay }
-    }
-    case 'study': {
-      const request = studyRequest.value
-      return request ? { view: 'study', pieceId: request.pieceId, overlay } : { view: 'study', overlay }
-    }
     case 'library':
       return { view: 'library', overlay }
   }
@@ -89,34 +78,34 @@ function stateFor(preset: PracticePreset | undefined, overlayFrom: boolean): His
   return { ...(preset ? { preset } : {}), ...(overlayFrom ? { overlayFrom: true } : {}) }
 }
 
-/** Make the signals describe `route` (and `preset`) without touching anything that already matches. */
+/**
+ * Make the signals describe `route` (and `preset`) without touching anything that already matches.
+ * A route's mode opens the piece again in it; the mode a request was opened in is forgotten once
+ * Practice has been left.
+ */
 export function applyRoute(route: Route, preset: PracticePreset | undefined): void {
   batch(() => {
+    const arriving = currentView.peek() !== 'practice'
     currentView.value = route.view
     if (route.view === 'practice') {
       const current = practiceRequest.peek()
       if (!route.pieceId) {
         if (current) practiceRequest.value = null
-      } else if (!current || current.pieceId !== route.pieceId || !samePreset(current.preset, preset)) {
-        practiceRequest.value = { pieceId: route.pieceId, ...(preset ? { preset } : {}) }
-      }
-    } else if (route.view === 'results') {
-      const current = resultsRequest.peek()
-      if (!route.pieceId) {
-        if (current) resultsRequest.value = null
-      } else if (!current || current.pieceId !== route.pieceId || current.attemptId !== route.attemptId) {
-        resultsRequest.value = { pieceId: route.pieceId, ...(route.attemptId ? { attemptId: route.attemptId } : {}) }
-      }
-    } else if (route.view === 'study') {
-      const current = studyRequest.peek()
-      if (!route.pieceId) {
-        if (current) studyRequest.value = null
-      } else if (!current || current.pieceId !== route.pieceId) {
-        studyRequest.value = { pieceId: route.pieceId }
+      } else if (
+        !current ||
+        current.pieceId !== route.pieceId ||
+        !samePreset(current.preset, preset) ||
+        (current.mode !== route.mode && (arriving || route.mode !== undefined))
+      ) {
+        practiceRequest.value = {
+          pieceId: route.pieceId,
+          ...(preset ? { preset } : {}),
+          ...(route.mode ? { mode: route.mode } : {}),
+        }
       }
     }
-    settingsOpen.value = route.overlay === 'settings'
-    connectionOpen.value = route.overlay === 'connection'
+    settingsOpen.value = route.overlay !== null
+    if (route.overlay === 'connection') settingsTab.value = 'piano'
   })
 }
 
@@ -154,9 +143,22 @@ export function startRouter(win: RouterWindow = window): () => void {
     }
   }
 
+  /** Rewrite a hand-typed or aliased hash (`#/connection`, `#/study/x`, `#/nonsense`) to its canonical form. */
+  const canonicalize = (): void => {
+    const canonical = formatHash(parseHash(win.location.hash))
+    if (win.location.hash === '' || win.location.hash === canonical) return
+    try {
+      win.history.replaceState(win.history.state, '', canonical)
+      seenHash = win.location.hash
+    } catch {
+      // See push.
+    }
+  }
+
   /** `withPreset` false at boot: a reload reopens the piece's stored state, not the preset (U98). */
   const fromUrl = (withPreset = true): void => {
     applyRoute(parseHash(win.location.hash), withPreset ? readHistoryState(win.history.state).preset : undefined)
+    canonicalize()
   }
 
   const toUrl = (): void => {
@@ -184,7 +186,7 @@ export function startRouter(win: RouterWindow = window): () => void {
         }, BACK_TIMEOUT_MS)
         win.history.back()
       } else {
-        // Closing a deep-linked overlay, or swapping one overlay for another.
+        // Closing a deep-linked overlay, or another Settings tab.
         replace(next, stateFor(preset, next.overlay !== null && prevState.overlayFrom === true))
       }
       return
@@ -219,16 +221,6 @@ export function startRouter(win: RouterWindow = window): () => void {
   }
 
   fromUrl(false)
-  // Rewrite a hand-typed or aliased hash (`#/connection`, `#/nonsense`) to its canonical form.
-  const initial = parseHash(win.location.hash)
-  if (win.location.hash !== '' && win.location.hash !== formatHash(initial)) {
-    try {
-      win.history.replaceState(win.history.state, '', formatHash(initial))
-      seenHash = win.location.hash
-    } catch {
-      // See push.
-    }
-  }
 
   const onPopState = (): void => onUrlChange('popstate')
   const onHashChange = (): void => onUrlChange('hashchange')

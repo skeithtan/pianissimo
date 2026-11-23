@@ -119,6 +119,39 @@ export function reviewGate(
   return { canSave: blockers.length === 0, blockers, tempoError }
 }
 
+/** What the review shows as a visible warning ("Before you play"). */
+export interface ImportIssues {
+  readonly warnings: ImportSummary['diagnostics']['list']
+  readonly unsupported: ImportSummary['unsupported']
+  readonly timingIssues: ImportSummary['timingIssues']
+  readonly tempoConflicts: boolean
+  readonly any: boolean
+}
+
+export function importIssues(summary: ImportSummary): ImportIssues {
+  // Hand and tempo questions have dedicated controls in the review.
+  const warnings = summary.diagnostics.list.filter(
+    (d) => d.severity === 'warning' && d.code !== 'tempo-missing' && d.code !== 'hand-ambiguous',
+  )
+  const { unsupported, timingIssues } = summary
+  const tempoConflicts = summary.tempo.conflicts > 0
+  return {
+    warnings,
+    unsupported,
+    timingIssues,
+    tempoConflicts,
+    any: warnings.length > 0 || unsupported.length > 0 || timingIssues.length > 0 || tempoConflicts,
+  }
+}
+
+/**
+ * Nothing in the review needs an answer or a look (DECISIONS L12): the score states its tempo and
+ * hands, has no import errors and nothing the review would warn about.
+ */
+export function needsNoAnswer(summary: ImportSummary, draft: ReviewDraft): boolean {
+  return reviewGate(summary, draft).canSave && !importIssues(summary).any
+}
+
 export interface FinalizedImport {
   readonly model: ScoreModel
   readonly userTempo?: UserTempo

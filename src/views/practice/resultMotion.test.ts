@@ -53,6 +53,14 @@ describe('the result opening (P4)', () => {
         for (const key of Object.keys(frame)) if (key !== 'offset') expect(MOTION_PROPERTIES.has(key), key).toBe(true)
   })
 
+  it('what the pill peeked at fades where it was, on a tablet and under the phone’s screen', () => {
+    const peek = el('peek')
+    const tablet = panelOpening({ ...parts(), peek }, PILL, CARD, PANEL_TOP, VIEW)
+    const phone = screenOpening(el('screen'), PILL, { left: 0, top: 0, right: 390, bottom: 844 }, 22, [], 8, peek)
+    for (const steps of [tablet, phone])
+      expect(named(steps, 'peek').keyframes).toEqual([{ opacity: 1 }, { opacity: 0, offset: 0.35 }, { opacity: 0 }])
+  })
+
   it("starts the tablet card at the pill's rectangle and ends at its own", () => {
     const steps = panelOpening(parts(), PILL, CARD, PANEL_TOP, VIEW)
     // The panel rises from behind the row: at first only the pill's height above the row shows
@@ -67,6 +75,9 @@ describe('the result opening (P4)', () => {
     )
     // The summary starts where it was in the pill: 30 px higher, its ends at the pill's edges.
     expect(named(steps, 'summary').keyframes[0]).toEqual({ transform: 'translateY(-30px)' })
+    // Its own offset when the pill gives it another place (the chevron above it).
+    const offset = panelOpening(parts(), PILL, CARD, PANEL_TOP, VIEW, 24, 22)
+    expect(named(offset, 'summary').keyframes[0]).toEqual({ transform: 'translateY(-22px)' })
     expect(named(steps, 'badge').keyframes[0]).toEqual({ transform: 'translateX(150px)' })
     expect(named(steps, 'actions').keyframes[0]).toMatchObject({ transform: 'translateX(-150px)', opacity: 0 })
     // The outline: the top corners travel with the top edge (from the pill's top to the panel's).

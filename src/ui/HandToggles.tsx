@@ -1,56 +1,41 @@
 import { msg } from '../i18n/messages'
 /**
  * Hand selection as two hand toggles around the primary Start/Pause button (spec "Listening and
- * hand practice"): an *on* hand is played by the learner, an *off* hand is played by the piano,
- * and with both off the app is in Listen mode and the piano plays everything (DECISIONS U4, U9).
- * There is no caption (U12): `aria-pressed`, the L / R badge, the tooltip and the main button's
- * label (Start / Listen) say what the selection means. Without a connected piano the hands are
- * unavailable (`handsUnavailable`): both toggles show off, and a tap explains instead of toggling.
- *
- * `PlayButton` is the large accent Play / Pause circle on its own (68 px, 44 px `compact`): the
- * cluster uses it, and so does Study's footer (DECISIONS U90), which puts its own two actions
- * where the hands are.
+ * hand practice", DECISIONS U4, U141): the hands that are *on* are the ones the learner plays or,
+ * in Listen, hears. One hand always stays on: a tap on the only lit hand reports `onOnlyHand` and
+ * changes nothing. There is no caption (U12): `aria-pressed`, the L / R badge and the tooltip
+ * (`onText` / `offText`, the mode's words) say what the selection means.
  */
-import type { HandSelection } from '../core/model/score'
+import type { LearnerHands } from '../core/model/score'
 import { Icon } from './icons'
 import styles from './HandToggles.module.css'
 
 type Hand = 'left' | 'right'
 
-/** Whether the learner plays `hand` under `selection`. */
-export function handIsOn(selection: HandSelection, hand: Hand): boolean {
+/** Whether `hand` is on under `selection`. */
+export function handIsOn(selection: LearnerHands, hand: Hand): boolean {
   return selection === 'both' || selection === hand
 }
 
-/** Selection for a pair of toggle states: both -> both, one -> that hand, none -> Listen. */
-export function handsFromToggles(left: boolean, right: boolean): HandSelection {
-  if (left && right) return 'both'
-  if (left) return 'left'
-  if (right) return 'right'
-  return 'none'
-}
-
-/** Default label of the primary button: Pause while running, Listen with both hands off, otherwise Start. */
-export function playButtonLabel(selection: HandSelection, playing: boolean): string {
-  if (playing) return msg('Pause')
-  return selection === 'none' ? msg('Listen') : msg('Start')
+/** The selection after a tap on `hand`, or null when it is the only one on (it stays on). */
+export function toggledHands(selection: LearnerHands, hand: Hand): LearnerHands | null {
+  if (selection === 'both') return hand === 'left' ? 'right' : 'left'
+  return selection === hand ? null : 'both'
 }
 
 export interface HandTogglesProps {
-  readonly hands: HandSelection
-  readonly onHandsChange: (hands: HandSelection) => void
+  readonly hands: LearnerHands
+  readonly onHandsChange: (hands: LearnerHands) => void
+  /** A tap on the only lit hand, which stays on. */
+  readonly onOnlyHand: () => void
+  /** What a hand that is on / off means now ("you play it" / "the piano plays it"). */
+  readonly onText: string
+  readonly offText: string
   readonly playing: boolean
   readonly onPlayPause: () => void
-  /** Overrides the default Start / Pause / Listen label (also the accessible name). */
-  readonly playLabel?: string
+  /** The main button's accessible name and tooltip (Start / Resume / Play / Pause). */
+  readonly playLabel: string
   readonly handsDisabled?: boolean
-  /**
-   * Why no hand can be chosen now ("Piano not connected"): both toggles show off and unavailable
-   * (`aria-disabled`, still tappable; the text is their tooltip) and a tap calls
-   * `onHandsUnavailable` instead of changing the selection.
-   */
-  readonly handsUnavailable?: string | undefined
-  readonly onHandsUnavailable?: (() => void) | undefined
   readonly playDisabled?: boolean
   /** Extra class on the two hand toggles (the Practice view fades them while playing). */
   readonly handClass?: string | undefined
@@ -61,34 +46,30 @@ export interface HandTogglesProps {
 function HandToggle({
   hand,
   on,
+  text,
   disabled,
-  unavailable,
   extraClass,
   compact,
   onToggle,
-  onUnavailable,
 }: {
   hand: Hand
   on: boolean
+  text: string
   disabled: boolean | undefined
-  unavailable: string | undefined
   extraClass: string | undefined
   compact: boolean
   onToggle: () => void
-  onUnavailable: (() => void) | undefined
 }) {
   const name = hand === 'left' ? msg('Left hand') : msg('Right hand')
-  const blocked = unavailable !== undefined
   return (
     <button
       type="button"
       class={[styles.hand, hand === 'left' ? styles.left : styles.right, extraClass].filter(Boolean).join(' ')}
-      aria-pressed={blocked ? false : on}
-      aria-disabled={blocked || undefined}
+      aria-pressed={on}
       aria-label={name}
-      title={`${name}: ${blocked ? unavailable : on ? msg('you play it') : msg('the piano plays it')}`}
+      title={msg('{0}: {1}', name, text)}
       disabled={disabled}
-      onClick={blocked ? onUnavailable : onToggle}
+      onClick={onToggle}
     >
       <Icon name={hand === 'left' ? 'handLeft' : 'hand'} size={compact ? 22 : 30} />
       <span class={styles.letter} aria-hidden="true">
@@ -98,64 +79,53 @@ function HandToggle({
   )
 }
 
-export interface PlayButtonProps {
-  readonly playing: boolean
-  /** The accessible name and the tooltip (Start / Listen / Play / Pause). */
-  readonly label: string
-  readonly disabled?: boolean | undefined
-  readonly compact?: boolean
-  readonly onClick: () => void
-}
-
-/** The primary accent circle: a play triangle, or pause bars while `playing`. */
-export function PlayButton({ playing, label, disabled, compact = false, onClick }: PlayButtonProps) {
-  return (
-    <button type="button" class={styles.play} aria-label={label} title={label} disabled={disabled} onClick={onClick}>
-      <Icon name={playing ? 'pause' : 'play'} size={compact ? 24 : 32} />
-    </button>
-  )
-}
-
 /** Centered transport cluster: [left hand] [Start / Pause] [right hand]. */
 export function HandToggles({
   hands,
   onHandsChange,
+  onOnlyHand,
+  onText,
+  offText,
   playing,
   onPlayPause,
   playLabel,
   handsDisabled,
-  handsUnavailable,
-  onHandsUnavailable,
   playDisabled,
   handClass,
   compact = false,
 }: HandTogglesProps) {
-  const left = handIsOn(hands, 'left')
-  const right = handIsOn(hands, 'right')
-  const label = playLabel ?? playButtonLabel(hands, playing)
+  const toggle = (hand: Hand) => {
+    const on = handIsOn(hands, hand)
+    return (
+      <HandToggle
+        hand={hand}
+        on={on}
+        text={on ? onText : offText}
+        disabled={handsDisabled}
+        extraClass={handClass}
+        compact={compact}
+        onToggle={() => {
+          const next = toggledHands(hands, hand)
+          if (next) onHandsChange(next)
+          else onOnlyHand()
+        }}
+      />
+    )
+  }
   return (
     <div class={compact ? `${styles.row} ${styles.compact}` : styles.row}>
-      <HandToggle
-        hand="left"
-        on={left}
-        disabled={handsDisabled}
-        unavailable={handsUnavailable}
-        extraClass={handClass}
-        compact={compact}
-        onToggle={() => onHandsChange(handsFromToggles(!left, right))}
-        onUnavailable={onHandsUnavailable}
-      />
-      <PlayButton playing={playing} label={label} disabled={playDisabled} compact={compact} onClick={onPlayPause} />
-      <HandToggle
-        hand="right"
-        on={right}
-        disabled={handsDisabled}
-        unavailable={handsUnavailable}
-        extraClass={handClass}
-        compact={compact}
-        onToggle={() => onHandsChange(handsFromToggles(left, !right))}
-        onUnavailable={onHandsUnavailable}
-      />
+      {toggle('left')}
+      <button
+        type="button"
+        class={styles.play}
+        aria-label={playLabel}
+        title={playLabel}
+        disabled={playDisabled}
+        onClick={onPlayPause}
+      >
+        <Icon name={playing ? 'pause' : 'play'} size={compact ? 24 : 32} />
+      </button>
+      {toggle('right')}
     </div>
   )
 }

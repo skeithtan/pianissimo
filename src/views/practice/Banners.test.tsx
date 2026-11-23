@@ -3,9 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
 import type { AttemptSummary, GuideState, PracticeSession, SessionUi } from '../../app/session'
 import { Store } from '../../app/session/store'
+import type { Language } from '../../core/model/language'
+import type { PassageRange } from '../../core/model/practice'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import en from '../../i18n/locales/en-US.json'
 import fr from '../../i18n/locales/fr-FR.json'
+import ja from '../../i18n/locales/ja-JP.json'
 import { readMessagesWith } from '../../i18n/messages'
 import { $, byLabel, byText, click, mount, type Mounted } from '../shared/testing'
 import {
@@ -41,8 +44,8 @@ const UI: SessionUi = {
   activity: 'idle',
   phase: null,
   playing: false,
+  mode: 'wait',
   hands: 'both',
-  handsAvailable: true,
   leadIn: false,
   range: null,
   multiplier: 1,
@@ -65,13 +68,10 @@ const UI: SessionUi = {
   interruption: null,
   soundStatus: null,
   inputDisconnected: false,
-  playThrough: false,
   micStatus: null,
   follow: 'piano',
   pianoConnected: true,
   micSupported: true,
-  playThroughLocked: false,
-  rhythm: false,
   countIn: null,
   metronomeScope: 'general',
   metronomeMuted: false,
@@ -100,9 +100,9 @@ function result(ui: Partial<SessionUi>, extra: Partial<AttemptResultProps> = {})
   return (
     <AttemptResult
       ui={{ ...UI, ...ui }}
-      model={{ notes: [] }}
+      model={{ notes: [], occurrences: [] }}
       naming={DEFAULT_SETTINGS.naming}
-      details={() => <p data-testid="details-body">The details</p>}
+      details={(_, actions) => <div data-testid="details-body">The details{actions}</div>}
       onRestart={noop}
       onDismiss={noop}
       {...extra}
@@ -141,7 +141,7 @@ describe('Banners', () => {
     view = mount(banners({ inputDisconnected: true, interruption: DISCONNECT }))
     const notice = $(view.container, '[data-testid="input-disconnected"]')
     expect(notice?.textContent).toContain('Piano disconnected. Reconnect it to continue.')
-    expect(byText(notice!, 'Connection')).not.toBeNull()
+    expect(byText(notice!, 'Connect piano')).not.toBeNull()
     expect($(view.container, '[data-testid="interruption"]')).toBeNull()
 
     // The piano is back: no disconnect message remains (the footer offers Resume / Start).
@@ -175,18 +175,18 @@ describe('Banners', () => {
     expect($(view.container, '[data-testid="interruption"]')?.textContent).toContain('Paused.')
   })
 
-  it('shows no result card or interruption while playing through (P12)', () => {
+  it('shows no result card or interruption in Follow (P12)', () => {
     view = mount(
       banners({
         activity: 'playing',
-        playThrough: true,
+        mode: 'follow',
         lastResult: RESULT,
         interruption: { reason: 'seek', text: 'Moving through the score stopped the attempt.', canResume: true },
       }),
     )
     expect($(view.container, '[data-testid="interruption"]')).toBeNull()
     view.unmount()
-    view = mount(result({ activity: 'playing', playThrough: true, lastResult: RESULT }))
+    view = mount(result({ activity: 'playing', mode: 'follow', lastResult: RESULT }))
     expect(view.container.textContent).not.toContain('Clean pass')
     expect(byLabel(view.container, 'Hide result')).toBeNull()
   })
@@ -217,13 +217,11 @@ describe('Banners', () => {
     expect(card.textContent).not.toContain('in a row')
   })
 
-  it('shows the Repeat goal as dots, Again only once the goal is met, and the repeated mistake on the note line', () => {
+  it('shows the Repeat goal as dots and the repeated mistake on the note line', () => {
     view = mount(result({ repeat: true, repeatTarget: 3, lastResult: { ...RESULT, streak: 2 } }))
     const goal = () => $(view!.container, '[role="img"]')
     expect(goal()?.getAttribute('aria-label')).toBe('2 of 3 clean toward the goal')
     expect(goal()?.querySelectorAll('[data-on]')).toHaveLength(2)
-    // In Repeat mode the next pass starts by playing: no Again until the goal ends Repeat.
-    expect(byText(view.container, 'Again')).toBeNull()
     expect($(view.container, '[data-testid="result-note"]')).toBeNull()
     view.rerender(
       result({
@@ -239,7 +237,6 @@ describe('Banners', () => {
     )
     expect(goal()?.querySelectorAll('[data-on]')).toHaveLength(3)
     expect(view.container.textContent).toContain('Goal reached. Repeat is off.')
-    expect(byText(view.container, 'Again')).not.toBeNull()
     // The first (most passes) repeated mistake, worded with the naming settings.
     expect($(view.container, '[data-testid="result-note"]')?.textContent).toBe(
       'F instead of F♯ in bar 12, three passes running',
@@ -280,13 +277,15 @@ describe('Banners', () => {
     expect(card()?.textContent).toContain('Clean pass')
     expect(card()?.textContent).toContain('2 clean in a row')
     const preview = $(card()!, '[data-testid="result-details-preview"]')!
-    expect(Array.from(preview.querySelectorAll('li'), (li) => li.textContent)).toEqual([
+    expect(Array.from(preview.querySelectorAll('p, li'), (line) => line.textContent)).toEqual([
+      'No mistakes in this pass.',
+      'This pass',
       'Right the first time at 4 of 4 places',
       'Took 3.0 s; the music lasts 3.0 s at this speed (0.0 s)',
+      '2 clean in a row',
     ])
     for (const gone of ['marks on the score', 'No wrong notes']) expect(card()?.textContent).not.toContain(gone)
     expect(byLabel(card()!, 'Show details of this pass')).not.toBeNull()
-    expect(byText(card()!, 'Again')).not.toBeNull()
 
     click(byLabel(card()!, 'Hide result'))
     expect(onDismiss).toHaveBeenCalledOnce()
@@ -298,6 +297,139 @@ describe('Banners', () => {
     expect(card()).not.toBeNull()
     advance(2)
     expect(card()).toBeNull()
+  })
+})
+
+describe('the pill has no actions; its card has them (U142)', () => {
+  const occurrences = Array.from({ length: 40 }, (_, occ) => ({
+    number: String((occ % 20) + 1),
+    pass: occ < 20 ? 1 : 2,
+  })) as unknown as AttemptResultProps['model']['occurrences']
+  const model = { notes: [], occurrences }
+  const run: AttemptSummary = {
+    ...RESULT,
+    run: true,
+    passed: false,
+    wrongAttacks: 4,
+    completionTimeSec: null,
+    expectedTimeSec: null,
+    streak: 0,
+    rough: { fromOcc: 8, toOcc: 11 },
+  }
+  const card = () => $(view!.container, '[data-testid="attempt-result"]')!
+  const open = () => click($(card(), '[data-testid="result-details-toggle"]'))
+  const choices = () => $(view!.container, '[data-testid="result-choices"]')
+  const loop = () => $(view!.container, '[data-testid="result-loop"]')
+  const labels = () => Array.from(choices()?.querySelectorAll('button') ?? [], (b) => b.textContent)
+  const speak = (language: Language, catalog: Record<string, string>) => {
+    const source = en as Record<string, string>
+    const strings = Object.fromEntries(Object.entries(catalog).map(([id, text]) => [source[id]!, text]))
+    readMessagesWith(() => ({ language, strings }))
+  }
+  afterEach(() => readMessagesWith(() => ({ language: 'en-US', strings: {} })))
+
+  it.each([
+    ['a run with rough bars', { lastResult: run }],
+    ['a clean pass', { lastResult: RESULT }],
+    ['Repeat', { repeat: true, lastResult: RESULT }],
+    ['Repeat at its goal', { repeat: true, repeatTarget: 2, lastResult: { ...RESULT, targetReached: true } }],
+    ['Keep time', { mode: 'time' as const, lastResult: { ...run, run: undefined as never } }],
+  ])('the pill of %s: only the whole-pill control and ✕', (_, ui) => {
+    for (const phone of [false, true]) {
+      view?.unmount()
+      view = mount(result(ui, { model, onLoop: noop, phone }))
+      expect(Array.from(card().querySelectorAll('button'), (b) => b.getAttribute('aria-label'))).toEqual([
+        'Show details of this pass',
+        'Hide result',
+      ])
+      expect(choices()).toBeNull()
+    }
+  })
+
+  it('the card offers Loop first, then Again; each does its own', () => {
+    const onLoop = vi.fn()
+    const onRestart = vi.fn()
+    view = mount(result({ lastResult: run }, { model, onLoop, onRestart }))
+    open()
+    expect(labels()).toEqual(['Loop 9–12', 'Again'])
+    expect($(card(), '[data-testid="result-details"]')!.contains(choices())).toBe(true)
+    click(loop())
+    expect([onLoop.mock.calls.length, onRestart.mock.calls.length]).toEqual([1, 0])
+    click(byText(choices()!, 'Again'))
+    expect([onLoop.mock.calls.length, onRestart.mock.calls.length]).toEqual([1, 1])
+  })
+
+  it('one of them is primary: Loop when it is there, else Again', () => {
+    const primary = () =>
+      Array.from(choices()!.querySelectorAll('button'))
+        .filter((b) => /primary/.test(b.className))
+        .map((b) => b.textContent)
+    view = mount(result({ lastResult: run }, { model, onLoop: noop }))
+    open()
+    expect(primary()).toEqual(['Loop 9–12'])
+    view.unmount()
+    view = mount(result({ lastResult: RESULT }, { model, onLoop: noop }))
+    open()
+    expect(labels()).toEqual(['Again'])
+    expect(primary()).toEqual(['Again'])
+  })
+
+  it('in Repeat, none until the goal ends it, then Again', () => {
+    view = mount(result({ repeat: true, repeatTarget: 3, lastResult: RESULT }, { model, onLoop: noop }))
+    open()
+    expect(choices()).toBeNull()
+    view.unmount()
+    view = mount(
+      result(
+        { repeat: true, repeatTarget: 2, lastResult: { ...RESULT, targetReached: true } },
+        { model, onLoop: noop },
+      ),
+    )
+    open()
+    expect(labels()).toEqual(['Again'])
+  })
+
+  it('words one bar and a repeated one as the Repeat panel does, and in the language shown', () => {
+    const shown = (rough: PassageRange) => {
+      view?.unmount()
+      view = mount(result({ lastResult: { ...run, rough } }, { model, onLoop: noop }))
+      open()
+      return loop()?.textContent
+    }
+    expect(shown({ fromOcc: 11, toOcc: 11 })).toBe('Loop 12')
+    expect(shown({ fromOcc: 18, toOcc: 21 })).toBe('Loop 19–2 (2nd)')
+    speak('fr-FR', fr)
+    expect(shown({ fromOcc: 8, toOcc: 11 })).toBe('Boucler 9–12')
+    speak('ja-JP', ja)
+    expect(shown({ fromOcc: 8, toOcc: 11 })).toBe('第9～12小節を反復')
+  })
+
+  it('a card that opening Repeat sends away keeps its actions while it folds', () => {
+    vi.useFakeTimers()
+    view = mount(result({ lastResult: run, repeatTarget: 3 }, { model, onLoop: noop }))
+    advance(50)
+    open()
+    view.rerender(result({ lastResult: null, repeat: true, repeatTarget: 3 }, { model, onLoop: noop }))
+    expect($(card(), '[data-testid="result-details"]')?.dataset['phase']).toBe('leaving')
+    expect(labels()).toEqual(['Loop 9–12', 'Again'])
+    expect($(card(), '[role="img"]')).toBeNull()
+  })
+
+  it('tells the peek whether there is something to correct, and when nothing is played', () => {
+    const peek = vi.fn((_: AttemptSummary, s: { marked: boolean; idle: boolean }) => (
+      <i data-testid="peek">{String(s.idle)}</i>
+    ))
+    const last = () => peek.mock.calls.at(-1)![1]
+    view = mount(result({ lastResult: RESULT, phase: 'completed' }, { peek }))
+    expect(last()).toEqual({ marked: false, idle: true })
+    // Its marks go with Start; what it peeks at stays.
+    view.rerender(result({ lastResult: { ...RESULT, id: 'a2' }, corrections: 2, phase: 'completed' }, { peek }))
+    expect(last()).toEqual({ marked: true, idle: true })
+    view.rerender(result({ lastResult: { ...RESULT, id: 'a2' }, corrections: 0, phase: 'running' }, { peek }))
+    expect(last()).toEqual({ marked: true, idle: false })
+    view.rerender(result({ lastResult: { ...RESULT, id: 'a2' }, phase: 'ready', countIn: 2 }, { peek }))
+    expect(last().idle).toBe(false)
+    expect($(card(), '[data-testid="peek"]')!.closest('[aria-hidden="true"]')).not.toBeNull()
   })
 })
 
@@ -338,7 +470,7 @@ describe('the result card expands in place (U99)', () => {
     const card = $(view.container, '[data-testid="attempt-result"]')!
     expect(card.firstElementChild).toBe(body())
     expect(body()?.closest('[role="status"]')).toBeNull()
-    expect(details).toHaveBeenCalledWith(RESULT)
+    expect(details).toHaveBeenCalledWith(RESULT, expect.anything())
 
     click(toggle())
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
@@ -493,7 +625,7 @@ describe('the result card expands in place (U99)', () => {
     view = mount(
       <AttemptResult
         ui={{ ...UI, lastResult: RESULT }}
-        model={{ notes: [] }}
+        model={{ notes: [], occurrences: [] }}
         naming={DEFAULT_SETTINGS.naming}
         onRestart={noop}
         onDismiss={noop}
@@ -521,7 +653,7 @@ describe('the expanded result by screen size (U99, 17 November 2026)', () => {
     expect($(view.container, '[role="status"]')?.hasAttribute('inert')).toBe(false)
   })
 
-  it('a phone gets a full-screen modal dialog: header with the verdict, chevron, Again and Hide', () => {
+  it('a phone gets a full-screen modal dialog: header with the verdict, chevron and Hide', () => {
     vi.useFakeTimers()
     const onRestart = vi.fn()
     const onDismiss = vi.fn()
@@ -542,8 +674,9 @@ describe('the expanded result by screen size (U99, 17 November 2026)', () => {
     expect($(view.container, '[role="status"]')?.hasAttribute('inert')).toBe(true)
     // Focus moved into the panel, onto the chevron.
     expect(document.activeElement).toBe(hide())
-    // Again and Hide result are in the header.
-    click(byText(header, 'Again')!)
+    // Again is in the card, not in the header that stays.
+    expect(byText(header, 'Again')).toBeNull()
+    click(byText(body()!, 'Again')!)
     expect(onRestart).toHaveBeenCalledTimes(1)
     click(byLabel(header, 'Hide result')!)
     expect(onDismiss).toHaveBeenCalledTimes(1)
@@ -611,7 +744,7 @@ describe('Keep time on the result card and the stage (P13)', () => {
     view = mount(
       result({
         activity: 'scored',
-        rhythm: true,
+        mode: 'time',
         repeat: true,
         lastResult: { ...RESULT, passed: false, timing: TIMING },
       }),
@@ -631,7 +764,7 @@ describe('Keep time on the result card and the stage (P13)', () => {
   })
 
   it('shows no Ready banner in Keep time: the count-in replaces it', () => {
-    view = mount(banners({ activity: 'scored', phase: 'ready', rhythm: true, countIn: 3 }))
+    view = mount(banners({ activity: 'scored', phase: 'ready', mode: 'time', countIn: 3 }))
     expect($(view.container, '[data-testid="ready"]')).toBeNull()
     view.rerender(banners({ activity: 'scored', phase: 'ready' }))
     expect($(view.container, '[data-testid="ready"]')).not.toBeNull()

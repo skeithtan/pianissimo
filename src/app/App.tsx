@@ -1,12 +1,10 @@
 import { msg } from '../i18n/messages'
 /**
  * App shell: renders the current view from the registry (`views.ts`), the compact app bar for
- * non-practice views, the toast area and the two overlays, Settings and the Connection setup
- * modal. Overlays sit on top of the mounted view, so the selected score and passage are never
- * lost. The URL follows all of this (`router.ts`).
+ * non-practice views, the toast area and the Settings overlay, which sits on top of the mounted
+ * view, so the selected score and passage are never lost. The URL follows all of this (`router.ts`).
  */
 import { useEffect, useRef } from 'preact/hooks'
-import { ConnectionModal } from '../views/connection/ConnectionModal'
 import { SettingsOverlay } from '../views/settings/SettingsOverlay'
 import { AppBar } from './AppBar'
 import { CapabilityBanner } from './CapabilityBanner'
@@ -26,9 +24,9 @@ export function App({ features = getFeatures() }: { features?: FeatureReport }) 
   const first = useRef(true)
 
   // A piano never touches the screen, so keep it awake while practicing, or while a piece plays
-  // on a phone propped on the music stand (Study, U72).
+  // on a phone propped on the music stand (Listen, U72).
   useEffect(() => {
-    if (view !== 'practice' && view !== 'study') return
+    if (view !== 'practice') return
     const owner = `view:${view}`
     wakeLock.hold(owner)
     return () => wakeLock.drop(owner)
@@ -57,7 +55,6 @@ export function App({ features = getFeatures() }: { features?: FeatureReport }) 
       </main>
       <NoticeArea />
       <SettingsOverlay features={features} />
-      <ConnectionModal />
     </div>
   )
 }

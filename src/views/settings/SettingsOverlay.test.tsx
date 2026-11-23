@@ -1,7 +1,16 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
-import { currentView, navigate, settingsOpen } from '../../app/navigation'
+import {
+  closeSettings,
+  currentView,
+  navigate,
+  noteRulesRequested,
+  openNoteRules,
+  openSettings,
+  settingsOpen,
+} from '../../app/navigation'
+import { preloadView } from '../../app/LazyView'
 import { notices, setSettingsPersistence, settings, updateSettings } from '../../app/state'
 import type { AppSettings } from '../../core/model/settings'
 import { $, $$, byLabel, click, mount, press, type Mounted } from '../shared/testing'
@@ -28,18 +37,26 @@ function open() {
 }
 
 describe('Settings overlay shell', () => {
-  it('opens a titled dialog with eight sections', () => {
+  it('opens a titled dialog with four tabs of sections', () => {
     const root = open()
     expect($(root, 'dialog')?.getAttribute('aria-label')).toBe('Settings')
     expect($$(root, '[role="tab"]').map((t) => t.textContent?.trim())).toEqual([
+      'Reading help',
+      'Piano and sound',
+      'App',
+      'Data',
+    ])
+    expect($$(openTab(root, 'Reading help'), 'h3').map((h) => h.textContent)).toEqual([
       'Note names',
-      'Score labels',
+      'Naming style',
       'Hints',
-      'Pedal',
+    ])
+    expect($$(openTab(root, 'Piano and sound'), 'h3').map((h) => h.textContent)).toEqual([
+      'Piano',
       'Sound',
-      'General',
-      'Backup',
-      'About',
+      'Metronome',
+      'Performance recording',
+      'Microphone',
     ])
   })
 
@@ -51,23 +68,49 @@ describe('Settings overlay shell', () => {
   it('shows one panel at a time and keeps the others mounted', () => {
     const root = open()
     const panels = $$(root, '[role="tabpanel"]')
-    expect(panels).toHaveLength(8)
+    expect(panels).toHaveLength(4)
     expect(panels.filter((p) => !p.hidden)).toHaveLength(1)
-    expect(tab(root, 'Note names').getAttribute('aria-selected')).toBe('true')
-    const hints = openTab(root, 'Hints')
-    expect(hints.hidden).toBe(false)
-    expect(tab(root, 'Hints').getAttribute('aria-selected')).toBe('true')
-    expect(panels.filter((p) => !p.hidden)).toEqual([hints])
+    expect(tab(root, 'Reading help').getAttribute('aria-selected')).toBe('true')
+    const app = openTab(root, 'App')
+    expect(app.hidden).toBe(false)
+    expect(tab(root, 'App').getAttribute('aria-selected')).toBe('true')
+    expect(panels.filter((p) => !p.hidden)).toEqual([app])
   })
 
   it('moves between tabs with the arrow keys', () => {
     const root = open()
-    press(tab(root, 'Note names'), 'ArrowDown')
-    expect(tab(root, 'Score labels').getAttribute('aria-selected')).toBe('true')
-    press(tab(root, 'Score labels'), 'End')
-    expect(tab(root, 'About').getAttribute('aria-selected')).toBe('true')
-    press(tab(root, 'About'), 'ArrowDown') // wraps
-    expect(tab(root, 'Note names').getAttribute('aria-selected')).toBe('true')
+    press(tab(root, 'Reading help'), 'ArrowDown')
+    expect(tab(root, 'Piano and sound').getAttribute('aria-selected')).toBe('true')
+    press(tab(root, 'Piano and sound'), 'End')
+    expect(tab(root, 'Data').getAttribute('aria-selected')).toBe('true')
+    press(tab(root, 'Data'), 'ArrowDown') // wraps
+    expect(tab(root, 'Reading help').getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('opens on the tab used last, and for the Note names rules on Reading help with them focused', async () => {
+    const root = open()
+    openTab(root, 'App')
+    act(() => closeSettings())
+    act(() => openSettings())
+    expect(tab(root, 'App').getAttribute('aria-selected')).toBe('true')
+    act(() => closeSettings())
+    updateSettings({ labels: { mode: 'conditional' } })
+    act(() => openNoteRules())
+    expect(tab(root, 'Reading help').getAttribute('aria-selected')).toBe('true')
+    await act(async () => void (await new Promise((resolve) => requestAnimationFrame(resolve))))
+    expect(document.activeElement).toBe(byLabel(root, 'Choose which notes'))
+    expect(noteRulesRequested.value).toBe(false)
+  })
+
+  it('mounts the piano setup with its tab only', async () => {
+    const root = open()
+    const setup = () => $(root, '[data-step="piano"]')
+    await preloadView('connection')
+    expect(setup()).toBeNull()
+    openTab(root, 'Piano and sound')
+    expect(setup()).not.toBeNull()
+    openTab(root, 'App')
+    expect(setup()).toBeNull()
   })
 
   it('closes from the close button', () => {
@@ -117,19 +160,19 @@ describe('Settings overlay shell', () => {
     opener.remove()
   })
 
-  it('applies the theme choice from the General tab', () => {
+  it('applies the theme choice from the App tab', () => {
     const root = open()
-    const general = openTab(root, 'General')
-    click(radio(general, 'Theme', 'Dark'))
+    const app = openTab(root, 'App')
+    click(radio(app, 'Theme', 'Dark'))
     expect(settings.value.view.theme).toBe('dark')
   })
 
   it('warns on close when staged label edits are discarded', () => {
     const root = open()
-    const labels = openTab(root, 'Score labels')
-    click(radio(labels, 'Persistent labels', 'All notes'))
+    const reading = openTab(root, 'Reading help')
+    click(radio(reading, 'Note names on the score', 'All'))
     expect(isLabelDraftDirty()).toBe(true)
-    expect(tab(root, 'Score labels').textContent).toContain('changes not applied')
+    expect(tab(root, 'Reading help').textContent).toContain('changes not applied')
     click(byLabel(root, 'Close'))
     expect(notices.value.some((n) => /not applied/u.test(n.text))).toBe(true)
     expect(isLabelDraftDirty()).toBe(false)
@@ -138,7 +181,7 @@ describe('Settings overlay shell', () => {
 
   it('does not warn when nothing was staged', () => {
     const root = open()
-    openTab(root, 'Score labels')
+    openTab(root, 'Reading help')
     click(byLabel(root, 'Close'))
     expect(notices.value).toEqual([])
   })
@@ -146,7 +189,7 @@ describe('Settings overlay shell', () => {
   it('shows the settings that are currently applied', () => {
     updateSettings({ naming: { system: 'fixed-do' } })
     const root = open()
-    const names = openTab(root, 'Note names')
+    const names = openTab(root, 'Reading help')
     expect(radio(names, 'Naming system', 'Fixed do').getAttribute('aria-checked')).toBe('true')
   })
 })
@@ -158,6 +201,7 @@ describe('translation coverage', () => {
     /\b[A-G][♯♭𝄪𝄫]?-?\d?\b/u,
     /\b(Do|Re|Mi|Fa|Sol|La|Si|Ti)\b/u,
     /^(English|Español|Français|Filipino|日本語)( \(.+\))?$/u,
+    'iPad:',
     'MusicXML',
     'Pianissimo',
     'CC-BY',
@@ -186,7 +230,7 @@ describe('translation coverage', () => {
         metronome: { enabled: true },
       })
       const root = open()
-      for (const name of ['Note names', 'Score labels', 'Hints', 'Pedal', 'Sound', 'General', 'Backup', 'About'])
+      for (const name of ['Reading help', 'Piano and sound', 'App', 'Data'])
         expect(untranslatedText(openTab(root, msg(name)), literal)).toEqual([])
       expect(untranslatedText(root, literal)).toEqual([])
     } finally {
@@ -200,13 +244,12 @@ describe('saving on the way out', () => {
     ['the close button', (root: HTMLElement) => click(byLabel(root, 'Close'))],
     ['the browser Back button', () => act(() => void (settingsOpen.value = false))],
     ['another view taking over', () => act(() => navigate('practice'))],
-    ['Set up in Connection', (root: HTMLElement) => click(byLabel(openTab(root, 'Pedal'), 'Set up in Connection'))],
   ])('writes pending preferences at once when Settings closes through %s', async (_, close) => {
     vi.useFakeTimers()
     const saves: AppSettings[] = []
     await setSettingsPersistence({ load: () => null, save: (next) => void saves.push(next) })
     const root = open()
-    click(radio(openTab(root, 'General'), 'Theme', 'Dark'))
+    click(radio(openTab(root, 'App'), 'Theme', 'Dark'))
     expect(saves).toHaveLength(0) // debounced
     close(root)
     await act(async () => {

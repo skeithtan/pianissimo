@@ -6,14 +6,16 @@ import { msg, percentage } from '../../i18n/messages'
  * practice tempo before starting. If the selected hand has no required onsets in the passage,
  * disable scored practice and explain why; retain Listen and selection controls.").
  */
-import { buildTimeline, type LearnerHands, type Timeline, type TimelineOptions } from '../../core/engine'
+import { buildTimeline, type Timeline, type TimelineOptions } from '../../core/engine'
 import { describePassage, normalizePassage, passageBounds, samePassage } from '../../core/model/passage'
-import type { PassageRange } from '../../core/model/practice'
-import type { HandSelection, ScoreModel } from '../../core/model/score'
+import type { PassageRange, PracticeMode } from '../../core/model/practice'
+import type { LearnerHands, ScoreModel } from '../../core/model/score'
 import { beatUnitGlyph, effectiveTempoAt, hasTempo, type TempoMapData } from '../../core/music/tempo'
+import type { OtherHandSound } from './types'
 
 export interface Selection {
-  readonly hands: HandSelection
+  /** The hands the learner plays; in Listen, the hands they hear. */
+  readonly hands: LearnerHands
   /**
    * Inclusive passage, optionally with note-level edges (U21); null = no passage (ordinary reading
    * of the whole piece, DECISIONS P1).
@@ -37,26 +39,24 @@ export function clampPassage(model: ScoreModel, range: PassageRange | null): Pas
   return normalizePassage(model, range)
 }
 
-/** The learner timeline for a selection. Preview ('none') keeps a both-hands timeline for the cursor. */
+/** The onset groups of the selected hands in the selected passage (all of them in Listen too: the cursor's stops). */
 export function selectionTimeline(
   model: ScoreModel,
   tempo: TempoMapData,
   sel: Selection,
   options: Pick<TimelineOptions, 'reattackHeldAtStart'> = {},
 ): Timeline {
-  const hands: LearnerHands = sel.hands === 'none' ? 'both' : sel.hands
-  return buildTimeline(model, { hands, range: sel.range, multiplier: sel.multiplier, tempo, ...options })
+  return buildTimeline(model, { hands: sel.hands, range: sel.range, multiplier: sel.multiplier, tempo, ...options })
 }
 
-export const HAND_TEXT: Readonly<Record<HandSelection, string>> = {
+export const HAND_TEXT: Readonly<Record<LearnerHands, string>> = {
   both: 'Both hands',
   right: 'Right hand',
   left: 'Left hand',
-  none: 'Preview',
 }
 
 /** "Bars 5–8", "Bar 12 (pass 2)", "Bar 12, beat 3 – bar 14", "Whole piece" (`describePassage`). */
-export function rangeText(model: ScoreModel, range: PassageRange | null, hands: HandSelection = 'both'): string {
+export function rangeText(model: ScoreModel, range: PassageRange | null, hands: LearnerHands = 'both'): string {
   return describePassage(model, range, hands)
 }
 
@@ -76,10 +76,12 @@ export function passageSummary(model: ScoreModel, tempo: TempoMapData, sel: Sele
 
 /** Why the main button cannot start what it would start; null when it can. */
 export interface StartPlan {
-  /** `'play'`: play-through (DECISIONS P12), unscored performance over the whole piece. */
+  /** `'play'`: Follow (DECISIONS P12), an unscored performance over the whole piece. */
   readonly action: 'reading' | 'scored' | 'listen' | 'play'
   readonly enabled: boolean
   readonly reason: string | null
+  /** Only the place where the other hand sounds is missing (P2): the view asks for it (U149). */
+  readonly otherHand?: OtherHandSound
 }
 
 export interface StartContext {
@@ -89,134 +91,72 @@ export interface StartContext {
   readonly noOutputReason?: string | null
   /** One-hand grading allowed on this route (verified, echo-free output or browser sound). */
   readonly accompanimentAllowed: boolean
+  /** Where the other hand could sound, whatever the settings say now. */
+  readonly otherHand?: OtherHandSound
   readonly hasTempo: boolean
-  /** A piano input is connected (default true). Without one only a microphone play-through can start. */
+  /** A piano input is connected (default true): Wait and Keep time need one. */
   readonly hasInput?: boolean
-  /**
-   * This browser can open a microphone (default true; DECISIONS P22). Without a piano and without
-   * one, nothing a hand plays can be followed.
-   */
-  readonly micSupported?: boolean
-}
-
-export interface StartPlanOptions {
-  /**
-   * Play-through mode is on (DECISIONS P12): with a hand selected the action is `'play'`, with
-   * the same blockers as reading (tempo, one-hand output, accompaniment allowed, notes exist);
-   * never a scored blocker; through the microphone one hand needs no output (P22). Hands 'none'
-   * stays Listen.
-   */
-  readonly playThrough?: boolean
-  /**
-   * Keep time is on (rhythm mode, DECISIONS P13): with a hand selected the action is always
-   * `'scored'` (over the loop in Repeat mode, else from the cursor to the end), with the scored blockers.
-   * Hands 'none' stays Listen; play-through wins (the session never sets both).
-   */
-  readonly rhythm?: boolean
   /** Keep time plays both parts, using a route that is safe for grading. */
   readonly scorePlayback?: boolean
   /**
-   * Play-through follows the microphone (DECISIONS P15, P22): it needs no piano input, and with
-   * one hand the app plays nothing (no output or echo check needed). Without a piano everything
-   * but play-through is blocked with a reason.
+   * Follow would use the microphone (DECISIONS P15, P22): it needs no piano input, and with one
+   * hand the app plays nothing (no output or echo check needed).
    */
   readonly mic?: boolean
 }
 
-/** Why Start cannot run without a piano and without a microphone (DECISIONS P22). */
-export const NO_PIANO_NO_MIC = 'Connect a piano to play a hand: this browser cannot use the microphone here.'
-
-export function startPlan(
-  timeline: Timeline,
-  sel: Selection,
-  ctx: StartContext,
-  opts: StartPlanOptions = {},
-): StartPlan {
+/**
+ * What Start does in `mode` with this selection, and why it cannot. Listen plays the score; Wait
+ * reads, or scores the loop in Repeat mode (`sel.range`); Keep time always scores (the loop, or
+ * from the cursor to the end); Follow plays through. A missing piano comes before any other reason
+ * in Wait and Keep time, so the view can offer to connect one.
+ */
+export function startPlan(timeline: Timeline, sel: Selection, mode: PracticeMode, ctx: StartContext): StartPlan {
   const noOutput = ctx.noOutputReason ?? msg('Nothing can play sound here.')
-  if (sel.hands === 'none') {
-    if (!ctx.hasOutput)
-      return { action: 'listen', enabled: false, reason: msg('{0} Listen is not available.', noOutput) }
-    if (!ctx.hasTempo) return { action: 'listen', enabled: false, reason: msg('Set a practice tempo to listen.') }
-    return { action: 'listen', enabled: true, reason: null }
-  }
-  const action = opts.playThrough ? 'play' : sel.range || opts.rhythm ? 'scored' : 'reading'
-  if (!ctx.hasTempo) {
-    return {
-      action,
-      enabled: false,
-      reason: msg('Set a practice tempo so the score can follow the timing.'),
-    }
+  const action =
+    mode === 'listen'
+      ? 'listen'
+      : mode === 'follow'
+        ? 'play'
+        : mode === 'time' || sel.range !== null
+          ? 'scored'
+          : 'reading'
+  const blocked = (reason: string): StartPlan => ({ action, enabled: false, reason })
+  const noNotes = () =>
+    blocked(msg('{0} has no notes to play here. Choose other hands or bars.', msg(HAND_TEXT[sel.hands])))
+
+  if (action === 'listen') {
+    if (!ctx.hasOutput) return blocked(msg('{0} Listen is not available.', noOutput))
+    if (!ctx.hasTempo) return blocked(msg('Set a practice tempo to listen.'))
+    return timeline.groups.length === 0 ? noNotes() : { action, enabled: true, reason: null }
   }
   if (ctx.hasInput === false) {
-    // Without a piano a hand plays through the microphone (the session keeps play-through on);
-    // anything else, or no microphone at all, says why.
-    if (ctx.micSupported === false || (action === 'play' && !opts.mic)) {
-      return { action, enabled: false, reason: msg(NO_PIANO_NO_MIC) }
-    }
-    if (action !== 'play') {
-      return {
-        action,
-        enabled: false,
-        reason: msg(
-          '{0} needs a connected piano. Play through follows the microphone instead.',
-          action === 'scored' ? msg('Scored practice') : msg('Reading'),
-        ),
-      }
-    }
+    if (mode === 'wait') return blocked(msg('Wait needs a connected piano.'))
+    if (mode === 'time') return blocked(msg('Keep time needs a connected piano.'))
+    if (!ctx.mic) return blocked(msg('Follow needs a connected piano or a microphone.'))
   }
-  if (action === 'scored' && opts.rhythm && opts.scorePlayback && (!ctx.hasOutput || !ctx.accompanimentAllowed)) {
-    return {
-      action,
-      enabled: false,
-      reason: ctx.hasOutput
+  if (!ctx.hasTempo) return blocked(msg('Set a practice tempo so the score can follow the timing.'))
+  // One hand through the microphone: the app plays nothing (the microphone must never hear it).
+  const silent = action === 'play' && ctx.mic === true
+  const places = ctx.otherHand ?? { piano: ctx.hasOutput, device: false }
+  const asks = sel.hands !== 'both' && !silent && !(ctx.hasOutput && ctx.accompanimentAllowed)
+  const otherHand = asks && (places.piano || places.device) ? places : null
+  if (asks && !otherHand) {
+    return blocked(msg('One-hand practice needs the piano or this device to play the other hand. {0}', noOutput))
+  }
+  if (!otherHand && mode === 'time' && ctx.scorePlayback && (!ctx.hasOutput || !ctx.accompanimentAllowed)) {
+    return blocked(
+      ctx.hasOutput
         ? msg(
-            'Playback needs an echo-free output. Play the test notes in Connection or choose Browser sound in Settings → Sound.',
+            'Playback needs an echo-free output. Play the test notes or choose Browser sound in Settings → Piano and sound.',
           )
         : msg('Playback needs a sound output. {0}', noOutput),
-    }
+    )
   }
-  // One hand through the microphone: the app plays nothing (the microphone must never hear it).
-  const silent = action === 'play' && opts.mic === true
-  if (sel.hands !== 'both' && !silent) {
-    if (!ctx.hasOutput) {
-      return {
-        action,
-        enabled: false,
-        reason: msg('One-hand practice needs the piano or this device to play the other hand. {0}', noOutput),
-      }
-    }
-    if (!ctx.accompanimentAllowed) {
-      return {
-        action,
-        enabled: false,
-        reason:
-          action === 'play'
-            ? msg(
-                'One-hand play-through needs a verified output with no echo. Play the test notes in Connection, or play both hands.',
-              )
-            : msg(
-                'Graded one-hand practice needs a verified output with no echo. Play the test notes in Connection, or practice both hands.',
-              ),
-      }
-    }
-  }
-  if (timeline.groups.length === 0) {
-    return {
-      action,
-      enabled: false,
-      reason: msg(
-        '{0} has no notes to play here. Choose other hands or bars. Listen still works.',
-        msg(HAND_TEXT[sel.hands]),
-      ),
-    }
-  }
+  if (timeline.groups.length === 0) return noNotes()
   if (action === 'scored' && !timeline.scoredAllowed) {
-    const first = timeline.blockers[0]
-    return {
-      action,
-      enabled: false,
-      reason: first ? first.message : msg('Scored practice is not available for this passage.'),
-    }
+    return blocked(timeline.blockers[0]?.message ?? msg('Scored practice is not available for this passage.'))
   }
+  if (otherHand) return { action, enabled: false, reason: null, otherHand }
   return { action, enabled: true, reason: null }
 }

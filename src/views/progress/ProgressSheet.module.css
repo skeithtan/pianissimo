@@ -1,0 +1,8 @@
+/* The end side of a tablet or desktop, the score beside it. A phone's rule in Sheet (full screen,
+   U82) is more specific and wins there. */
+dialog.side {
+  --sheet-width: 560px;
+  height: calc(100dvh - 32px);
+  margin-block: 16px;
+  margin-inline: auto 16px;
+}

@@ -4,8 +4,8 @@ import { msg } from '../../i18n/messages'
  * recovery", "Execution and rendering architecture"):
  *
  *   pick a file → read → inspect (worker, progress, Cancel) → choose score/parts when there is a
- *   choice (I8) → build (worker, progress, Cancel) → review the summary (hands, tempo) → save
- *   (`commitImport`, one transaction) → idle (the sheet closes; the caller opens Practice) while
+ *   choice (I8) → build (worker, progress, Cancel) → review the summary (hands, tempo), unless
+ *   nothing in it needs an answer (L12) → save (`commitImport`, one transaction) → idle (the sheet closes; the caller opens Practice) while
  *   persistent storage is asked for once.
  *
  * Every asynchronous step carries the job token it started with; `cancel()` and `close()` bump
@@ -31,10 +31,11 @@ import {
 } from '../../core/storage/persist'
 import { newPieceRecord, type PieceRecord } from '../../core/storage/records'
 import type { LibraryDeps } from './deps'
-import { finalizeImport, type ReviewDraft } from './review'
+import { finalizeImport, initialDraft, needsNoAnswer, type ReviewDraft } from './review'
 import { needsChoice, selectionProblem, togglePart } from './selection'
 
-export type WorkStep = 'reading' | 'inspecting' | 'building'
+/** `'saving'`: the commit of a score that needed no answer; it cannot be canceled. */
+export type WorkStep = 'reading' | 'inspecting' | 'building' | 'saving'
 
 export interface StorageStatus {
   /** Outcome of the one persistence request, or the current state when already asked. */
@@ -78,6 +79,13 @@ export type FlowPhase =
       readonly diagnostics: readonly Diagnostic[]
     }
 
+type ReviewPhase = Extract<FlowPhase, { kind: 'review' }>
+
+/** A save is being written: the sheet stays open until it is done. */
+export function isSaving(phase: FlowPhase): boolean {
+  return phase.kind === 'review' ? phase.saving : phase.kind === 'working' && phase.step === 'saving'
+}
+
 /** Readable progress wording per importer stage. */
 export const STAGE_TEXT: Readonly<Record<ImportStage, string>> = {
   reading: 'Reading the file',
@@ -114,6 +122,14 @@ function errorMessage(error: unknown): { message: string; diagnostics: readonly 
   return { message: String(error), diagnostics: [] }
 }
 
+function saveErrorText(error: unknown): string {
+  return isQuotaError(error)
+    ? msg(
+        'There is not enough storage space left in this browser. Export a backup and delete pieces you no longer need, then try again.',
+      )
+    : msg('The score could not be saved: {0}. Your library is unchanged.', errorMessage(error).message)
+}
+
 function isCanceled(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'canceled'
 }
@@ -136,7 +152,7 @@ export class ImportFlow {
 
   get busy(): boolean {
     const p = this.phase.peek()
-    return p.kind === 'working' || (p.kind === 'review' && p.saving)
+    return p.kind === 'working' || isSaving(p)
   }
 
   #client_(): ImportClient {
@@ -293,7 +309,7 @@ export class ImportFlow {
       return
     }
     if (!this.#live(token)) return
-    this.phase.value = {
+    const review: ReviewPhase = {
       kind: 'review',
       fileName,
       inspect,
@@ -304,6 +320,32 @@ export class ImportFlow {
       saving: false,
       saveError: null,
     }
+    const draft = initialDraft(result.summary, result.package.model)
+    if (choiceOffered || !needsNoAnswer(result.summary, draft)) this.phase.value = review
+    else await this.#saveUnasked(token, review, draft)
+  }
+
+  /** Nothing to ask (L12): save at once, behind the progress. A duplicate or a failed save shows the review. */
+  async #saveUnasked(token: number, review: ReviewPhase, draft: ReviewDraft): Promise<void> {
+    let stored: readonly PieceRecord[]
+    try {
+      stored = await (await this.#deps.getStorage()).listPieces()
+    } catch (error) {
+      if (this.#live(token)) this.phase.value = { ...review, saveError: saveErrorText(error) }
+      return
+    }
+    if (!this.#live(token)) return
+    if (stored.some((p) => p.scoreVersionId === review.result.package.model.scoreVersionId)) {
+      this.phase.value = review
+      return
+    }
+    await this.#saveReviewed(review, draft, {
+      kind: 'working',
+      step: 'saving',
+      fileName: review.fileName,
+      stage: null,
+      fraction: 1,
+    })
   }
 
   /** From the summary back to the score/part choice. */
@@ -325,6 +367,10 @@ export class ImportFlow {
   async save(draft: ReviewDraft): Promise<void> {
     const p = this.phase.peek()
     if (p.kind !== 'review' || p.saving) return
+    await this.#saveReviewed(p, draft, { ...p, saving: true, saveError: null })
+  }
+
+  async #saveReviewed(p: ReviewPhase, draft: ReviewDraft, saving: FlowPhase): Promise<void> {
     let piece: PieceRecord
     let pkg
     try {
@@ -335,7 +381,7 @@ export class ImportFlow {
       this.phase.value = { ...p, saveError: errorMessage(error).message }
       return
     }
-    await this.#commit(p, pkg, piece)
+    await this.#commit(p, pkg, piece, saving)
   }
 
   /** A duplicate keeps the existing reviewed score; never offer edits that storage would ignore. */
@@ -355,26 +401,22 @@ export class ImportFlow {
         throw new Error(msg('The existing score is unavailable or needs review. Open that piece before adding a copy.'))
       }
       if (!this.#live(token)) return
-      await this.#commit(p, pkg, this.#pieceFor(pkg, existing.userTempo))
+      await this.#commit(p, pkg, this.#pieceFor(pkg, existing.userTempo), this.phase.peek())
     } catch (error) {
       if (this.#live(token)) this.phase.value = { ...p, saving: false, saveError: errorMessage(error).message }
     }
   }
 
-  async #commit(p: Extract<FlowPhase, { kind: 'review' }>, pkg: ScorePackage, piece: PieceRecord): Promise<void> {
+  /** Commit behind the `saving` phase; a failure shows the review `p` with the reason. */
+  async #commit(p: ReviewPhase, pkg: ScorePackage, piece: PieceRecord, saving: FlowPhase): Promise<void> {
     const token = this.#job
-    this.phase.value = { ...p, saving: true, saveError: null }
+    this.phase.value = saving
     try {
       const storage = await this.#deps.getStorage()
       await storage.commitImport({ source: p.result.source, pkg, piece })
     } catch (error) {
       if (!this.#live(token)) return
-      const message = isQuotaError(error)
-        ? msg(
-            'There is not enough storage space left in this browser. Export a backup and delete pieces you no longer need, then try again.',
-          )
-        : msg('The score could not be saved: {0}. Your library is unchanged.', errorMessage(error).message)
-      this.phase.value = { ...p, saving: false, saveError: message }
+      this.phase.value = { ...p, saving: false, saveError: saveErrorText(error) }
       return
     }
     // The worker was already released after building; drop the retained file as well.

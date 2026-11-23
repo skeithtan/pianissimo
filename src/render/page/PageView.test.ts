@@ -919,7 +919,7 @@ describe('PageView', () => {
     })
   })
 
-  it('has no repeat button on the cursor without a handler (Study mode, U72)', () => {
+  it('has no repeat button on the cursor without a handler', () => {
     const { root } = view(24)
     expect(root.querySelector('.pn-cursor .pn-cursor-action')).toBeNull()
   })

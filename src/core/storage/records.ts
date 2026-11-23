@@ -2,8 +2,8 @@
  * Record shapes owned by storage. Everything is plain JSON except the retained source
  * bytes, so records survive structured clone, IndexedDB and export/restore unchanged.
  */
-import type { PassageRange } from '../model/practice'
-import type { HandSelection, ScorePackage } from '../model/score'
+import type { PassageRange, PracticeMode } from '../model/practice'
+import type { HandSelection, LearnerHands, ScorePackage } from '../model/score'
 import type { Rational } from '../music/rational'
 import type { AbandonEvent } from '../model/practice'
 /** Per-group outcomes stored on scored `AttemptRecord`s (optional, additive). */
@@ -55,14 +55,17 @@ export interface PieceRecord {
   /** Last selected speed for this piece (spec: remember the last selected speed per piece). */
   readonly lastMultiplier: number
   readonly userTempo?: UserTempo
+  /** The learner's hands; 'none' only in older records (Listen then, read as both hands). */
   readonly lastHands: HandSelection
+  /** The learner's mode on the score screen; absent (older records) = derived (`openingMode`). */
+  readonly mode?: PracticeMode
   readonly resume: ResumePosition | null
   readonly lastPassage: PassageRange | null
   /** Consecutive-pass target for Repeat; null = unlimited. */
   readonly repeatTarget: number | null
   /** Speed ladder for Repeat mode; null or absent (older records) = off. */
   readonly ladder?: LadderSettings | null
-  /** Keep time (rhythm mode) is on for this piece; absent (older records) = off. */
+  /** Older records only: Keep time was on. Read when there is no `mode`, never written. */
   readonly rhythm?: boolean
   /** Repeat mode was on when the piece was last practiced (DECISIONS U98); absent (older records) = closed. */
   readonly repeatOpen?: boolean
@@ -101,13 +104,15 @@ export function newId(): string {
 
 /**
  * Fields `updatePiece` may change; identity, creation time and the score version are fixed.
- * Passing `undefined` for `userTempo` or `composer` removes it.
+ * Passing `undefined` for `userTempo` or `composer` removes it. What only older records hold
+ * (`rhythm`, `lastHands: 'none'`) is never written.
  */
 export type PiecePatch = Partial<
-  Omit<PieceRecord, 'id' | 'scoreVersionId' | 'createdAt' | 'userTempo' | 'composer'>
+  Omit<PieceRecord, 'id' | 'scoreVersionId' | 'createdAt' | 'userTempo' | 'composer' | 'rhythm' | 'lastHands'>
 > & {
   readonly userTempo?: UserTempo | undefined
   readonly composer?: string | undefined
+  readonly lastHands?: LearnerHands
 }
 
 /** Per-piece suggestion state: the persisted suggestions and the per-piece disable switch. */

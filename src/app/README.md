@@ -8,10 +8,10 @@ The shell the four main views plug into. Spec: "Main user journey", "Practice sc
 
 | File | Role |
 | --- | --- |
-| `App.tsx` | Shell: current view, app bar (non-practice), capability banner (library), toasts, the Settings overlay and the Connection modal. Holds the wake lock while the Practice or Study view is shown; moves focus into `<main>` and sets the tab title after navigation. |
-| `views.ts` | **The view registry.** One entry per `ViewName` (`library`, `practice`, `results`, `study`): `{ title, chrome, component | load }`, plus `overlayScreens` for screens shown in a modal (`connection`). |
+| `App.tsx` | Shell: current view, app bar (non-practice), capability banner (library), toasts and the Settings overlay. Holds the wake lock while the Practice view is shown; moves focus into `<main>` and sets the tab title after navigation. |
+| `views.ts` | **The view registry.** One entry per `ViewName` (`library`, `practice`): `{ title, chrome, component | load }`, plus `overlayScreens` for lazy screens shown inside Settings (`connection`). |
 | `LazyView.tsx` | Renders the registry entry; caches lazily loaded views; quiet "Loading…" after 250 ms; retry on load failure. `preloadView(name)` to prefetch. |
-| `navigation.ts` | The signals views read: `currentView`, `practiceRequest`, `resultsRequest`, `studyRequest`, `settingsOpen`, `connectionOpen`, and `navigate`, `openPractice`, `openResults`, `openStudy`, `openSettings`/`closeSettings`, `openConnection`/`closeConnection`. At most one overlay is open; `navigate(view)` closes overlays. `navigate('connection')` is kept as an alias for `openConnection()`. Nothing calls `openResults` since U99 (only Back leaves Practice; the result's details open in place); the Results route stays for deep links. |
+| `navigation.ts` | The signals views read: `currentView`, `practiceRequest`, `settingsOpen`, `settingsTab` (kept while closed), `connectionOpen` (computed: Settings is open on Piano and sound), and `navigate`, `openPractice`, `openSettings`/`closeSettings`, `openConnection`, `openNoteRules` (Settings at the Note names rules, U143). `navigate(view)` closes Settings. `navigate('connection')` is kept as an alias for `openConnection()`. |
 | `routes.ts`, `router.ts` | URL hash routing (below): pure parse/format, and the two-way sync between the signals and `location.hash` / `history.state`, started by `boot.ts`. |
 | `state.ts` | Global signals and actions (below). |
 | `settingsMerge.ts` | Pure: `mergeSettings` (immutable deep merge), `deepEqual`, `normalizeSettings` / `settingsFromStored` (identity-preserving wrappers over the single normalizer in `core/storage/settings.ts`), `SettingsPatch<T>`. |
@@ -21,7 +21,7 @@ The shell the four main views plug into. Spec: "Main user journey", "Practice sc
 | `boot.ts` | `startShell()` from `main.tsx`: theme sync, initial MIDI status from detection, settings flush on `pagehide`/hidden, preload first view. |
 | `AppBar`, `NoticeArea`, `CapabilityBanner` | Shell chrome. `ConnectionChip` lives in `views/shared` so Practice can reuse it. |
 | `version.ts` | `APP_VERSION` from `package.json` (tree-shaken). |
-| `pwa.ts` | `startPwa()` from `main.tsx` (production only): registers the service worker (`workers/sw.ts`, DECISIONS U84), asks for updates at launch, on `online` and when shown again, and reloads a page left on an older build only off the Practice and Study screens with no sheet open (`createReloader`). The installed app asks for persistent storage. |
+| `pwa.ts` | `startPwa()` from `main.tsx` (production only): registers the service worker (`workers/sw.ts`, DECISIONS U84), asks for updates at launch, on `online` and when shown again, and reloads a page left on an older build only off the Practice screen with no sheet open (`createReloader`). The installed app asks for persistent storage. |
 
 The non-practice app bar uses the Olive page surface, a compact lowercase wordmark, and the
 existing MIDI/Settings actions (U49). On narrow phones the music icon replaces the visible wordmark.
@@ -39,17 +39,17 @@ mirrors every change back.
 | --- | --- |
 | `#/` (or empty) | Library |
 | `#/practice/<pieceId>` (`#/practice`: its empty state) | Practice |
-| `#/results/<pieceId>[/<attemptId>]` | Results |
-| `#/study/<pieceId>` (`#/study`: its empty state; `#/consult/…` is the pre-U79 spelling, still parsed) | Study (U72, U79) |
-| any of the above + `?settings` / `?connection` | that overlay over the screen |
-| `#/connection`, `#/settings` | aliases: the overlay over the Library (rewritten to `#/?connection`) |
+| `#/results/<pieceId>[/<attemptId>]` | Practice: old links to the Results page (U148), rewritten to `#/practice/<pieceId>` |
+| `#/study/<pieceId>`, `#/consult/<pieceId>` | Practice in Listen, leaving the piece's own mode: old links to the Sheet music screen (U141), rewritten to `#/practice/<pieceId>` (`#/study` alone to `#/practice`) |
+| any of the above + `?settings` / `?connection` | Settings over the screen, on the tab used last / on Piano and sound (U143) |
+| `#/connection`, `#/settings` | aliases: the same over the Library (rewritten to `#/?connection`, at boot or typed) |
 
 - Pages push an entry. Opening an overlay pushes one too (`history.state.overlayFrom`), and
   closing it (button, Escape or `closeX()`) calls `history.back()`, so Back and Escape are the
-  same. Swapping overlays, closing a deep-linked overlay and changing a Practice preset in place
+  same. Changing to or from the Piano and sound tab, closing a deep-linked overlay and changing a Practice preset in place
   use `replaceState`; leaving the page while an overlay is open takes over the overlay's entry.
 - A Practice preset (passage, hands, speed) rides in `history.state.preset`, not the URL.
-- Signal writes are coalesced per microtask, so `closeSettings(); openConnection()` is one swap.
+- Signal writes are coalesced per microtask, so `closeSettings(); openConnection()` is one step.
   While our own `history.back()` is pending nothing else is written; its `popstate` re-syncs.
 - Unknown hashes are the Library; unknown piece ids reach the view's own empty state.
 - Tests: `routes.test.ts` (parse/format round trips), `router.test.ts` (fake session history
@@ -116,12 +116,12 @@ tolerates refusal (one retry per visibility event, never a loop) and missing sup
 ## Extension points for the later views
 
 1. **Register the view** in `views.ts`. Library: `component: Library` (static, first screen).
-   Connection/Practice/Results: `load: () => import('../views/practice/PracticeView').then(m => ({ default: m.PracticeView }))`
+   The piano setup and Practice: `load: () => import('../views/practice/PracticeView').then(m => ({ default: m.PracticeView }))`
    so the library shell stays small (`npm run size`). `chrome: 'none'` gives Practice the whole
    viewport (no app bar, no scrolling `<main>`); `'bar'` views scroll inside `<main>`.
 2. **Navigation**: `navigate('practice')`, and `preloadView('practice')` when a score is chosen.
-3. **Settings and Connection from anywhere**: `openSettings()` / `openConnection()` (overlays; the view stays mounted underneath).
-4. **Connection status**: `ConnectionChip` (`views/shared`) for the Practice header; it opens the Connection modal.
+3. **Settings and the piano setup from anywhere**: `openSettings()` / `openConnection()` (an overlay; the view stays mounted underneath).
+4. **Connection status**: `ConnectionChip` (`views/shared`) for the Practice header; it opens Settings on Piano and sound.
 5. **Toasts**: `pushNotice(...)`. Do not use them for the wrong-note feedback (use `ui/WrongNoteFlash`).
 6. **Settings persistence** and **label hook**: see above.
 7. **Library banner**: the shell shows `CapabilityBanner` on the library view for missing

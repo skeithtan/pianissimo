@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact'
 import type { AttemptSummary, RankedMistake, ReadonlyStore, ResultDetails, SnippetState } from '../../app/session'
 import type { SnippetKind } from '../../app/session/snippets'
 import type { ScoreModel } from '../../core/model/score'
@@ -16,6 +17,8 @@ export interface ResultDetailsProps {
     stopSnippet(): void
   }
   readonly result: AttemptSummary
+  /** What the card offers to do next (Loop, Again), shown directly under the verdict (U142). */
+  readonly actions?: ComponentChildren
   readonly model: ScoreModel
   readonly naming: NamingSettings
   readonly pieceId: string

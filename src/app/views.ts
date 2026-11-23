@@ -9,8 +9,8 @@
  * - `chrome`: `'bar'` shows the app bar and the page scrolls inside `<main>`; `'none'` gives the
  *   view the whole viewport (Practice draws its own header and footer).
  *
- * The Connection setup is not a page: it is a modal over whichever view is current, so it has an
- * entry in `overlayScreens` (lazy, like the heavy views) and no `ViewName`.
+ * The piano setup is not a page: it is part of Settings → Piano and sound, so it has an entry in
+ * `overlayScreens` (lazy, like the heavy views) and no `ViewName`.
  */
 import type { ComponentType } from 'preact'
 import type { ViewName } from './navigation'
@@ -38,19 +38,9 @@ export const views: Readonly<Record<ViewName, ViewEntry>> = {
     chrome: 'none',
     load: () => import('../views/practice/PracticeView').then((m) => ({ default: m.PracticeView })),
   },
-  results: {
-    title: 'Results',
-    chrome: 'bar',
-    load: () => import('../views/results/ResultsView').then((m) => ({ default: m.ResultsView })),
-  },
-  study: {
-    title: 'Sheet music',
-    chrome: 'none',
-    load: () => import('../views/study/StudyView').then((m) => ({ default: m.StudyView })),
-  },
 }
 
-/** Screens shown in a modal over the current view instead of replacing it. */
+/** Lazy screens shown inside Settings instead of replacing the current view. */
 export type OverlayScreenName = 'connection'
 
 /** Everything `LazyView` can render. */
@@ -58,7 +48,7 @@ export type ScreenName = ViewName | OverlayScreenName
 
 export const overlayScreens: Readonly<Record<OverlayScreenName, ViewEntry>> = {
   connection: {
-    title: 'Connection and Pedal Setup',
+    title: 'Piano and sound',
     chrome: 'none',
     load: () => import('../views/connection/ConnectionView').then((m) => ({ default: m.ConnectionView })),
   },

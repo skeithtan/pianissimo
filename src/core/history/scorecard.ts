@@ -155,11 +155,7 @@ function assistanceText(d: AssistanceDetails): { value: string; detail?: string 
   const parts: string[] = []
   if (d.persistentLabelNotes > 0) {
     parts.push(
-      msg(
-        'persistent labels on {0} in {1}',
-        plural(d.persistentLabelNotes, 'note'),
-        plural(d.persistentLabelGroups, 'group'),
-      ),
+      msg('note names on {0} in {1}', plural(d.persistentLabelNotes, 'note'), plural(d.persistentLabelGroups, 'group')),
     )
   }
   if (d.hintRequests > 0) parts.push(plural(d.hintRequests, 'hint request'))

@@ -1,6 +1,6 @@
 /**
  * A reading pass is recorded however it ends (DECISIONS ST2): leaving while it runs, leaving
- * while it is paused or under an overlay, and switching play-through on and off.
+ * while it is paused or under an overlay, and changing to a mode that records nothing.
  */
 import { describe, expect, it } from 'vitest'
 import { buildScore } from '../../core/engine/testkit'
@@ -80,11 +80,11 @@ describe('PracticeSession: leaving records the reading pass', () => {
   })
 })
 
-describe('PracticeSession: play-through keeps the reading before it', () => {
-  it('switching play-through on and off records the reading pass once', async () => {
+describe('PracticeSession: another mode keeps the reading before it', () => {
+  it.each(['listen', 'time', 'follow'] as const)('to %s and back records the reading pass once', async (mode) => {
     const h = await readSome()
-    h.session.setPlayThrough(true)
-    h.session.setPlayThrough(false)
+    h.session.setMode(mode)
+    h.session.setMode('wait')
     h.frames.flush()
     expectOneReading(h, 'interrupted')
     h.session.dispose()
@@ -92,16 +92,16 @@ describe('PracticeSession: play-through keeps the reading before it', () => {
     expect(h.abandons).toHaveLength(0)
   })
 
-  it('reading, then play-through played: the reading is recorded once and nothing of the play-through', async () => {
+  it('reading, then Follow played: the reading is recorded once and nothing of Follow', async () => {
     const h = await readSome()
-    h.session.setPlayThrough(true)
+    h.session.setMode('follow')
     await h.session.start()
     h.frames.flush()
     h.tap(64)
     h.step(1000)
     h.tap(66)
     h.step(1000)
-    h.session.setPlayThrough(false)
+    h.session.setMode('wait')
     h.frames.flush()
     h.session.dispose()
     expectOneReading(h, 'interrupted')

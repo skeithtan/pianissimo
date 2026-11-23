@@ -2,7 +2,7 @@ import { msg } from '../../i18n/messages'
 /**
  * "Rename piece": the title and composer of a library entry (the piece record). The score
  * package and its source file keep the score's own metadata. Every screen reads the name from
- * the piece record, so the row (and Practice, Study and Results) follow once the Library has
+ * the piece record, so the row (and Practice and Results) follow once the Library has
  * refreshed; the updated row is the feedback, so there is no success notice.
  */
 import { useEffect, useRef, useState } from 'preact/hooks'

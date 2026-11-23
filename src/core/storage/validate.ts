@@ -4,7 +4,7 @@ import { msg } from '../../i18n/messages'
  * Each returns the first problem as readable text, or null when the record is usable. They
  * check structure the app relies on, not every field of the large score model.
  */
-import { TRANSPORT_KINDS } from '../model/practice'
+import { PRACTICE_MODES, TRANSPORT_KINDS } from '../model/practice'
 import { SCORE_PACKAGE_FORMAT } from '../model/score'
 
 type Raw = Readonly<Record<string, unknown>>
@@ -95,6 +95,7 @@ export function pieceProblem(v: unknown): string | null {
     ['lastPassage', v['lastPassage'] === null || passage(v['lastPassage'])],
     ['repeatTarget', v['repeatTarget'] === null || (isInt(v['repeatTarget']) && (v['repeatTarget'] as number) >= 1)],
     ['ladder', v['ladder'] === undefined || v['ladder'] === null || ladderOk(v['ladder'])],
+    ['mode', v['mode'] === undefined || isOneOf(v['mode'], PRACTICE_MODES)],
     ['rhythm', v['rhythm'] === undefined || isBool(v['rhythm'])],
     ['repeatOpen', v['repeatOpen'] === undefined || isBool(v['repeatOpen'])],
   ])

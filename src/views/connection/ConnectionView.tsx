@@ -1,29 +1,28 @@
 import { msg } from '../../i18n/messages'
 /**
- * Connection and Pedal Setup (spec "Main user journey" step 3; "MIDI input, output, and pedal
+ * The piano setup (spec "Main user journey" step 3; "MIDI input, output, and pedal
  * controls"; "Delivery and device compatibility"): three independent setup steps
  * (DECISIONS C11) — the piano (MIDI access, input with a live key/pedal test), playback to the
  * piano (output, test notes that double as the echo probe, accompaniment options) and the hint
- * pedal — with the remembered route and a clear exit.
+ * pedal — with the remembered route.
  *
- * It is the content of the Connection modal (`ConnectionModal`, over whichever view is current;
- * the modal's header carries the title). Lazily loaded from `app/views.ts`. MIDI input only
- * reaches the live panel and the hint-pedal flow, both rendered at most once per animation frame.
+ * It is the Piano section of Settings → Piano and sound (U143), lazily loaded from `app/views.ts` and
+ * mounted only while that tab is shown. MIDI input only reaches the live panel and the hint-pedal
+ * flow, both rendered at most once per animation frame.
  */
 import { useEffect } from 'preact/hooks'
 import { getMidiService, type MidiService, type MidiSnapshot } from '../../app/services'
 import { getFeatures, type FeatureReport } from '../../app/features'
-import { closeConnection } from '../../app/navigation'
 import { settings } from '../../app/state'
 import type { MidiRouteSettings } from '../../core/model/settings'
-import { Button } from '../../ui/controls'
 import { Icon } from '../../ui/icons'
 import { HintPedalStep } from './HintPedalStep'
 import { LivePanel } from './LivePanel'
 import { PianoStep } from './PianoStep'
 import { useMidiSnapshot } from './parts'
-import { PlaybackStep, type EchoClock } from './PlaybackStep'
-import { STEP_ORDER, channelLabel, stepStatuses, type StepId, type StepStatus } from './status'
+import { PlaybackStep } from './PlaybackStep'
+import { STEP_ORDER, channelLabel, stepStatuses, type StepId } from './status'
+import type { EchoClock } from './testNotes'
 import styles from './connection.module.css'
 
 /** The registered screen (no props): the app's MIDI service and this browser's features. */
@@ -31,7 +30,7 @@ export function ConnectionView() {
   return <ConnectionSetup />
 }
 
-/** The setup page; tests inject the service, feature report and the test-note clock. */
+/** The setup; tests inject the service, feature report and the test-note clock. */
 export function ConnectionSetup({
   service = getMidiService(),
   features = getFeatures(),
@@ -82,26 +81,7 @@ export function ConnectionSetup({
         />
         <HintPedalStep index={index('pedal')} status={statuses.pedal} snap={snap} service={service} />
       </div>
-
-      <footer class={styles.done}>
-        <p>{doneSummary(statuses)}</p>
-        <div class={styles.actions}>
-          <Button variant="primary" icon="check" onClick={closeConnection}>
-            {msg('Done')}
-          </Button>
-        </div>
-      </footer>
     </div>
-  )
-}
-
-function doneSummary(statuses: Readonly<Record<StepId, StepStatus>>): string {
-  if (statuses.piano.tone !== 'done')
-    return msg('You can come back here any time from the connection status at the top of the screen.')
-  if (statuses.playback.tone === 'done')
-    return msg('Your piano is ready for both-hands and one-hand practice, with the piano playing the other hand.')
-  return msg(
-    'Your piano is ready for both-hands practice. One-hand practice needs playback to the piano, or browser sound in Settings → Sound.',
   )
 }
 

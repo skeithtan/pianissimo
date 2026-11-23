@@ -22,6 +22,7 @@ import {
   describeCrossStaff,
   describeStaffUse,
   handLines,
+  importIssues,
   parsePracticeBpm,
   type BeatUnitChoice,
   type ReviewDraft,
@@ -159,33 +160,29 @@ export function ImportSummaryView({
 
 /** Report anything that changes what the player can practice before the optional technical report. */
 function ImportIssues({ summary }: { summary: Summary }) {
-  // Hand and tempo questions already have dedicated controls above.
-  const warnings = summary.diagnostics.list.filter(
-    (d) => d.severity === 'warning' && d.code !== 'tempo-missing' && d.code !== 'hand-ambiguous',
-  )
-  if (!warnings.length && !summary.unsupported.length && !summary.timingIssues.length && !summary.tempo.conflicts)
-    return null
+  const { warnings, unsupported, timingIssues, tempoConflicts, any } = importIssues(summary)
+  if (!any) return null
   return (
     <Notice tone="warning">
       <strong>{msg('Before you play')}</strong>
       <ul class={importStyles.issues}>
-        {summary.unsupported.map((passage, i) => (
+        {unsupported.map((passage, i) => (
           <li key={`unsupported-${i}`}>
             {passage.bars.includes('–') ? msg('Bars') : msg('Bar')} {passage.bars}: {importMessage(passage.message)}{' '}
             {msg('You can view this passage, but it cannot be scored.')}
           </li>
         ))}
-        {summary.timingIssues.length ? (
+        {timingIssues.length ? (
           <li>
             {msg(
-              summary.timingIssues.length === 1
+              timingIssues.length === 1
                 ? 'Timing is not scored across the timing mark in bar {0}.'
                 : 'Timing is not scored across the timing marks in bars {0}.',
-              summary.timingIssues.map((issue) => issue.bar).join(', '),
+              timingIssues.map((issue) => issue.bar).join(', '),
             )}
           </li>
         ) : null}
-        {summary.tempo.conflicts ? (
+        {tempoConflicts ? (
           <li>{msg('Some playback tempos differ from the printed marks. The printed tempos are used.')}</li>
         ) : null}
         {warnings.map((warning, i) => (

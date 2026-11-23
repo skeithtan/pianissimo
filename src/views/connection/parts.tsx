@@ -50,12 +50,12 @@ export function Step({
           {status.tone === 'done' ? <Icon name="check" size={18} /> : index}
         </span>
         <div class={styles.stepTitle}>
-          <h2 id={headingId} tabIndex={-1}>
+          <h4 id={headingId} tabIndex={-1}>
             <span class="visually-hidden">
               {msg('Step')} {index}:{' '}
             </span>
             {title}
-          </h2>
+          </h4>
           {lead ? <p class={styles.lead}>{lead}</p> : null}
         </div>
         <StatusPill status={status} />

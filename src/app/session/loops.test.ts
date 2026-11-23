@@ -79,7 +79,7 @@ describe('PracticeSession: playhead drag (U23)', () => {
   })
 
   it('Listen continues from the dropped note', async () => {
-    const h = harness(piece, { hands: 'none' })
+    const h = harness(piece, {}, { options: { mode: 'listen' } })
     expect(h.strip.snaps).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map(quarters))
     await h.session.start()
     h.step(500)
@@ -98,7 +98,7 @@ describe('PracticeSession: playhead drag (U23)', () => {
 describe('PracticeSession: note-level Repeat loops (U21)', () => {
   it.each(['pause', 'browse'] as const)('restores loop editing after Listen stops through %s', async (action) => {
     const range = { fromOcc: 0, toOcc: 1 }
-    const h = harness(piece, { range, hands: 'none' })
+    const h = harness(piece, { range }, { options: { mode: 'listen' } })
     await h.session.start()
     h.step(500)
     expect(h.strip.loopEditable).toBe(false)

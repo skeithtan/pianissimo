@@ -51,7 +51,8 @@ describe('<SuggestionList>', () => {
     expect(card?.textContent).toContain('Both hands')
     expect(card?.textContent).toContain('1× speed')
     expect(card?.textContent).toContain('Mistakes in bar 13 on 3 of your last 5 comparable passes.')
-    expect(card?.textContent).toContain('Practice bars 12–14?')
+    // The title and the button name the bars; the question would say it a third time.
+    expect(card?.textContent).not.toContain('Practice bars 12–14?')
     expect(card?.textContent).toContain('0 of 3 clean passes')
 
     const bars = $$(card as HTMLElement, '[data-role]')
@@ -76,13 +77,13 @@ describe('<SuggestionList>', () => {
     expect($(root, '[role="img"][aria-label="2 of 3 clean passes"]')).not.toBeNull()
   })
 
-  it('Practice this passage reports the exact suggestion (range, hands and speed travel on it)', () => {
+  it('Practice these bars reports the exact suggestion (range, hands and speed travel on it)', () => {
     const { active } = select(history())
     const onPractice = vi.fn()
     const root = show({ suggestions: active, onPractice })
     const target = active[0] as Suggestion
     const card = $(root, `[data-suggestion="${target.id}"]`) as HTMLElement
-    click(byText(card, 'Practice this passage', 'button span')?.closest('button'))
+    click(byText(card, 'Practice these bars', 'button span')?.closest('button'))
     expect(onPractice).toHaveBeenCalledTimes(1)
     expect(onPractice).toHaveBeenCalledWith(target)
     const given = onPractice.mock.calls[0]?.[0] as Suggestion
@@ -125,7 +126,7 @@ describe('<SuggestionList>', () => {
     expect(root.textContent).toContain('You restarted at bar 21 after mistakes three times.')
   })
 
-  it('lists improved suggestions without actions', () => {
+  it('folds the improved suggestions, without actions', () => {
     let h = history()
     h = play(h, 12, ['clean', 'clean', 'clean'])
     const sel = select(h)
@@ -133,6 +134,7 @@ describe('<SuggestionList>', () => {
     const onPractice = vi.fn()
     const root = show({ suggestions: [], improved: sel.improved, onPractice })
     const details = $(root, 'details')
+    expect(details?.hasAttribute('open')).toBe(false)
     expect(details?.textContent).toContain('Improved (1)')
     expect(details?.textContent).toContain('Improved: 3 clean passes in a row on bar 13.')
     expect(details?.textContent).toContain('Both hands at 1×')
@@ -153,16 +155,9 @@ describe('<SuggestionList>', () => {
     expect(byText(bare, 'Turn on suggestions', 'button span')).toBeNull()
   })
 
-  it('says what an empty list means', () => {
+  it('says when the list is empty', () => {
     const root = show({ suggestions: [] })
-    expect($(root, '[data-state="none"]')?.textContent).toContain('Nothing to suggest')
-  })
-
-  it('can show improvement without an empty-list explanation in the Library', () => {
-    const improved = select(play(history(), 12, ['clean', 'clean', 'clean'])).improved
-    const root = show({ suggestions: [], improved, hideEmpty: true })
-    expect(root.textContent).toContain('Improved (1)')
-    expect(root.textContent).not.toContain('Nothing to suggest')
+    expect($(root, '[data-state="none"]')?.textContent).toBe('Nothing to work on right now.')
   })
 
   it('compact mode drops the legend and tightens the cards', () => {
@@ -213,11 +208,8 @@ describe('in other languages', () => {
         const root = show({ suggestions: active, improved, onDisableSuggestions: () => undefined })
         expect($(root, 'summary span')?.textContent).toBe(count)
         expect($(root, '[data-suggestion] h3 span, [data-suggestion] h2 span')?.textContent).toBe(` · ${context}`)
-        expect($(root, 'header h2')?.textContent).toBe(title)
+        expect($(root, 'section > h2')?.textContent).toBe(title)
         expect(byText(root, disable, 'button span')).not.toBeNull()
-        view?.unmount()
-        const unlabeled = show({ suggestions: active, showHeading: false })
-        expect(unlabeled.querySelector('section')?.getAttribute('aria-label')).toBe(title)
       } finally {
         restore()
       }
@@ -236,7 +228,7 @@ describe('in other languages', () => {
       })
       expect(untranslatedText(root)).toEqual([])
       view?.unmount()
-      const off = show({ suggestions: [], disabled: true, onEnableSuggestions: () => undefined, showHeading: false })
+      const off = show({ suggestions: [], disabled: true, onEnableSuggestions: () => undefined })
       expect(untranslatedText(off)).toEqual([])
     } finally {
       restore()

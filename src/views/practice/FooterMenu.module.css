@@ -1,5 +1,5 @@
 /* The Practice footer menu (DECISIONS U76): an anchored popover above the Menu button, with the
-   tempo popover's surface, radius and hairline edge, and the Study menu's label / control rows. */
+   tempo popover's surface, radius and hairline edge, and label / control rows. */
 .root {
   position: relative;
   display: inline-flex;
@@ -47,17 +47,20 @@
   min-height: var(--touch);
   padding-block: var(--space-3);
 }
-.popover > :is(.row, .keepTimeGroup) + :is(.row, .keepTimeGroup) {
+.popover > :is(.row, .group) + :is(.row, .group) {
   border-block-start: 1px solid var(--border);
 }
-/* An action after the rows (Record performance, in Practice's and Sheet music's menus): the rows'
-   spacing above and below it and a hairline above it, the full width with its label at the start,
+/* The actions after the rows (Progress, Record performance): the rows'
+   spacing above and below them and a hairline above them, the full width with its label at the start,
    as the phone menu's actions. */
 .popover > button {
   margin-block: var(--space-3);
   justify-content: flex-start;
 }
-.popover > :is(.row, .keepTimeGroup):has(+ button) {
+.popover > button + button {
+  margin-block-start: 0;
+}
+.popover > :is(.row, .group):has(+ button) {
   border-block-end: 1px solid var(--border);
 }
 .label,
@@ -94,9 +97,17 @@
   padding-inline: var(--space-2);
 }
 
-.scorePlayback {
-  margin-block: var(--space-1) var(--space-2);
-  padding-block: var(--space-1);
+.link {
+  min-height: var(--touch);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-s);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
 }
 
 .scorePlaybackVolume {
@@ -106,21 +117,6 @@
 
 .menuButton {
   position: relative;
-}
-
-/* Keep time is on: a small metronome on the Menu button's corner (tokens only). */
-.badge {
-  position: absolute;
-  top: 4px;
-  right: 2px;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--bg-elevated);
-  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

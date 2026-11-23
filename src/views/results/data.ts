@@ -1,17 +1,15 @@
 /**
- * Loading for the Results view: everything it needs from storage in one call, against a narrow
- * interface so tests can pass a fake or an in-memory database.
+ * Loading for the practice result's earlier passes and for Progress: everything they need from storage
+ * in one call, against a narrow interface so tests can pass a fake or an in-memory database.
  */
-import type { SuggestionSelection } from '../../core/history'
 import type { PassageWords } from '../../core/model/passage'
 import type { AttemptRecord } from '../../core/model/practice'
 import type { MeasureOccurrence } from '../../core/model/score'
 import type { PianissimoStorage, PieceRecord } from '../../core/storage'
 
-export type ResultsStorage = Pick<
-  PianissimoStorage,
-  'getPiece' | 'getPackage' | 'getAttempt' | 'listAttempts' | 'loadSuggestions' | 'setSuggestionsDisabled'
-> & { readonly history: Pick<PianissimoStorage['history'], 'flush'> }
+export type ResultsStorage = Pick<PianissimoStorage, 'getPiece' | 'getPackage' | 'getAttempt' | 'listAttempts'> & {
+  readonly history: Pick<PianissimoStorage['history'], 'flush'>
+}
 
 export interface ResultsData {
   readonly piece: PieceRecord
@@ -21,7 +19,6 @@ export interface ResultsData {
   readonly occurrences: readonly MeasureOccurrence[]
   /** What names a note-level passage ("Bar 12, beat 3 – bar 14"); absent when the package is gone. */
   readonly words?: PassageWords | null
-  readonly suggestions: SuggestionSelection
 }
 
 export type LoadedResults = { readonly kind: 'ready'; readonly data: ResultsData } | { readonly kind: 'missing' }
@@ -34,7 +31,6 @@ export type LoadedResults = { readonly kind: 'ready'; readonly data: ResultsData
 export async function loadResultsData(
   storage: ResultsStorage,
   request: { readonly pieceId: string; readonly attemptId?: string | undefined },
-  dismissed?: { has(id: string): boolean },
 ): Promise<LoadedResults> {
   await storage.history.flush().catch(() => undefined)
   const piece = await storage.getPiece(request.pieceId)
@@ -45,10 +41,9 @@ export async function loadResultsData(
     const requested = await storage.getAttempt(request.attemptId)
     if (requested && requested.pieceId === piece.id) version = requested.context.scoreVersionId
   }
-  const [attempts, pkg, suggestions] = await Promise.all([
+  const [attempts, pkg] = await Promise.all([
     storage.listAttempts({ pieceId: piece.id, scoreVersionId: version }),
     storage.getPackage(version),
-    storage.loadSuggestions(piece.id, dismissed),
   ])
   const m = pkg?.model
   const words: PassageWords | null = m
@@ -60,5 +55,5 @@ export async function loadResultsData(
         totalDuration: m.totalDuration,
       }
     : null
-  return { kind: 'ready', data: { piece, attempts, occurrences: m?.occurrences ?? [], words, suggestions } }
+  return { kind: 'ready', data: { piece, attempts, occurrences: m?.occurrences ?? [], words } }
 }

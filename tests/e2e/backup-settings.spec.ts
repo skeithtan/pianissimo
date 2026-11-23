@@ -16,10 +16,10 @@ import {
   seedPiece,
 } from './practice-helpers'
 
-/** Settings → Backup (export and restore are not on the Library page). */
+/** Settings → Data (export and restore are not on the Library page). */
 async function openBackup(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Settings' }).click()
-  await sheet(page).getByRole('tab', { name: 'Backup' }).click()
+  await sheet(page).getByRole('tab', { name: 'Data' }).click()
 }
 
 async function completeWithOneWrongNote(page: Page): Promise<void> {
@@ -43,7 +43,7 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   await page.getByRole('button', { name: 'Back to Library' }).click()
   await expect(page.getByRole('heading', { level: 2, name: 'Two Hands' })).toBeVisible()
 
-  // Export from Settings → Backup: a real download of the backup archive.
+  // Export from Settings → Data: a real download of the backup archive.
   await expect(page.getByRole('button', { name: 'Export backup' })).toHaveCount(0)
   await openBackup(page)
   const [download] = await Promise.all([
@@ -67,7 +67,7 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   expect(await idbAll(page, 'pieces')).toHaveLength(0)
   expect(await idbAll(page, 'attempts')).toHaveLength(0)
 
-  // Restore it from the downloaded file through the real file input, in Settings → Backup.
+  // Restore it from the downloaded file through the real file input, in Settings → Data.
   await openBackup(page)
   await sheet(page)
     .locator('label', { hasText: 'Restore from backup' })
@@ -105,7 +105,7 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   const history = details.locator('[data-panel="history"]')
   await expect(history.getByRole('heading', { name: 'Clean 1', exact: true })).toBeVisible()
   // The restored attempt had one wrong note, which now shows a hint (S5): here only the note counts (U144).
-  await expect(history.getByRole('heading', { name: 'With wrong notes 1', exact: true })).toBeVisible()
+  await expect(history.getByRole('heading', { name: 'Not clean 1', exact: true })).toBeVisible()
   await expect(history.locator('ul > li')).toHaveCount(2) // the restored attempt and the new one
 })
 
@@ -137,18 +137,18 @@ test.describe('settings survive a reload', () => {
     await expect(page.getByRole('heading', { name: 'Ode to Joy', exact: true })).toBeVisible()
     await openSettings(page)
 
-    // Note names: fixed do with ti, no octave numbers.
+    // Naming style: fixed do with ti, no octave numbers.
     await sheet(page).getByRole('radio', { name: 'Fixed do' }).click()
-    await sheet(page).getByRole('radio', { name: 'ti' }).click()
+    await sheet(page).getByRole('radio', { name: 'ti', exact: true }).click()
     await sheet(page)
       .getByRole('switch', { name: /Show octave number/ })
       .uncheck()
-    const examples = sheet(page).getByLabel('Example labels')
+    const examples = sheet(page).getByLabel('Example names')
     await expect(examples).toContainText('do')
     const exampleTexts = await examples.locator('strong').allTextContents()
 
     // Theme: dark.
-    await sheet(page).getByRole('tab', { name: 'General' }).click()
+    await sheet(page).getByRole('tab', { name: 'App' }).click()
     await sheet(page).getByRole('radio', { name: 'Dark' }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 
@@ -164,14 +164,14 @@ test.describe('settings survive a reload', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
     await expect(sheet(page)).toBeVisible()
     await expect(sheet(page).getByRole('radio', { name: 'Fixed do' })).toHaveAttribute('aria-checked', 'true')
-    await expect(sheet(page).getByRole('radio', { name: 'ti' })).toHaveAttribute('aria-checked', 'true')
+    await expect(sheet(page).getByRole('radio', { name: 'ti', exact: true })).toHaveAttribute('aria-checked', 'true')
     await expect(sheet(page).getByRole('switch', { name: /Show octave number/ })).not.toBeChecked()
-    expect(await sheet(page).getByLabel('Example labels').locator('strong').allTextContents()).toEqual(exampleTexts)
-    await sheet(page).getByRole('tab', { name: 'General' }).click()
+    expect(await sheet(page).getByLabel('Example names').locator('strong').allTextContents()).toEqual(exampleTexts)
+    await sheet(page).getByRole('tab', { name: 'App' }).click()
     await expect(sheet(page).getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true')
   })
 
-  test('the Labels mode chosen in Practice is remembered after a reload', async ({ page }) => {
+  test('the Note names mode chosen in Practice is remembered after a reload', async ({ page }) => {
     await installFakeMidi(page)
     await seedPiece(page)
     await openSeededPractice(page)

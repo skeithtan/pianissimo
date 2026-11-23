@@ -9,6 +9,8 @@ import { expect, test, type Page } from '../browser-test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { idbAll } from './app-helpers'
 import {
+  chooseMode,
+  expectMode,
   installFakeMidi,
   loopWholePiece,
   openFooterMenu,
@@ -247,14 +249,11 @@ test.describe('practice assistance and repeat', () => {
     await openSeededPractice(page)
     const sentBefore = await page.evaluate(() => window.__midi.sent.length)
 
-    // Both hand toggles off is Listen mode (U9): the main button reads Listen; no part filter (U12).
-    await page.getByRole('button', { name: 'Left hand' }).click()
-    await page.getByRole('button', { name: 'Right hand' }).click()
-    await expect(page.getByRole('radiogroup', { name: 'Hear' })).toHaveCount(0)
+    await chooseMode(page, 'Listen')
     await expect(page.getByTestId('strip-host')).toHaveAttribute('data-mode', 'page')
     const heads = page.locator('.pn-music [data-n] path')
     const scoreInk = await heads.first().evaluate((head) => getComputedStyle(head.closest('.pn-strip')!).color)
-    await page.getByRole('button', { name: 'Listen', exact: true }).click()
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
     await expect
       .poll(() =>
@@ -288,46 +287,51 @@ test.describe('practice assistance and repeat', () => {
 
 test.describe('practice without a piano', () => {
   // No fake Web MIDI here: headless browsers have none, like a device with no piano.
-  test('Listen plays through this device (Auto, S4); the hands are off and unavailable (U27, U105)', async ({
-    page,
-  }) => {
+  test('a piece opens in Listen and plays through this device (Auto, S4), one hand or both', async ({ page }) => {
     const samples: string[] = []
     page.on('request', (r) => {
       if (r.url().includes('/samples/')) samples.push(r.url())
     })
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
     await openSeededPractice(page)
-    // Without a piano Practice offers Listen only, with or without a microphone: following the
-    // learner's playing with a microphone belongs to Sheet music (U105).
+    await expectMode(page, 'Listen')
+    // Headless browsers have no Web MIDI, so the piece's own mode is not stored by opening it.
     const left = page.getByRole('button', { name: 'Left hand' })
+    const right = page.getByRole('button', { name: 'Right hand' })
+    await expect(left).toHaveAttribute('aria-pressed', 'true')
+    await left.click()
     await expect(left).toHaveAttribute('aria-pressed', 'false')
-    await expect(left).toHaveAttribute('aria-disabled', 'true')
-    await expect(page.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-disabled', 'true')
-    const listen = page.getByRole('button', { name: 'Listen', exact: true })
-    await expect(listen).toBeEnabled()
+    await expect(left).toHaveAttribute('title', 'Left hand: silent')
+    await expect(right).toHaveAttribute('title', 'Right hand: you hear it')
+    // The only lit hand stays on, and a notice says why.
+    await right.click()
+    await expect(right).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByText('At least one hand stays on.')).toBeVisible()
+    const play = page.getByRole('button', { name: 'Play', exact: true })
+    await expect(play).toBeEnabled()
     expect(samples).toEqual([]) // nothing is fetched before the gesture
-    await listen.click()
+    await play.click()
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible({ timeout: 20_000 })
     expect(samples.length).toBeGreaterThan(0)
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
+    await expect(play).toBeVisible()
+    expect((await idbAll<{ mode?: string }>(page, 'pieces'))[0]?.mode).toBeUndefined()
   })
 
-  test('without a microphone either, the hands are off and unavailable: Listen (U27)', async ({ page }) => {
+  test('without a microphone either, Follow says what it needs; Listen still plays', async ({ page }) => {
     // A browser that cannot open a microphone (no getUserMedia).
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true })
     })
     await seedPiece(page, { route: DEFAULT_SETTINGS.route })
     await openSeededPractice(page)
-    // A tap on a hand explains why (`force`: Playwright treats aria-disabled as disabled).
-    const left = page.getByRole('button', { name: 'Left hand' })
-    await expect(left).toHaveAttribute('aria-pressed', 'false')
-    await expect(left).toHaveAttribute('aria-disabled', 'true')
-    await expect(page.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-disabled', 'true')
-    await left.click({ force: true })
-    await expect(page.getByText(/Connect a piano to practice a hand/)).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Listen', exact: true })).toBeEnabled()
+    await chooseMode(page, 'Follow')
+    await expect(page.getByRole('note')).toContainText('Follow needs a connected piano or a microphone.')
+    await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Connect piano' })).toBeVisible()
+    await chooseMode(page, 'Listen')
+    await expect(page.getByRole('note')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeEnabled()
   })
 })
 

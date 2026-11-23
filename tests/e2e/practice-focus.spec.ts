@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '../browser-test'
 import { REVEAL_MS } from '../../src/views/practice/recede'
-import { SHOT_DIR, installFakeMidi, openSeededPractice, seedPiece } from './practice-helpers'
+import { SHOT_DIR, chooseMode, installFakeMidi, openSeededPractice, seedPiece } from './practice-helpers'
 
 const height = (locator: Locator) => locator.evaluate((el) => el.getBoundingClientRect().height)
 const screen = (page: Page) => page.locator('[data-activity]')
@@ -403,7 +403,7 @@ test.describe('phone top bar', () => {
       const menu = page.getByRole('dialog', { name: 'Menu' })
       await expect(menu).toBeVisible()
       await expect(menu.getByText('Speed')).toBeVisible()
-      await expect(menu.getByRole('switch', { name: 'Keep time' })).toBeVisible()
+      await expect(menu.getByRole('switch', { name: 'Metronome' })).toBeVisible()
       await expect(menu.getByRole('switch', { name: 'Show keys' })).toHaveCount(size.sideways ? 0 : 1)
       await expect(menu.getByRole('radiogroup', { name: 'Note names on the score' })).toBeVisible()
       await menu.getByRole('button', { name: /Open speed options/ }).click()
@@ -477,24 +477,47 @@ for (const size of [
   })
 }
 
-test('Listen keeps playing while portrait chrome collapses and returns', async ({ page }) => {
-  await page.setViewportSize({ width: 586, height: 846 })
-  await open(page)
-  await page.getByRole('button', { name: /Open speed options/ }).click()
-  await page.getByRole('dialog', { name: 'Playback speed' }).getByRole('button', { name: '50%', exact: true }).click()
-  await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Left hand', exact: true }).click()
-  await page.getByRole('button', { name: 'Right hand', exact: true }).click()
-  await page.getByRole('button', { name: 'Listen', exact: true }).click()
-  await focused(page)
-  await expect(screen(page)).toHaveAttribute('data-activity', 'listening')
-  await expect(page.locator('.pn-page.pn-browsing')).toHaveCount(0)
-  await reveal(page)
-  await expect.poll(() => height(tools(page))).toBeGreaterThan(40)
-  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
-  await expect(screen(page)).toHaveAttribute('data-activity', 'listening')
-  await expect(page.locator('.pn-page.pn-browsing')).toHaveCount(0)
-})
+for (const size of [
+  { width: 586, height: 846 },
+  { width: 1194, height: 834 },
+  { width: 393, height: 852 },
+  { width: 852, height: 360 },
+])
+  test(`${size.width}×${size.height}: nothing recedes while Listen plays (U72), only the cursor's repeat button goes`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size)
+    await open(page)
+    await chooseMode(page, 'Listen')
+    const phone = await page.getByTestId('practice-bar').count()
+    if (!phone) {
+      await page.getByRole('button', { name: /Open speed options/ }).click()
+      await page
+        .getByRole('dialog', { name: 'Playback speed' })
+        .getByRole('button', { name: '50%', exact: true })
+        .click()
+      await page.keyboard.press('Escape')
+    }
+    const repeat = page.locator('.pn-action-on')
+    await expect(repeat).toHaveCount(1)
+    const stageBefore = await height(stage(page))
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
+    await expect(screen(page)).toHaveAttribute('data-activity', 'listening')
+    await expect(repeat).toHaveCount(0)
+    // Where the other modes have receded by now (1.2 s), every control is still there and takes input.
+    await page.waitForTimeout(800)
+    await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
+    expect(await height(stage(page))).toBe(stageBefore)
+    const chrome = phone ? page.getByTestId('practice-bar') : tools(page)
+    expect(await chrome.evaluate((el) => el.hasAttribute('inert'))).toBe(false)
+    await expect(chrome).toHaveCSS('opacity', '1')
+    await expect(page.locator('.pn-browsing')).toHaveCount(0)
+    const pause = page.getByRole('button', { name: 'Pause', exact: true })
+    await expect(pause).toBeInViewport({ ratio: 1 })
+    // Another mode is one tap away, and stops it.
+    await chooseMode(page, 'Wait')
+    await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
+  })
 
 /**
  * The footer menu's last action (Record performance) keeps the rows' rhythm: a hairline above it,

@@ -2,7 +2,7 @@ import { msg } from '../../i18n/messages'
 import type { GuideKey, GuideKeyState } from './types'
 
 const GROUPS: ReadonlyArray<readonly [GuideKeyState, string]> = [
-  ['target', 'Play'],
+  ['target', 'To play'],
   ['accepted', 'Played'],
   ['sounding', 'Sounding'],
   ['held', 'Held'],

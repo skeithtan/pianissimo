@@ -20,7 +20,7 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `EARLY_PRESS_GRACE_MS` (120), `matchingRulesFor(graceMs)` | Early-press grace window and the matching-rules id recorded with it. |
 | `CHORD_SLIP_MS` (60) | Chord slips (P24): a wrong key this soon after a group completes is that group's. Also the session's `finalSlipMs`. |
 | `DEFAULT_RHYTHM_TOLERANCE_MS` (150), `rhythmMatchingRulesFor(toleranceMs)` | Rhythm mode (strict transport) default tolerance and its matching-rules id (`strict-v1-tol-<n>ms`). See "Strict transport (rhythm mode)". |
-| `buildAttemptRecord`, `comparisonContextOf` | Record builders (used internally; exported for history tests). Scored records carry per-group outcomes (`groups: GroupOutcome[]`, type re-exported here). |
+| `buildAttemptRecord`, `comparisonContextOf` | Record builders (used internally; exported for history tests). Scored and reading records carry per-group outcomes (`groups: GroupOutcome[]`, type re-exported here). |
 | `testkit.ts` | Test-only: `buildScore` (compact note lists → valid `ScoreModel`), `MidiScript`, `EngineDriver`, `pedalDetector`. |
 
 ### `PracticeEngine`
@@ -33,7 +33,7 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `requestHint(now)`, `dismissHint(now)` | Manual hint request (pedal goes through `input`), explicit dismissal (fade). |
 | `setKeyboardVisible(v, now)` | Keyboard guide; showing marks keyboard assistance. |
 | `recordPersistentLabelExposure(notes, now)` | Visible persistent labels. Call on every `exposure-reset` event and whenever newly placed labels become visible (read-ahead included). |
-| `config.finalSlipMs` | Scored: a completed final group stays current this long (ms, default 0) so a wrong key pressed with the final chord is still counted; the session passes `CHORD_SLIP_MS`. The completion time is unchanged; `nextDeadline` includes the hold's end, and the next event after it, `tick`, `restart`, `seek`, `reconfigure` or `interrupt` end the attempt first. |
+| `config.finalSlipMs` | Scored, and reading of the whole piece (U142; never a reading passage, so a lead-in hands over at once): a completed final group stays current this long (ms, default 0) so a wrong key pressed with the final chord is still counted; the session passes `CHORD_SLIP_MS`. The completion time is unchanged; `nextDeadline` includes the hold's end, and the next event after it, `tick`, `pause`, `restart`, `seek`, `reconfigure` or `interrupt` end the attempt first. |
 | `markPrepared(now)` | Scored: preparation done (score ready, automatic tail finished, output released, transport at the passage start, persistent-label fades finished). |
 | `pause` / `resume` | Reading: freeze/unfreeze (progress kept). Scored: `pause` interrupts. |
 | `interrupt(reason, now)` | Ends the attempt/traversal: `user-stop`/`user-restart` → abandoned, others → interrupted. `disconnect` forgets physical state. |
@@ -128,15 +128,17 @@ The completion event keeps the timestamp of the last accepted attack on the succ
 
 ## Per-group outcomes (teacher corrections, E15–E16)
 
-Scored records carry `groups: GroupOutcome[]`, one per reached group, ascending (completed
-groups and, when the attempt ended early, the current one); reading records carry none.
+Scored and reading records carry `groups: GroupOutcome[]`, one per reached group, ascending
+(completed groups and, when the attempt or traversal ended early, the current one; a reading
+traversal's begin where it started, and a group a speed change splits is in both traversals, each
+with its own presses). A completed group is one with an entry in `onsets`.
 
 | Field | Rule |
 | --- | --- |
 | `wrongAttacks`, `earlyAttacks` | Wrong attacks attributed to the group; of them, right pitches too early (E12). |
-| `lateMs` | Whole ms from the gate's arrival (`transportArrived`) to the group's input completion; 0 when completed at or before arrival, not completed, or in free mode. **The group whose press started the clock is never late** (the transport waits at the first gate for that press, P9), unless the attempt began with `runningStart: true` (a lead-in handing over while the transport runs into the loop), where it is measured like any other group. |
+| `lateMs` | Whole ms from the gate's arrival (`transportArrived`) to the group's input completion, an ordinary-reading pause left out; 0 when completed at or before arrival, not completed, or in free mode. **The group whose press started the clock is never late** (the transport waits at the first gate for that press, P9), unless the attempt began with `runningStart: true` (a lead-in handing over while the transport runs into the loop), where it is measured like any other group. |
 | `wrongPitches` | MIDI pitches of the group's wrong attacks that were not too early, in order, repeats included. |
-| `spreadMs` | Whole ms between the first and last accepted attack (engine press times; replays ignored); 0 for a one-pitch group or an incomplete one. |
+| `spreadMs` | Whole ms between the first and last accepted attack (engine press times; replays ignored; an ordinary-reading pause left out); 0 for a one-pitch group or an incomplete one. |
 | `tieEndPresses` | Presses of a pitch in the group's `tiedPitches` while it is current, or within the early grace before it (pending like a next-group press; expiring before the group comes it is a `'pitch'` error of the current group). A pending next-group press whose pitch is also tied into the current group expires as a tie-end press instead of `'ahead'`. A tie-end press emits `wrong` with reason `'tie-end'` (feedback end unchanged) and is **not** a wrong attack: no totals, first-pass, bar traversal, red wash, local marker, held-wrong marking, hint count or ottava warning, and `lastWrongReason` is kept. The review can mark the tied note. |
 
 `tiedPitches` (timeline): learner tie continuations go to the first group at or after their
@@ -279,7 +281,8 @@ happened (`waitingForTransport` meanwhile).
    carry no diagnostics and would otherwise add an empty attempt on every Stop after Repeat.
 3. **Reading traversals** produce `kind: 'reading'` records (untimed, never passed) when
    they end: end of piece, seek, interruption, restart or reconfigure. A tempo/speed change
-   while reading splits the traversal but keeps the current target and its accepted pitches.
+   while reading splits the traversal but keeps the current target and its accepted pitches. Their
+   `groups` let the session merge them into a Wait run's result (U142).
 4. **Timing issues** make the attack span unscored only between the first and last required
    attack: a fermata on the final chord (final sustain) or before the first attack does not;
    verbal tempo/rubato before the final attack does.
@@ -307,7 +310,7 @@ happened (`waitingForTransport` meanwhile).
 15. **Held pedals never block Ready** (user, 31 October 2026): only held keys, preparation and
     label fades do. `ReadyBlocker` keeps `'pedals-held'` for compatibility; it is never emitted.
 16. **Per-group outcomes.** See "Per-group outcomes" above (E15 revised, E16 tie-end presses;
-    E17 pedal checking was removed). Reading traversals carry no `groups`.
+    E17 pedal checking was removed).
 
 ## Play-through follower (`follow.ts`, DECISIONS P12)
 

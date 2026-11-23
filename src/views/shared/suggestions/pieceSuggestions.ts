@@ -1,26 +1,22 @@
-import { msg } from '../../i18n/messages'
+import { msg } from '../../../i18n/messages'
 /**
- * Data layer for a piece's Suggested practice section (spec "Suggested practice"). Kept apart
- * from the presentation (`PieceSuggestions.tsx`, the shared `SuggestionList`):
+ * A piece's suggestions (spec "Suggested practice"), for Progress and the Library's Continue card.
+ * Kept apart from the presentation (`SuggestionList`):
  *
  * - `load()` → `storage.loadSuggestions(pieceId, sessionDismissals)` (up to three + Improved).
  * - `dismiss(id)` hides a suggestion for this session only (memory, never persisted).
  * - `setDisabled(bool)` is the per-piece "disable suggestions" switch (evidence keeps being
  *   recorded). The global switch is `settings.suggestions.enabled`.
- * - `practice(s)` opens Practice with the passage, hands and speed preselected; it never starts.
  * - Refreshes when the history writer reports changed suggestions for this piece (between
  *   attempts; never interrupts playing).
  */
 import { signal, type Signal } from '@preact/signals'
-import { openPractice, type PracticeRequest } from '../../app/navigation'
-import { settings } from '../../app/state'
-import type { SessionDismissals } from '../../core/history/controls'
-import type { Suggestion, SuggestionSelection } from '../../core/history/selection'
-import type { PianissimoStorage } from '../../core/storage/storage'
-import { sessionDismissals } from '../shared/suggestions/dismissals'
-
-/** Session-scoped dismissals (memory only), shared with Results. */
-export { sessionDismissals }
+import type { PracticeRequest } from '../../../app/navigation'
+import { settings } from '../../../app/state'
+import type { SessionDismissals } from '../../../core/history/controls'
+import type { Suggestion, SuggestionSelection } from '../../../core/history/selection'
+import type { PianissimoStorage } from '../../../core/storage/storage'
+import { sessionDismissals } from './dismissals'
 
 export type SuggestionsState =
   | { readonly status: 'loading' }
@@ -34,14 +30,10 @@ export type SuggestionsState =
 
 export interface SuggestionsDeps {
   getStorage(): Promise<PianissimoStorage>
-  /** Called before opening Practice (the Library marks the piece as opened). */
-  beforePractice?(pieceId: string): Promise<void> | void
-  /** Navigation seam (tests). */
-  openPractice?(request: PracticeRequest): void
   readonly dismissals?: SessionDismissals
 }
 
-/** The preset that "Practice this passage" sends: range, hands and speed (never auto-start). */
+/** What "Practice these bars" opens from the Library: range, hands and speed (never auto-start). */
 export function practiceRequestFor(pieceId: string, s: Suggestion): PracticeRequest {
   return { pieceId, preset: { passage: s.passage, hands: s.hands, multiplier: s.multiplier } }
 }
@@ -109,11 +101,6 @@ export class PieceSuggestionsModel {
     const storage = await this.#deps.getStorage()
     await storage.setSuggestionsDisabled(this.pieceId, disabled)
     await this.load()
-  }
-
-  async practice(s: Suggestion): Promise<void> {
-    await this.#deps.beforePractice?.(this.pieceId)
-    ;(this.#deps.openPractice ?? openPractice)(practiceRequestFor(this.pieceId, s))
   }
 
   dispose(): void {

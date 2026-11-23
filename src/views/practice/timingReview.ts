@@ -39,6 +39,7 @@ export function buildTimingReview(details: ResultDetails): TimingReviewData | nu
   const attempt = details.records.at(-1)
   if (
     attempt?.id !== details.attemptId ||
+    attempt.kind === 'run' ||
     attempt.context.transport !== 'strict' ||
     attempt.completion !== 'completed' ||
     !Array.isArray(attempt.groups)

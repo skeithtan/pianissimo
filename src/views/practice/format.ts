@@ -21,7 +21,15 @@ export function wrongText(n: number): string {
   return n === 0 ? msg('No wrong notes') : n === 1 ? msg('1 wrong note') : msg('{0} wrong notes', n)
 }
 
-/** The "This pass" lines in display order. The pill previews the beginning of this list. */
+/** What a pass without anything to correct says first, or null. */
+export function cleanText(r: AttemptSummary): string | null {
+  const clean =
+    r.wrongAttacks === 0 && r.groupsFirstPass === r.groupsTotal && (!r.timing || r.timing.onTime === r.timing.groups)
+  if (!clean) return null
+  return r.passed ? msg('No mistakes in this pass.') : msg('No wrong keys or timing marks in this pass.')
+}
+
+/** The "This pass" lines in display order. The pill of a pass without mistakes peeks at them. */
 export function passFacts(result: AttemptSummary, goal: number | null): string[] {
   const facts: string[] = []
   if (result.groupsTotal > 0)
@@ -54,4 +62,13 @@ export function passFacts(result: AttemptSummary, goal: number | null): string[]
     )
   else if (result.streak > 1) facts.push(msg('{0} clean in a row', result.streak))
   return facts
+}
+
+/** "Clean pass: no wrong notes." or why not, in one plain sentence. */
+export function verdict(r: AttemptSummary): string {
+  if (r.passed) return msg('Clean pass: no wrong notes.')
+  if (r.wrongAttacks === 1) return msg('Not clean: 1 wrong note.')
+  if (r.wrongAttacks > 0) return msg('Not clean: {0} wrong notes.', r.wrongAttacks)
+  if (r.timing && r.timing.onTime < r.timing.groups) return msg('Not clean: the timing slipped.')
+  return msg('Completed, but not counted as clean.')
 }

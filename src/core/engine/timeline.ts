@@ -10,7 +10,7 @@ import { type TempoMapData, hasTempo, isValidMultiplier, secondsBetween, tempoMa
 import {
   MATCHING_RULES_VERSION,
   type Hand,
-  type HandSelection,
+  type LearnerHands,
   type PerformedNote,
   type ScoreModel,
   type TimingIssue,
@@ -20,8 +20,7 @@ import type { ComparisonContext, PassageRange } from '../model/practice'
 import { handAssignmentId } from '../model/practice'
 import { describePassage, normalizePassage, passageBounds } from '../model/passage'
 
-/** Hands the learner plays (Preview has no learner timeline). */
-export type LearnerHands = Exclude<HandSelection, 'none'>
+export type { LearnerHands }
 
 export interface TimelineOptions {
   readonly hands: LearnerHands

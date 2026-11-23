@@ -40,7 +40,7 @@ afterEach(() => {
 async function open(): Promise<HTMLElement> {
   view = mount(
     <LibraryDepsContext.Provider value={deps}>
-      <BackupSection />
+      <BackupSection recordingsOpen={false} />
     </LibraryDepsContext.Provider>,
   )
   await settle()
@@ -61,7 +61,7 @@ const fileButton = (root: HTMLElement, text: string) =>
 const button = (root: HTMLElement, text: string) =>
   $$(root, 'button').find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined
 
-describe('Settings → Backup', () => {
+describe('Settings → Data, Backup and restore', () => {
   it('exports a .pianissimo.zip download', async () => {
     await importPiece(deps.storage, 'v1')
     const root = await open()
@@ -74,7 +74,7 @@ describe('Settings → Backup', () => {
 
   it('says which of this device’s settings a restore keeps', async () => {
     const root = await open()
-    expect(root.textContent).toContain("except this device's piano connection and metronome output.")
+    expect(root.textContent).toContain("except this device's piano connection, metronome output and recording input.")
   })
 
   it('restores a backup after confirmation, in place, and reports what was merged', async () => {

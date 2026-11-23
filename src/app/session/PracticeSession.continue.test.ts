@@ -67,7 +67,7 @@ const notesSince = (h: BrowseHarness, from: number) =>
 
 describe('Loop changes while Repeat plays keep playing (U94)', () => {
   it('Listen: a grown loop plays on from where it was', async () => {
-    const h = harness(threeBars, { hands: 'none', range: { fromOcc: 1, toOcc: 1 } })
+    const h = harness(threeBars, { range: { fromOcc: 1, toOcc: 1 } }, { options: { mode: 'listen' } })
     await h.session.start()
     h.step(1500)
     const before = h.backend.ons().length
@@ -86,7 +86,7 @@ describe('Loop changes while Repeat plays keep playing (U94)', () => {
   })
 
   it('Listen: a loop shrunk behind the cursor plays on from its start', async () => {
-    const h = harness(threeBars, { hands: 'none', range: { fromOcc: 1, toOcc: 2 } })
+    const h = harness(threeBars, { range: { fromOcc: 1, toOcc: 2 } }, { options: { mode: 'listen' } })
     await h.session.start()
     h.step(5000)
     expect(h.session.progress.get().position).toBeGreaterThan(2)
@@ -172,7 +172,7 @@ describe('Loop changes while Repeat plays keep playing (U94)', () => {
     h.frames.flush()
     expect(ui(h)).toMatchObject({ leadIn: false, playing: false, range: { fromOcc: 1, toOcc: 2 } })
 
-    const l = harness(threeBars, { hands: 'none', range: { fromOcc: 1, toOcc: 1 } })
+    const l = harness(threeBars, { range: { fromOcc: 1, toOcc: 1 } }, { options: { mode: 'listen' } })
     await l.session.start()
     l.step(1500)
     l.session.pause()
@@ -184,7 +184,7 @@ describe('Loop changes while Repeat plays keep playing (U94)', () => {
   })
 
   it('a loop changed during a browse hold decides where playback goes on, and the strip follows again', async () => {
-    const h = harness(threeBars, { hands: 'none', range: { fromOcc: 1, toOcc: 1 } })
+    const h = harness(threeBars, { range: { fromOcc: 1, toOcc: 1 } }, { options: { mode: 'listen' } })
     await h.session.start()
     h.step(1500)
     // A handle drag that scrolled the strip: browsing begins, then the loop is committed.
@@ -223,7 +223,7 @@ describe('Keep time: a loop change while playing (U94)', () => {
       threeBars,
       { hands: 'right', range: { fromOcc: 1, toOcc: 1 } },
       {
-        options: { rhythm: true },
+        options: { mode: 'time' },
         deps: { loadMetronome: async () => ({ WebAudioMetronome }) as unknown as MetronomeModule },
       },
     )
@@ -305,7 +305,7 @@ describe('Browsing while playing holds, the release continues (U95)', () => {
   }
 
   it('Restart loop starts Listen at the loop boundary after seeking before the first play', async () => {
-    const h = harness(threeBars, { hands: 'none', range: { fromOcc: 1, toOcc: 1 } })
+    const h = harness(threeBars, { range: { fromOcc: 1, toOcc: 1 } }, { options: { mode: 'listen' } })
     expect(h.session.seekPosition(rat(5, 4))).toBe(true)
     h.frames.flush()
     expect(h.session.progress.get().position).toBe(1.25)
@@ -318,7 +318,7 @@ describe('Browsing while playing holds, the release continues (U95)', () => {
   })
 
   it('Listen holds its sound while the finger is down, then plays from the browsed note', async () => {
-    const h = harness(threeBars, { hands: 'none' })
+    const h = harness(threeBars, {}, { options: { mode: 'listen' } })
     await h.session.start()
     h.step(1000)
     browse(h, rat(2))
@@ -334,7 +334,7 @@ describe('Browsing while playing holds, the release continues (U95)', () => {
 
   it('play-through continues from the browsed note', async () => {
     const h = harness(threeBars, { hands: 'right' })
-    h.session.setPlayThrough(true)
+    h.session.setMode('follow')
     await h.session.start()
     h.frames.flush()
     h.tap(60)
@@ -376,7 +376,7 @@ describe('Browsing while playing holds, the release continues (U95)', () => {
   })
 
   it('an overlay during the hold cancels the continuation', async () => {
-    const h = harness(threeBars, { hands: 'none' })
+    const h = harness(threeBars, {}, { options: { mode: 'listen' } })
     await h.session.start()
     h.step(1000)
     browse(h, rat(2))
@@ -387,7 +387,7 @@ describe('Browsing while playing holds, the release continues (U95)', () => {
   })
 
   it('scrolling the page layout while playing pauses nothing', async () => {
-    const h = harness(threeBars, { hands: 'none' })
+    const h = harness(threeBars, {}, { options: { mode: 'listen' } })
     await h.session.start()
     h.step(1000)
     const before = h.backend.ons().length

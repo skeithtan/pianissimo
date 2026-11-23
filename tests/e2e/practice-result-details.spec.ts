@@ -16,9 +16,9 @@ import { expect, test, type Page } from '../browser-test'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/core/model/settings'
 import { QUICK_FOLD_MS } from '../../src/views/practice/resultMotion'
 import {
+  chooseMode,
   installFakeMidi,
   loopWholePiece,
-  openFooterMenu,
   openSeededPractice,
   play,
   playAfterCountIn,
@@ -93,9 +93,7 @@ async function keepTimePass(page: Page): Promise<void> {
   await seedPiece(page)
   await openSeededPractice(page)
   await loopWholePiece(page)
-  const menu = await openFooterMenu(page)
-  await menu.getByRole('switch', { name: 'Keep time' }).click()
-  await page.keyboard.press('Escape')
+  await chooseMode(page, 'Keep time')
   await page.getByRole('button', { name: 'Start', exact: true }).click()
   await playAfterCountIn(page, [
     { notes: [60, 48], atMs: 0 },
@@ -559,13 +557,17 @@ test.describe('the result details open in place (U99)', () => {
     await settled(page)
     const url = page.url()
     const before = await stripTransform(page)
-    const previewLines = await page.getByTestId('result-details-preview').locator('li').allTextContents()
+    // The pill peeks at the card's first excerpt: its caption, and its music cut off.
+    const preview = page.getByTestId('result-details-preview')
+    await expect(preview.locator('.pn-excerpt-svg')).toHaveCount(1, { timeout: 10_000 })
+    const peeked = await preview.innerText()
     await toggle(page).click()
     const excerpts = details(page).getByTestId('result-excerpt')
     await expect(excerpts).toHaveCount(2)
-    const expandedFacts = details(page).getByTestId('result-facts')
-    await expect(expandedFacts).toBeInViewport({ ratio: 0.9 })
-    expect((await expandedFacts.locator('li').allTextContents()).slice(0, previewLines.length)).toEqual(previewLines)
+    await expect(excerpts.first()).toBeInViewport()
+    const caption = (await excerpts.first().locator('figcaption').innerText()).replace(/\s+/g, ' ')
+    expect(peeked.replace(/\s+/g, ' ').trim().startsWith(caption)).toBe(true)
+    await expect(details(page).getByTestId('result-facts')).toBeAttached()
     // Bar 1 leads under "Keeps happening": D♭ for D three passes running, E♭ for E twice now.
     const keeps = details(page).locator('[data-group="keeps"]')
     await expect(keeps.getByRole('heading', { name: 'Keeps happening' })).toBeVisible()
@@ -923,7 +925,8 @@ test.describe('result details screenshots (U99)', () => {
  * The same on a result with the longest status line there is (Keep time's timing), opened and folded
  * with the toggle: no letter is cut by the side clips, in the details or in the summary row. The
  * first opening has the details replace their loading line in the middle of it (the request for
- * them is held back; the service worker would serve it around the route).
+ * them, made at rest for the pill's peek, is held back until then; the service worker would serve it
+ * around the route).
  */
 test.describe('no letter is cut while a long result opens and folds', () => {
   test.use({ serviceWorkers: 'block' })
@@ -931,23 +934,25 @@ test.describe('no letter is cut while a long result opens and folds', () => {
     test(`at ${size.width}×${size.height}`, async ({ page }) => {
       test.setTimeout(200_000)
       let held = 0
+      let open = () => undefined as void
+      const opened = new Promise<void>((resolve) => (open = resolve))
       await page.route('**/assets/ResultDetails-*.js', async (route) => {
         held++
-        await new Promise((resolve) => setTimeout(resolve, 150))
+        await opened
         await route.continue()
       })
       await keepTimePass(page)
       await expect(page.getByTestId('timing-result')).toBeVisible()
       await page.setViewportSize(size)
-      await page.waitForTimeout(1500)
-      expect(held).toBe(0) // fetched only on the first expansion
+      await expect.poll(() => held).toBe(1)
       for (let i = 0; i < 2; i++) {
         const opening = cutBySideClip(page, 900)
         await toggle(page).click()
-        const opened = await opening
-        expect(opened.frames).toBeGreaterThan(10)
-        expect(opened.cut, `opening ${i + 1}`).toEqual([])
-        expect(opened.fading, `opening ${i + 1} fades its contents in`).toBeGreaterThan(1)
+        setTimeout(open, 150)
+        const seen = await opening
+        expect(seen.frames).toBeGreaterThan(10)
+        expect(seen.cut, `opening ${i + 1}`).toEqual([])
+        expect(seen.fading, `opening ${i + 1} fades its contents in`).toBeGreaterThan(1)
         await expect(details(page).getByTestId('timing-review').first()).toBeVisible()
         const folding = cutBySideClip(page, 600)
         await fold(page)

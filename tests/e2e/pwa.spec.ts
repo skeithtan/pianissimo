@@ -10,7 +10,7 @@ import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test, type Page } from '../browser-test'
 import { writeServiceWorker } from '../../scripts/pwa'
-import { addToLibrary, fixtureFile, importFile, sheet } from './app-helpers'
+import { addToLibrary, fixtureFile, importFile } from './app-helpers'
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const DIST = join(ROOT, 'dist')
@@ -144,10 +144,8 @@ test('after one online visit the app relaunches and works offline', async ({ pag
 
   // An import works offline too (the import worker).
   await importFile(page, fixtureFile('repeats.musicxml'))
-  await sheet(page).getByRole('button', { name: 'Add and open' }).click()
-  await expect(sheet(page)).toHaveCount(0)
   await expect(page.getByText('is in your library')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Listen', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
   await expect(page.locator('.pn-strip')).toBeVisible()
 })
 

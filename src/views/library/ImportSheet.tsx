@@ -2,7 +2,8 @@ import { importMessage } from '../../i18n/importMessage'
 import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * The import sheet: one modal over the Library showing the `ImportFlow` phase — progress with
- * Cancel, score/part choice, the import summary with hands and tempo, or a readable failure.
+ * Cancel (all a score that needs no answer shows, L12), score/part choice, the import summary with
+ * hands and tempo, or a readable failure.
  * Saving closes the sheet (L6); the library shows the notice.
  */
 import { useEffect, useMemo, useState } from 'preact/hooks'
@@ -14,7 +15,7 @@ import { useLibraryDeps } from './deps'
 import { FileButton, SCORE_ACCEPT } from './FileButton'
 import { formatBytes } from './format'
 import { ImportSummaryView } from './ImportSummary'
-import { STAGE_TEXT, type FlowPhase, type ImportFlow, type StorageStatus } from './importFlow'
+import { STAGE_TEXT, isSaving, type FlowPhase, type ImportFlow, type StorageStatus } from './importFlow'
 import { initialDraft, reviewGate, type ReviewDraft } from './review'
 import { candidateTitle, describePart, playableParts } from './selection'
 import styles from './library.module.css'
@@ -36,8 +37,7 @@ export function ImportSheet({
   const open = flow !== null && phase.kind !== 'idle'
   // While "Saving…" the sheet stays open (X and Escape do nothing); it closes itself when saved.
   const closeUnlessSaving = () => {
-    const current = flow?.phase.peek()
-    if (current?.kind === 'review' && current.saving) return
+    if (flow && isSaving(flow.phase.peek())) return
     onClose()
   }
   return (
@@ -94,12 +94,15 @@ const STEP_TEXT = {
 
 function Working({ phase, onCancel }: { phase: Extract<FlowPhase, { kind: 'working' }>; onCancel: () => void }) {
   const fraction = Math.max(0, Math.min(1, phase.fraction))
-  const label = msg(phase.stage && phase.step === 'building' ? STAGE_TEXT[phase.stage] : STEP_TEXT[phase.step])
+  const label =
+    phase.step === 'saving'
+      ? msg('Saving…')
+      : `${msg(phase.stage && phase.step === 'building' ? STAGE_TEXT[phase.stage] : STEP_TEXT[phase.step])}…`
   return (
     <div class={styles.flow} aria-busy="true">
       <p class={styles.fileName}>{phase.fileName}</p>
       <p class={styles.stage} aria-live="polite">
-        {label}…
+        {label}
       </p>
       <div
         class={styles.progressTrack}
@@ -114,7 +117,9 @@ function Working({ phase, onCancel }: { phase: Extract<FlowPhase, { kind: 'worki
       <p class={styles.muted}>{msg('Everything stays on this device. Nothing is uploaded.')}</p>
       <div class={styles.flowActions}>
         <span />
-        <Button onClick={onCancel}>{msg('Cancel import')}</Button>
+        <Button disabled={phase.step === 'saving'} onClick={onCancel}>
+          {msg('Cancel import')}
+        </Button>
       </div>
     </div>
   )

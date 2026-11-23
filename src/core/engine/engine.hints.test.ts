@@ -200,6 +200,23 @@ describe('Acceptance: Hint fade', () => {
     expect(d.engine.temporaryLabelOpacity(d.now).has(note!)).toBe(false)
   })
 
+  it.each(['seek', 'other hands'] as const)(
+    'a traversal that begins paused (%s) shows no label of the last one',
+    (how) => {
+      const d = driver()
+      d.engine.requestHint(d.now)
+      d.engine.pause(d.now)
+      expect(d.engine.temporaryLabelOpacity(d.now).size).toBeGreaterThan(0)
+      if (how === 'seek') d.engine.seek(1, d.now)
+      else {
+        const timeline = buildTimeline(model, { hands: 'right', range: null, multiplier: 1 })
+        d.engine.reconfigure({ reason: 'hand-change', timeline }, d.now)
+      }
+      expect(d.state.phase).toBe('paused')
+      expect(d.engine.temporaryLabelOpacity(d.now).size).toBe(0)
+    },
+  )
+
   it('pausing a scored attempt interrupts it and dismisses its hints with a fade', () => {
     const d = driver({ mode: 'scored', prepared: true })
     d.engine.requestHint(d.now)

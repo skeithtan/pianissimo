@@ -50,7 +50,7 @@ const DEFINITIONS: Readonly<Record<FeatureId, { label: string; severity: Feature
     severity: 'important',
     explanation:
       'This browser has no Web MIDI (Safari does not offer it), so a piano cannot be connected for live practice. ' +
-      'You can still view scores and use browser-sound reference playback. ' +
+      'Listen still works, and Follow with the microphone. ' +
       'Use the MIDIWeb browser on an iPad, or Chrome on a computer.',
   },
   webAudio: {

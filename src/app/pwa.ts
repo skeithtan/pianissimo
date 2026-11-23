@@ -7,13 +7,13 @@
  * runs the latest deploy. A page that stays open asks for a newer worker at launch, when the
  * network comes back and whenever it is shown again (an installed app can sit in the background
  * for days). A newer worker takes over at once, and when this page runs an older build it
- * reloads, but only where that interrupts nothing: never on the Practice or Study screen (it
+ * reloads, but only where that interrupts nothing: never on the Practice screen (it
  * waits until the learner leaves it) and never while a sheet is open (an import, a restore,
  * Settings). Settings and practice records are written before the reload.
  */
 import { effect } from '@preact/signals'
 import { requestPersistentStorage } from '../core/storage/persist'
-import { connectionOpen, currentView, settingsOpen } from './navigation'
+import { currentView, settingsOpen } from './navigation'
 import { getStorage } from './services'
 import { flushSettings } from './state'
 
@@ -72,7 +72,7 @@ export function createReloader(deps: ReloaderDeps): Reloader {
 
 function busy(): boolean {
   const view = currentView.peek()
-  return view === 'practice' || view === 'study' || document.querySelector('dialog[open]') !== null
+  return view === 'practice' || document.querySelector('dialog[open]') !== null
 }
 
 function save(): Promise<unknown> {
@@ -113,7 +113,6 @@ export function startPwa(): void {
   effect(() => {
     void currentView.value
     void settingsOpen.value
-    void connectionOpen.value
     reloader.poke()
   })
 

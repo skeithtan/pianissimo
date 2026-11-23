@@ -20,9 +20,9 @@ import { DEFAULT_SETTINGS, type AppSettings } from '../../src/core/model/setting
 import { generateLongScore } from '../fixtures/generate-long-score'
 import { importBytes } from '../unit/import/fixtures'
 import {
+  chooseMode,
   installFakeMidi,
   loopWholePiece,
-  openFooterMenu,
   openSeededPractice,
   play,
   playAfterCountIn,
@@ -78,7 +78,6 @@ async function openLongLoop(page: Page, settings: Partial<AppSettings> = {}): Pr
     .first()
     .locator('input[type="file"]')
     .setInputFiles({ name: 'review-loop.musicxml', mimeType: 'application/xml', buffer: Buffer.from(LONG) })
-  await page.getByRole('button', { name: 'Add and open', exact: true }).click()
   await expect(page.locator('.pn-strip, .pn-page').first()).toBeVisible({ timeout: 60_000 })
   const pause = page.getByRole('button', { name: 'Pause', exact: true })
   if (await pause.isVisible()) await pause.click()
@@ -324,10 +323,7 @@ test.describe('the review after a completed pass (U97)', () => {
     await seedPiece(page, { view: { ...DEFAULT_SETTINGS.view, zoom: 2.2 } })
     await openSeededPractice(page)
     await loopWholePiece(page)
-    const menu = await openFooterMenu(page)
-    await menu.getByRole('switch', { name: 'Keep time' }).click()
-    await page.keyboard.press('Escape')
-    await expect(menu).toHaveCount(0)
+    await chooseMode(page, 'Keep time')
 
     const strip = page.locator('.pn-strip')
     const corrections = strip.locator('.pn-corr')

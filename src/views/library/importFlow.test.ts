@@ -40,23 +40,17 @@ function trace(flow: ImportFlow): string[] {
 }
 
 describe('ImportFlow', () => {
-  it('goes straight from a single piano part to the summary, then saves in one commit', async () => {
+  it('saves a score that needs no answer in one commit, showing only the progress', async () => {
     const { flow, saved } = savingFlow()
     const phases = trace(flow)
     await flow.openFile(file('two-hands.musicxml'))
     expect(deps.client.calls).toEqual(['inspect', 'build:P1'])
-    const r = review(flow)
-    expect(r.choiceOffered).toBe(false)
-    expect(r.result.summary.readiness.scoredPractice).toBe(true)
-    expect(phases).toContain('working')
-
-    await flow.save(initialDraft(r.result.summary, r.result.package.model))
-    // Saved: the sheet closes (idle) and the save is reported once, with no confirmation screen (L6).
-    expect(flow.phase.value.kind).toBe('idle')
+    // The sheet showed its progress and closed; the save is reported once (L6, L12).
+    expect([...new Set(phases)]).toEqual(['idle', 'working'])
     expect(phases.at(-1)).toBe('idle')
     expect(saved).toHaveLength(1)
     const done = saved[0]!
-    expect(done.piece.title).toBe(r.result.summary.title)
+    expect(done.piece.title).toBe('Two Hands')
     expect(done.piece.lastOpenedAt).toBe(deps.clock)
     // Persistence is requested once, after the first import, and the quota is reported.
     expect(deps.manager.persistCalls).toBe(1)
@@ -77,10 +71,40 @@ describe('ImportFlow', () => {
     // A second import does not ask again.
     const again = savingFlow()
     await again.flow.openFile(file('ties.musicxml'))
-    await again.flow.save(initialDraft(review(again.flow).result.summary, review(again.flow).result.package.model))
     expect(deps.manager.persistCalls).toBe(1)
     expect(again.saved).toHaveLength(1)
     expect((await again.saved[0]!.storage).persistence).toBe('granted')
+  })
+
+  it.each(['no-tempo', 'split-voice', 'timing-marks', 'tempo-conflict', 'unsupported'])(
+    'asks when something is unclear (%s)',
+    async (name) => {
+      const flow = new ImportFlow(deps)
+      await flow.openFile(file(`${name}.musicxml`))
+      expect(review(flow).choiceOffered).toBe(false)
+      expect(await deps.storage.listPieces()).toEqual([])
+    },
+  )
+
+  it('asks about a score that is already in the library', async () => {
+    await new ImportFlow(deps).openFile(file('two-hands.musicxml'))
+    const flow = new ImportFlow(deps)
+    await flow.openFile(file('two-hands.musicxml'))
+    expect(review(flow).saveError).toBeNull()
+    expect(await deps.storage.listPieces()).toHaveLength(1)
+  })
+
+  it('canceling before the commit saves nothing', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const flow = new ImportFlow({ ...deps, getStorage: () => gate.then(() => deps.storage) })
+    const running = flow.openFile(file('two-hands.musicxml'))
+    await tick(20)
+    flow.cancel()
+    release()
+    await running
+    expect(flow.phase.value).toEqual({ kind: 'idle' })
+    expect(await deps.storage.listPieces()).toEqual([])
   })
 
   it('offers the part choice when there is one, and validates it before building', async () => {
@@ -242,7 +266,7 @@ describe('ImportFlow', () => {
 
   it('does not add a duplicate when its existing piece has disappeared', async () => {
     const { flow, saved } = savingFlow()
-    await flow.openFile(file('two-hands.musicxml'))
+    await flow.openFile(file('no-tempo.musicxml'))
     await flow.saveCopy('missing')
     expect(review(flow).saving).toBe(false)
     expect(review(flow).saveError).toContain('existing piece changed')
@@ -257,7 +281,7 @@ describe('ImportFlow', () => {
     flow.cancel()
     expect(deps.client.disposed).toBe(1)
     await flow.openFile(file('two-hands.musicxml'))
-    expect(review(flow).result.summary.readiness.scoredPractice).toBe(true)
+    expect(await deps.storage.listPieces()).toHaveLength(1)
   })
 
   it('closing the sheet while saving still stores the piece but skips the Practice handoff', async () => {
@@ -267,9 +291,9 @@ describe('ImportFlow', () => {
     const flow = new ImportFlow({ ...deps, getStorage: () => gate.then(() => deps.storage) }, (piece, info) =>
       saved.push({ piece, ...info }),
     )
-    await flow.openFile(file('two-hands.musicxml'))
+    await flow.openFile(file('no-tempo.musicxml'))
     const r = review(flow)
-    const saving = flow.save(initialDraft(r.result.summary, r.result.package.model))
+    const saving = flow.save({ ...initialDraft(r.result.summary, r.result.package.model), bpmText: '80' })
     expect(flow.busy).toBe(true)
     flow.close()
     release()
@@ -282,7 +306,6 @@ describe('ImportFlow', () => {
   it('shows a save failure without touching the library', async () => {
     const flow = new ImportFlow({ ...deps, getStorage: () => Promise.reject(new Error('disk on fire')) })
     await flow.openFile(file('two-hands.musicxml'))
-    await flow.save(initialDraft(review(flow).result.summary, review(flow).result.package.model))
     const r = review(flow)
     expect(r.saving).toBe(false)
     expect(r.saveError).toMatch(/could not be saved: disk on fire\. Your library is unchanged/)

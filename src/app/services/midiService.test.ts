@@ -89,7 +89,10 @@ describe('MidiService: lazy adapter and access (spec "Delivery and device compat
     expect(h.fake.calls).toEqual([{ sysex: false }])
     expect(h.service.snapshot.inputs.map((p) => p.id)).toEqual(['in-1'])
     expect(h.service.snapshot.outputs.map((p) => p.id)).toEqual(['out-1'])
-    expect(h.statuses.at(-1)).toEqual({ state: 'disconnected', detail: 'Choose your piano in Connection.' })
+    expect(h.statuses.at(-1)).toEqual({
+      state: 'disconnected',
+      detail: 'Choose your piano in Settings → Piano and sound.',
+    })
     expect(h.statuses).toContainEqual({ state: 'connecting' })
   })
 

@@ -6,7 +6,7 @@
  * `OutputBackend`; the session decides when they may play.
  *
  * The capture is the only thing in the MIDI input path: one bounded append per key or pedal event
- * during a scored pass, nothing else (no sorting, no allocation beyond the record, nothing stored).
+ * during a scored pass or a Wait run, nothing else (no sorting, nothing stored).
  */
 import { CC_SOFT, CC_SOSTENUTO, CC_SUSTAIN } from '../../core/midi/types'
 import { buildPerformance, passageRange } from '../../core/playback'
@@ -23,6 +23,8 @@ export interface CapturedKey {
   readonly velocity: number
   /** The engine group the cursor waited at when it arrived (its bar is the group's). */
   readonly group: number
+  /** A Wait run: the visit it was played in (`addTraversal`); 0 or absent in a scored pass. */
+  readonly visit?: number
 }
 
 /** One pedal event of a pass: when (performance.now() ms), which controller, its value (0..127). */
@@ -35,47 +37,92 @@ export interface CapturedPedal {
 /** The pedals a replay keeps: sustain, sostenuto and soft (never the hint pedal, the session's filter). */
 export const SNIPPET_PEDALS: readonly number[] = [CC_SUSTAIN, CC_SOSTENUTO, CC_SOFT]
 
-/** Key events (and, apart, pedal events) kept per pass (a long loop at most): beyond, not captured. */
-export const CAPTURE_LIMIT = 4096
+/**
+ * Key events (and, apart, pedal events) kept per pass: some eight thousand presses, a long piece
+ * played through (about 1 MB). Past it the oldest go, a block at a time: a run that went back over its
+ * bars keeps the latest playing of them.
+ */
+export const CAPTURE_LIMIT = 16384
+/** Events per block (`CAPTURE_LIMIT` is a multiple). */
+export const CAPTURE_BLOCK = 1024
 
-interface KeptPass {
-  readonly id: string
+/** The latest `CAPTURE_LIMIT` events, oldest first. `push` is O(1) and copies nothing. */
+class EventLog<T> {
+  readonly #blocks: T[][] = []
+  #size = 0
+  /** Older events were dropped. */
+  truncated = false
+
+  get size(): number {
+    return this.#size
+  }
+
+  get full(): boolean {
+    return this.#size >= CAPTURE_LIMIT
+  }
+
+  push(event: T): void {
+    let block = this.#blocks[this.#blocks.length - 1]
+    if (!block || block.length >= CAPTURE_BLOCK) {
+      if (this.full) {
+        this.#size -= this.#blocks.shift()!.length
+        this.truncated = true
+      }
+      block = []
+      this.#blocks.push(block)
+    }
+    block.push(event)
+    this.#size++
+  }
+
+  all(): T[] {
+    return this.#blocks.flat()
+  }
+}
+
+/** A captured pass: `keys` and `pedals` in the order they arrived. */
+export interface CapturedPass {
   readonly keys: readonly CapturedKey[]
   readonly pedals: readonly CapturedPedal[]
   readonly truncated: boolean
 }
 
+interface KeptPass {
+  readonly id: string
+  readonly keys: EventLog<CapturedKey>
+  readonly pedals: EventLog<CapturedPedal>
+  /** Keys still down when it ended: their releases are part of it. */
+  readonly held: Set<number>
+}
+
 /**
  * The key and pedal events of the pass being played and of the last completed one. `begin` starts
  * a pass (drops what the previous unfinished one had; a pedal already down is put at its start),
- * `add` and `pedal` are O(1), `finish` keeps the pass under the attempt's id. Nothing is persisted;
- * a new context (another loop, hands, speed) simply never matches the kept id.
+ * `add` and `pedal` are O(1), `finish` keeps the pass under its id, `discard` drops the one being
+ * played. Nothing is persisted; a new context (another loop, hands, speed) simply never matches the
+ * kept id.
  */
 export class PassCapture {
-  #current: CapturedKey[] = []
-  #currentPedals: CapturedPedal[] = []
-  #full = false
+  #current = new EventLog<CapturedKey>()
+  #currentPedals = new EventLog<CapturedPedal>()
+  #held = new Set<number>()
   #inPass = false
   /** Every pedal's latest value, whatever the phase, so a pass can start with a pedal down. */
   readonly #pedalNow = new Map<number, number>()
   #last: KeptPass | null = null
 
   begin(time: number): void {
-    this.#current = []
-    this.#currentPedals = []
-    this.#full = false
+    this.discard()
     this.#inPass = true
     for (const [controller, value] of this.#pedalNow)
       if (value > 0) this.#currentPedals.push({ time, controller, value })
   }
 
-  /** O(1): one append while there is room. */
-  add(time: number, note: number, velocity: number, group: number): void {
-    if (this.#current.length >= CAPTURE_LIMIT) {
-      this.#full = true
-      return
-    }
-    this.#current.push({ time, note, velocity, group })
+  /** O(1): one append. */
+  add(time: number, note: number, velocity: number, group: number, visit = 0): void {
+    this.#current.push({ time, note, velocity, group, visit })
+    if (velocity > 0) this.#held.add(note)
+    else this.#held.delete(note)
   }
 
   /**
@@ -86,45 +133,51 @@ export class PassCapture {
     this.#pedalNow.set(controller, value)
     if (!record) return
     if (this.#inPass) {
-      if (this.#currentPedals.length >= CAPTURE_LIMIT) this.#full = true
-      else this.#currentPedals.push({ time, controller, value })
+      this.#currentPedals.push({ time, controller, value })
       return
     }
     const last = this.#last
-    if (last && last.pedals.length < CAPTURE_LIMIT) (last.pedals as CapturedPedal[]).push({ time, controller, value })
+    if (last && !last.pedals.full) last.pedals.push({ time, controller, value })
   }
 
-  finish(attemptId: string): void {
-    this.#last = { id: attemptId, keys: this.#current, pedals: this.#currentPedals, truncated: this.#full }
-    this.#current = []
-    this.#currentPedals = []
-    this.#full = false
-    this.#inPass = false
+  finish(passId: string): void {
+    this.#last = { id: passId, keys: this.#current, pedals: this.#currentPedals, held: this.#held }
+    this.discard()
   }
 
   /** A release after its pass ended (the last chord's keys come up later): kept on that pass. */
   release(time: number, note: number): void {
     const last = this.#last
-    if (!last || last.keys.length >= CAPTURE_LIMIT) return
-    ;(last.keys as CapturedKey[]).push({ time, note, velocity: 0, group: -1 })
+    if (last?.held.delete(note)) last.keys.push({ time, note, velocity: 0, group: -1 })
+  }
+
+  /** The pass being played is given up; the last completed one stays. */
+  discard(): void {
+    this.#current = new EventLog()
+    this.#currentPedals = new EventLog()
+    this.#held = new Set()
+    this.#inPass = false
   }
 
   clear(): void {
-    this.#current = []
-    this.#currentPedals = []
-    this.#full = false
-    this.#inPass = false
+    this.discard()
     this.#pedalNow.clear()
     this.#last = null
   }
 
-  /** The completed pass `attemptId`'s key and pedal events, or null when it is not the one kept. */
-  pass(attemptId: string): KeptPass | null {
-    return this.#last?.id === attemptId ? this.#last : null
+  /** The completed pass `passId`'s events (copied: for the card, never the input path), or null. */
+  pass(passId: string): CapturedPass | null {
+    const last = this.#last
+    if (last?.id !== passId) return null
+    return {
+      keys: last.keys.all(),
+      pedals: last.pedals.all(),
+      truncated: last.keys.truncated || last.pedals.truncated,
+    }
   }
 
   get size(): number {
-    return this.#current.length
+    return this.#current.size
   }
 }
 

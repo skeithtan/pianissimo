@@ -283,9 +283,10 @@ export interface RestoreOptions {
    */
   readonly settings?: 'backup' | 'keep'
   /**
-   * MIDI route settings (port ids, output verification, echo result) belong to one browser and
-   * connection and say nothing about this one. `keep-local` (default) keeps this browser's
-   * route when settings are restored; `backup` restores it too.
+   * MIDI route settings (port ids, output verification, echo result), the metronome's audio output
+   * and the recording input belong to one browser and connection and say nothing about this one.
+   * `keep-local` (default) keeps this browser's when settings are restored; `backup` restores
+   * them too.
    */
   readonly route?: 'keep-local' | 'backup'
   /** Clock of the unfinished-write markers of restored takes (tests). */
@@ -747,8 +748,9 @@ export async function restoreBackup(db: Db, source: ZipSource, options: RestoreO
       } else {
         const incoming = normalizeSettings(backup.settings)
         const local = normalizeSettings(await tx.objectStore('settings').get(SETTINGS_KEY))
-        // The metronome's audio output id names a device of the machine that made the backup,
-        // like the MIDI route: both stay this device's unless the route is restored too.
+        // The metronome's audio output and the recording input name devices of the machine that
+        // made the backup, like the MIDI route: all stay this device's unless the route is
+        // restored too.
         const next: AppSettings =
           options.route === 'backup'
             ? incoming
@@ -756,6 +758,7 @@ export async function restoreBackup(db: Db, source: ZipSource, options: RestoreO
                 ...incoming,
                 route: local.route,
                 metronome: { ...incoming.metronome, outputId: local.metronome.outputId },
+                recording: local.recording,
               }
         await tx.objectStore('settings').put(next, SETTINGS_KEY)
         settingsOutcome = 'restored'

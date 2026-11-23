@@ -112,6 +112,19 @@ describe('record validators', () => {
     }
   })
 
+  it('accept each mode or none (older records), and reject anything else', () => {
+    for (const mode of ['listen', 'wait', 'time', 'follow']) expect(pieceProblem(set(piece, { mode }))).toBeNull()
+    expect('mode' in piece).toBe(false)
+    expect(pieceProblem(clone(piece))).toBeNull()
+    for (const mode of ['study', 'Listen', '', 1, true, null, {}, ['wait']]) {
+      expect(pieceProblem(set(piece, { mode }))).toBe('mode is missing or invalid')
+    }
+  })
+
+  it('accept what only older records hold: both hands off', () => {
+    expect(pieceProblem(set(piece, { lastHands: 'none' }))).toBeNull()
+  })
+
   it('accept Keep time on, off or absent (older records), and reject anything else', () => {
     expect(pieceProblem(set(piece, { rhythm: true }))).toBeNull()
     expect(pieceProblem(set(piece, { rhythm: false }))).toBeNull()

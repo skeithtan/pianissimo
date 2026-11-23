@@ -29,7 +29,7 @@ export interface SuggestionProgress {
   readonly text: string
 }
 
-/** A suggestion ready to show. "Practice this passage" opens `passage` at `hands` and `multiplier`. */
+/** A suggestion ready to show. "Practice these bars" opens `passage` at `hands` and `multiplier`. */
 export interface Suggestion {
   readonly id: string
   readonly kind: SuggestionKind
@@ -77,7 +77,7 @@ const HAND_LABEL: Readonly<Record<HandSelection, string>> = {
   both: 'Both hands',
   right: 'Right hand',
   left: 'Left hand',
-  none: 'Preview',
+  none: 'Listen',
 }
 
 /** "Both hands at 0.75×" for a context. */

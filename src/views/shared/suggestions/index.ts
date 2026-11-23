@@ -1,4 +1,5 @@
 export { SuggestionCard, SuggestionList } from './SuggestionList'
 export type { HeadingLevel, SuggestionCardProps, SuggestionListProps } from './SuggestionList'
 export { sessionDismissals } from './dismissals'
+export { PieceSuggestionsModel, practiceRequestFor } from './pieceSuggestions'
 export { barsTitle, difficultTitle, handsText, speedText } from './format'

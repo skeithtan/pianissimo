@@ -281,6 +281,7 @@ export function harness(
     {
       pieceId: 'p1',
       model,
+      mode: 'wait',
       selection: { hands: 'both', range: null, multiplier: 1, ...selection },
       settings: opts.settings ?? testSettings(),
       // A passage in the selection opens Repeat mode (as a preset passage does, U10).

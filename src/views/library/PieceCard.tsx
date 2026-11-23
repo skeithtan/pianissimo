@@ -1,18 +1,20 @@
 import { msg, messageLanguage } from '../../i18n/messages'
 /**
- * An ordinary library entry: the whole row opens Practice, with Sheet music, an Options menu and
- * useful suggestions as separate controls. Saved practice context can be featured for
- * continuing; every piece keeps the same management actions.
+ * An ordinary library entry: the whole row opens Practice, with an Options menu as a separate
+ * control. Saved practice context can be featured for continuing, with the piece's first suggestion
+ * beside it; every piece keeps the same management actions.
  */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { openPractice, openSettings } from '../../app/navigation'
 import { pushNotice } from '../../app/state'
+import type { Suggestion } from '../../core/history/selection'
 import type { PieceRecord } from '../../core/storage/records'
 import type { ScoreModel } from '../../core/model/score'
 import { Button, Notice, Sheet } from '../../ui/controls'
+import { ProgressSheet } from '../progress/ProgressSheet'
+import { PieceSuggestionsModel, practiceRequestFor } from '../shared/suggestions/pieceSuggestions'
 import { useLibraryDeps } from './deps'
 import type { LibraryModel } from './libraryModel'
-import { PieceSuggestions, SuggestionOptions } from './PieceSuggestions'
-import { PieceSuggestionsModel } from './suggestionsData'
 import { continuationContext, openedStatus } from './continuation'
 import { RenameSheet } from './RenameSheet'
 import { ReviewSheet } from './ReviewSheet'
@@ -29,7 +31,7 @@ const CLICK_AFTER_UP_MS = 500
 /**
  * A tap outside an open Options menu only closes it, as iPadOS menus do: the rows' stretched
  * targets cover nearly the whole list, so the dismissing tap must not also open a piece (or
- * Study, Add score, Settings). The click that ends the closing press is stopped in the capture
+ * Add score, Settings). The click that ends the closing press is stopped in the capture
  * phase, before any handler or default action. The mark ends with that click, the next
  * pointerdown, a pointercancel (the press became a scroll) or a short timeout, so it never eats
  * a later, unrelated click (a keyboard click has no pointerdown to clear it).
@@ -60,31 +62,56 @@ function swallowNextClick(): void {
   timer = window.setTimeout(end, PRESS_LIMIT_MS)
 }
 
-export function PieceCard({ piece, model, featured }: { piece: PieceRecord; model: LibraryModel; featured: boolean }) {
+type PieceSheet = 'rename' | 'progress' | 'delete' | 'clear' | 'review'
+
+/** What to work on next, for the Continue card: the first suggestion's bars. */
+function WorkOn({ suggestion: s, onPractice }: { suggestion: Suggestion; onPractice: () => void }) {
+  const [first, last] = [s.bars[0], s.bars.at(-1)]
+  if (!first || !last) return null
+  return (
+    <Button class={cardStyles.workOn} onClick={onPractice}>
+      {first === last ? msg('Work on bar {0}', first.label) : msg('Work on bars {0}–{1}', first.label, last.label)}
+    </Button>
+  )
+}
+
+export function PieceCard({
+  piece,
+  model,
+  featured,
+  searching = false,
+  hidden = false,
+}: {
+  piece: PieceRecord
+  model: LibraryModel
+  featured: boolean
+  /** A search shows every piece as an ordinary row (L13). */
+  searching?: boolean
+  /** Not found: hidden rather than removed, so a search never loads a row's data again. */
+  hidden?: boolean
+}) {
+  const card = featured && !searching
   const deps = useLibraryDeps()
-  const [confirm, setConfirm] = useState<'rename' | 'delete' | 'clear' | 'review' | null>(null)
+  const [confirm, setConfirm] = useState<PieceSheet | null>(null)
   const [optionsOpen, setOptionsOpen] = useState(false)
   const options = useRef<HTMLDivElement>(null)
   const [score, setScore] = useState<ScoreModel | null>(null)
+  // Only the Continue card shows a suggestion (a search keeps it read): the other rows read none.
   const suggestions = useMemo(
-    () =>
-      new PieceSuggestionsModel(
-        { getStorage: deps.getStorage, beforePractice: (id) => model.markOpened(id) },
-        piece.id,
-      ),
-    [piece.id, deps, model, messageLanguage()],
+    () => (featured ? new PieceSuggestionsModel({ getStorage: deps.getStorage }, piece.id) : null),
+    [featured, piece.id, deps, messageLanguage()],
   )
   const previousSuggestions = useRef({ model: suggestions, piece })
   useEffect(() => {
-    void suggestions.start()
-    return () => suggestions.dispose()
+    void suggestions?.start()
+    return () => suggestions?.dispose()
   }, [suggestions])
   useEffect(() => {
     // Library refreshes records when Settings close (including after restoring a backup).
     // A new model already loads in start(); only an existing model needs this refresh.
     const previous = previousSuggestions.current
     previousSuggestions.current = { model: suggestions, piece }
-    if (previous.model === suggestions && previous.piece !== piece) void suggestions.load()
+    if (previous.model === suggestions && previous.piece !== piece) void suggestions?.load()
   }, [piece, suggestions])
   useEffect(() => {
     if (!featured) return
@@ -127,7 +154,7 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
     options.current?.querySelector('button')?.focus()
     setOptionsOpen(false)
   }
-  const show = (next: 'rename' | 'delete' | 'clear' | 'review') => {
+  const show = (next: PieceSheet) => {
     closeOptions()
     setConfirm(next)
   }
@@ -135,8 +162,17 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
   // The whole row opens Practice: this one button's ::after covers the card (stretched target),
   // and every other control in the card sits above it (PieceCard.module.css).
   const practice = () => void model.open(piece.id)
+  const practiceSuggestion = async (s: Suggestion) => {
+    await model.markOpened(piece.id)
+    openPractice(practiceRequestFor(piece.id, s))
+  }
+  const suggested = suggestions?.state.value
+  const next =
+    suggested?.status === 'ready' && !suggested.globallyDisabled && !suggested.selection.disabled
+      ? suggested.selection.active[0]
+      : undefined
   return (
-    <li class={cardStyles.card} data-featured={featured ? '' : undefined}>
+    <li class={cardStyles.card} data-featured={card ? '' : undefined} hidden={hidden}>
       <article aria-labelledby={`piece-${piece.id}-title`}>
         <div class={cardStyles.main}>
           <div class={cardStyles.text}>
@@ -144,14 +180,14 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
               {piece.title}
             </h2>
             {piece.composer ? <p class={cardStyles.composer}>{piece.composer}</p> : null}
-            {featured ? (
+            {card ? (
               <p class={cardStyles.context}>{continuationContext(piece, score)}</p>
             ) : (
               <p class={cardStyles.status}>{openedStatus(piece, deps.now())}</p>
             )}
           </div>
           <div class={cardStyles.actions}>
-            {featured ? (
+            {card ? (
               <Button
                 variant="primary"
                 icon="play"
@@ -162,15 +198,7 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
                 {msg('Continue practice')}
               </Button>
             ) : null}
-            <Button
-              variant="ghost"
-              icon="music"
-              class={cardStyles.above}
-              onClick={() => void model.study(piece.id)}
-              aria-label={msg('Open sheet music for {0}', piece.title)}
-            >
-              {msg('Sheet music')}
-            </Button>
+            {card && next ? <WorkOn suggestion={next} onPractice={() => void practiceSuggestion(next)} /> : null}
             <div
               class={cardStyles.options}
               data-open={optionsOpen ? '' : undefined}
@@ -195,10 +223,12 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
                   <Button variant="ghost" icon="pencil" onClick={() => show('rename')}>
                     {msg('Rename…')}
                   </Button>
+                  <Button variant="ghost" icon="chart" onClick={() => show('progress')}>
+                    {msg('Progress…')}
+                  </Button>
                   <Button variant="ghost" icon="hand" onClick={() => show('review')}>
                     {msg('Review hands and tempo…')}
                   </Button>
-                  <SuggestionOptions model={suggestions} onClose={closeOptions} />
                   <Button variant="ghost" icon="restart" onClick={() => show('clear')}>
                     {msg('Clear practice history…')}
                   </Button>
@@ -208,7 +238,7 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
                 </div>
               ) : null}
             </div>
-            {featured ? null : (
+            {card ? null : (
               <Button
                 variant="ghost"
                 icon="forward"
@@ -219,9 +249,23 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
             )}
           </div>
         </div>
-        <PieceSuggestions model={suggestions} />
       </article>
       <RenameSheet piece={piece} model={model} open={confirm === 'rename'} onClose={() => setConfirm(null)} />
+      <ProgressSheet
+        open={confirm === 'progress'}
+        onClose={() => {
+          setConfirm(null)
+          // Not now, or the switch, may have changed the Continue card's suggestion.
+          void suggestions?.load()
+        }}
+        pieceId={piece.id}
+        storage={deps.getStorage}
+        onPractice={(s) => void practiceSuggestion(s)}
+        onOpenSettings={() => {
+          setConfirm(null)
+          openSettings()
+        }}
+      />
       <ReviewSheet piece={piece} model={model} open={confirm === 'review'} onClose={() => setConfirm(null)} />
       <DeleteSheet piece={piece} model={model} open={confirm === 'delete'} onClose={() => setConfirm(null)} />
       <ClearSheet
@@ -229,7 +273,7 @@ export function PieceCard({ piece, model, featured }: { piece: PieceRecord; mode
         model={model}
         open={confirm === 'clear'}
         onClose={() => setConfirm(null)}
-        onCleared={() => void suggestions.load()}
+        onCleared={() => void suggestions?.load()}
       />
     </li>
   )

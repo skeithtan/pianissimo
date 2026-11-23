@@ -121,7 +121,9 @@ export function connectionStatusFor(s: MidiSnapshot, unsupportedDetail?: string 
       }
       return {
         state: 'disconnected',
-        detail: input ? msg('{0} is disconnected.', input.name) : msg('Choose your piano in Connection.'),
+        detail: input
+          ? msg('{0} is disconnected.', input.name)
+          : msg('Choose your piano in Settings → Piano and sound.'),
       }
     }
   }
@@ -225,7 +227,7 @@ export class MidiService {
   /**
    * Boot (user, 2026-10-31): ask for MIDI access at first load instead of waiting for the
    * Connection setup. Unsupported browsers skip it; a denied permission shows in the chip. With
-   * access, the remembered route is reselected; without one, the only input present (and the only
+   * access, the remembered route is reselected; without one (also from the Library's Connect, U149), the only input present (and the only
    * output, if any) is the piano: it is chosen and remembered, so a single piano just works. The
    * output still needs its test notes (sound + echo) before one-hand grading (S4). Returns true
    * when access was obtained.
@@ -259,6 +261,23 @@ export class MidiService {
     this.matched = { ...this.matched, input: 'pick' }
     this.lostFlags = { ...this.lostFlags, input: false }
     this.remember()
+    return true
+  }
+
+  /**
+   * Choose a piano by its input. With no output remembered, its own plays it: the one with its
+   * name, or the only one.
+   */
+  selectPiano(inputId: string): boolean {
+    if (!this.selectInput(inputId)) return false
+    const adapter = this.adapter
+    const route = this.deps.getRoute()
+    if (!adapter.selectedOutput && route.outputId === null && route.outputName === null) {
+      const outputs = adapter.outputs().filter((p) => p.state === 'connected')
+      const named = outputs.filter((p) => p.name === adapter.selectedInput?.name)
+      const own = named.length === 1 ? named[0] : outputs.length === 1 ? outputs[0] : undefined
+      if (own) this.selectOutput(own.id)
+    }
     return true
   }
 

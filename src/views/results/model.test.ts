@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { attemptRecord, comparisonContext, noAssistance, occurrences } from '../../core/history/testkit'
 import { contextKey } from '../../core/model/practice'
 import type { AttemptRecord, ComparisonContext } from '../../core/model/practice'
-import { deriveResults, earlyAttackCount, passReason, passageText } from './model'
+import { deriveResults, earlyAttackCount, passGroups, passReason, passageText } from './model'
 
 const SCORE = occurrences(40)
 const A = comparisonContext() // both hands, 1×, bars 11–17
@@ -28,20 +28,22 @@ describe('deriveResults: context separation', () => {
   it('shows the latest attempt and compares only inside its own context', () => {
     const model = deriveResults({ attempts, occurrences: SCORE })
     expect(model.attempt?.context.hands).toBe('right')
-    expect(model.isLatest).toBe(true)
     expect(model.history?.contextKey).toBe(contextKey(B))
     expect(model.historyCount).toBe(1)
     expect(model.history?.cleanRanking.map((a) => a.id)).toEqual([attempts[5]?.id])
-    // Context A is offered separately, never merged.
-    expect(model.others).toHaveLength(1)
-    expect(model.others[0]?.results.contextKey).toBe(contextKey(A))
-    expect(model.others[0]?.count).toBe(5)
-    expect(model.others[0]?.latest.id).toBe(attempts[4]?.id)
+  })
+
+  it('groups the passes by context, the most recent first, never merged (Progress)', () => {
+    const groups = passGroups(attempts)
+    expect(groups.map((g) => g.results.contextKey)).toEqual([contextKey(B), contextKey(A)])
+    expect(groups.map((g) => g.count)).toEqual([1, 5])
+    expect(groups[1]?.latest.id).toBe(attempts[4]?.id)
+    // Help does not matter (U144): the exact pass with note names is the best clean one.
+    expect(groups[1]?.results.cleanCompletions[0]?.id).toBe(attempts[3]?.id)
   })
 
   it('keeps best clean unassisted apart from assisted practice and outside incomplete attempts', () => {
     const model = deriveResults({ attempts, occurrences: SCORE, attemptId: attempts[1]?.id })
-    expect(model.isLatest).toBe(false)
     const h = model.history
     expect(h?.bestClean?.id).toBe(attempts[1]?.id) // closest to expected, not fastest
     expect(h?.cleanRanking.map((a) => a.id)).toEqual([attempts[1]?.id, attempts[0]?.id])
@@ -72,7 +74,6 @@ describe('deriveResults: context separation', () => {
 
   it('falls back to the latest when the requested attempt is missing', () => {
     const model = deriveResults({ attempts, occurrences: SCORE, attemptId: 'nope' })
-    expect(model.requestedMissing).toBe(true)
     expect(model.attempt?.id).toBe(attempts[5]?.id)
   })
 
@@ -80,7 +81,6 @@ describe('deriveResults: context separation', () => {
     const model = deriveResults({ attempts: [], occurrences: SCORE })
     expect(model.attempt).toBeNull()
     expect(model.scorecard).toBeNull()
-    expect(model.others).toEqual([])
   })
 })
 
@@ -104,7 +104,7 @@ describe('deriveResults: special attempts', () => {
     expect(model.attempt?.kind).toBe('reading')
     expect(model.history).toBeNull()
     expect(model.streak).toBeNull()
-    expect(model.others.map((o) => o.results.contextKey)).toEqual([contextKey(A)])
+    expect(passGroups([scored, reading]).map((g) => g.latest.id)).toEqual([scored.id])
   })
 
   it('describes the early-press share only when the record carries it', () => {

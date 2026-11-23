@@ -43,7 +43,7 @@ describe('createPieceSaver', () => {
     await Promise.resolve()
     expect(writes).toHaveLength(1)
     saver.save({ lastHands: 'left' }, true)
-    saver.save({ rhythm: true }, true)
+    saver.save({ mode: 'time' }, true)
     saver.save({ lastMultiplier: 0.9 }, true)
     expect(writes).toHaveLength(1)
     let flushed = false
@@ -53,7 +53,7 @@ describe('createPieceSaver', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(writes).toHaveLength(2)
-    expect(writes[1]).toEqual({ lastHands: 'left', rhythm: true, lastMultiplier: 0.9 })
+    expect(writes[1]).toEqual({ lastHands: 'left', mode: 'time', lastMultiplier: 0.9 })
     expect(flushed).toBe(false)
     releases[1]!()
     await saver.flush()

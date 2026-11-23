@@ -7,6 +7,13 @@ export async function silenceBrowserContext(context: BrowserContext): Promise<vo
     // The fake MIDI fixture can still define its own method on navigator.
     Reflect.deleteProperty(Navigator.prototype, 'requestMIDIAccess')
 
+    // Media elements (a recorded take) play on, muted.
+    const playMedia = HTMLMediaElement.prototype.play
+    HTMLMediaElement.prototype.play = function () {
+      this.muted = true
+      return playMedia.call(this)
+    }
+
     const liveContext = window.AudioContext
     if (!liveContext) return
 

@@ -56,11 +56,11 @@ afterEach(() => resetSharedAudioContext())
 
 function open(
   selection: Partial<Selection> = {},
-  opts: { settings?: SessionSettings; options?: Partial<SessionOptions>; rhythm?: boolean } = {},
+  opts: { settings?: SessionSettings; options?: Partial<SessionOptions> } = {},
 ): Harness {
   return harness(melody, selection, {
     settings: opts.settings ?? testSettings(),
-    options: { rhythm: opts.rhythm ?? true, ...opts.options },
+    options: { mode: 'time', ...opts.options },
     deps: { loadMetronome: recordingMetronome(rec) },
   })
 }
@@ -95,7 +95,7 @@ const ui = (h: Harness) => h.session.ui.get()
 describe('Keep time: count-in', () => {
   it('counts in one bar with accented first click, then starts the clock and the music together', async () => {
     const h = open()
-    expect(ui(h)).toMatchObject({ rhythm: true, startAction: 'scored', startEnabled: true, countIn: null })
+    expect(ui(h)).toMatchObject({ mode: 'time', startAction: 'scored', startEnabled: true, countIn: null })
     await begin(h)
     expect(h.session.engine.mode).toBe('scored')
     expect(h.session.engine.transport).toBe('strict')
@@ -139,7 +139,7 @@ describe('Keep time: count-in', () => {
     const h = harness(
       six,
       { multiplier: 0.5 },
-      { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec) } },
+      { options: { mode: 'time' }, deps: { loadMetronome: recordingMetronome(rec) } },
     )
     await begin(h)
     // Two eighth-note clicks lead to a downbeat, then the dotted-quarter pulse is 3 s apart.
@@ -268,7 +268,7 @@ describe('Keep time: playing against the music', () => {
         { at, midi: 64 },
       ]),
     })
-    const h = harness(chords, {}, { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec) } })
+    const h = harness(chords, {}, { options: { mode: 'time' }, deps: { loadMetronome: recordingMetronome(rec) } })
     await begin(h)
     for (const [i, spread] of [0, 54, 101, 110].entries()) {
       at(h, RUN + i * 1000)
@@ -322,7 +322,7 @@ describe('Keep time: playing against the music', () => {
       const score = buildScore({
         notes: Array.from({ length: 24 }, (_, i) => ({ at: i / 8, midi: 48 + i, dur: 1 / 8 })),
       })
-      const h = harness(score, {}, { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec) } })
+      const h = harness(score, {}, { options: { mode: 'time' }, deps: { loadMetronome: recordingMetronome(rec) } })
       await begin(h)
       at(h, RUN + playedAt)
       // At 125 ms per note, the expected onset is eight notes from the playhead.
@@ -342,7 +342,7 @@ describe('Keep time: playing against the music', () => {
         { at: 1, midi: 62 },
       ],
     })
-    const h = harness(score, {}, { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec) } })
+    const h = harness(score, {}, { options: { mode: 'time' }, deps: { loadMetronome: recordingMetronome(rec) } })
     await begin(h)
     playOnTime(h, [60])
     at(h, RUN + 450)
@@ -505,31 +505,37 @@ describe('Keep time: playing against the music', () => {
     at(h, RUN + 100)
     h.session.beforeApplyLabels({ ...DEFAULT_SETTINGS.labels, mode: 'all' })
     h.frames.flush()
-    expect(ui(h).interruption?.text).toBe('A label setting changed, so the attempt stopped.')
+    expect(ui(h).interruption?.text).toBe('Note names changed, so the attempt stopped.')
   })
 })
 
 describe('Keep time: modes', () => {
-  it('is exclusive with play-through', () => {
-    const h = open({}, { rhythm: false })
-    h.session.setRhythmMode(true)
-    expect(ui(h).rhythm).toBe(true)
-    h.session.setPlayThrough(true)
+  it('is one mode of four, saved on the piece at once', () => {
+    const h = open({}, { options: { mode: 'wait' } })
+    h.session.setMode('time')
+    expect(ui(h)).toMatchObject({ mode: 'time', startAction: 'scored' })
+    h.session.setMode('follow')
     h.frames.flush()
-    expect(ui(h)).toMatchObject({ playThrough: true, rhythm: false, startAction: 'play' })
-    h.session.setRhythmMode(true)
-    expect(ui(h)).toMatchObject({ playThrough: false, micStatus: null, rhythm: true, startAction: 'scored' })
-    expect(h.saves.filter((s) => 'rhythm' in s.patch).map((s) => s.patch.rhythm)).toEqual([true, false, true])
+    expect(ui(h)).toMatchObject({ mode: 'follow', startAction: 'play' })
+    h.session.setMode('time')
+    expect(ui(h)).toMatchObject({ mode: 'time', micStatus: null, startAction: 'scored' })
+    const saved = h.saves.filter((s) => s.patch.mode !== undefined)
+    expect(saved.map((s) => s.patch.mode)).toEqual(['time', 'follow', 'time'])
+    expect(saved.every((s) => s.immediate)).toBe(true)
   })
 
-  it('needs a hand selected and a numerical tempo', () => {
-    const none = open({ hands: 'none' }, { rhythm: false })
-    none.session.setRhythmMode(true)
-    expect(none.session.ui.get().rhythm).toBe(false)
-    const h = harness(noTempo, {}, { options: { rhythm: true } })
-    expect(h.session.ui.get().rhythm).toBe(false)
-    h.session.setRhythmMode(true)
-    expect(h.session.ui.get().rhythm).toBe(false)
+  it('without a numerical tempo it stays chosen and Start says why it cannot', async () => {
+    const h = harness(noTempo, {}, { options: { mode: 'time' } })
+    expect(ui(h)).toMatchObject({
+      mode: 'time',
+      startAction: 'scored',
+      startEnabled: false,
+      startReason: 'Set a practice tempo so the score can follow the timing.',
+    })
+    await h.session.start()
+    h.session.restart()
+    h.frames.flush()
+    expect(ui(h)).toMatchObject({ mode: 'time', playing: false, countIn: null })
   })
 
   it('starts at the restored mid-bar cursor and scores only the remaining notes', async () => {
@@ -577,7 +583,7 @@ describe('Keep time: modes', () => {
       ],
       unsupported: [{ kind: 'grace', fromOcc: 0, toOcc: 0, message: 'Grace notes' }],
     })
-    const h = harness(score, {}, { options: { rhythm: true } })
+    const h = harness(score, {}, { options: { mode: 'time' } })
     expect(ui(h).startEnabled).toBe(false)
     h.session.seek(1)
     h.frames.flush()
@@ -613,7 +619,7 @@ describe('Keep time: modes', () => {
     const h = harness(
       score,
       { hands: 'right' },
-      { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec) } },
+      { options: { mode: 'time' }, deps: { loadMetronome: recordingMetronome(rec) } },
     )
     h.session.seek(1)
     await begin(h)
@@ -666,7 +672,7 @@ describe('Keep time: modes', () => {
           bars: [1, 4],
         })
       : melody
-    const h = harness(model, { range }, { options: { rhythm: true } })
+    const h = harness(model, { range }, { options: { mode: 'time' } })
     await begin(h)
 
     at(h, RUN + barMs - 1)
@@ -683,7 +689,7 @@ describe('Keep time: modes', () => {
       notes: [60, 62, 64, 65].map((midi, bar) => ({ at: bar * 4, midi })),
       bars: 4,
     })
-    const h = harness(model, { range: repeat ? { fromOcc: 0, toOcc: 3 } : null }, { options: { rhythm: true } })
+    const h = harness(model, { range: repeat ? { fromOcc: 0, toOcc: 3 } : null }, { options: { mode: 'time' } })
     await begin(h)
     playOnTime(h, [60])
     // A wrong note still shows the learner is playing after the opening pitch check has passed.
@@ -705,7 +711,7 @@ describe('Keep time: modes', () => {
       ],
       bars: 3,
     })
-    const h = harness(model, {}, { options: { rhythm: true } })
+    const h = harness(model, {}, { options: { mode: 'time' } })
     await begin(h)
     playOnTime(h, [60])
     at(h, RUN + 8000)
@@ -839,7 +845,7 @@ describe('Keep time: modes', () => {
 
   it.each([1, 2])('leaves review on the first beat of a %i-beat count-in', async (beats) => {
     const model = buildScore({ notes: [{ at: 0, midi: 60 }], bars: 1, meter: [beats, 4] })
-    const h = harness(model, { range: LOOP }, { options: { rhythm: true } })
+    const h = harness(model, { range: LOOP }, { options: { mode: 'time' } })
     await begin(h)
     const run = T0 + beats * 1000
     at(h, run)
@@ -978,22 +984,23 @@ describe('Keep time: modes', () => {
     const h = open()
     await begin(h)
     playOnTime(h, [60, 62, 64])
-    h.session.setRhythmMode(false)
+    h.session.setMode('wait')
     h.frames.flush()
     expect(h.attempts.at(-1)).toMatchObject({ completion: 'interrupted', interruptReason: 'mode-change' })
     expect(h.session.engine.mode).toBe('reading')
     expect(h.session.engine.transport).toBe('accompaniment')
-    expect(h.session.engine.state.groupIndex).toBe(3)
-    expect(ui(h)).toMatchObject({ rhythm: false, playing: false, startAction: 'reading', countIn: null })
+    // The cursor is on the third note, played just now.
+    expect(h.session.engine.state.groupIndex).toBe(2)
+    expect(ui(h)).toMatchObject({ mode: 'wait', playing: false, startAction: 'reading', countIn: null })
     expect(ui(h).interruption).toBeNull()
   })
 
   it('switching Keep time on stops reading and the next Start is a strict attempt', async () => {
-    const h = open({}, { rhythm: false })
+    const h = open({}, { options: { mode: 'wait' } })
     await h.session.start()
     h.play(60, 62)
     expect(h.session.engine.mode).toBe('reading')
-    h.session.setRhythmMode(true)
+    h.session.setMode('time')
     h.frames.flush()
     expect(ui(h).playing).toBe(false)
     expect(ui(h).startAction).toBe('scored')
@@ -1023,7 +1030,7 @@ describe('Keep time: score playback', () => {
         duet,
         { hands, multiplier: 0.5 },
         {
-          options: { rhythm: true },
+          options: { mode: 'time' },
           settings,
           deps: { loadMetronome: recordingMetronome(rec) },
         },
@@ -1058,7 +1065,7 @@ describe('Keep time: score playback', () => {
     const h = harness(
       duet,
       {},
-      { options: { rhythm: true }, settings, deps: { loadMetronome: recordingMetronome(rec) } },
+      { options: { mode: 'time' }, settings, deps: { loadMetronome: recordingMetronome(rec) } },
     )
     await begin(h)
     at(h, RUN)
@@ -1086,7 +1093,7 @@ describe('Keep time: score playback', () => {
   })
 
   it('switches back to the other hand mid-pass and reviews the completed pass with Playback', async () => {
-    const h = harness(duet, { hands: 'right' }, { options: { rhythm: true }, settings })
+    const h = harness(duet, { hands: 'right' }, { options: { mode: 'time' }, settings })
     await begin(h)
     at(h, RUN)
     h.tap(60)
@@ -1108,7 +1115,7 @@ describe('Keep time: score playback', () => {
   })
 
   it('turns Playback on mid-loop at the next notes and keeps the original downbeat and misses', async () => {
-    const h = harness(duet, { range: LOOP }, { options: { rhythm: true }, settings: testSettings() })
+    const h = harness(duet, { range: LOOP }, { options: { mode: 'time' }, settings: testSettings() })
     await begin(h)
     at(h, RUN + 500)
     h.session.updateSettings(settings)
@@ -1152,7 +1159,7 @@ describe('Keep time: score playback', () => {
       const h = harness(
         duet,
         {},
-        { options: { rhythm: true }, settings: off, deps: { loadBrowserAudio: () => module } },
+        { options: { mode: 'time' }, settings: off, deps: { loadBrowserAudio: () => module } },
       )
       await begin(h)
       at(h, RUN + 300)
@@ -1175,7 +1182,7 @@ describe('Keep time: score playback', () => {
       duet,
       {},
       {
-        options: { rhythm: true },
+        options: { mode: 'time' },
         settings: {
           ...settingsAtVolume(0.5),
           route: { ...settings.route, outputVerified: false, echo: 'untested' },
@@ -1199,7 +1206,7 @@ describe('Keep time: score playback', () => {
       duet,
       {},
       {
-        options: { rhythm: true },
+        options: { mode: 'time' },
         settings: { ...settings, route: { ...settings.route, echo: 'echo-detected' } },
       },
     )
@@ -1233,7 +1240,7 @@ describe('Keep time: its own metronome switch (DECISIONS P20)', () => {
   it('ordinary reading follows the general switch only', async () => {
     const reading = async (enabled: boolean, keepTime: boolean): Promise<number> => {
       rec = { clicks: [], cancels: [] }
-      const h = open({}, { rhythm: false, settings: metronome({ enabled, keepTime }) })
+      const h = open({}, { options: { mode: 'wait' }, settings: metronome({ enabled, keepTime }) })
       expect(ui(h).metronomeScope).toBe('general')
       await begin(h)
       expect(h.session.engine.mode).toBe('reading')
@@ -1296,24 +1303,24 @@ describe('Keep time: its own metronome switch (DECISIONS P20)', () => {
     expect(h.session.engine.state.phase).toBe('running')
   })
 
-  it('ui.metronomeScope: Keep time with a hand, else the general switch', () => {
+  it('ui.metronomeScope: Keep time’s own switch, else the general one', () => {
     const h = open()
-    expect(ui(h)).toMatchObject({ rhythm: true, metronomeScope: 'keepTime', metronomeMuted: false })
+    expect(ui(h)).toMatchObject({ mode: 'time', metronomeScope: 'keepTime', metronomeMuted: false })
     h.session.setSelection({ hands: 'right' })
     h.frames.flush()
     expect(ui(h).metronomeScope).toBe('keepTime')
-    h.session.setSelection({ hands: 'none' })
+    h.session.setMode('listen')
     h.frames.flush()
-    expect(ui(h)).toMatchObject({ hands: 'none', metronomeScope: 'general', metronomeMuted: false })
-    h.session.setSelection({ hands: 'both' })
+    expect(ui(h)).toMatchObject({ hands: 'right', metronomeScope: 'general', metronomeMuted: false })
+    h.session.setMode('time')
     h.frames.flush()
     expect(ui(h).metronomeScope).toBe('keepTime')
-    h.session.setRhythmMode(false)
+    h.session.setMode('wait')
     h.frames.flush()
-    expect(ui(h)).toMatchObject({ rhythm: false, metronomeScope: 'general' })
-    h.session.setPlayThrough(true)
+    expect(ui(h)).toMatchObject({ mode: 'wait', metronomeScope: 'general' })
+    h.session.setMode('follow')
     h.frames.flush()
-    expect(ui(h)).toMatchObject({ playThrough: true, metronomeScope: 'general', metronomeMuted: false })
+    expect(ui(h)).toMatchObject({ mode: 'follow', metronomeScope: 'general', metronomeMuted: false })
   })
 })
 
@@ -1335,7 +1342,10 @@ describe('Start unlocks audio inside the tap (DECISIONS P20)', () => {
   it('a reading Start with the general switch on creates it synchronously', () => {
     const h = open(
       {},
-      { rhythm: false, settings: testSettings({ metronome: { ...DEFAULT_SETTINGS.metronome, enabled: true } }) },
+      {
+        options: { mode: 'wait' },
+        settings: testSettings({ metronome: { ...DEFAULT_SETTINGS.metronome, enabled: true } }),
+      },
     )
     vi.stubGlobal('AudioContext', FakeAudioContext)
     try {
@@ -1348,7 +1358,7 @@ describe('Start unlocks audio inside the tap (DECISIONS P20)', () => {
   })
 
   it('a Start that wants no click creates none (MIDI-only reading)', async () => {
-    const h = open({}, { rhythm: false })
+    const h = open({}, { options: { mode: 'wait' } })
     vi.stubGlobal('AudioContext', FakeAudioContext)
     try {
       await begin(h)
@@ -1366,7 +1376,7 @@ describe('Start unlocks audio inside the tap (DECISIONS P20)', () => {
     const off = harness(
       melody,
       {},
-      { options: { rhythm: true }, deps: { loadMetronome: recordingMetronome(rec), hasWebAudio: () => false } },
+      { options: { mode: 'time' }, deps: { loadMetronome: recordingMetronome(rec), hasWebAudio: () => false } },
     )
     vi.stubGlobal('AudioContext', FakeAudioContext)
     try {

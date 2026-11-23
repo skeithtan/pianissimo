@@ -36,16 +36,11 @@
   background: color-mix(in srgb, var(--hand-ink) 14%, transparent);
   color: var(--hand-ink);
 }
-.hand:active:not(:disabled):not([aria-disabled='true']) {
+.hand:active:not(:disabled) {
   transform: scale(0.93);
 }
 .hand:disabled,
 .play:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-/* Unavailable (no piano): dimmed and off, but a tap still explains why. */
-.hand[aria-disabled='true'] {
   opacity: 0.45;
   cursor: not-allowed;
 }

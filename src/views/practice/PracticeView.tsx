@@ -6,6 +6,7 @@ import { msg } from '../../i18n/messages'
  */
 import { useEffect, useState } from 'preact/hooks'
 import { navigate, openPractice, practiceRequest, type PracticeRequest } from '../../app/navigation'
+import type { PracticeMode } from '../../core/model/practice'
 import type { ScorePackage } from '../../core/model/score'
 import type { PieceRecord, UserTempo } from '../../core/storage/records'
 import { Button } from '../../ui/controls'
@@ -16,7 +17,13 @@ import styles from './practice.module.css'
 type Load =
   | { readonly state: 'loading' }
   | { readonly state: 'missing'; readonly message: string }
-  | { readonly state: 'ready'; readonly piece: PieceRecord; readonly pkg: ScorePackage }
+  | {
+      readonly state: 'ready'
+      readonly piece: PieceRecord
+      readonly pkg: ScorePackage
+      /** The request's mode, until the learner chooses another (which is then the piece's own). */
+      readonly openIn: PracticeMode | undefined
+    }
 
 /** Registered in `app/views.ts` (no props). */
 export function PracticeView() {
@@ -28,7 +35,8 @@ export function PracticeViewWith({ env: injected }: { env?: PracticeEnv | undefi
   const [env] = useState(() => injected ?? defaultPracticeEnv())
   const request = practiceRequest.value
   if (!request) return <EmptyState env={env} />
-  return <Loaded key={request.pieceId + JSON.stringify(request.preset ?? null)} env={env} request={request} />
+  const key = JSON.stringify([request.pieceId, request.preset ?? null, request.mode ?? null])
+  return <Loaded key={key} env={env} request={request} />
 }
 
 function Loaded({ env, request }: { env: PracticeEnv; request: PracticeRequest }) {
@@ -44,7 +52,7 @@ function Loaded({ env, request }: { env: PracticeEnv; request: PracticeRequest }
         const pkg = await storage.getPackage(piece.scoreVersionId)
         if (!pkg) throw new Error(msg('The score for this piece is missing. Import it again from the Library.'))
         void storage.updatePiece(piece.id, { lastOpenedAt: Date.now() }).catch(() => undefined)
-        if (live) setLoad({ state: 'ready', piece, pkg })
+        if (live) setLoad({ state: 'ready', piece, pkg, openIn: request.mode })
       } catch (e) {
         if (live)
           setLoad({ state: 'missing', message: e instanceof Error ? e.message : msg('The piece could not be opened.') })
@@ -76,7 +84,7 @@ function Loaded({ env, request }: { env: PracticeEnv; request: PracticeRequest }
   const onTempo = async (userTempo: UserTempo): Promise<void> => {
     const storage = await env.storage()
     const piece = await storage.updatePiece(load.piece.id, { userTempo })
-    if (piece) setLoad({ ...load, piece })
+    if (piece) setLoad({ ...load, piece, openIn: piece.mode === load.piece.mode ? load.openIn : undefined })
   }
   return (
     <PracticeScreen
@@ -85,12 +93,7 @@ function Loaded({ env, request }: { env: PracticeEnv; request: PracticeRequest }
       piece={load.piece}
       pkg={load.pkg}
       preset={request.preset}
-      autoStart={request.autoStart}
-      onAutoStart={() => {
-        if (practiceRequest.peek() !== request) return
-        const { autoStart: _autoStart, ...consumed } = request
-        practiceRequest.value = consumed
-      }}
+      openIn={load.openIn}
       onTempoSaved={onTempo}
     />
   )

@@ -10,14 +10,16 @@ import type {
   AttemptRecord,
   InterruptReason,
   PassageRange,
+  PracticeMode,
   TimingDirection,
 } from '../../core/model/practice'
-import type { HandSelection, ScoreModel } from '../../core/model/score'
+import type { LearnerHands, ScoreModel } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import type { AppSettings } from '../../core/model/settings'
 import type { Phase, Timeline } from '../../core/engine'
 import type { RepeatedMistake } from './mistakes'
 import type { GroupMark } from './ranking'
+import type { PassRecord } from './run'
 import type { BrowserAudioModule, MetronomeModule, OutputBackend, TimerApi } from '../../core/playback'
 import type { LadderSettings, ResumePosition } from '../../core/storage/records'
 import type { GuideKey } from '../../render/keyboard/types'
@@ -37,8 +39,8 @@ export interface StripSink {
   setLoop(range: PassageRange | null): void
   setLoopEditable(editable: boolean): void
   /**
-   * Note onsets (exact, ascending) of the current hands — all onsets in Listen — that the dragged
-   * playhead and the loop edges snap to (U19, U21). The same array again is a no-op.
+   * Note onsets (exact, ascending) of the current hands that the dragged playhead and the loop
+   * edges snap to (U19, U21). The same array again is a no-op.
    */
   setSnapPositions(onsets: readonly Rational[]): void
   /** The playhead can be dragged onto a note (`StripOptions.onCursorSeek`, U23). */
@@ -110,14 +112,13 @@ export interface HistorySink {
 
 /** What the session persists on the piece (throttled by the caller; never per MIDI event). */
 export interface PiecePatch {
+  readonly mode?: PracticeMode
   readonly lastMultiplier?: number
-  readonly lastHands?: HandSelection
+  readonly lastHands?: LearnerHands
   readonly lastPassage?: PassageRange | null
   readonly resume?: ResumePosition | null
   readonly repeatTarget?: number | null
   readonly ladder?: LadderSettings | null
-  /** Keep time (rhythm mode) for this piece. */
-  readonly rhythm?: boolean
   /** Repeat mode is on (DECISIONS U98): Practice reopens it over `lastPassage`. */
   readonly repeatOpen?: boolean
 }
@@ -137,9 +138,10 @@ export interface SessionDeps {
   /** `performance.timeOrigin` for record timestamps. */
   readonly timeOrigin?: number
   /**
-   * How long a scored pass's completed final group stays open for a key pressed with that chord
-   * (the engine's `finalSlipMs`, DECISIONS P24). Default `CHORD_SLIP_MS`; the test harness passes 0
-   * so scenario tests see the record at the final key, as before.
+   * How long a pass's completed final group stays open for a key pressed with that chord (the
+   * engine's `finalSlipMs`, DECISIONS P24; a scored pass, or a whole-piece reading). Default
+   * `CHORD_SLIP_MS`; the test harness passes 0 so scenario tests see the record at the final key, as
+   * before.
    */
   readonly finalSlipMs?: number
   /**
@@ -160,13 +162,13 @@ export interface SessionDeps {
   /** Builds the MIDI output backend (tests inject a recording backend). */
   readonly createMidiBackend?: (output: MidiOutputLike, channel: number, humanGuard: boolean) => MidiBackendLike
   /**
-   * Builds the microphone follower for play-through (DECISIONS P15, P22; `app/audio/micFollower.ts`,
-   * tests inject a fake). Absent: play-through never follows the microphone (Study, tests).
+   * Builds the microphone follower for Follow (DECISIONS P15, P22; `app/audio/micFollower.ts`,
+   * tests inject a fake). Absent: Follow never uses the microphone.
    */
   readonly createMicFollower?: CreateMicFollower
   /**
    * Can this browser open a microphone at all (`microphoneSupported`; default true when
-   * `createMicFollower` is supplied)? Without it and without a piano, the hands are held (U27).
+   * `createMicFollower` is supplied)? Without it, Follow needs a piano.
    */
   readonly micSupported?: () => boolean
 }
@@ -202,7 +204,7 @@ export type CreateMicFollower = (
   model: ScoreModel,
   onEstimate: (estimate: MicEstimate) => void,
   onLost: (reason: string) => void,
-  hands?: Exclude<HandSelection, 'none'>,
+  hands?: LearnerHands,
 ) => MicFollowerLike
 
 /** What the session needs from `MidiOutputBackend` beyond `OutputBackend`. */
@@ -214,13 +216,18 @@ export interface MidiBackendLike extends OutputBackend {
 }
 
 /**
- * What the session is doing (coarse; drives the footer and banners). `'playing'`: play-through
- * mode is on (DECISIONS P12), started or not.
+ * What the session is doing (coarse; drives the footer and banners). `'playing'`: the mode is
+ * Follow (DECISIONS P12), started or not.
  */
 export type Activity = 'idle' | 'reading' | 'scored' | 'listening' | 'playing'
 
 export interface AttemptSummary {
   readonly id: string
+  /**
+   * A Wait run outside Repeat that reached the end of the piece (DECISIONS U142): reading, so it has
+   * no time and no streak, and it is not stored (the card has no numbers or earlier passes for it).
+   */
+  readonly run?: boolean
   readonly passed: boolean
   readonly wrongAttacks: number
   readonly groupsFirstPass: number
@@ -249,6 +256,12 @@ export interface AttemptSummary {
    * note line shows the first (U97).
    */
   readonly repeatedMistakes?: readonly RepeatedMistake[]
+  /**
+   * Outside Repeat, a run with mistakes: the bars the card's Loop action loops (`roughPassage`,
+   * `PracticeSession.loopRoughBars`). Absent in Repeat, for a clean run, and when they would be the
+   * whole run.
+   */
+  readonly rough?: PassageRange
 }
 
 /**
@@ -256,10 +269,10 @@ export interface AttemptSummary {
  * inputs of `rankMistakes` (in `ranking.ts`, loaded with the card), as the session holds them.
  */
 export interface ResultDetails {
-  /** The attempt the details are of (`AttemptSummary.id`; the last of `records`). */
+  /** The pass the details are of (`AttemptSummary.id`; the last of `records`). */
   readonly attemptId: string
-  /** The session's last scored records, oldest first (a copy). */
-  readonly records: readonly AttemptRecord[]
+  /** The session's last passes (scored attempts, Wait runs), oldest first (a copy). */
+  readonly records: readonly PassRecord[]
   /** The timeline the attempt ran on (its group indices). */
   readonly timeline: Timeline
   /** The attempt's correction mark per group (`correctionMarksByGroup`). */
@@ -302,29 +315,42 @@ export interface Interruption {
   readonly canResume: boolean
 }
 
+/** Where the hand the app plays can sound: the connected piano, this device (U149). */
+export interface OtherHandSound {
+  readonly piano: boolean
+  readonly device: boolean
+}
+
 /** Coarse state for the Preact view; changes on phase/selection/feedback-status changes only. */
 export interface SessionUi {
   readonly activity: Activity
   readonly phase: Phase | null
   /** Start/Pause button state. */
   readonly playing: boolean
-  readonly hands: HandSelection
-  /**
-   * False while no piano input is connected and this browser cannot use the microphone either
-   * (U27, P22): the hand toggles are off and unavailable and the session is in Listen; the
-   * learner's hands come back with the piano.
-   */
-  readonly handsAvailable: boolean
+  /** The learner's mode (`PracticeSession.setMode`); it never changes by itself. */
+  readonly mode: PracticeMode
+  /** The hands the learner plays; in Listen, the hands they hear. */
+  readonly hands: LearnerHands
   readonly range: PassageRange | null
   readonly multiplier: number
   readonly startAction: 'reading' | 'scored' | 'listen' | 'play'
   readonly startEnabled: boolean
+  /**
+   * Why the main button is disabled (`startPlan`), or null. With no piano connected
+   * (`pianoConnected` false), in Wait and Keep time it always says that the mode needs one.
+   */
   readonly startReason: string | null
+  /**
+   * `startEnabled` is false only because the app does not know where the hand it plays may sound
+   * (P2): pressing Start asks (U149), with the places that are possible. Absent otherwise.
+   */
+  readonly otherHand?: OtherHandSound
   /** Ready blockers in words ("Release the keys to begin."). */
   readonly waiting: string | null
   readonly hintVisible: boolean
   readonly keyboardVisible: boolean
   readonly canHint: boolean
+  /** Repeat mode is open. Never in Follow, which brings it back as it was when it is left. */
   readonly repeat: boolean
   /** An open loop can start from its beginning while playback is stopped. */
   readonly canRestartLoop: boolean
@@ -363,39 +389,24 @@ export interface SessionUi {
   readonly soundStatus: string | null
   readonly inputDisconnected: boolean
   /**
-   * Play-through mode is on (DECISIONS P12): the cursor follows the music and the learner's
-   * playing, wrong notes never block, nothing is graded or recorded.
-   */
-  readonly playThrough: boolean
-  /**
-   * The microphone follower's status while play-through uses it (DECISIONS P15): starting,
-   * following, or why it could not start; null otherwise.
+   * The microphone follower's status while Follow uses it (DECISIONS P15): starting, following, or
+   * why it could not start; null otherwise.
    */
   readonly micStatus: string | null
   /**
-   * What a play-through follows (DECISIONS P22): `'mic'` without a piano input, or with one when
+   * What Follow follows (DECISIONS P22): `'mic'` without a piano input, or with one when
    * `settings.mic.follow` is on (and the browser can use a microphone); else `'piano'`.
    */
   readonly follow: 'piano' | 'mic'
-  /** A piano input is connected (the Follow choice offers Piano). */
+  /** A piano input is connected (Wait and Keep time can start; Follow's choice offers Piano). */
   readonly pianoConnected: boolean
-  /** This browser can open a microphone (the Follow choice offers Microphone). */
+  /** This browser can open a microphone (Follow's choice offers Microphone). */
   readonly micSupported: boolean
-  /**
-   * No piano is connected, so play-through is how a hand plays (P22): with a hand selected it is
-   * on and cannot be switched off.
-   */
-  readonly playThroughLocked: boolean
-  /**
-   * Keep time (rhythm mode, DECISIONS P13) is on: every Start is a scored attempt played against
-   * the music (strict transport), after a count-in. Exclusive with play-through.
-   */
-  readonly rhythm: boolean
   /** Clicks left in the Keep time count-in (the number to show), else null. */
   readonly countIn: number | null
-  /** Which Metronome preference the current mode uses, so the Practice menu's switch edits the right one (DECISIONS P20). */
+  /** Which Metronome preference the mode uses, so the menu's switch edits the right one (DECISIONS P20). */
   readonly metronomeScope: MetronomeScope
-  /** Play through with the microphone following: the metronome is silent whatever its setting (DECISIONS P16). */
+  /** Follow through the microphone: the metronome is silent whatever its setting (DECISIONS P16). */
   readonly metronomeMuted: boolean
   /** Completed the whole piece in ordinary reading. */
   readonly finished: boolean
@@ -442,7 +453,7 @@ export type SessionSettings = Pick<
   AppSettings,
   'naming' | 'labels' | 'hints' | 'pedal' | 'route' | 'sound' | 'metronome'
 > & {
-  /** Keep time tolerance; absent (Study, which has no Keep time) = the engine default. */
+  /** Keep time tolerance; absent = the engine default. */
   readonly rhythm?: AppSettings['rhythm']
   /** Microphone following (DECISIONS P15); absent = off. */
   readonly mic?: AppSettings['mic']

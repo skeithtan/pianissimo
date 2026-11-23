@@ -14,7 +14,7 @@ import { msg } from '../../i18n/messages'
 import { gradedAccompanimentAllowed } from '../../core/midi/route'
 import type { MidiOutputLike } from '../../core/midi/webmidi'
 import { MidiOutputBackend } from '../../core/playback/midiOutput'
-import type { SessionSettings, MidiBackendLike } from './types'
+import type { SessionSettings, MidiBackendLike, OtherHandSound } from './types'
 
 /** What a destination resolves to now: the piano's MIDI output or this device's sound. */
 export type PlaybackKind = 'midi' | 'browser'
@@ -61,9 +61,9 @@ export function noPlaybackReason(
   if (hasSoundOutput(settings, output, browserSound)) return null
   switch (settings.sound.destination) {
     case 'midi':
-      return msg('The piano output is not connected. Connect it in Connection, or choose Auto in Settings → Sound.')
+      return msg('The piano output is not connected. Connect it or choose Auto in Settings → Piano and sound.')
     case 'browser':
-      return msg('This browser cannot play sound. Choose Auto or the connected piano in Settings → Sound.')
+      return msg('This browser cannot play sound. Choose Auto or the connected piano in Settings → Piano and sound.')
     default:
       return msg('No piano is connected and this browser cannot play sound.')
   }
@@ -81,6 +81,16 @@ export function accompanimentAllowed(
   const kind = playbackDestination(settings, output, browserSound)
   if (kind === 'browser') return true
   return kind === 'midi' && gradedAccompanimentAllowed(settings.route)
+}
+
+const ON_EITHER: OtherHandSound = { piano: true, device: true }
+const ON_PIANO: OtherHandSound = { piano: true, device: false }
+const ON_DEVICE: OtherHandSound = { piano: false, device: true }
+const NOWHERE: OtherHandSound = { piano: false, device: false }
+
+/** Where the other hand could sound, whatever the settings say now (U149): one object per answer. */
+export function otherHandSound(output: MidiOutputLike | null, browserSound: boolean): OtherHandSound {
+  return output ? (browserSound ? ON_EITHER : ON_PIANO) : browserSound ? ON_DEVICE : NOWHERE
 }
 
 /**

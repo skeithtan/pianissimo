@@ -10,7 +10,7 @@ import { msg } from '../../i18n/messages'
 import { ImportSheet } from './ImportSheet'
 import { ImportFlow, resetPersistenceRequestForTests, type FlowPhase } from './importFlow'
 import { initialDraft } from './review'
-import { bytesFile, testDeps, type TestDeps } from './testkit'
+import { bytesFile, showReview, testDeps, type TestDeps } from './testkit'
 
 let view: Mounted | null = null
 let deps: TestDeps
@@ -39,7 +39,7 @@ const button = (root: ParentNode, label: string) => byLabel(root, label) as HTML
 const details = (root: ParentNode) => byText(root, 'Import details', 'summary')?.parentElement as HTMLDetailsElement
 
 async function open(name = 'two-hands.musicxml', onOpenExisting = vi.fn()) {
-  await flow.openFile(file(name))
+  await showReview(flow, deps.client, file(name))
   const pieces = await deps.storage.listPieces()
   view = mount(<ImportSheet flow={flow} pieces={pieces} onClose={() => flow.close()} onOpenExisting={onOpenExisting} />)
   return view.container
@@ -92,7 +92,7 @@ describe('Import review', () => {
   })
 
   it('keeps import errors visible and refuses to add the score', async () => {
-    await flow.openFile(file('two-hands.musicxml'))
+    await showReview(flow, deps.client, file('two-hands.musicxml'))
     const phase = review()
     flow.phase.value = {
       ...phase,
@@ -174,7 +174,7 @@ describe('translation coverage', () => {
 describe('the score check in other languages', () => {
   /** The repeats fixture with fourteen repeated bars, one error and one importer note. */
   async function openFull(): Promise<HTMLElement> {
-    await flow.openFile(file('repeats.musicxml'))
+    await showReview(flow, deps.client, file('repeats.musicxml'))
     const phase = review()
     const summary = phase.result.summary
     flow.phase.value = {

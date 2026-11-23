@@ -7,16 +7,15 @@
 import { expect, test, type Page } from '../browser-test'
 import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
 import { storedSettings } from './app-helpers'
-import { seedPiece } from './practice-helpers'
+import { openSeededPractice, seedPiece } from './practice-helpers'
 
 const PHONE = { width: 393, height: 852 }
 const COLD = { timeout: 60_000 }
 
 const scroller = (page: Page) => page.locator('.pn-page-scroll')
 
-async function openStudy(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Open sheet music for Two Hands' }).click()
-  await expect(page.locator('main')).toHaveAttribute('data-view', 'study')
+async function openPiece(page: Page): Promise<void> {
+  await openSeededPractice(page)
   await waitForPage(page)
 }
 
@@ -86,7 +85,7 @@ test.describe('A phone page zooms like a photo (U83)', () => {
   test('opens fitted, a pinch magnifies without re-engraving, a reload fits again', async ({ page, browserName }) => {
     // A page zoom saved by an old pinch (it re-engraved the page then) must not apply on a phone.
     await seedPiece(page, { route: DEFAULT_SETTINGS.route, view: { ...DEFAULT_SETTINGS.view, pageZoom: 2 } })
-    await openStudy(page)
+    await openPiece(page)
 
     // Fitted: engraved at zoom 1 for the screen's width, nothing scrolls sideways.
     const fitted = await shownScale(page)

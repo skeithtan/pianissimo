@@ -172,6 +172,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const metronome = obj(s['metronome'])
   const rhythm = obj(s['rhythm'])
   const mic = obj(s['mic'])
+  const recording = obj(s['recording'])
   const view = obj(s['view'])
   const suggestions = obj(s['suggestions'])
   const storedVersion = typeof s['version'] === 'number' ? s['version'] : 0
@@ -243,6 +244,10 @@ export function normalizeSettings(raw: unknown): AppSettings {
       scorePlaybackVolume: num(rhythm['scorePlaybackVolume'], d.rhythm.scorePlaybackVolume, 0, 1),
     },
     mic: { follow: bool(mic['follow'], d.mic.follow) },
+    recording: {
+      inputId: strOrNull(recording['inputId'], d.recording.inputId) || null,
+      inputLabel: strOrNull(recording['inputLabel'], d.recording.inputLabel) || null,
+    },
     view: {
       language: oneOf(view['language'], ['system', ...(Object.keys(LANGUAGES) as Language[])], d.view.language),
       zoom: num(view['zoom'], d.view.zoom, 0.1, 20),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { makePackage, makePiece } from '../../core/storage/testkit'
+import type { PieceRecord } from '../../core/storage/records'
 import { rat } from '../../core/music/rational'
 import { useCatalog } from '../shared/catalogTesting'
 import { continuationContext, continuingPiece, hasPracticeContext, neverOpened, openedStatus } from './continuation'
@@ -81,14 +82,30 @@ describe('Library continuation', () => {
     expect(continuationContext(piece, pkg.model)).toBe('Repeat bar 4 · both hands')
   })
 
-  it('names Repeat over the whole piece, and Listen (no hands) as "listening"', () => {
-    const piece = makePiece(makePackage(), { repeatOpen: true, lastHands: 'none', lastMultiplier: 1.25 })
-    expect(continuationContext(piece, null)).toBe('Repeat whole piece · listening · 125% speed')
+  it('names the mode first, unless it is Wait (U141)', () => {
+    const at = (patch: Partial<PieceRecord>) =>
+      continuationContext(makePiece(makePackage(), { repeatOpen: true, ...patch }), null)
+    expect(at({ mode: 'listen', lastHands: 'left' })).toBe('Listen · Repeat whole piece · left hand')
+    expect(at({ mode: 'time', lastMultiplier: 1.25 })).toBe('Keep time · Repeat whole piece · both hands · 125% speed')
+    expect(at({ mode: 'follow' })).toBe('Follow · Repeat whole piece · both hands')
+    expect(at({ mode: 'wait' })).toBe('Repeat whole piece · both hands')
+    expect(at({})).toBe('Repeat whole piece · both hands')
+    const restore = useCatalog('fr-FR')
+    try {
+      expect(at({ mode: 'time' })).toBe('En mesure · Répéter le morceau entier · deux mains')
+    } finally {
+      restore()
+    }
+  })
+
+  it('reads the mode of an older record: Keep time on, or both hands off (Listen)', () => {
+    const older = makePiece(makePackage(), { repeatOpen: true, lastHands: 'none', lastMultiplier: 1.25 })
+    expect(continuationContext(older, null)).toBe('Listen · Repeat whole piece · both hands · 125% speed')
     const fromStart = makePiece(makePackage(), {
-      lastHands: 'none',
+      rhythm: true,
       resume: { occ: 0, position: rat(0), hands: 'none', multiplier: 1, savedAt: 10 },
     })
-    expect(continuationContext(fromStart, null)).toBe('From the start · listening')
+    expect(continuationContext(fromStart, null)).toBe('Keep time · From the start · both hands')
   })
 
   it('omits the speed only when it reads 100%', () => {

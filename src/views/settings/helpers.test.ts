@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { MIN_HINT_LIFETIME_SECONDS, parsePositive } from './numbers'
-import { controllerName, describeHintPedal, describeObservedPedals } from './pedalSummary'
+import { controllerName, describeHintPedal } from './pedalSummary'
 
 describe('parsePositive', () => {
   const opts = { integer: true, max: 99, what: 'a number of wrong attacks' } as const
@@ -40,7 +39,7 @@ describe('pedal summary', () => {
   })
 
   it('explains an unset pedal', () => {
-    expect(describeHintPedal(null)).toMatch(/enable automatic hints in Settings/u)
+    expect(describeHintPedal(null)).toMatch(/enable automatic hints in Reading help/u)
   })
 
   it('describes channel, direction and verification', () => {
@@ -59,13 +58,6 @@ describe('pedal summary', () => {
     expect(text).toMatch(/Not tested yet/u)
     expect(describeHintPedal({ ...base, channel: 2, inverted: false, verified: true })).toMatch(
       /channel 3\..*at or above 40.*Tested/u,
-    )
-  })
-
-  it('lists observed pedals', () => {
-    expect(describeObservedPedals(DEFAULT_SETTINGS.pedal)).toBeNull()
-    expect(describeObservedPedals({ ...DEFAULT_SETTINGS.pedal, observedControllers: [64, 67] })).toBe(
-      'sustain (right pedal), soft (left pedal)',
     )
   })
 })

@@ -69,7 +69,7 @@ export function LivePanel({
   return (
     <aside class={styles.live} aria-labelledby="connection-live-title">
       <header class={styles.liveHead}>
-        <h2 id="connection-live-title">{msg('Live input')}</h2>
+        <h4 id="connection-live-title">{msg('Live input')}</h4>
         <span class={styles.liveStatus} data-on={listening ? '' : undefined}>
           <span class={styles.liveDot} aria-hidden="true" />
           {listening ? msg('Listening to {0}', snap.input!.name) : msg('No input selected')}
@@ -108,7 +108,7 @@ export function LivePanel({
       </div>
 
       <section class={styles.liveSection} aria-label={msg('Pedals')}>
-        <h3>{msg('Pedals')}</h3>
+        <h5>{msg('Pedals')}</h5>
         {meters.length === 0 ? (
           <p class={styles.help}>{msg('Press each pedal slowly. Every controller the piano sends appears here.')}</p>
         ) : (
@@ -134,7 +134,7 @@ export function LivePanel({
       </section>
 
       <section class={styles.liveSection} aria-label={msg('Last events')}>
-        <h3>{msg('Last events')}</h3>
+        <h5>{msg('Last events')}</h5>
         {events.length === 0 ? (
           <p class={styles.help}>
             {listening ? msg('Play a key to start.') : msg('Choose your piano input to see its keys and pedals.')}

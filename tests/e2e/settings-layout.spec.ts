@@ -32,7 +32,7 @@ for (const { name, viewport, widthFraction, viewportUnitsWidth } of layouts) {
       await page.goto('./')
       await page.getByRole('button', { name: 'Settings', exact: true }).tap()
       const dialog = page.getByRole('dialog', { name: 'Settings' })
-      await expect(dialog.getByRole('tabpanel', { name: 'Note names' })).toBeVisible()
+      await expect(dialog.getByRole('tabpanel', { name: 'Reading help' })).toBeVisible()
       // The sheet opens slightly scaled down: measure it once its opening animations are over.
       await dialog.evaluate((el) => Promise.allSettled(el.getAnimations().map((a) => a.finished)))
       const box = await dialog.boundingBox()

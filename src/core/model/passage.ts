@@ -261,6 +261,18 @@ function ordinal(n: number): string {
   return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
 }
 
+/** A printed bar in the short form: "12", or "12 (2nd)" for the second pass of a repeated bar. */
+function barShortText(model: Pick<ScoreModel, 'occurrences'>, occ: number): string {
+  const o = model.occurrences[occ]
+  return !o ? `${occ + 1}` : o.pass > 1 ? `${o.number} (${ordinal(o.pass)})` : o.number
+}
+
+/** Whole bars in the Repeat steppers' short form, for a button: "12", "9–12", "9 (2nd)–12 (2nd)". */
+export function barsShortText(model: Pick<ScoreModel, 'occurrences'>, p: PassageRange): string {
+  const from = barShortText(model, p.fromOcc)
+  return p.fromOcc === p.toOcc ? from : msg('{0}–{1}', from, barShortText(model, p.toOcc))
+}
+
 /**
  * The short text of one loop edge for the Repeat steppers, which sit next to a "Bars" label
  * (U22, revised 15 November 2026): "12", "12·3" (beat 3), "12 (2nd)" for the second pass of a
@@ -273,9 +285,7 @@ export function edgeShortText(
   edge: 'start' | 'end',
   hands: HandSelection,
 ): string {
-  const occ = edge === 'start' ? p.fromOcc : p.toOcc
-  const o = model.occurrences[occ]
-  const bar = !o ? `${occ + 1}` : o.pass > 1 ? `${o.number} (${ordinal(o.pass)})` : o.number
+  const bar = barShortText(model, edge === 'start' ? p.fromOcc : p.toOcc)
   if (edge === 'start') return p.start ? `${bar}·${beatText(model, p.start)}` : bar
   if (!p.end) return bar
   const { start, end } = passageBounds(model, p)

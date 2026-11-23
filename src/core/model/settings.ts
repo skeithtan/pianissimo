@@ -122,7 +122,7 @@ export interface SoundSettings {
  * switches say.
  */
 export interface MetronomeSettings {
-  /** The click in Listen, ordinary reading, scored practice and Play through (default off). */
+  /** The click in Listen, Wait and Follow (default off). */
   readonly enabled: boolean
   /** The click during a Keep time attempt, after its count-in (default on). */
   readonly keepTime: boolean
@@ -150,15 +150,26 @@ export const MIN_RHYTHM_TOLERANCE_MS = 40
 export const MAX_RHYTHM_TOLERANCE_MS = 500
 
 /**
- * The microphone follower (DECISIONS P15, P22). Without a piano input, play-through always follows
- * what this device's microphone hears (an acoustic piano); no setting is needed for that.
+ * The microphone follower (DECISIONS P15, P22). Without a piano input, Follow always uses
+ * this device’s microphone (an acoustic piano); no setting is needed for that.
  */
 export interface MicSettings {
   /**
    * Follow the microphone even when a piano is connected (default off: the piano's keys). The
-   * Practice menu's Follow choice (Piano / Microphone) and Settings → Sound edit this one value.
+   * Practice menu’s Follow input (Piano / Microphone) and Settings → Sound edit this one value.
    */
   readonly follow: boolean
+}
+
+/**
+ * The audio input performance recordings use (DECISIONS D20): set when a take starts from the
+ * setup sheet, null until then. It belongs to this device, like the MIDI route.
+ */
+export interface RecordingSettings {
+  /** Browser audio input device ID. */
+  readonly inputId: string | null
+  /** The input's name, which recognizes it when the browser gives out new IDs. */
+  readonly inputLabel: string | null
 }
 
 export interface ViewSettings {
@@ -192,6 +203,8 @@ export interface AppSettings {
   readonly rhythm: RhythmSettings
   /** Microphone following. Absent in older stored settings: off. */
   readonly mic: MicSettings
+  /** The remembered recording input. Absent in older stored settings: none. */
+  readonly recording: RecordingSettings
   readonly view: ViewSettings
   readonly suggestions: SuggestionSettings
 }
@@ -243,6 +256,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   metronome: { enabled: false, keepTime: true, volume: 0.6, outputId: null },
   rhythm: { toleranceMs: 150, scorePlayback: false, scorePlaybackVolume: 1 },
   mic: { follow: false },
+  recording: { inputId: null, inputLabel: null },
   view: { language: 'system', zoom: 1, pageZoom: 1, theme: 'system', scorePaper: 'theme' },
   suggestions: { enabled: true },
 }

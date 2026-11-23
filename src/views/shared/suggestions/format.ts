@@ -7,7 +7,7 @@ const HANDS: Readonly<Record<HandSelection, string>> = {
   both: 'Both hands',
   right: 'Right hand',
   left: 'Left hand',
-  none: 'Preview',
+  none: 'Listen',
 }
 
 export function handsText(hands: HandSelection): string {

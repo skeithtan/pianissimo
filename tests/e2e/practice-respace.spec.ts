@@ -5,7 +5,14 @@
  */
 import { join } from 'node:path'
 import { expect, test, type Page } from '../browser-test'
-import { SHOT_DIR, installFakeMidi, openFooterMenu, openSeededPractice, seedPiece } from './practice-helpers'
+import {
+  SHOT_DIR,
+  chooseMode,
+  installFakeMidi,
+  openFooterMenu,
+  openSeededPractice,
+  seedPiece,
+} from './practice-helpers'
 
 /** Screen x of every notehead, left to right (first engraving of each note only). */
 async function headXs(page: Page): Promise<number[]> {
@@ -249,9 +256,8 @@ test.describe('respacing between Labels Off and All', () => {
       await seedPiece(page)
       await openSeededPractice(page)
       await page.waitForTimeout(2500)
-      await page.getByRole('button', { name: 'Left hand', exact: true }).click()
-      await page.getByRole('button', { name: 'Right hand', exact: true }).click()
-      await page.getByRole('button', { name: 'Listen', exact: true }).click()
+      await chooseMode(page, 'Listen')
+      await page.getByRole('button', { name: 'Play', exact: true }).click()
       // Cross the first system boundary during the portrait glide.
       if (mode === 'portrait') await page.waitForTimeout(3650)
       const labels = mode === 'landscape' ? ['All', 'Off', 'Conditional', 'Off'] : ['All', 'Off']
@@ -285,9 +291,8 @@ test.describe('respacing between Labels Off and All', () => {
     await seedPiece(page)
     await openSeededPractice(page)
     await page.waitForTimeout(2500)
-    await page.getByRole('button', { name: 'Left hand', exact: true }).click()
-    await page.getByRole('button', { name: 'Right hand', exact: true }).click()
-    await page.getByRole('button', { name: 'Listen', exact: true }).click()
+    await chooseMode(page, 'Listen')
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
     await watchGlides(page)
     await openFooterMenu(page)
     const group = page.getByRole('radiogroup', { name: 'Note names on the score' })
@@ -311,9 +316,8 @@ test.describe('respacing between Labels Off and All', () => {
     await seedPiece(page)
     await openSeededPractice(page)
     await page.waitForTimeout(2500)
-    await page.getByRole('button', { name: 'Left hand', exact: true }).click()
-    await page.getByRole('button', { name: 'Right hand', exact: true }).click()
-    await page.getByRole('button', { name: 'Listen', exact: true }).click()
+    await chooseMode(page, 'Listen')
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
     const samples = await page.evaluate(async (menuButton) => {
       const points: { t: number; x: number; y: number; lag: number; mode: string }[] = []
       const sample = (mode: string) => {

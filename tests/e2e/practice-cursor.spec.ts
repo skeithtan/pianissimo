@@ -1,7 +1,7 @@
 /** Playback must start at the visible cursor after browsing and keep following the sound. */
 import { expect, test, type Page } from '../browser-test'
 import { importFixture } from '../unit/import/fixtures'
-import { installFakeMidi, openSeededPractice, playWhenDue, seedPiece } from './practice-helpers'
+import { chooseMode, installFakeMidi, openSeededPractice, playWhenDue, seedPiece } from './practice-helpers'
 
 async function headX(page: Page, midi: number): Promise<number> {
   const built = await importFixture('two-hands.musicxml')
@@ -51,16 +51,15 @@ test.describe('playback from the visible cursor', () => {
     test(`${resumed ? 'resumed' : 'first'} Listen starts at the note browsed backward to and follows playback`, async ({
       page,
     }) => {
-      await page.getByRole('button', { name: 'Left hand', exact: true }).click()
-      await page.getByRole('button', { name: 'Right hand', exact: true }).click()
+      await chooseMode(page, 'Listen')
       await seekBarTwo(page)
       if (resumed) {
-        await page.getByRole('button', { name: 'Listen', exact: true }).click()
+        await page.getByRole('button', { name: 'Play', exact: true }).click()
         await page.getByRole('button', { name: 'Pause', exact: true }).click()
       }
       const line = await browseTo(page, 62, resumed)
       await page.evaluate(() => (window.__midi.sent.length = 0))
-      await page.getByRole('button', { name: resumed ? 'Play' : 'Listen', exact: true }).click()
+      await page.getByRole('button', { name: 'Play', exact: true }).click()
       // D4 is inside bar 1: choosing only the browsed bar would incorrectly sound C4 instead.
       await expect
         .poll(() =>
@@ -110,14 +109,13 @@ for (const portrait of [false, true]) {
       await installFakeMidi(page)
       await seedPiece(page)
       await openSeededPractice(page)
-      await page.getByRole('button', { name: 'Left hand', exact: true }).click()
-      await page.getByRole('button', { name: 'Right hand', exact: true }).click()
+      await chooseMode(page, 'Listen')
       const moving = page.locator(portrait ? '.pn-page .pn-cursor' : '.pn-strip .pn-content')
       const openingX = await moving.evaluate((el) => new DOMMatrix((el as HTMLElement).style.transform).m41)
       const overview = page.getByRole('slider', { name: 'Piece overview' })
       await overview.press('End')
       await expect(overview).toHaveAttribute('aria-valuenow', '2')
-      await page.getByRole('button', { name: 'Listen', exact: true }).click()
+      await page.getByRole('button', { name: 'Play', exact: true }).click()
       await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
 
       // The page cursor's rewind is a CSS glide: its inline transform points to the opening at once

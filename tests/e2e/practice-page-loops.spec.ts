@@ -16,9 +16,8 @@ async function openLoop(page: Page, width: number, height: number): Promise<void
       mimeType: 'application/xml',
       buffer: Buffer.from(generateLongScore(12)),
     })
-  await page.getByRole('button', { name: 'Add and open', exact: true }).click()
   await expect(page.locator('.pn-page')).toBeVisible({ timeout: 60_000 })
-  // "Add and open" opens Practice paused; pause only if something is still playing.
+  // Adding a score opens Practice paused; pause only if something is still playing.
   const pause = page.getByRole('button', { name: 'Pause', exact: true })
   if (await pause.isVisible()) await pause.click()
   await page.getByRole('button', { name: 'Repeat from here', exact: true }).click()

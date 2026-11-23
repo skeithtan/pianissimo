@@ -22,7 +22,7 @@ export function AboutSection({ features }: { features: FeatureReport }) {
         </Help>
         <Help>
           {msg(
-            'Everything stays on this device: your scores, settings and practice history are stored in this browser and never uploaded. Use Backup in Settings to keep a copy or move them between devices.',
+            'Everything stays on this device: your scores, settings and practice history are stored in this browser and never uploaded. Use Backup and restore to keep a copy or move them between devices.',
           )}
         </Help>
       </Group>

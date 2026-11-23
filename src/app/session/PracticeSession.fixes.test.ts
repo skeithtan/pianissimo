@@ -1,10 +1,11 @@
 /**
  * Regression tests for audited session bugs: concurrent Start, Again after closing Repeat or
- * reaching the target, one hand on device sound, lead-in cues and paused feedback, lastHands
- * without a piano, the disconnect interruption, the input monitor under an overlay and volumes.
+ * reaching the target, one hand on device sound, lead-in cues and paused feedback, the
+ * disconnect interruption, the input monitor under an overlay and volumes.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { buildScore } from '../../core/engine/testkit'
+import type { PracticeMode } from '../../core/model/practice'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { sharedAudioContext, type BrowserAudioModule, type MetronomeModule } from '../../core/playback'
 import { FakeAudioContext } from '../../core/playback/fakeWebAudio'
@@ -78,10 +79,13 @@ describe('Start while sounds load', () => {
 
 describe('Start canceled while sounds load', () => {
   /** Device sound only (no piano output), loading until the test resolves it. */
-  function loading(selection: Parameters<typeof harness>[1]) {
+  function loading(selection: Parameters<typeof harness>[1], mode: PracticeMode = 'wait') {
     const s = deviceSound()
     const p = pendingLoad()
-    const h = harness(melody, selection, { deps: { loadBrowserAudio: p.load, hasWebAudio: () => true } })
+    const h = harness(melody, selection, {
+      options: { mode },
+      deps: { loadBrowserAudio: p.load, hasWebAudio: () => true },
+    })
     h.midi.out = null
     h.session.updateSettings(testSettings())
     h.frames.flush()
@@ -94,30 +98,59 @@ describe('Start canceled while sounds load', () => {
     return { h, s, finish }
   }
 
-  it('Listen, then a hand chosen during the load: reading is honored, Listen never plays', async () => {
-    const { h, s, finish } = loading({ hands: 'none' })
+  it.each(['listen', 'wait', 'follow'] as const)(
+    '%s, then another mode during the load: nothing plays, and a Start there does not wait for it',
+    async (mode) => {
+      const { h, s, finish } = loading({ hands: 'right' }, mode)
+      const start = h.session.start()
+      h.session.setMode('time')
+      const second = h.session.start()
+      await finish(start)
+      await second
+      h.frames.flush()
+      // Only the Keep time Start went on: its attempt, and no sound of the old mode.
+      expect(h.session.ui.get()).toMatchObject({ mode: 'time', activity: 'scored', playing: true, countIn: 4 })
+      h.step(500)
+      expect(s.backend.ons()).toEqual([])
+    },
+  )
+
+  it.each(['listen', 'wait', 'follow'] as const)(
+    '%s, then another mode during the load and no Start there: nothing starts',
+    async (mode) => {
+      const { h, s, finish } = loading({ hands: 'right' }, mode)
+      const start = h.session.start()
+      h.session.setMode(mode === 'listen' ? 'wait' : 'listen')
+      await finish(start)
+      h.step(1000)
+      expect(h.session.ui.get()).toMatchObject({ activity: 'idle', playing: false, startEnabled: true })
+      expect(s.backend.ons()).toEqual([])
+    },
+  )
+
+  it('Listen, then other hands during the load: it plays those', async () => {
+    const { h, s, finish } = loading({}, 'listen')
     const start = h.session.start()
-    h.session.setSelection({ hands: 'right' })
+    h.session.setSelection({ hands: 'left' })
     await finish(start)
-    expect(h.session.ui.get()).toMatchObject({ hands: 'right', activity: 'reading', playing: true })
-    // Nothing of the Listen performance (the left hand's part is all the device plays now).
+    expect(h.session.ui.get()).toMatchObject({ mode: 'listen', hands: 'left' })
     h.step(500)
-    expect(s.backend.ons().every((c) => c.note < 60)).toBe(true)
+    // The melody is the right hand's.
+    expect(s.backend.ons()).toEqual([])
   })
 
-  it('Listen, then the held hands given back during the load: reading starts, not Listen', async () => {
-    const { h, finish } = loading({ hands: 'right' })
-    h.session.setInputAvailable(false)
-    h.frames.flush()
-    expect(h.session.ui.get().hands).toBe('none')
+  it('Wait loses its piano during the load: nothing plays', async () => {
+    const { h, s, finish } = loading({ hands: 'right' })
     const start = h.session.start()
-    h.session.setInputAvailable(true)
+    h.session.setInputAvailable(false)
     await finish(start)
-    expect(h.session.ui.get()).toMatchObject({ hands: 'right', activity: 'reading' })
+    h.step(1000)
+    expect(h.session.ui.get()).toMatchObject({ hands: 'right', playing: false, startEnabled: false })
+    expect(s.backend.ons()).toEqual([])
   })
 
   it('Listen, then an overlay opened during the load: nothing plays', async () => {
-    const { h, s, finish } = loading({ hands: 'none' })
+    const { h, s, finish } = loading({}, 'listen')
     const start = h.session.start()
     h.session.holdInput(true)
     await finish(start)
@@ -182,18 +215,17 @@ describe('Start canceled while sounds load', () => {
     expect(s.backend.ons()).toHaveLength(0)
   })
 
-  it('one-hand play-through, then an overlay opened during the load: nothing plays', async () => {
-    const { h, s, finish } = loading({ hands: 'right' })
-    h.session.setPlayThrough(true)
+  it('one-hand Follow, then an overlay opened during the load: nothing plays', async () => {
+    const { h, s, finish } = loading({ hands: 'right' }, 'follow')
     const start = h.session.start()
     h.session.holdInput(true)
     await finish(start)
     h.step(1000)
-    expect(h.session.ui.get()).toMatchObject({ playThrough: true, playing: false })
+    expect(h.session.ui.get()).toMatchObject({ mode: 'follow', playing: false })
     expect(s.backend.ons()).toHaveLength(0)
   })
 
-  it('play-through through the microphone, then an overlay while it opens: nothing plays', async () => {
+  it('Follow through the microphone, then an overlay while it opens: nothing plays', async () => {
     let open!: () => void
     const mic = {
       start: vi.fn(() => new Promise<void>((r) => (open = r))),
@@ -205,9 +237,12 @@ describe('Start canceled while sounds load', () => {
     const h = harness(
       melody,
       {},
-      { settings: testSettings({ mic: { follow: true } }), deps: { createMicFollower: () => mic } },
+      {
+        options: { mode: 'follow' },
+        settings: testSettings({ mic: { follow: true } }),
+        deps: { createMicFollower: () => mic },
+      },
     )
-    h.session.setPlayThrough(true)
     const start = h.session.start()
     await settle()
     expect(mic.start).toHaveBeenCalledTimes(1)
@@ -216,12 +251,12 @@ describe('Start canceled while sounds load', () => {
     await start
     h.frames.flush()
     h.step(1000)
-    expect(h.session.ui.get()).toMatchObject({ playThrough: true, playing: false })
+    expect(h.session.ui.get()).toMatchObject({ mode: 'follow', playing: false })
     expect(mic.resume).not.toHaveBeenCalled()
-    // Paused as an ordinary pause of play-through through the microphone, not closed.
+    // Paused as an ordinary pause of Follow through the microphone, not closed.
     expect(mic.pause).toHaveBeenCalledTimes(1)
     expect(mic.dispose).not.toHaveBeenCalled()
-    // The overlay closes: Start plays through, with the microphone already open.
+    // The overlay closes: Start follows, with the microphone already open.
     h.session.holdInput(false)
     await h.session.start()
     h.frames.flush()
@@ -383,13 +418,17 @@ describe('lead-in', () => {
 })
 
 describe('no piano', () => {
-  it('a speed change without a piano does not save lastHands none', () => {
+  it('hands and speed stay selectable and are saved', () => {
     const h = harness(melody, { hands: 'right' })
     h.session.setInputAvailable(false)
     h.session.setSelection({ multiplier: 0.5 })
+    h.session.setSelection({ hands: 'left' })
     h.frames.flush()
-    expect(h.saves.some((s) => s.patch.lastHands === 'none')).toBe(false)
-    expect(h.saves.some((s) => s.patch.lastHands === 'right' && s.patch.lastMultiplier === 0.5)).toBe(true)
+    expect(h.session.ui.get()).toMatchObject({ mode: 'wait', hands: 'left', multiplier: 0.5 })
+    expect(h.saves.map((s) => [s.patch.lastHands, s.patch.lastMultiplier])).toEqual([
+      ['right', 0.5],
+      ['left', 0.5],
+    ])
   })
 
   it('scored: disconnect + reconnect shows the disconnect interruption', async () => {
@@ -417,7 +456,7 @@ describe('no piano', () => {
     h.midi.route({ kind: 'input-disconnected', port: port as never })
     h.session.setInputAvailable(false)
     h.frames.flush()
-    expect(h.session.ui.get().hands).toBe('none')
+    expect(h.session.ui.get()).toMatchObject({ mode: 'wait', hands: 'right', startEnabled: false })
     h.midi.route({ kind: 'input-reconnected', port: port as never })
     h.session.setInputAvailable(true)
     h.frames.flush()
@@ -451,7 +490,11 @@ describe('device sound', () => {
 
   it('a browser volume change reaches the loaded device sound', async () => {
     const s = deviceSound({ setVolume: vi.fn() })
-    const h = harness(melody, { hands: 'none' }, { deps: { loadBrowserAudio: s.load, hasWebAudio: () => true } })
+    const h = harness(
+      melody,
+      {},
+      { options: { mode: 'listen' }, deps: { loadBrowserAudio: s.load, hasWebAudio: () => true } },
+    )
     h.midi.out = null
     h.session.updateSettings(testSettings())
     await h.session.start()
@@ -493,8 +536,9 @@ describe('Human-held guard on the MIDI output', () => {
     const backend = new FakeMidiBackend(() => 0)
     const h = harness(
       melody,
-      { hands: 'none' },
+      {},
       {
+        options: { mode: 'listen' },
         settings: withEcho(echo),
         deps: {
           createMidiBackend: (_out, _ch, guard) => {

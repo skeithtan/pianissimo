@@ -106,8 +106,12 @@ describe('context results', () => {
     expect(r?.assisted).toEqual([keyboard, assisted])
     // Without telling help apart (U144): equally close runs rank by recency.
     expect(r?.cleanCompletions).toEqual([keyboard, assisted, clean, lessClean])
-    expect(r?.withErrors).toEqual([withErrors])
+    expect(r?.notClean).toEqual([withErrors])
     expect(r?.incomplete).toEqual([paused])
+
+    // Keep time: no wrong note, but the music passed some.
+    const missed = attempt({ missedGroups: 2, passed: false })
+    expect(summarizeContext([missed], contextKey(comparisonContext()))?.notClean).toEqual([missed])
   })
 
   it('an assisted run never becomes the best clean run, even when it is exact', () => {

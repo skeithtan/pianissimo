@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildScore } from '../../core/engine/testkit'
 import type { OutputBackend, TimerApi } from '../../core/playback/types'
 import {
+  CAPTURE_BLOCK,
   CAPTURE_LIMIT,
   MAX_GAP_MS,
   PEDAL_TAIL_MS,
@@ -23,10 +24,16 @@ describe('PassCapture', () => {
     expect(c.pass('a1')?.keys).toHaveLength(2)
     expect(c.pass('a2')).toBeNull()
     c.begin(0)
-    for (let i = 0; i < CAPTURE_LIMIT + 10; i++) c.add(i, 60, 80, 0)
+    for (let i = 0; i < CAPTURE_LIMIT; i++) c.add(i, 60, 80, 0)
     expect(c.size).toBe(CAPTURE_LIMIT)
+    // Past the limit the oldest block goes: the latest presses are always kept.
+    for (let i = 0; i < 10; i++) c.add(CAPTURE_LIMIT + i, 62, 80, 0)
+    expect(c.size).toBe(CAPTURE_LIMIT - CAPTURE_BLOCK + 10)
     c.finish('a2')
-    expect(c.pass('a2')?.truncated).toBe(true)
+    const long = c.pass('a2')!
+    expect(long.truncated).toBe(true)
+    expect(long.keys[0]!.time).toBe(CAPTURE_BLOCK)
+    expect(long.keys.at(-1)).toMatchObject({ time: CAPTURE_LIMIT + 9, note: 62 })
     expect(c.pass('a1')).toBeNull() // only the last pass is kept
     c.begin(0)
     c.add(1, 60, 80, 0)
@@ -34,6 +41,38 @@ describe('PassCapture', () => {
     expect(c.size).toBe(0)
     c.clear()
     expect(c.pass('a2')).toBeNull()
+  })
+
+  it('after a pass takes the releases of the keys it left down, once each, and nothing else', () => {
+    const c = new PassCapture()
+    c.begin(0)
+    c.add(0, 60, 80, 0)
+    c.add(10, 64, 80, 0)
+    c.add(20, 60, 0, 0)
+    c.finish('a1')
+    c.release(40, 60) // already up
+    c.release(50, 64)
+    c.release(60, 64) // pressed again later, not in the pass
+    c.release(70, 67)
+    expect(c.pass('a1')!.keys.map((k) => [k.time, k.note, k.velocity])).toEqual([
+      [0, 60, 80],
+      [10, 64, 80],
+      [20, 60, 0],
+      [50, 64, 0],
+    ])
+  })
+
+  it('keeps the visit of a run’s presses; a run given up leaves the last pass as it was', () => {
+    const c = new PassCapture()
+    c.begin(0)
+    c.add(0, 60, 80, 4, 2)
+    expect(c.size).toBe(1)
+    c.finish('run')
+    c.begin(10)
+    c.add(10, 62, 80, 0, 3)
+    c.discard()
+    expect(c.size).toBe(0)
+    expect(c.pass('run')!.keys).toEqual([{ time: 0, note: 60, velocity: 80, group: 4, visit: 2 }])
   })
 
   it('keeps the pedals: one down before the first press, moves in the pass, the lift after it (U101)', () => {

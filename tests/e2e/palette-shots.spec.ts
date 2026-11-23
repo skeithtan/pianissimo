@@ -1,5 +1,5 @@
 /**
- * Screenshots of the Library, Settings and Connection modal in both themes, for visual review
+ * Screenshots of the Library, Settings (App, and Piano and sound) in both themes, for visual review
  * of the palette (DECISIONS A9, A12). Skipped unless APP_SHOTS=<directory outside the
  * repository> is set; files land in <dir>/<browser>/<theme>/<screen>.png.
  */
@@ -36,8 +36,8 @@ test.describe('palette screenshots', () => {
       await shot('library')
 
       await page.getByRole('button', { name: 'Settings' }).click()
-      await page.locator('dialog[open]').getByRole('tab', { name: 'General' }).click()
-      await shot('settings-general')
+      await page.locator('dialog[open]').getByRole('tab', { name: 'App' }).click()
+      await shot('settings-app')
       await page.keyboard.press('Escape')
       await expect(page.locator('dialog[open]')).toHaveCount(0)
 
@@ -45,7 +45,7 @@ test.describe('palette screenshots', () => {
       await expect(
         page.locator('dialog[open]').getByRole('heading', { name: 'Step 1: Your piano', exact: true }),
       ).toBeVisible()
-      await shot('connection-modal')
+      await shot('settings-piano')
       await page.keyboard.press('Escape')
       await expect(page.locator('dialog[open]')).toHaveCount(0)
     })

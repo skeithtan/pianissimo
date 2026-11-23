@@ -716,7 +716,7 @@ describe('StripView continuous motion and cursor action', () => {
     expect(host.querySelector('.pn-cursor')!.classList.contains('pn-action-on')).toBe(false)
   })
 
-  it('has no cursor action button at all without a handler (Study mode, U72)', () => {
+  it('has no cursor action button at all without a handler', () => {
     const { v } = view(40)
     expect(host.querySelector('.pn-cursor-action')).toBeNull()
     v.setCursorAction(true)

@@ -1,35 +1,20 @@
 import { msg } from '../../i18n/messages'
 /**
- * History for one comparison context only (spec "Results and timing"): best clean unassisted
- * runs are ranked on their own, assisted practice is listed apart and never ranked, and
- * incomplete attempts are diagnostics outside every ranking. The practice result card shows the same
- * history without telling assisted practice apart (`assistance={false}`, U144).
+ * History for one comparison context only (spec "Results and timing"): clean passes are ranked, the
+ * others are listed newest first, and incomplete attempts are diagnostics outside every ranking. Help
+ * is not told apart (U144).
  */
 import { useId, useState } from 'preact/hooks'
-import { formatSeconds, timingAccuracy } from '../../core/history'
 import type { ContextResults } from '../../core/history'
 import type { AttemptRecord } from '../../core/model/practice'
 import { Button } from '../../ui/controls'
 import { Icon } from '../../ui/icons'
-import { incompleteReason, plural, signedTime, timeText, whenText } from './format'
+import { attemptText, cleanText, signedTime, whenText } from './format'
 import styles from './results.module.css'
 
 const INITIAL_ROWS = 5
 
-type RowKind = 'clean' | 'errors' | 'assisted' | 'incomplete'
-
-function rowSummary(a: AttemptRecord, kind: RowKind): string {
-  const parts: string[] = []
-  if (kind === 'incomplete') {
-    parts.push(incompleteReason(a))
-    parts.push(plural(a.wrongAttacks, 'wrong attack'))
-  } else {
-    parts.push(timeText(a))
-    if (kind !== 'clean') parts.push(plural(a.wrongAttacks, 'wrong attack'))
-    if (kind === 'assisted') parts.push(a.assistance.level === 'keyboard' ? msg('keyboard guide') : msg('note names'))
-  }
-  return parts.join(' · ')
-}
+type RowKind = 'clean' | 'errors' | 'incomplete'
 
 function AttemptRow({
   attempt,
@@ -61,7 +46,7 @@ function AttemptRow({
           <span class={styles.rowWhen}>{whenText(attempt.createdAt, now)}</span>
           {best ? <span class={styles.badge}>{msg('Best')}</span> : null}
         </span>
-        <span class={styles.rowStat}>{rowSummary(attempt, kind)}</span>
+        <span class={styles.rowStat}>{attemptText(attempt)}</span>
         <span class={styles.rowChevron} aria-hidden="true">
           <Icon name="forward" size={18} />
         </span>
@@ -79,7 +64,6 @@ function Group({
   onSelect,
   bestId,
   now,
-  empty,
 }: {
   title: string
   note: string
@@ -89,11 +73,10 @@ function Group({
   onSelect: (id: string) => void
   bestId?: string | undefined
   now?: number | undefined
-  empty?: string
 }) {
   const [all, setAll] = useState(false)
   const headingId = useId()
-  if (attempts.length === 0 && empty === undefined) return null
+  if (attempts.length === 0) return null
   const shown = all ? attempts : attempts.slice(0, INITIAL_ROWS)
   return (
     <section class={styles.group} aria-labelledby={headingId} data-group={kind}>
@@ -101,23 +84,19 @@ function Group({
         {title} <span class={styles.count}>{attempts.length}</span>
       </h3>
       <p class={styles.muted}>{note}</p>
-      {attempts.length === 0 ? (
-        <p class={styles.emptyLine}>{empty}</p>
-      ) : (
-        <ul class={styles.rows}>
-          {shown.map((a) => (
-            <AttemptRow
-              key={a.id}
-              attempt={a}
-              kind={kind}
-              selected={a.id === selectedId}
-              best={a.id === bestId}
-              onSelect={onSelect}
-              now={now}
-            />
-          ))}
-        </ul>
-      )}
+      <ul class={styles.rows}>
+        {shown.map((a) => (
+          <AttemptRow
+            key={a.id}
+            attempt={a}
+            kind={kind}
+            selected={a.id === selectedId}
+            best={a.id === bestId}
+            onSelect={onSelect}
+            now={now}
+          />
+        ))}
+      </ul>
       {attempts.length > INITIAL_ROWS ? (
         <Button variant="ghost" onClick={() => setAll(!all)}>
           {all ? msg('Show fewer') : msg('Show all {0}', attempts.length)}
@@ -133,21 +112,12 @@ export interface HistoryPanelProps {
   readonly contextText: string
   readonly selectedId: string | null
   readonly onSelect: (attemptId: string) => void
-  /** Keeps assisted practice apart (default); the practice result card leaves help out (U144). */
-  readonly assistance?: boolean
   readonly now?: number
 }
 
-export function HistoryPanel({
-  history,
-  contextText,
-  selectedId,
-  onSelect,
-  assistance = true,
-  now,
-}: HistoryPanelProps) {
+export function HistoryPanel({ history, contextText, selectedId, onSelect, now }: HistoryPanelProps) {
   const headingId = useId()
-  const clean = assistance ? history.cleanRanking : history.cleanCompletions
+  const clean = history.cleanCompletions
   const best = clean[0] ?? null
   return (
     <section class={styles.panel} aria-labelledby={headingId} data-panel="history">
@@ -165,16 +135,10 @@ export function HistoryPanel({
 
       <div class={styles.bestRow}>
         <div class={styles.bestCard} data-state={best ? 'has-best' : 'no-best'} data-row="best-clean">
-          <h3>{assistance ? msg('Best clean unassisted') : msg('Best clean')}</h3>
+          <h3>{msg('Best clean')}</h3>
           {best ? (
             <>
-              <p class={styles.bestValue}>
-                {best.context.transport === 'strict'
-                  ? `±${Math.round(timingAccuracy(best)?.meanAbsOffsetMs ?? 0)} ms`
-                  : best.completionTimeSec === undefined
-                    ? '—'
-                    : formatSeconds(best.completionTimeSec)}
-              </p>
+              <p class={styles.bestValue}>{cleanText(best)}</p>
               <p class={styles.muted}>
                 {signedTime(best) !== null ? msg('{0} from expected · ', signedTime(best)) : ''}
                 {whenText(best.createdAt, now)}
@@ -186,11 +150,7 @@ export function HistoryPanel({
               </p>
             </>
           ) : (
-            <p class={styles.muted}>
-              {assistance
-                ? msg('No completion with zero wrong notes and no assistance yet in this setting.')
-                : msg('No completion with zero wrong notes yet in this setting.')}
-            </p>
+            <p class={styles.muted}>{msg('No completion with zero wrong notes yet in this setting.')}</p>
           )}
         </div>
         <div class={styles.bestCard} data-row="streak">
@@ -201,7 +161,7 @@ export function HistoryPanel({
       </div>
 
       <Group
-        title={assistance ? msg('Clean and unassisted') : msg('Clean')}
+        title={msg('Clean')}
         note={
           clean.some((a) => a.context.transport === 'strict')
             ? msg('Ranked by average offset from the music.')
@@ -215,27 +175,14 @@ export function HistoryPanel({
         now={now}
       />
       <Group
-        title={assistance ? msg('Unassisted, with wrong notes') : msg('With wrong notes')}
+        title={msg('Not clean')}
         note={msg('Newest first. Not ranked.')}
         kind="errors"
-        attempts={assistance ? history.unassistedWithErrors : history.withErrors}
+        attempts={history.notClean}
         selectedId={selectedId}
         onSelect={onSelect}
         now={now}
       />
-      {assistance ? (
-        <Group
-          title={msg('Assisted practice')}
-          note={msg(
-            'Note names or the keyboard guide were shown. Kept apart from your clean results and never ranked.',
-          )}
-          kind="assisted"
-          attempts={history.assisted}
-          selectedId={selectedId}
-          onSelect={onSelect}
-          now={now}
-        />
-      ) : null}
       <Group
         title={msg('Incomplete attempts')}
         note={msg(

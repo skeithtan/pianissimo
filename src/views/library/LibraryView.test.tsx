@@ -4,15 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
 import { fixtureBytes } from '../../../tests/unit/import/fixtures'
 import { existingAudioContext, resetSharedAudioContext } from '../../core/playback/webaudio/context'
-import { studyRequest, currentView, practiceRequest, settingsOpen } from '../../app/navigation'
-import { notices, resetAppStateForTests, updateSettings } from '../../app/state'
+import { currentView, practiceRequest, settingsOpen } from '../../app/navigation'
+import { notices, resetAppStateForTests } from '../../app/state'
+import { comparisonContext } from '../../core/history/testkit'
 import { attemptFor, importPiece } from '../../core/storage/testkit'
 import { $, $$, byLabel, byText, click, mount, type, type Mounted } from '../shared/testing'
 import { DEVICE_DATES, untranslatedText, useCatalog, usePseudoCatalog } from '../shared/catalogTesting'
 import { msg } from '../../i18n/messages'
 import { Library } from './LibraryView'
 import { resetPersistenceRequestForTests } from './importFlow'
-import { sessionDismissals } from './suggestionsData'
+import { sessionDismissals } from '../shared/suggestions'
 import { bytesFile, testDeps, tick, type TestDeps } from './testkit'
 
 let view: Mounted | null = null
@@ -93,10 +94,10 @@ describe('Library list', () => {
     const input = fileButton(root, 'Add score')!.querySelector('input')!
     expect(input.getAttribute('accept')).toContain('.musicxml')
     expect(input.getAttribute('accept')).toContain('.mxl')
-    // Backup and restore live in Settings → Backup.
+    // Backup and restore live in Settings → Data.
     expect(button(root, 'Export backup')).toBeUndefined()
     expect(fileButton(root, 'Restore from backup…')).toBeNull()
-    expect(root.textContent).toContain('Settings → Backup')
+    expect(root.textContent).toContain('Settings → Data')
   })
 
   it('refreshes the list when Settings close (a restore there may have added pieces)', async () => {
@@ -130,11 +131,11 @@ describe('Library list', () => {
     expect(root.textContent).not.toContain('Nothing to suggest')
     expect(button(root, 'Delete…')).toBeUndefined()
     expect(root.textContent).toContain('Anon')
-    // No piece count under the heading and no caption explaining Study.
+    // No piece count under the heading, and the Sheet music button is gone (U141).
     expect($(root, 'header h1')?.textContent).toBe('Library')
     expect($(root, 'header')!.textContent).not.toMatch(/piece/)
     expect(root.textContent).not.toMatch(/\d+ pieces?\b/)
-    expect(root.textContent).not.toContain('Study lets you')
+    expect(root.textContent).not.toContain('Sheet music')
 
     // The row's primary action is a chevron: no visible word, the same accessible name.
     const practice = byLabel(root, 'Practice Etude')!
@@ -234,21 +235,12 @@ describe('Library list', () => {
       await importPiece(deps.storage, 'v2', { title: 'Nocturne', lastOpenedAt: deps.clock })
     })
 
-    it('only closes the menu: it opens neither the row it lands on nor Study', async () => {
+    it('only closes the menu: it does not open the row it lands on', async () => {
       const root = await open()
       tap(byLabel(root, 'Options for Nocturne'))
       expect(expanded(root, 'Nocturne')).toBe('true')
 
-      // On another row's Study button.
-      tap(byLabel(root, 'Open sheet music for Etude'))
-      await settle()
-      expect(expanded(root, 'Nocturne')).toBe('false')
-      expect(currentView.value).toBe('library')
-      expect(studyRequest.value).toBeNull()
-
       // On another row's stretched Practice target (the chevron's ::after covers the row).
-      tap(byLabel(root, 'Options for Nocturne'))
-      expect(expanded(root, 'Nocturne')).toBe('true')
       tap(byLabel(root, 'Practice Etude'))
       await settle()
       expect(expanded(root, 'Nocturne')).toBe('false')
@@ -291,16 +283,39 @@ describe('Library list', () => {
     })
   })
 
-  it('Study opens the piece in the Study view and counts as opening it (U72)', async () => {
-    await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })
+  it('searches more than six pieces, with the Continue card as an ordinary row (L13)', async () => {
+    const names = ['Etude', 'Nocturne', 'Für Elise', 'Canon', 'Prelude', 'Ode', 'Waltz']
+    for (const [i, title] of names.entries())
+      await importPiece(deps.storage, `v${i}`, {
+        title,
+        lastOpenedAt: deps.clock - i,
+        ...(title === 'Für Elise' ? { repeatOpen: true, lastPassage: { fromOcc: 1, toOcc: 2 } } : {}),
+      })
     const root = await open()
-    expect(byLabel(root, 'Open sheet music for Etude')?.textContent?.trim()).toBe('Sheet music')
-    deps.clock += 5000
-    click(byLabel(root, 'Open sheet music for Etude'))
-    await until(() => currentView.value === 'study', 'navigation')
-    expect(studyRequest.value).toEqual({ pieceId: 'piece-v1' })
-    expect(practiceRequest.value).toBeNull()
-    expect((await deps.storage.getPiece('piece-v1'))?.lastOpenedAt).toBe(deps.clock)
+    const shown = () =>
+      ($$(root, 'ul[aria-label="Pieces"] > li') as HTMLElement[])
+        .filter((li) => !li.hidden)
+        .map((li) => $(li, 'h2')!.textContent)
+    expect(shown()[0]).toBe('Für Elise')
+    const field = byLabel(root, 'Search pieces') as HTMLInputElement
+    expect(field.type).toBe('search')
+    expect(document.activeElement).not.toBe(field)
+    type(field, 'e')
+    expect(shown()).toEqual(['Etude', 'Nocturne', 'Für Elise', 'Prelude', 'Ode'])
+    type(field, 'fur elise')
+    expect(shown()).toEqual(['Für Elise'])
+    expect(button(root, 'Continue practice')).toBeUndefined()
+    expect(byLabel(root, 'Practice Für Elise')).not.toBeNull()
+    expect($(root, '[data-testid="search-status"]')!.textContent).toBe('1 piece found.')
+    type(field, 'zzz')
+    expect(shown()).toEqual([])
+    expect(root.textContent).toContain('No pieces match “zzz”.')
+    click(byLabel(root, 'Clear search'))
+    expect(shown()).toHaveLength(7)
+    type(field, 'ode')
+    act(() => void field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(field.value).toBe('')
+    expect(button(root, 'Continue practice')).toBeDefined()
   })
 
   it('explains when storage cannot be opened', async () => {
@@ -377,7 +392,8 @@ describe('Rename a piece', () => {
     await importPiece(deps.storage, 'v1', { title: 'Etude' })
     const root = await open()
     click(byLabel(root, 'Options for Etude'))
-    expect($$(byLabel(root, 'Manage Etude')!, 'button')[0]?.textContent?.trim()).toBe('Rename…')
+    const items = $$(byLabel(root, 'Manage Etude')!, 'button').map((b) => b.textContent?.trim())
+    expect(items).toEqual(['Rename…', 'Progress…', 'Review hands and tempo…', 'Clear practice history…', 'Delete…'])
     click(byLabel(root, 'Options for Etude'))
 
     let d = await openRename(root, 'Etude')
@@ -433,7 +449,6 @@ describe('Rename a piece', () => {
     await until(() => dialog(root) === null, 'sheet closed')
     expect(titles(root)).toEqual(['Nocturne', 'Study in C'])
     expect(byLabel(root, 'Practice Study in C')).not.toBeNull()
-    expect(byLabel(root, 'Open sheet music for Study in C')).not.toBeNull()
     expect(byLabel(root, 'Options for Study in C')).not.toBeNull()
     expect(byLabel(root, 'Practice Etude')).toBeNull()
     expect(root.textContent).toContain('Carl Czerny')
@@ -476,15 +491,8 @@ describe('Import flow (UI)', () => {
   it('imports a ready score and opens it in Practice paused', async () => {
     const root = await open()
     pick(fileButton(root, 'Add score'), fixture('two-hands.musicxml'))
-    await until(() => button(root, 'Add and open') !== undefined, 'summary')
-    const d = dialog(root)!
-    expect(d.getAttribute('aria-label')).toBe('Add score')
-    expect(d.textContent).toContain('Hands')
-    expect(d.textContent).toContain('From the score')
-    expect(d.textContent).toContain('Score check')
-    expect(button(d, 'Add and open')!.disabled).toBe(false)
-    click(button(d, 'Add and open'))
-    // Saving closes the sheet and opens the stored score, without waiting for persistence.
+    expect(dialog(root)!.getAttribute('aria-label')).toBe('Add score')
+    // Nothing to answer (L12): saving closes the sheet and opens the score, without waiting for persistence.
     await until(() => notices.value.some((n) => /“Two Hands” is in your library\./.test(n.text)), 'saved')
     await until(() => dialog(root) === null, 'sheet closed')
     await until(() => titles(root).length === 1, 'list')
@@ -512,12 +520,9 @@ describe('Import flow (UI)', () => {
     )
     const root = await open()
     pick(fileButton(root, 'Add score'), fixture('two-hands.musicxml'))
-    await until(() => button(root, 'Add and open') !== undefined, 'summary')
-    expect(existingAudioContext()).toBeNull()
-    click(button(dialog(root)!, 'Add and open'))
+    await until(() => currentView.value === 'practice', 'practice')
     expect(existingAudioContext()).toBeNull()
     expect(resume).not.toHaveBeenCalled()
-    await until(() => currentView.value === 'practice', 'practice')
   })
 
   it('keeps Add and open disabled until a split voice is confirmed', async () => {
@@ -544,10 +549,15 @@ describe('Import flow (UI)', () => {
   })
 
   it('shows a cross-staff voice as one hand with no confirmation, and lets the user change it', async () => {
+    // A duplicate check that cannot run shows the review of a score that needs no answer.
     const root = await open()
+    const { listPieces } = deps.storage
+    deps.storage.listPieces = () => Promise.reject(new Error('busy'))
     pick(fileButton(root, 'Add score'), fixture('cross-staff.musicxml'))
     await until(() => button(root, 'Add and open') !== undefined, 'summary')
+    deps.storage.listPieces = listPieces
     const d = dialog(root)!
+    expect(d.textContent).toContain('The score could not be saved: busy.')
     expect(button(d, 'Add and open')!.disabled).toBe(false)
     expect(button(d, 'Confirm hands')).toBeUndefined()
     expect(d.textContent).toContain('From the score')
@@ -624,18 +634,19 @@ describe('Import flow (UI)', () => {
     const d = dialog(root)!
     expect(fileButton(d, 'Choose another file')).not.toBeNull()
     pick(fileButton(d, 'Choose another file'), fixture('two-hands.musicxml'))
-    await until(() => button(root, 'Add and open') !== undefined, 'summary')
+    await until(() => currentView.value === 'practice', 'practice')
   })
 })
 
 describe('Review hands and tempo of a stored piece (L5)', () => {
   async function importThroughSheet(root: HTMLElement, name: string, bpm?: string) {
     pick(fileButton(root, 'Add score'), fixture(name))
-    await until(() => button(root, 'Add and open') !== undefined, 'summary')
-    const d = dialog(root)!
-    if (button(d, 'Confirm hands')) click(button(d, 'Confirm hands'))
-    if (bpm) type(byLabel(d, 'Beats per minute'), bpm)
-    click(button(d, 'Add and open'))
+    if (bpm) {
+      await until(() => button(root, 'Add and open') !== undefined, 'summary')
+      const d = dialog(root)!
+      type(byLabel(d, 'Beats per minute'), bpm)
+      click(button(d, 'Add and open'))
+    }
     await until(() => notices.value.some((n) => /is in your library/.test(n.text)), 'saved')
     await settle(250)
     const [piece] = await deps.storage.listPieces()
@@ -697,71 +708,38 @@ describe('Review hands and tempo of a stored piece (L5)', () => {
   })
 })
 
-describe('Suggested practice (Library)', () => {
-  async function withSuggestion() {
-    const { piece } = await importPiece(deps.storage, 'v1', { title: 'Etude' })
-    for (let i = 0; i < 3; i++)
-      deps.storage.history.queueAttempt(
-        attemptFor(piece.id, [
-          [1, 'error'],
-          [2, 'clean'],
-        ]),
-      )
+describe('Progress and the Continue card’s suggestion (U148)', () => {
+  async function withSuggestion(piece: Parameters<typeof importPiece>[2] = {}) {
+    const stored = await importPiece(deps.storage, 'v1', { title: 'Etude', ...piece })
+    for (let i = 0; i < 3; i++) deps.storage.history.queueAttempt(attemptFor(stored.piece.id, [[1, 'error']]))
     await deps.storage.history.flush()
-    return piece
+    return stored.piece
   }
+  const preset = { passage: { fromOcc: 0, toOcc: 2 }, hands: 'both', multiplier: 1 }
 
-  it('shows evidence, bars with context, progress and opens Practice with the preset', async () => {
-    const piece = await withSuggestion()
+  it('the Continue card offers the first suggestion and opens it in Practice', async () => {
+    const piece = await withSuggestion({ lastPassage: { fromOcc: 1, toOcc: 2 }, repeatOpen: true })
+    const attempts = vi.spyOn(deps.storage, 'listAttempts')
     const root = await open()
-    await until(() => button(root, 'Practice this passage') !== undefined, 'suggestion')
-    expect(byText(root, 'Suggested practice', 'h2, h3, h4')).toBeNull()
-    expect(root.textContent).toMatch(/Mistakes in bar 2 on 3 of your last 3 comparable passes/)
-    expect(root.textContent).toContain('Both hands')
-    expect(root.textContent).toContain('1× speed')
-    expect(root.textContent).toMatch(/0 of 3 clean passes/)
-    const bars = $$(root, '[data-role]')
-    expect(bars.map((b) => b.getAttribute('data-role'))).toEqual(['context', 'difficult', 'context'])
-
-    click(button(root, 'Practice this passage'))
+    await until(() => button(root, 'Work on bars 1–3') !== undefined, 'suggestion')
+    click(button(root, 'Work on bars 1–3'))
     await until(() => currentView.value === 'practice', 'navigation')
-    expect(practiceRequest.value).toEqual({
-      pieceId: piece.id,
-      preset: { passage: { fromOcc: 0, toOcc: 2 }, hands: 'both', multiplier: 1 },
-    })
+    expect(practiceRequest.value).toEqual({ pieceId: piece.id, preset })
+    expect(attempts).not.toHaveBeenCalled()
   })
 
-  it('dismisses for this session only, and can be turned off and on for the piece', async () => {
+  it('an ordinary row shows none; Options opens Progress, whose suggestion opens in Practice', async () => {
     const piece = await withSuggestion()
-    let root = await open()
-    await until(() => button(root, 'Not now') !== undefined, 'suggestion')
-    click(button(root, 'Not now'))
-    await until(() => button(root, 'Practice this passage') === undefined, 'dismissed')
-    expect(root.textContent).not.toContain('Nothing to suggest')
-    // Still dismissed when the Library is opened again in this session.
-    view!.unmount()
-    root = await open()
-    await settle()
-    expect(button(root, 'Practice this passage')).toBeUndefined()
-    sessionDismissals.clear()
-
-    clickOption(root, 'Turn off suggestions for this piece')
-    await until(() => byLabel(root, 'Options for Etude')?.getAttribute('aria-expanded') === 'false', 'disabled')
-    expect((await deps.storage.loadPieceHistory(piece.id)).disabled).toBe(true)
-    clickOption(root, 'Turn on suggestions for this piece')
-    await until(() => button(root, 'Practice this passage') !== undefined, 'enabled again')
-  })
-
-  it('says when suggestions are off in Settings', async () => {
-    await withSuggestion()
-    await deps.storage.saveSettings({
-      ...(await deps.storage.loadSettings()),
-      suggestions: { enabled: false },
-    } as never)
-    updateSettings({ suggestions: { enabled: false } } as never)
+    const suggestions = vi.spyOn(deps.storage, 'loadSuggestions')
     const root = await open()
-    click(byLabel(root, 'Options for Etude'))
-    await until(() => /turned off in Settings/.test(root.textContent ?? ''), 'global off')
+    expect(suggestions).not.toHaveBeenCalled()
+    expect($$(root, 'article button').some((b) => b.textContent?.startsWith('Work on'))).toBe(false)
+    clickOption(root, 'Progress…')
+    await until(() => button(root, 'Practice these bars') !== undefined, 'progress')
+    expect(dialog(root)?.getAttribute('aria-label')).toBe('Progress')
+    click(button(root, 'Practice these bars'))
+    await until(() => currentView.value === 'practice', 'navigation')
+    expect(practiceRequest.value).toEqual({ pieceId: piece.id, preset })
   })
 })
 
@@ -810,16 +788,8 @@ describe('interface languages', () => {
       expect(untranslatedText(root)).toEqual([])
       view!.unmount()
 
-      const { piece } = await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })
-      for (let i = 0; i < 3; i++)
-        deps.storage.history.queueAttempt(
-          attemptFor(piece.id, [
-            [1, 'error'],
-            [2, 'clean'],
-          ]),
-        )
-      await deps.storage.history.flush()
-      await importPiece(deps.storage, 'v2', {
+      await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })
+      const { piece } = await importPiece(deps.storage, 'v2', {
         title: 'Nocturne',
         lastOpenedAt: deps.clock - 30_000,
         lastHands: 'right',
@@ -827,8 +797,13 @@ describe('interface languages', () => {
         lastPassage: { fromOcc: 1, toOcc: 2 },
         repeatOpen: true,
       })
+      for (let i = 0; i < 3; i++)
+        deps.storage.history.queueAttempt(
+          attemptFor(piece.id, [[1, 'error']], { context: comparisonContext({ scoreVersionId: 'v2' }) }),
+        )
+      await deps.storage.history.flush()
       root = await open()
-      await until(() => $(root, '[data-suggestion]') !== null, 'suggestion')
+      await until(() => $$(root, 'button').some((b) => b.textContent?.includes('1–3')), 'suggestion')
       const literal = ['Etude', 'Nocturne', 'Anon', 'Piano', ...DEVICE_DATES]
       expect(untranslatedText(root, literal)).toEqual([])
       click(byLabel(root, msg('Options for {0}', 'Etude')))

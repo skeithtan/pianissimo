@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act } from 'preact/test-utils'
 import { getMidiService, resetServicesForTests } from '../../app/services'
 import { connectionStatus, resetAppStateForTests, settings, updateSettings } from '../../app/state'
-import { connectionOpen, currentView } from '../../app/navigation'
+import { currentView } from '../../app/navigation'
 import { FakeAccess, FakeInput, FakeOutput, fakeNavigator } from '../../core/midi/fakeWebMidi'
 import type { MidiNavigatorLike } from '../../core/midi/webmidi'
 import { NO_MIDDLE_PEDAL_EXPLANATION } from '../../core/midi/hintPedal'
@@ -26,7 +26,6 @@ beforeEach(() => {
   resetAppStateForTests()
   resetServicesForTests()
   currentView.value = 'library'
-  connectionOpen.value = true
 })
 afterEach(() => {
   view?.unmount()
@@ -254,7 +253,6 @@ describe('Playback step: test notes, confirmation and echo (DECISIONS C11)', () 
     await settle()
     expect(settings.value.route.echo).toBe('none')
     expect(section(rig.root, 'playback').getAttribute('data-tone')).toBe('done')
-    expect(rig.root.textContent).toContain('ready for both-hands and one-hand practice')
   })
 
   it('on "No sound" suggests channel, cable direction and that a port is not proof', async () => {
@@ -324,10 +322,10 @@ describe('Hint pedal (spec acceptance "Pedal hints")', () => {
     const text = section(rig.root, 'pedal').textContent ?? ''
     expect(text).toContain('Detected: Soft (left pedal)')
     expect(text).toContain(NO_MIDDLE_PEDAL_EXPLANATION)
-    expect(text).toContain('You can enable automatic hints in Settings without a pedal')
+    expect(text).toContain('You can enable automatic hints in Reading help without a pedal')
   })
 
-  it('mirrors the hint pedal action from Settings → Pedal', async () => {
+  it('sets the hint pedal action', async () => {
     const rig = await open()
     const keys = $$(section(rig.root, 'pedal'), '[role="radio"]').find((r) => r.textContent === 'Show keys')
     click(keys)
@@ -364,7 +362,6 @@ describe('Playback step: accompaniment options', () => {
     const rig = await open()
     await connectAll(rig)
     expect(section(rig.root, 'playback').textContent).toContain('Play the test notes')
-    expect(rig.root.textContent).toContain('ready for both-hands practice. One-hand practice needs')
     updateSettings({ route: { outputVerified: true, echo: 'echo-detected' } })
     await settle()
     expect(section(rig.root, 'playback').textContent).toContain('Echo detected')
@@ -396,7 +393,7 @@ describe('Playback step: accompaniment options', () => {
   })
 })
 
-describe('Route memory and exit', () => {
+describe('Route memory', () => {
   it('reselects the remembered piano when it is plugged in later', async () => {
     updateSettings({ route: { inputId: 'in-9', inputName: 'Stage Piano' } })
     const rig = await open({ permission: 'granted' })
@@ -416,18 +413,10 @@ describe('Route memory and exit', () => {
     expect(section(rig.root, 'piano').getAttribute('data-tone')).toBe('action')
   })
 
-  it('offers a clear exit: Done closes the modal and leaves the current view alone', async () => {
-    currentView.value = 'practice'
-    const rig = await open()
-    click(byLabel(rig.root, 'Done'))
-    expect(connectionOpen.value).toBe(false)
-    expect(currentView.value).toBe('practice')
-  })
-
   it('shows each setup section with a text status without redundant navigation or connection type', async () => {
     const rig = await open()
     const sections = $$(rig.root, 'section[data-step]')
-    expect(sections.map((step) => $(step, 'h2')?.textContent)).toEqual([
+    expect(sections.map((step) => $(step, 'h4')?.textContent)).toEqual([
       'Step 1: Your piano',
       'Step 2: Playback to the piano',
       'Step 3: Hint pedal',

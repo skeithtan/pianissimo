@@ -24,7 +24,7 @@ If MIDIWeb cannot pass these checks and no acceptable existing browser does, liv
 
 Pianissimo supports US English, Spanish from Spain, French from Canada, French from France, Filipino, and Japanese. By default it uses the first supported language in the device’s ordered preferences. Spanish variants use Spanish from Spain. Canadian French uses Canadian French, and other French variants use French from France. Filipino and Tagalog preferences select Filipino. US English is the fallback.
 
-Settings → General → Language lets the player choose any supported language or return to the device preference. The choice applies immediately, persists across visits, and travels with settings backups. Score titles, composer names, instrument names, and notation supplied by the score retain their original text. The separate note-naming preference controls musical pitch names. Dates and times follow the device locale.
+Settings → App → Language lets the player choose any supported language or return to the device preference. The choice applies immediately, persists across visits, and travels with settings backups. Score titles, composer names, instrument names, and notation supplied by the score retain their original text. The separate note-naming preference controls musical pitch names. Dates and times follow the device locale.
 
 ## Main user journey
 
@@ -34,7 +34,7 @@ Settings → General → Language lets the player choose any supported language 
 
 3. Connect the piano. Test key and pedal input, then use a short playback test to confirm that the app can make the piano sound.
 
-4. Choose which hands you play: both, right, left, or neither for Preview. The connected piano plays the parts assigned to the app.
+4. Choose a mode: Listen (the app plays), Wait (the score waits for the right notes), Keep time (the score keeps going) or Follow (the score follows your playing, ungraded). Choose which hands you play, or hear in Listen: both, right or left. The connected piano plays the parts assigned to the app.
 
 5. Practice the whole piece or select a passage.
 
@@ -44,7 +44,7 @@ Settings → General → Language lets the player choose any supported language 
 
 8. Repeat a passage and compare completed attempts.
 
-The first version needs four main views: Library and Import, Connection and Pedal Setup, Practice, and Passage Results. Suggested practice appears within Library and Passage Results. Settings open without losing the selected score or passage.
+The first version needs two main views, Library and Import, and Practice, with Settings (piano connection and pedal setup under Piano and sound) and Progress over either. Progress holds a piece's suggested practice, past passes and recordings. Both open without losing the selected score or passage.
 
 ## Practice screen
 
@@ -52,7 +52,7 @@ Use landscape as the primary layout, with a usable portrait layout. Both staves 
 
 A strong vertical cursor identifies the next onset across the grand staff. Keep it approximately one-third of the way across the viewport and scroll the music beneath it, leaving substantial space to read ahead. At the beginning and end, preserve context without requiring empty score padding.
 
-The header contains the piece name, connection status, hand selector including Preview (neither hand), tempo control showing the speed multiplier and effective BPM with its beat unit, and a compact Labels control with Off, All notes, and Conditional choices. The main area contains the notation, measure numbers, current-note highlights, and loop selection. A compact footer contains Start or Pause, Listen, Repeat, Hint, Show keys, and Settings. Touch controls must be comfortable to use from a piano bench.
+One score screen per piece holds four named modes, **Listen, Wait, Keep time, Follow**. The mode is the learner's explicit choice, saved per piece; it never changes by itself. The header contains the piece name, the mode, the connection status and Settings. A compact footer contains the tempo control showing the speed multiplier and effective BPM with its beat unit, the hand selector around the main button (Play or Pause in Listen; Start, Pause or Resume otherwise), and a menu with the mode's settings: note names (Off, All notes, Conditional), Playback in Keep time, the input in Follow, the metronome, Show keys, Progress and Record performance. Where the header has no room for the four modes, and on a phone, one control names the mode and opens a sheet with each mode and its description. The main area contains the notation, measure numbers, current-note highlights, and loop selection. Touch controls must be comfortable to use from a piano bench.
 
 Keep clef, key signature, and current meter available at the viewport edge when their original symbols scroll away. Pinch zoom changes notation size; it does not change musical timing. Keep the current event visible when zooming.
 
@@ -66,7 +66,7 @@ MusicXML is the only supported score import format. Accept .musicxml and compres
 
 If an import contains several scores or movements, let the user select one. Malformed XML, damaged compressed files, and unsupported score structures must produce readable diagnostics.
 
-Show an import summary with the score preview, selected piano parts, hand assignments, numerical tempo, and any missing or unsupported information. Check pitches and octaves, ottava markings and their scope, durations, chords, rests, ties, tuplets, staff and voice structure, repeats, and tempo changes before enabling scored practice. A format's ability to represent a feature does not guarantee that an exported file contains it. Ambiguous hand assignments require confirmation; missing numerical tempo requires a practice tempo. [MusicXML score and notation structure](https://www.w3.org/2021/06/musicxml40/tutorial/notation-basics/).
+When the score is the only choice in its file, states its tempo and hands, has nothing to report as missing or unsupported, and is not in the library yet, save it and open it at once, paused. Otherwise show an import summary with the score preview, selected piano parts, hand assignments, numerical tempo, and any missing or unsupported information. Check pitches and octaves, ottava markings and their scope, durations, chords, rests, ties, tuplets, staff and voice structure, repeats, and tempo changes before enabling scored practice. A format's ability to represent a feature does not guarantee that an exported file contains it. Ambiguous hand assignments require confirmation; missing numerical tempo requires a practice tempo. [MusicXML score and notation structure](https://www.w3.org/2021/06/musicxml40/tutorial/notation-basics/).
 
 Retain the original MusicXML source and its packaging locally. The import pipeline produces a structured musical model, engraved notation, and a playback representation entirely in the browser. Rendering a readable score alone does not establish that its notes, timing, or hand assignments are correct.
 
@@ -118,7 +118,7 @@ Correctness means sounding pitch, including octave. An active ottava marking is 
 
 The cursor never passes a required onset until its notes are correct. It is not forced forward by a metronome. Rests, note lengths, and expressive details remain part of the music and reference timing, but this mode does not enforce them as pitch gates.
 
-Settings → Hints has one **Rushing and Dragging indicators** switch, on by default. Turning it off hides the live timing label, its reserved row, and the matching cursor tint in Practice, Keep time, and MIDI following. Timing measurements and results continue.
+Settings → Reading help → Hints has one **Rushing and Dragging indicators** switch, on by default. Turning it off hides the live timing label, its reserved row, and the matching cursor tint in Practice, Keep time, and MIDI following. Timing measurements and results continue.
 
 Use the theme's default cursor color whenever the live timing cue is absent. Use slate blue while **Rushing** is visible and copper while **Dragging** is visible. Show the cue as a borderless rectangular pill close above the active staff, clear of notation and aligned horizontally with the score cursor. In the strip, set the height from the full engraving’s top. In page view, scroll the active system to a consistent reading position just below the cue. Keep the cue at one height through note and direction changes. Sweep a single gradient behind the label and the chevrons in the direction the chevrons move. Keep both static when Reduced Motion is enabled.
 
@@ -220,15 +220,15 @@ Showing this guide marks the attempt as keyboard-assisted even if the player sub
 
 ## MIDI input, output, and pedal controls
 
-The connection view lists MIDI inputs and outputs separately. Select one piano input and a verified output destination, with the piano's supported receive channel or part. Provide live key and pedal input tests and an explicit Play test note action to confirm audible output. Remember the route and its tested channel/pedal behavior. For traditional MIDI sockets, the piano's MIDI Out feeds the interface's MIDI In, and the interface's MIDI Out must also connect to the piano's MIDI In for automatic playback.
+While no piano is connected and none is remembered, the Library offers to connect one in place: it asks for access, takes the only piano or lists several, and waits for one key. The connection view lists MIDI inputs and outputs separately. Select one piano input and a verified output destination, with the piano's supported receive channel or part. Provide live key and pedal input tests and an explicit Play test note action to confirm audible output. Remember the route and its tested channel/pedal behavior. For traditional MIDI sockets, the piano's MIDI Out feeds the interface's MIDI In, and the interface's MIDI Out must also connect to the piano's MIDI In for automatic playback.
 
-Physical-piano playback is required for the default one-hand and Preview modes. Send the app's assigned notes, releases, velocity, and supported controller events through MIDIOutput. A visible output port is not proof that the connected instrument can sound it. If no working receiving route exists, explain the missing capability and disable physical-piano playback. Browser sound may be offered as an explicitly chosen alternative; it must not silently substitute for the required instrument output. [Web MIDI output](https://www.w3.org/TR/webmidi/#midioutput-interface).
+Physical-piano playback is required for the default one-hand practice and Listen. Send the app's assigned notes, releases, velocity, and supported controller events through MIDIOutput. A visible output port is not proof that the connected instrument can sound it. If no working receiving route exists, explain the missing capability and disable physical-piano playback. Browser sound may be offered as an explicitly chosen alternative; it must not silently substitute for the required instrument output. [Web MIDI output](https://www.w3.org/TR/webmidi/#midioutput-interface).
 
-Keep keyboard input and automatic output separate. Prefer an echo-free route or verified distinct ports/channels. Standard MIDI input carries no trustworthy application-origin tag: do not discard a real key press merely because its pitch and timing resemble a recently sent note. If returned playback cannot be distinguished from human input, disable graded accompaniment for that routing until it is corrected. Preview can run without grading, but must not forward received echoes back to the output.
+Keep keyboard input and automatic output separate. Prefer an echo-free route or verified distinct ports/channels. Standard MIDI input carries no trustworthy application-origin tag: do not discard a real key press merely because its pitch and timing resemble a recently sent note. If returned playback cannot be distinguished from human input, disable graded accompaniment for that routing until it is corrected. Listen can run without grading, but must not forward received echoes back to the output.
 
-Keep the piano's local keyboard sound enabled by default and send only the automatically assigned part. Do not automatically retransmit the learner's notes, change Local Control, change the instrument's patch, or reset every channel. Prefer an independent receive channel/part for accompaniment, and verify that its releases do not cut off a human-held note of the same pitch. If a pitch starts simultaneously in both the learner and automatic part, require the learner's attack and suppress the redundant automatic attack; in Preview, merge simultaneous unisons. Track app-owned notes and overlapping voices separately so an older release does not prematurely stop a newer note.
+Keep the piano's local keyboard sound enabled by default and send only the automatically assigned part. Do not automatically retransmit the learner's notes, change Local Control, change the instrument's patch, or reset every channel. Prefer an independent receive channel/part for accompaniment, and verify that its releases do not cut off a human-held note of the same pitch. If a pitch starts simultaneously in both the learner and automatic part, require the learner's attack and suppress the redundant automatic attack; in Listen, merge simultaneous unisons. Track app-owned notes and overlapping voices separately so an older release does not prematurely stop a newer note.
 
-Preview sends the supported score pedal events. In one-hand practice, the pianist controls shared pedals by default; send automatic pedal changes only when their effect is verified to be confined to the automatic part. Do not let two independent pedal sources fight over the same receiving part. The assigned hint pedal retains its input function. An accompaniment-level control changes only app-generated playback, using velocity scaling unless isolated channel-volume behavior is verified.
+Listen sends the supported score pedal events. In one-hand practice, the pianist controls shared pedals by default; send automatic pedal changes only when their effect is verified to be confined to the automatic part. Do not let two independent pedal sources fight over the same receiving part. The assigned hint pedal retains its input function. An accompaniment-level control changes only app-generated playback, using velocity scaling unless isolated channel-volume behavior is verified.
 
 Required input handling includes Note On, Note Off, velocity, timestamps, channels, and pedal controller messages. Treat Note On with zero velocity as a release. Preserve continuous pedal values where the device provides them. Separate physically depressed keys from sustained sounding notes.
 
@@ -256,13 +256,15 @@ The default pass condition is completion with zero wrong-note attacks. Assistanc
 
 After each attempt, show a compact result while preserving the score. Finish any remaining automatic part to the passage boundary and release app-owned output, then wait for physical keys and every sound-retaining pedal, including sustain and sostenuto where supported, to be released, then finish reset and return directly to Ready at the passage's beginning. The next attempt's clock starts only on its first fresh human key press; restarting the automatic part does not start it. Reset matching state, local error counts, and temporary hint visibility; retain the passage, settings, and qualifying persistent score labels. Record visible persistent labels in the next attempt's assistance data.
 
+A Wait run outside Repeat that reaches the end of the piece shows the same compact result. Pausing, moving through the score, browsing, changing speed or labels, and a piano unplugged and reconnected never end the run; changing hands or mode, opening Repeat, restarting, and leaving do. Listen and Follow show no result. The collapsed result has no actions except to hide it: it is the top of the expanded result, visibly cut off, and all of it expands. The expanded result offers its actions directly under its verdict. Outside Repeat, or once its goal ends it, one is to play again. For a Wait or Keep time run outside Repeat with mistakes, another, naming the printed bars, is to loop the bars it went worst in. It opens Repeat over them, paused at their start, in the same mode, and starts nothing. Wrong notes and groups the music passed make bars rough; timing alone does not.
+
 At a loop start inside an existing tie or held note, require a new attack for any note that should already be active and mark it as a practice-boundary reattack. At the loop end, stop the practice segment without waiting for sound or reverb to decay. Keep source notation unchanged.
 
 Changing hands, tempo, range, or score position during a scored attempt interrupts that attempt and creates a new comparison context. After a tempo change, the next scored attempt starts at the selected passage's beginning using the new tempo and recalculated target duration. During ordinary unscored reading, tempo changes reschedule automatic playback and the metronome without skipping the current learner target. A disconnect, pause during a scored attempt, or background suspension never records a failed or successful completed performance.
 
 ## Suggested practice
 
-Add a Suggested practice section to the piece's Library view and Passage Results. It identifies recurring trouble in previously played bars and offers a focused loop. Show up to three suggestions, updated between attempts; never interrupt playing or change the selected passage automatically.
+Show the piece's suggested practice first in Progress, under Work on next, and its first suggestion on the Library's Continue card. It identifies recurring trouble in previously played bars and offers a focused loop. Show up to three suggestions, updated between attempts; never interrupt playing or change the selected passage automatically.
 
 Each suggestion shows the affected bars, selected hand and practice tempo, a small notation preview, and the evidence behind it. Use specific language instead of an absolute claim such as “You always make mistakes here.” Example: “Mistakes in bar 13 on 3 of your last 5 comparable passes. Practice bars 12–14?” This is example interface copy, not recorded user data.
 
@@ -282,13 +284,13 @@ Merge adjacent flagged bars before ranking suggestions. Rank by the recent propo
 
 Add one context bar before and after the problem area where available. Distinguish these context bars from the bars identified as difficult. For a long cluster, propose manageable passages of at most eight bars and allow the player to adjust the boundaries.
 
-A Practice this passage button opens the existing repeat workflow with the suggested range, hand selection, and tempo already selected. The player can review the range, listen, change settings, or start. Changing tempo or hand creates a separate comparison context and does not erase the original suggestion.
+A Practice these bars button opens the existing repeat workflow with the suggested range, hand selection, and tempo already selected, in place when pressed over the score. The player can review the range, listen, change settings, or start. Changing tempo or hand creates a separate comparison context and does not erase the original suggestion.
 
 ### Recognizing improvement
 
 Once flagged, a suggestion remains active until every flagged bar has three consecutive complete, clean traversals in the same comparison context. Clean means zero wrong attacks; assistance (persistent note labels, temporary hints, or keyboard hints) is recorded but does not affect it. An error-bearing traversal resets that bar's clean streak. Partial traversals never advance it; observed mistakes in a partial traversal break it. Merely falling below the rolling detection threshold does not remove the suggestion.
 
-Show progress, such as “2 of 3 clean passes,” and move resolved suggestions to an Improved section. New recurring errors can flag the passage again. Context bars do not need to be mastered to resolve a suggestion.
+Show progress, such as “2 of 3 clean passes,” and move resolved suggestions to a folded Improved section. New recurring errors can flag the passage again. Context bars do not need to be mastered to resolve a suggestion.
 
 Allow the player to dismiss a suggestion for the current session, disable suggestions, or clear the piece's practice history. Persist measure histories, active suggestions, and recovery streaks locally with the existing export and restore data. No cloud analysis is required.
 
@@ -325,25 +327,46 @@ Apply the same multiplier to reference playback, its cursor, note and pedal even
 
 Missing numerical tempos require user input to establish the reference tempo before relative speed controls can be used. Unresolved fermatas, rubato, and annotation-only tempo changes remain timing-unscored until a policy is explicitly supplied; changing speed does not resolve them.
 
+A Wait run outside Repeat is not an attempt: its result has no completion time, streak, or goal, and it is not stored. For each onset group it counts the latest time the group was played in the run, so playing on from an earlier bar replaces what was played there before and jumping ahead keeps it; groups never played are not counted. It is clean without wrong notes or assistance in what it counts. Its reading still feeds suggested practice as before.
+
 A faster result is not automatically better. Rushing can cancel a hesitation in the total. Preserve onset timestamps for later rhythm analysis, but do not label total elapsed time as rhythm accuracy.
 
-Assisted and unassisted attempts must remain distinguishable. Compare results only for the same score version, selected passage occurrences, hands, tempo map and speed, reference-roll realization policy, accompaniment/transport mode, and matching rules. Show best clean unassisted performance separately from assisted practice. Incomplete attempts retain diagnostics but do not enter completion rankings.
+Assisted and unassisted attempts must remain distinguishable. Compare results only for the same score version, selected passage occurrences, hands, tempo map and speed, reference-roll realization policy, accompaniment/transport mode, and matching rules. Progress lists the stored attempts of the current score version by that comparison context, the most recent first, with the number of passes, the best clean one and the last; help is recorded and does not matter to what is clean. Incomplete attempts retain diagnostics but do not enter completion rankings.
 
 Because the app waits for every required pitch, a completed attempt cannot contain an omitted required note. Do not invent a “missed notes” metric for this mode.
 
 ## Performance recordings
 
 Record performance captures the selected piano's incoming MIDI and a user-visible audio input
-in the same take. Prefer the piano's USB audio input when identifiable. Show its name and an
-input meter before starting. Start a take from the menu of either score view, with a button that
-carries a red record circle. The header shows recording controls only during a take. During a take, a red light and elapsed time sit beside Stop, clear of the score timeline. These controls
-use the header on wider screens and a footer on portrait phones. Focus mode keeps Stop and the
-recording timer visible and tappable. The adjacent piano connection pill stays visible too. The ZIP
-filename includes the date, time, and UTC offset when capture started. Stop saves both files
-together on this device. Download offers one ZIP with a Standard MIDI File and a PCM WAV.
+in the same take. Prefer the piano's USB audio input when identifiable. Start a take from the menu of either score view, with a button that
+carries a red record circle.
 
-Recordings in the Library keeps takes available for listening, comparison, download, and
-confirmed deletion. Each take shows a note accuracy percentage and counts of matched, missing,
+The first take opens a setup sheet: the learner enables audio input, chooses the input by name,
+checks it with an input meter, and starts. A take that starts from the sheet remembers its input on
+this device, and the sheet says so. From then on, with a connected piano, Record performance opens
+that input and starts the take as soon as it is open, with no sheet. While it opens, its place shows
+so, with a way to cancel. Check that the opened input is the remembered one, by its device ID or, when
+the browser has given out new IDs, by its name, and never record from another source. When the
+remembered input is missing, permission is refused, or anything fails, and whenever no piano is
+connected, open the setup sheet with the reason. Settings → Piano and sound names the remembered input and can
+forget it. A restored backup keeps this device's own.
+
+The header shows recording controls only during a take. During a take, a red light and elapsed time sit beside Stop, clear of the score timeline. These controls
+use the header on wider screens and a footer on portrait phones. Focus mode keeps Stop and the
+recording timer visible and tappable. The adjacent piano connection pill stays visible too. Stop saves
+the MIDI and the audio together on this device and leaves the score in view: where the controls were, a
+pill says that the take is saved, or that it was interrupted, with its note accuracy percentage and
+buttons to listen to the take, to open Recordings at it, and to close the pill. The pill stays until it
+is closed, another take starts, the score starts playing, or the learner leaves the screen, and its
+sound stops with it. Another take can start from the menu while it shows. A take that could not be
+saved opens Recordings instead, where it can be saved again or downloaded. No audio input stays open
+after Stop.
+
+Download offers one ZIP with a Standard MIDI File and a PCM WAV. The ZIP
+filename includes the date, time, and UTC offset when capture started.
+
+Progress keeps a piece's takes available for listening, comparison, download, and confirmed deletion;
+Settings → Data opens the list of every take, of deleted pieces included. Each take shows a note accuracy percentage and counts of matched, missing,
 and extra attacks for its selected hands and passage. Mark the highest score among comparable
 takes, including ties. Interrupted takes retain both files and their score. A take shows a notice
 at 20 minutes and stops, saved, at 60. Include recordings in the full backup and restore by default,
@@ -351,18 +374,18 @@ with a switch that shows their size and leaves them out.
 
 ## Listening and hand practice
 
-Preview (neither hand), also available through Listen, sends both parts of the whole piece or selected passage to the connected piano. Start playback immediately after the user's Play action using the score's tempo map, repeat order, dynamics, supported pedals, and a moving cursor. Keep the score in its normal ink as the cursor follows playback. No learner input is required and no mistakes, practice score, or performance stopwatch are recorded. Retain optional listening filters for hearing just the left or right part.
+Listen sends the chosen hands' parts of the whole piece or selected passage, both by default, to the connected piano. Start playback immediately after the user's Play action using the score's tempo map, repeat order, dynamics, supported pedals, and a moving cursor. Keep the score in its normal ink as the cursor follows playback. No learner input is required and no mistakes, practice score, performance stopwatch, or resume position are recorded.
 
-Provide Play, Pause, Stop, return to passage start, playback level, and speed controls. Sound starts after an explicit user action. Stopping, seeking, or switching modes cancels queued output and releases app-owned notes and controllers in the selected output backend. During Preview, tempo changes take effect from the current musical position without restarting the piece. Reschedule future attacks, releases, and pedal changes together so sound and cursor stay synchronized without skipped, duplicated, or stuck notes.
+Provide Play, Pause, Stop, return to passage start, playback level, and speed controls. Sound starts after an explicit user action. Stopping, seeking, or switching modes cancels queued output and releases app-owned notes and controllers in the selected output backend. Switching modes keeps the cursor and starts nothing. During Listen, tempo changes take effect from the current musical position without restarting the piece. Reschedule future attacks, releases, and pedal changes together so sound and cursor stay synchronized without skipped, duplicated, or stuck notes.
 
-Choose which hands the learner plays. The app automatically plays the complementary part on the connected piano in the first release.
+Choose which hands the learner plays. At least one hand is always chosen, in every mode. The app automatically plays the complementary part on the connected piano in the first release. When it is not yet known where that part can sound without being taken for the learner's playing, Start asks: on the piano, after the test notes were heard and did not come back, or on this device. Wait and Keep time need a connected piano: without one the mode and the hands stay chosen, the main button is unavailable, and the reason is shown with a way to connect one. Follow uses the connected piano, or the microphone without one. Listen needs neither.
 
 | Learner selection | Learner plays | Connected piano plays automatically | Grading |
 | --- | --- | --- | --- |
 | Both hands | Both parts | Neither part | Both parts |
 | Right hand | Right part | Left part | Right part only |
 | Left hand | Left part | Right part | Left part only |
-| Neither / Preview | Neither part | Both parts | None |
+| Listen, any hands | Neither part | The chosen parts | None |
 
 Only learner-assigned parts create required onset groups. In one-hand practice, show the current learner targets in purple and accepted notes in green. The automatically played part uses normal score ink throughout playback. Assign hands by the confirmed musical voices, including cross-staff passages. Human presses outside the current learner targets can be errors even when they double an automatic part. Automatic accompaniment is part of the selected practice mode, not note-name or keyboard-guide assistance.
 
@@ -372,12 +395,12 @@ A correct fresh attack for the current learner group may be accepted early while
 
 Start or a repeat restart may play a genuine automatic-part introduction before the first learner onset. The attempt is Ready once preparation is complete, independently of whether automatic playback has begun. Its performance clock still starts only on the first fresh human key press, including a wrong press; an early press during the introduction is processed against the current learner group rather than silently discarded. The transport or an automatic note never starts that clock. If enabled, the metronome follows the musical transport during accompaniment.
 
-The learner's measured completion time ends on the final missing correct attack. If that attack was early, wait for its musical position before completing transport progression. Let the remaining automatic part reach the passage boundary before resetting a loop; this final automatic passage and output cleanup are outside the learner's measured time. Preview loops use only the musical transport and create no practice attempts.
+The learner's measured completion time ends on the final missing correct attack. If that attack was early, wait for its musical position before completing transport progression. Let the remaining automatic part reach the passage boundary before resetting a loop; this final automatic passage and output cleanup are outside the learner's measured time. Listen loops use only the musical transport and create no practice attempts.
 
-The connected piano is the default sound source for the learner's local playing, automatic accompaniment, and Preview. Select a single automatic output destination to avoid doubled playback. Browser synthesis remains an explicit alternative for previewing without a receiving instrument or for an intentionally selected browser-audio configuration; optional monitoring for a silent controller is separate. Its availability does not establish compatibility with the required physical-piano output.
+The connected piano is the default sound source for the learner's local playing, automatic accompaniment, and Listen. Select a single automatic output destination to avoid doubled playback. Browser synthesis remains an explicit alternative for listening without a receiving instrument or for an intentionally selected browser-audio configuration; optional monitoring for a silent controller is separate. Its availability does not establish compatibility with the required physical-piano output.
 
 The metronome click and Keep time count-in follow the system audio output by default. A piano
-with USB audio can play the click through its speakers. Settings → Sound → Metronome offers
+with USB audio can play the click through its speakers. Settings → Piano and sound → Metronome offers
 Test click and remembers a separate audio output where the browser supports selecting one.
 Use system audio when a saved output cannot be opened.
 
@@ -385,7 +408,7 @@ The Keep time count-in uses the opening meter and selected practice tempo. Count
 
 Playback is a reference performance generated from the common score model and sent to the selected sound destination. For MusicXML imports, use supported numerical tempo, dynamics, and pedal instructions when present; notation-only or missing expressive instructions require a defined interpretation. [MusicXML playback parameters](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/sound/).
 
-Keep time can optionally play the complete reference performance while the learner plays. The Practice menu shows **Playback** as a switch inside **Keep time** when the mode is on and the learner has selected a hand. The switch is off by default and independent of the metronome. Turning it on reveals a saved playback volume slider below it. The switch and volume slider work during the count-in and while the loop plays. Changes apply to upcoming notes on the same clock. Both parts play from the first downbeat after the count-in, at the selected speed, over the piece or current loop. Keep time continues to grade the selected hands from the learner's MIDI input on the same clock. Use the selected sound destination and require verified, echo-free MIDI output when it is the destination. Compare attempts that used Playback at any point after the count-in separately.
+Keep time can optionally play the complete reference performance while the learner plays. In Keep time the Practice menu shows **Playback** as a switch while a piano is connected. The switch is off by default and independent of the metronome. Turning it on reveals a saved playback volume slider below it. The switch and volume slider work during the count-in and while the loop plays. Changes apply to upcoming notes on the same clock. Both parts play from the first downbeat after the count-in, at the selected speed, over the piece or current loop. Keep time continues to grade the selected hands from the learner's MIDI input on the same clock. Use the selected sound destination and require verified, echo-free MIDI output when it is the destination. Compare attempts that used Playback at any point after the count-in separately.
 
 For notation-only rolled chords, create a deterministic reference performance. Use the marked direction, defaulting to low-to-high when no arrow is supplied. A shared cross-staff arpeggiation uses one sweep; independently marked rolls start together. Proposed default total spread from first to last attack is 120 ms at 1×, shortened when necessary to at most half the interval from the written onset to either the next written attack or the earliest affected note ending, whichever comes first. Space the roll's distinct fresh pitches evenly within that span and preserve their notated ending times. A single fresh pitch has zero spread. If source-resolved performance timings already specify the roll, preserve them and do not add another spread. Derive this full-piece realization before filtering to either hand, then scale all its timings with the selected tempo multiplier. Keep written score positions unchanged and store reference attack offsets separately. The spread supplies playback and the expected completion-time endpoint; it never becomes a deadline or hold requirement for the player's chord.
 
@@ -394,7 +417,8 @@ For notation-only rolled chords, create a deterministic reference performance. U
 | Setting | Default |
 | --- | --- |
 | Practice behavior | Wait for correct pitches |
-| Active hands | Both; right-only and left-only include automatic accompaniment, and neither selects Preview |
+| Mode | The piece's own; a new piece opens in Wait with a piano connected or remembered, else in Listen |
+| Active hands | Both; right-only and left-only include automatic accompaniment, and in Listen choose what is heard |
 | Automatic sound destination | Verified MIDI output to the connected piano |
 | Accompaniment synchronization | Selected tempo between learner onsets; wait at incomplete learner groups |
 | Persistent score labels | Off; All notes and Conditional available |
@@ -542,7 +566,7 @@ Prefer device wake prevention where the browser supports it, but recover correct
 | Responsiveness | Proposed target: 95% of received MIDI events produce visible feedback within 50 ms. Measure from browser receipt to display, and report transport latency separately. |
 | Endurance | A 30-minute practice session retains reliable matching, audio, pedal state, and saved progress. |
 | Suggested practice | Three error-bearing complete passes out of five flag a bar; one bad pass does not. Unvisited or partial bars never count as clean, and device interruptions do not trigger repeated-restart suggestions. |
-| Suggested passage action | Practice this passage opens the correct bars, hand, and tempo with context clearly distinguished. Suggestions never interrupt an active performance. |
+| Suggested passage action | Practice these bars opens the correct bars, hand, and tempo with context clearly distinguished. Suggestions never interrupt an active performance. |
 | Suggestion recovery | Three consecutive clean traversals, with or without assistance, resolve each flagged bar. Practice at another tempo and partial passes cannot falsely resolve it. |
 | Supported file formats | .musicxml and .mxl import directly; .xml is accepted only when it contains a MusicXML score. No other score import format is supported. |
 | MusicXML import validation | Malformed XML and compressed files receive clear errors. Missing numerical tempo and ambiguous hand assignments are resolved before scored practice; unsupported musical content is never silently dropped. |
@@ -560,12 +584,13 @@ Prefer device wake prevention where the browser supports it, but recover correct
 | Import memory lifecycle | Import, cancellation, failure, and repeated imports dispose of worker and temporary resources. The device stays responsive and does not reload or accumulate import memory. |
 | First-key timing | Start enters Ready without starting the clock. Idle waiting, hints, pedals, releases, and zero-velocity Note On do not start it. The first fresh positive-velocity Note On starts timing and is processed once, whether correct or wrong. |
 | Immediate repeat readiness | After keys and sound-retaining pedals are released and reset finishes, the next loop enters Ready directly. Reset time is excluded, stale held notes cannot satisfy it, and a hint-pedal press in Ready neither starts timing nor cancels readiness. |
-| Physical-piano Preview | Neither / Preview plays both parts audibly through the selected MIDI output, at the chosen tempo, with no learner input, errors, performance timer, or saved practice result. Browser sound never silently substitutes. |
+| Modes | Listen, Wait, Keep time and Follow can be chosen on every screen size. A mode changes only by the learner's choice and is kept per piece. Changing it stops what plays, keeps the cursor and starts nothing. Without a piano Wait and Keep time stay chosen and say why they cannot start. |
+| Physical-piano Listen | Listen plays the chosen hands audibly through the selected MIDI output, at the chosen tempo, with no learner input, errors, performance timer, or saved practice result or position. Browser sound never silently substitutes. |
 | Accompaniment waiting | The automatic part follows tempo between learner onsets, plays its due notes once, and waits at an incomplete learner group. Early correct attacks remain counted, but cannot move the transport ahead of musical time. Resumption produces no repeated or burst playback. |
 | Accompaniment timing | A genuine automatic introduction can play before the first human press without starting the stopwatch. A first human press, correct or wrong, starts it; output never does. Automatic endings and reset are excluded after the final required attack. |
-| Output echo and ownership | Returned automatic notes cannot advance matching, start timing, trigger hints, or count as mistakes. Genuine simultaneous same-pitch human attacks remain detectable. Preview unisons, overlapping voices, shared learner pitches, and pedal ownership pass the actual-instrument tests. |
+| Output echo and ownership | Returned automatic notes cannot advance matching, start timing, trigger hints, or count as mistakes. Genuine simultaneous same-pitch human attacks remain detectable. Listen unisons, overlapping voices, shared learner pitches, and pedal ownership pass the actual-instrument tests. |
 | MIDI output recovery | Pause, Stop, seeking, mode changes, tempo changes, and reconnection cancel obsolete output and clean up app-owned notes/controllers without cutting off unrelated learner sound. Test USB and BLE independently, including unavailable output and disconnection. |
-| MIDI-only resource use | Physical-piano preview and accompaniment run without fetching or decoding the browser piano sample bank. |
+| MIDI-only resource use | Physical-piano Listen and accompaniment run without fetching or decoding the browser piano sample bank. |
 
 These are release targets, not measured results. The device and import proofs must pass before committing to the full feature implementation.
 

@@ -1,5 +1,5 @@
 /** Test helpers for the Connection view. */
-import type { EchoClock } from './PlaybackStep'
+import type { EchoClock } from './testNotes'
 
 /** A clock whose timers fire only when the test says so (the test notes' listening window). */
 export function manualClock(): EchoClock & { fire(): void } {

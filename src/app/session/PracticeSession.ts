@@ -10,32 +10,39 @@ import { msg } from '../../i18n/messages'
  * the Preact view subscribes to changes per MIDI event: `ui` changes only on coarse state
  * changes, `progress` / `feedback` / `guide` at most once per frame.
  *
- * Modes (DECISIONS P1, U9, U10): with Repeat mode closed, Start = ordinary reading from the
- * current position; with Repeat mode open, Start = a scored attempt over the loop, repeated
- * (the loop is remembered while Repeat is closed). Both hands off = Listen (Preview); a hand
- * back on returns to practice. Playback goes to the piano, or this device without one (Auto, S4).
- * All practice follows a gated musical transport. Both hands uses a silent transport; one-hand
- * practice adds the automatic part. The score holds at each learner onset until it is played.
+ * Modes: the learner's own choice (`setMode`), which never changes by itself. Listen plays the
+ * chosen hands; Wait, Keep time and Follow expect the learner to play them. Changing it stops
+ * what plays, keeps the cursor where it is and starts nothing. Listen and Follow record nothing
+ * and never move the saved position.
  *
- * Lead-in (Repeat mode): a seek before the loop reads, unscored, from there to the loop start
+ * Wait (DECISIONS P1, U10): with Repeat mode closed, Start = ordinary reading from the current
+ * position; with Repeat mode open, Start = a scored attempt over the loop, repeated (the loop is
+ * remembered while Repeat is closed). It follows a gated musical transport: both hands uses a
+ * silent one, one hand adds the automatic part. The score holds at each learner onset until it is
+ * played. Playback goes to the piano, or this device without one (Auto, S4). A reading that reaches
+ * the end of the piece shows the result of its run (U142, `run.ts`): what was played since it began,
+ * whatever pauses, jumps, speed changes and disconnects it went through.
+ *
+ * Lead-in (Wait in Repeat mode): a seek before the loop reads, unscored, from there to the loop start
  * on one transport over [lead-in, loop end); when the lead-in's last group is done the scored
  * attempt over the loop takes over at once and the music plays on into it (its gates follow the
  * lead-in's). Repeats then use the loop's own transport. A seek inside the loop (or after it)
  * reads, unscored, from there to the loop end (or the piece end), then wraps to the loop start
  * where the attempt is live at once on the loop's own transport.
  *
- * Play-through (DECISIONS P12): a performance aid beside the engine, wired like Listen. Its own
+ * Follow (DECISIONS P12): a performance aid beside the engine, wired like Listen. Its own
  * gated transport over the whole piece and a `PlayFollower` (core/engine/follow.ts) that decides
  * when each gate is released: the group was played, the learner moved on to one of the next
  * groups, or the patience after the transport's arrival ran out. Human events go to the
  * follower instead of the engine; the engine stays paused at its position and records nothing.
+ * Repeat is put away meanwhile and comes back as it was when Follow is left.
  *
- * Keep time (rhythm mode, DECISIONS P13): every Start is a scored attempt on the strict transport
+ * Keep time (DECISIONS P13): every Start is a scored attempt on the strict transport
  * (over the loop in Repeat mode, else from the cursor to the end). When the engine is Ready a one-bar
  * count-in clicks through the metronome sink; at its end the transport plays and the engine's
  * clock starts at the same timestamp. The music never waits: every gate is released (ahead of
  * time, so timer jitter never delays the music) and each arrival is reported to the engine, which
- * judges every group against it. Exclusive with play-through; lead-ins are off.
+ * judges every group against it. It has no lead-ins.
  */
 import {
   CHORD_SLIP_MS,
@@ -61,8 +68,14 @@ import { NATURAL, labelFor, labelForMidi } from '../../core/naming'
 import type { MidiRouteEvent } from '../../core/midi/adapter'
 import { CC_ALL_NOTES_OFF, type MidiInputEvent } from '../../core/midi/types'
 import { onsetPositions, passageFromBounds, passageKey, samePassage } from '../../core/model/passage'
-import { contextKey, type AttemptRecord, type InterruptReason, type PassageRange } from '../../core/model/practice'
-import type { HandSelection, ScoreModel } from '../../core/model/score'
+import {
+  contextKey,
+  type AttemptRecord,
+  type InterruptReason,
+  type PassageRange,
+  type PracticeMode,
+} from '../../core/model/practice'
+import type { LearnerHands, ScoreModel } from '../../core/model/score'
 import type { LadderSettings } from '../../core/storage/records'
 import { type Rational, ZERO, add, eq, key as ratKey, lt, toNumber } from '../../core/music/rational'
 import { hasTempo, secondsBetween, type TempoMapData } from '../../core/music/tempo'
@@ -89,6 +102,7 @@ import {
   hasSoundOutput,
   humanGuardEnabled,
   noPlaybackReason,
+  otherHandSound,
   outputKey,
   performanceKey,
   playbackDestination,
@@ -98,9 +112,20 @@ import { clampPassage, sameSelection, selectionTimeline, startPlan, type Selecti
 import { buildGuideKeys, sameGuideKeys } from './guide'
 import { correctionMarks, correctionMarksByGroup, type CorrectionMark } from './corrections'
 import { REPEATED_MISTAKE_HISTORY, repeatedMistakes } from './mistakes'
-import { PassCapture, SNIPPET_PEDALS, SnippetPlayer, playedSnippet, writtenSnippet, type SnippetKind } from './snippets'
+import { roughPassage } from './rough'
+import { addTraversal, runRecord, type PassRecord, type ReadingRun } from './run'
+import {
+  PassCapture,
+  SNIPPET_PEDALS,
+  SnippetPlayer,
+  playedSnippet,
+  writtenSnippet,
+  type CapturedPass,
+  type SnippetKind,
+} from './snippets'
 import { countInPlan } from './countIn'
-import { metronomeOn, metronomeScope, type MetronomeScope } from './metronome'
+import { metronomeOn, metronomeScope } from './metronome'
+import { isPractice } from './openingMode'
 import { PerformanceTiming, TimingDrift } from './timingDrift'
 import {
   fullSpeedLadderStart,
@@ -136,6 +161,8 @@ export interface SessionOptions {
   readonly pieceId: string
   /** The practice model (a user-supplied tempo already applied, see `practiceModel`). */
   readonly model: ScoreModel
+  /** The mode it opens in (`openingMode`); opening saves nothing. */
+  readonly mode: PracticeMode
   readonly selection: Selection
   readonly settings: SessionSettings
   /** Reading starts here (resume position); default: the start of the selection. */
@@ -145,16 +172,10 @@ export interface SessionOptions {
   readonly ladder?: LadderSettings | null
   /**
    * Open with Repeat mode on (a preset passage, DECISIONS U10). `selection.range` is the loop;
-   * without one the loop starts at the first bar. Default: closed (reading), loop remembered.
+   * without one the loop starts at the first bar. Default: closed (reading), loop remembered. In
+   * Follow it waits for another mode.
    */
   readonly repeat?: boolean
-  /**
-   * Show the cursor's repeat button (DECISIONS U14). Default true; Study mode (U72) has no
-   * Repeat, so it passes false and the button never appears in either score view.
-   */
-  readonly cursorAction?: boolean
-  /** Open with Keep time on (the piece's saved choice; ignored without a numerical tempo). */
-  readonly rhythm?: boolean
 }
 
 /** The Keep time count-in in progress (`#beginCountIn`). */
@@ -230,11 +251,11 @@ interface LeadIn {
 }
 
 /**
- * Play-through (DECISIONS P12) once started: its gated transport over the whole piece, the
- * follower that releases the gates, and the output it was built for ('' when it plays nothing:
- * both hands, or the microphone follows).
+ * Follow (DECISIONS P12) once started: its gated transport over the whole piece, the follower
+ * that releases the gates, and the output it was built for ('' when it plays nothing: both hands,
+ * or the microphone follows).
  */
-interface PlayThrough {
+interface Following {
   readonly transport: Transport
   readonly follower: PlayFollower
   readonly timing: PerformanceTiming | null
@@ -244,7 +265,7 @@ interface PlayThrough {
   readonly mic: boolean
 }
 
-/** What the keyboard guide reads from the engine or the play-through follower. */
+/** What the keyboard guide reads from the engine or from Follow's follower. */
 type GuideSource = Pick<EngineState, 'targetNotes' | 'acceptedPitches' | 'heldKeys' | 'heldWrongKeys'>
 
 /**
@@ -278,7 +299,7 @@ const INTERRUPT_TEXT: Readonly<Record<InterruptReason, string>> = {
   seek: 'Moving through the score stopped the attempt.',
   disconnect: 'The piano was disconnected, so the attempt stopped.',
   suspend: 'Practice was interrupted.',
-  'setting-change': 'A label setting changed, so the attempt stopped.',
+  'setting-change': 'Note names changed, so the attempt stopped.',
   'layout-change': 'The score layout changed, so the attempt stopped.',
   'tempo-change': 'The speed changed, so the attempt stopped.',
   'hand-change': 'The hands changed, so the attempt stopped.',
@@ -300,6 +321,8 @@ export class PracticeSession {
   readonly #labels: PersistentLabels
   readonly #engine: PracticeEngine
   #settings: SessionSettings
+  /** The learner's mode; only `setMode` changes it. */
+  #mode: PracticeMode
   #sel: Selection
   #timeline: Timeline
   #cursorPassage: { selection: Timeline; timeline: Timeline } | null = null
@@ -332,26 +355,11 @@ export class PracticeSession {
       this.#metronome?.cancel(now)
     },
   }
-  /** Listen (both hands off): its transport and the output it was built for. */
+  /** Listen once started: its transport and the output it was built for. */
   #listen: { transport: Transport; playing: boolean; outputKey: string } | null = null
-  /** Play-through mode is on (DECISIONS P12), started or not. */
-  #playThrough = false
-  /**
-   * The learner switched play-through on (`setPlayThrough`). Without a piano it is on whenever a
-   * hand is selected (DECISIONS P22); this is what it returns to when the piano comes back.
-   */
-  #playThroughChosen = false
-  /** Keep time was switched off (not saved) because play-through took over without a piano: back with the piano. */
-  #rhythmHeld = false
-  /**
-   * Repeat mode was closed (not saved) because play-through took over without a piano (DECISIONS
-   * U98): it reopens over the remembered loop when the piano comes back. Cleared whenever Repeat
-   * opens and when the loop is cleared.
-   */
-  #repeatHeld = false
-  /** Play-through once started (Start in play-through); null before and after the mode. */
-  #play: PlayThrough | null = null
-  /** A play-through was replaced (hands, output) while paused mid-piece: the main button reads Resume. */
+  /** Follow once started; null before its first Start and in every other mode. */
+  #play: Following | null = null
+  /** Follow's transport was replaced (hands, output) while paused mid-piece: the main button reads Resume. */
   #playResumable = false
   /** Follower state version drawn last (`#framePlay`). */
   #playVersion = -1
@@ -359,14 +367,12 @@ export class PracticeSession {
   #playAgain = false
   /** The hint pedal while the follower has the input (the engine's own detector never sees it). */
   #playPedal: HintPedalTrigger | null = null
-  /** The microphone follower while play-through uses it (DECISIONS P15). */
+  /** The microphone follower while Follow uses it (DECISIONS P15). */
   #mic: MicFollowerLike | null = null
   /** Its status for the view: starting, following, or why it could not start. */
   #micStatus: string | null = null
   /** A piano input is connected (`setInputAvailable`). */
   #inputAvailable = true
-  /** Keep time (rhythm mode, DECISIONS P13) is on. */
-  #rhythm: boolean
   /** The Keep time count-in in progress, else null. */
   #countIn: CountIn | null = null
   /** Groups the music passed (Keep time) since the last frame: the soft wash. */
@@ -376,6 +382,8 @@ export class PracticeSession {
 
   // Lifecycle
   #readingStarted = false
+  /** The mode is being left: its last attempt is recorded, but nothing follows it. */
+  #leaving = false
   #awaitPrepared = false
   #pendingRepeat = false
   #secondOpeningBarOnWrap = false
@@ -384,8 +392,10 @@ export class PracticeSession {
   readonly #keepTimeGrace: number
   /** The practice transport's `shiftMs` when it last played (`#keepTimeShift`). */
   #shift = 0
-  /** Repeat mode (U10): loop controls shown, Start = scored attempts over `#loop`, repeated. */
+  /** Repeat mode (U10): loop controls shown, Start = scored attempts over `#loop`, repeated. Never in Follow. */
   #repeat = false
+  /** Follow only: Repeat was open when it was entered, and opens again when it is left. */
+  #repeatAfterFollow = false
   /** The loop, remembered while Repeat mode is closed (saved as `lastPassage`). */
   #loop: PassageRange | null = null
   #repeatTarget: number | null
@@ -414,14 +424,25 @@ export class PracticeSession {
   #reviewReturnBy: number | null = null
   /** How the last result went: played past by the next pass (U101), or dismissed any other way. */
   #resultExit: 'played' | 'dismissed' = 'dismissed'
-  /** Recent scored records of one comparison context, oldest first (repeated mistakes, P24). */
-  #recentScored: AttemptRecord[] = []
-  /** The completed record whose repeated mistakes the next UI publish works out, and its timeline. */
-  #repeatedPending: { readonly id: string; readonly timeline: Timeline } | null = null
+  /** Recent passes of one comparison context, oldest first (repeated mistakes, P24). */
+  #recentPasses: PassRecord[] = []
+  /**
+   * The completed pass whose repeated mistakes, and outside Repeat its rough bars, the next UI
+   * publish works out, and its timeline.
+   */
+  #resultPending: { readonly id: string; readonly timeline: Timeline; readonly repeat: boolean } | null = null
   /** The timeline the last result's record ran on (its group indices), for `resultDetails` (U99). */
   #resultTimeline: Timeline | null = null
   /** The history up to that completed pass, even if the next repeat is interrupted. */
-  #resultRecords: readonly AttemptRecord[] = []
+  #resultRecords: readonly PassRecord[] = []
+  /** The bars the last result's pass has captured key presses in, once the card asked (U100). */
+  #resultPressed: { readonly id: string; readonly occs: ReadonlySet<number> } | null = null
+  /** The Wait run outside Repeat, from its first ended traversal on (U142); null between runs. */
+  #run: ReadingRun | null = null
+  /** Numbers the reading's visits: a speed change goes on with one, every other end begins another. */
+  #visit = 0
+  /** The run's key presses are being captured (from its first one). */
+  #runCaptured = false
   /** The key events of the pass being played and of the last completed one (U100), never stored. */
   readonly #capture = new PassCapture()
   /** The mistake snippet playing (U100), with whether its echo is filtered from the input. */
@@ -433,8 +454,6 @@ export class PracticeSession {
   /** Keep time hides the marks at the downbeat and restores them if the automatic repeat stops. */
   #correctionsVisible = true
   #inputDisconnected = false
-  /** The learner's hands, held while no piano input is connected (the session is in Listen, U27). */
-  #heldHands: HandSelection | null = null
   #soundStatus: string | null = null
   #completedPending = false
   #lockState = ''
@@ -454,10 +473,8 @@ export class PracticeSession {
   readonly #practiceTiming = new PerformanceTiming()
   /** The chrome is revealed (not in focus mode): the cursor's repeat button may show while playing. */
   #chromeRevealed = true
-  /** The cursor's repeat button exists at all (`SessionOptions.cursorAction`). */
-  readonly #cursorActionAllowed: boolean
   /**
-   * Names revealed on request at the cursor (`revealAtCursor`, Study mode U72): the notes and
+   * Names revealed on request at the cursor (`revealAtCursor`, U72): the notes and
    * the real time they are gone by. They fade out over `hints.fadeMs` before `until`.
    */
   #reveal: { readonly notes: readonly number[]; readonly until: number } | null = null
@@ -495,7 +512,7 @@ export class PracticeSession {
   /** Both hands' onset groups for the keyboard guide (U20); rebuilt on first use per selection. */
   #bothTimeline: Timeline | null = null
   /** Snap onsets of the current hands for the strip (U19), rebuilt when the hands change. */
-  #snaps: { hands: HandSelection; onsets: readonly Rational[] } | null = null
+  #snaps: { hands: LearnerHands; onsets: readonly Rational[] } | null = null
   /**
    * Key feedback while nothing plays (DECISIONS U37): the session checks held keys against the
    * current group. The score marks accepted notes, and the guide also marks wrong keys.
@@ -514,15 +531,16 @@ export class PracticeSession {
     this.#tempo = options.model.tempo
     this.#settings = options.settings
     this.#keepTimeGrace = Math.max(0, deps.keepTimeGraceMs ?? KEEP_TIME_GRACE_MS)
-    this.#rhythm = options.rhythm === true && hasTempo(options.model.tempo)
+    this.#mode = options.mode
     this.#loop = clampPassage(options.model, options.selection.range)
-    this.#repeat = options.repeat === true
-    if (this.#repeat && !this.#loop) this.#loop = { fromOcc: 0, toOcc: 0 }
+    if (options.repeat && !this.#loop) this.#loop = { fromOcc: 0, toOcc: 0 }
+    this.#repeat = options.repeat === true && this.#mode !== 'follow'
+    this.#repeatAfterFollow = options.repeat === true && this.#mode === 'follow'
     this.#sel = { ...options.selection, range: this.#repeat ? this.#loop : null }
     this.#repeatTarget = options.repeatTarget ?? null
     this.#ladderSettings = options.ladder ?? null
     this.#ladder = this.#ladderSettings ? startLadder(this.#ladderSettings, this.#sel.multiplier) : null
-    this.#cursorActionAllowed = options.cursorAction !== false
+    this.#playPedal = this.#mode === 'follow' ? this.#hintPedal(options.settings) : null
     this.#timeline = selectionTimeline(this.#model, this.#tempo, this.#sel)
     this.#labels = new PersistentLabels(
       this.#model.notes,
@@ -653,25 +671,8 @@ export class PracticeSession {
     else void this.start()
   }
 
-  /** Study's two transport actions share the cursor and replace each other's sound or input. */
-  toggleStudyPlayback(action: 'listen' | 'follow', hands: Exclude<HandSelection, 'none'> = 'both'): void {
-    if (this.#disposed || this.#inputHeld) return
-    const follow = action === 'follow'
-    if (follow && !this.#inputAvailable && !this.#micPossible()) return
-    if (follow === this.#playThrough) {
-      this.togglePlay()
-      return
-    }
-    const position = this.#onsetAtOrAfter(this.#cursorPosition()) ?? ZERO
-    this.pause()
-    this.setSelection({ hands: follow ? hands : 'none' })
-    if (follow) this.setPlayThrough(true)
-    this.seekPosition(position)
-    void this.start()
-  }
-
   /**
-   * Start reading, a scored attempt or Preview, per the selection. One Start at a time: a second
+   * Start what the mode and the selection say. One Start at a time: a second
    * one while sounds load joins the first (it would otherwise stop the transport the first one
    * started at Ready), unless a Pause canceled the first meanwhile: then it runs after it.
    */
@@ -705,26 +706,17 @@ export class PracticeSession {
       await this.#startListening(fromLoopStart)
       return
     }
-    if (this.#listen) this.#stopListening()
     if (!this.#practiceSilent()) {
       const output = await this.#ensureOutput()
       if (!output || this.#startCanceled(gen)) return
     }
     // Keep time counts in through the metronome even when the Metronome setting is off.
-    await this.#ensureMetronome(this.#rhythm)
+    await this.#ensureMetronome(this.#mode === 'time')
     if (this.#startCanceled(gen)) return
     // The selection may have changed while sounds loaded (the loop cleared, the hands changed).
     this.#followBrowsedCursor()
     const plan = this.#plan()
     if (!plan.enabled) return
-    if (plan.action === 'listen') {
-      await this.#startListening(fromLoopStart)
-      return
-    }
-    if (plan.action === 'play') {
-      await this.#startPlay()
-      return
-    }
     // A changed selection may need browser sound that has yet to load.
     if (!this.#practiceSilent() && !this.#ensureOutputSync()) return this.#start(fromLoopStart)
     const t = this.#deps.clock()
@@ -787,14 +779,14 @@ export class PracticeSession {
     strip.returnToCurrent?.()
   }
 
-  /** Pause: reading keeps progress; a scored attempt is interrupted (spec); Preview pauses. */
+  /** Pause: reading keeps progress; a scored attempt is interrupted (spec); Listen and Follow pause. */
   pause(): void {
     const now = this.#deps.clock()
     // Pause is a stop intent also for a Start still loading sounds (an overlay, browsing, Stop sound),
     // and for the continuation a browse hold waits for (U95).
     this.#startGen++
     this.#browseHold = null
-    if (this.#playThrough) {
+    if (this.#mode === 'follow') {
       this.#pausePlay(now)
       this.#process(now)
       return
@@ -837,8 +829,8 @@ export class PracticeSession {
     // from it as from any finished pass (its ladder step included).
     this.#releaseKeepTime()
     this.#clearCorrections()
-    if (this.#playThrough) {
-      // Play-through has no passage: back to the start of the piece, playing on if it played.
+    if (this.#mode === 'follow') {
+      // Follow has no passage: back to the start of the piece, playing on if it played.
       this.seekPosition(ZERO)
       return
     }
@@ -849,7 +841,7 @@ export class PracticeSession {
       this.#process(now)
       return
     }
-    if (this.#rhythm && this.#engine.mode !== 'scored') {
+    if (this.#mode === 'time' && this.#engine.mode !== 'scored') {
       // A fresh Keep time attempt uses the loop or the chosen cursor position.
       void this.start()
       return
@@ -890,7 +882,13 @@ export class PracticeSession {
       this.#streak = 0
       this.#ensureTransport((t) => this.#tryPrepared(t))
       this.#prepareAttempt(now)
-    } else if (this.#readingStarted) {
+      this.#process(now)
+      return
+    }
+    // A run just ended (its last chord still held open) shows its result first.
+    this.#drain(now)
+    this.#dropRun()
+    if (this.#readingStarted) {
       this.#playAccompanimentFromCurrent(now)
     } else {
       // Reading that was never started has no transport playing: back at the start, paused.
@@ -899,9 +897,77 @@ export class PracticeSession {
     this.#process(now)
   }
 
+  /**
+   * The result's Again: a Wait run is read again from where it started (P30, U142), whatever was
+   * done since; any other pass as Restart.
+   */
+  again(): Promise<void> {
+    const pass = this.#resultRecords.at(-1)
+    if (pass?.kind !== 'run' || pass.id !== this.#lastResult?.id || !this.#reading()) {
+      this.restart()
+      return Promise.resolve()
+    }
+    const now = this.#deps.clock()
+    this.#accomp?.stop()
+    this.#clearSounding()
+    // A reading under way is abandoned, as by Restart.
+    this.#engine.restart(now)
+    this.#engine.pause(now)
+    this.#drain(now)
+    this.#dropRun()
+    this.#clearCorrections()
+    this.#lastResult = null
+    if (pass.startGroup > 0) this.#engine.seek(pass.startGroup, now)
+    const position = this.#engine.state.position
+    if (position) this.#accomp?.seek(position)
+    this.#process(now)
+    this.#followCursorAgain()
+    return this.start()
+  }
+
+  /**
+   * The result's Loop action (U142): Repeat over the run's rough bars, in the same mode, paused at
+   * their start. It starts nothing.
+   */
+  loopRoughBars(): void {
+    const rough = this.#lastResult?.rough
+    if (!rough || this.#repeat) return
+    // Also a Start still loading sounds.
+    this.pause()
+    this.#select({ hands: this.#sel.hands, multiplier: this.#sel.multiplier }, rough, true)
+    this.#followCursorAgain()
+  }
+
+  /**
+   * Practice these bars (U148): Repeat over a suggestion's bars with its hands and speed, in `mode`,
+   * paused at their start. It starts nothing.
+   */
+  practiceBars(passage: PassageRange, hands: LearnerHands, multiplier: number, mode: PracticeMode): void {
+    const loop = clampPassage(this.#model, passage)
+    if (this.#disposed || !loop) return
+    // Also a Start still loading sounds.
+    this.pause()
+    this.setMode(mode)
+    const here = this.#repeat && samePassage(loop, this.#loop)
+    if (this.#ladder && Math.abs(multiplier - this.#sel.multiplier) > 1e-9)
+      this.#ladder = startLadder(this.#ladder, multiplier)
+    this.#select({ hands, multiplier }, loop, true)
+    // Over the loop already open, the selection leaves the cursor where it was.
+    if (here) this.seekPosition(passageRange(this.#model, loop).start)
+    this.#followCursorAgain()
+  }
+
+  /** The score view follows the cursor, at once, when the learner was browsing it. */
+  #followCursorAgain(): void {
+    const strip = this.#strip
+    if (!strip?.isBrowsing()) return
+    strip.setCursor(this.#cursorPosition(), { smooth: false })
+    strip.returnToCurrent?.()
+  }
+
   /** Reading after an interruption: continue at the same position (fresh traversal). */
   resume(): void {
-    if (this.#engine.mode !== 'reading' && !this.#playThrough) {
+    if (this.#engine.mode !== 'reading') {
       this.restart()
       return
     }
@@ -931,7 +997,7 @@ export class PracticeSession {
    * reads from it until the music next arrives at the loop start, where the attempt takes over;
    * a running attempt is interrupted, P6); the loop start itself keeps the attempt at the loop
    * start. Seeking while Repeat plays keeps it playing from there (U70); reading, Listen and
-   * play-through also play on from the new position. A browse released while something played
+   * Follow also play on from the new position. A browse released while something played
    * (U95) arrives here through Start (`#followBrowsedCursor`). Returns false when nothing moved (a
    * scored attempt keeps its passage start, P6).
    */
@@ -947,7 +1013,7 @@ export class PracticeSession {
       return true
     }
     // Gated Repeat can read into the loop from the chosen position.
-    if (this.#repeat && this.#sel.range && this.#sel.hands !== 'none' && !this.#rhythm) {
+    if (this.#sel.range && this.#mode === 'wait') {
       const p = lt(position, ZERO) ? ZERO : position
       if (!eq(p, passageRange(this.#model, this.#sel.range).start)) {
         const moved = this.#seekLeadIn(p, now)
@@ -973,7 +1039,7 @@ export class PracticeSession {
         return false
       }
     }
-    const keepTime = this.#rhythm && this.#sel.hands !== 'none'
+    const keepTime = this.#mode === 'time'
     if (this.#engine.mode === 'scored' && !keepTime) {
       if (this.#engine.state.phase === 'running') {
         this.#pauseTransports()
@@ -982,7 +1048,6 @@ export class PracticeSession {
       }
       return false
     }
-    // The engine's own groups (the session's selection may be a hands hold, U27).
     let timeline = this.#engine.timeline
     // Navigation in Keep time covers the whole score, even after a partial attempt or in Repeat.
     if (keepTime && timeline.rangeSelected) {
@@ -1037,6 +1102,19 @@ export class PracticeSession {
     now: number,
     opts: { readonly play?: boolean; readonly reason?: InterruptReason } = {},
   ): boolean {
+    const keepPlaying = opts.play ?? (this.#isPlaying() || this.#pendingRepeat)
+    if (!this.#setUpLeadIn(position, now, opts.reason ?? 'seek')) return false
+    if (keepPlaying) {
+      this.#ensureAccompaniment()
+      this.#startLeadIn(now)
+    }
+    this.#saveResume(now, true)
+    this.#process(now)
+    return true
+  }
+
+  /** A lead-in from `position`, paused there; false (nothing changed) when there is nothing to lead in from. */
+  #setUpLeadIn(position: Rational, now: number, reason: InterruptReason): boolean {
     const loop = passageRange(this.#model, this.#sel.range)
     const start = lt(position, ZERO) ? ZERO : position
     const wrap = !lt(start, loop.start)
@@ -1052,7 +1130,6 @@ export class PracticeSession {
         reattackHeldAtStart: false,
       },
     )
-    const keepPlaying = opts.play ?? (this.#isPlaying() || this.#pendingRepeat)
     this.#pauseTransports()
     this.#awaitPrepared = false
     this.#pendingRepeat = false
@@ -1063,19 +1140,10 @@ export class PracticeSession {
     this.#leadIn = { start, passage, timeline, span, wrap, handedOver: false }
     this.#bothTimeline = null
     // An attempt in progress ends here ('seek'); one not yet started leaves no record.
-    this.#engine.reconfigure(
-      { reason: opts.reason ?? 'seek', mode: 'reading', timeline, transport: 'accompaniment', startGroup: 0 },
-      now,
-    )
+    this.#engine.reconfigure({ reason, mode: 'reading', timeline, transport: 'accompaniment', startGroup: 0 }, now)
     if (this.#engine.state.phase === 'running') this.#engine.pause(now)
     this.#readingStarted = false
     this.#applySelectionVisuals()
-    if (keepPlaying) {
-      this.#ensureAccompaniment()
-      this.#startLeadIn(now)
-    }
-    this.#saveResume(now, true)
-    this.#process(now)
     return true
   }
 
@@ -1228,11 +1296,9 @@ export class PracticeSession {
   }
 
   /**
-   * Listen (Preview, both hands off): plays the loop in Repeat mode, else from the current
-   * position, with no learner input. Reached only through Start with hands 'none' (U9); the
-   * piano plays both hands (there is no left / right filter, U12). Plays where the sound
-   * destination resolves now (S4); a destination that changed since the last Play rebuilds the
-   * transport instead of resuming it.
+   * Listen: plays the loop in Repeat mode, else from the current position, with no learner input.
+   * The chosen hands sound (`listenFilter`). Plays where the sound destination resolves now (S4);
+   * a destination that changed since the last Play rebuilds the transport instead of resuming it.
    */
   async #startListening(fromLoopStart: boolean): Promise<void> {
     if (!hasTempo(this.#tempo)) return
@@ -1261,27 +1327,21 @@ export class PracticeSession {
       this.#process(this.#deps.clock())
       return
     }
-    // Another destination than last time: release the old transport before its output goes.
-    if (this.#listen) this.#disposeListen()
+    // Another destination than last time: release the old transport before its output goes. The
+    // engine keeps the place meanwhile (a Pause or another mode can come before the new one plays).
+    if (this.#listen) {
+      const onset = this.#cursorOnset()
+      this.#disposeListen()
+      this.#placeCursor(onset, this.#deps.clock())
+    }
     const gen = this.#startGen
     const output = await this.#ensureOutput()
     if (!output || this.#startCanceled(gen)) return
     await this.#ensureMetronome()
     if (this.#startCanceled(gen)) return
-    // The selection may have changed while sounds loaded (a hand chosen, held hands given back):
-    // Start honors the new plan instead (its own load is done, so it does not come back here).
-    const plan = this.#plan()
-    if (!plan.enabled) return
-    if (plan.action !== 'listen') return this.#start(fromLoopStart)
+    // The selection may have changed while sounds loaded (other hands, another loop).
+    if (!this.#plan().enabled) return
     this.#followBrowsedCursor()
-    const t = this.#deps.clock()
-    // Leaving practice for Preview: a scored attempt is interrupted, reading pauses.
-    this.#pauseTransports()
-    if (this.#engine.mode === 'scored' && ACTIVE.includes(this.#engine.state.phase))
-      this.#engine.interrupt('mode-change', t)
-    else if (this.#engine.state.phase === 'running') this.#engine.pause(t)
-    this.#awaitPrepared = false
-    this.#pendingRepeat = false
     if (this.#listen) this.#disposeListen()
     const range = passageRange(this.#model, this.#sel.range)
     let start = range.start
@@ -1297,14 +1357,20 @@ export class PracticeSession {
     this.#process(this.#deps.clock())
   }
 
-  /** A new Listen transport over `range` on `output`, playing from `start`. */
-  #playListen(output: OutputBackend, range: ReturnType<typeof passageRange>, start: Rational): void {
-    const events = buildPerformance(this.#model, {
+  /** What Listen plays over `range`: the chosen hands. */
+  #listenEvents(range: ReturnType<typeof passageRange>) {
+    return buildPerformance(this.#model, {
       hands: 'none',
+      listenFilter: this.#sel.hands,
       range,
       sendPedals: true,
       accompanimentLevel: level(this.#settings.route.accompanimentLevel),
     })
+  }
+
+  /** A new Listen transport over `range` on `output`, playing from `start`. */
+  #playListen(output: OutputBackend, range: ReturnType<typeof passageRange>, start: Rational): void {
+    const events = this.#listenEvents(range)
     const transport = createTransport({
       clock: this.#deps.clock,
       timers: this.#deps.timers,
@@ -1351,10 +1417,28 @@ export class PracticeSession {
     return true
   }
 
-  // ── Play-through (DECISIONS P12) ──────────────────────────────────────────────────────
+  /**
+   * The hands changed in Listen: the same transport goes on from the same place with the notes of
+   * the new hands (paused or playing).
+   */
+  #listenToHands(next: Selection, now: number): void {
+    const l = this.#listen
+    if (!l) return
+    this.#sel = next
+    this.#timeline = selectionTimeline(this.#model, this.#tempo, next)
+    this.#bothTimeline = null
+    this.#clearSounding()
+    l.transport.replacePerformance(this.#listenEvents(passageRange(this.#model, next.range)), this.#output)
+    l.transport.setMultiplier(next.multiplier)
+    this.#engine.reconfigure({ reason: 'hand-change', timeline: this.#timeline, transport: 'accompaniment' }, now)
+    this.#applySelectionVisuals()
+    this.#process(now)
+  }
+
+  // ── Follow (DECISIONS P12) ────────────────────────────────────────────────────────────
 
   /**
-   * Start or resume play-through: from the current cursor (the first learner group at or after
+   * Start or resume Follow: from the current cursor (the first learner group at or after
    * it) to the end of the piece, or from the start of the piece after reaching its end. Both
    * hands use a silent transport; one hand plays the other hand automatically (an output is
    * needed, as for reading). A destination that changed since the last Start rebuilds the
@@ -1392,16 +1476,15 @@ export class PracticeSession {
       if (!output || this.#startCanceled(gen)) return
     }
     await this.#ensureMetronome()
-    if (this.#startCanceled(gen) || !this.#playThrough) return
+    if (this.#startCanceled(gen)) return
     // The selection may have changed while sounds loaded.
-    const plan = this.#plan()
-    if (!plan.enabled || plan.action !== 'play') return
+    if (!this.#plan().enabled) return
     if (!this.#playSilent() && !this.#ensureOutputSync()) return
     if (this.#play?.playing) return
     this.#followBrowsedCursor()
     const now = this.#deps.clock()
     const current = this.#play
-    // Rebuilt for a new output at the follower's group; fresh at the engine's (reading) position.
+    // Rebuilt for a new output at the follower's group; fresh at the engine's position.
     const position = current ? current.follower.state.position : this.#engine.state.position
     this.#buildPlay(position, now)
     const built = this.#play
@@ -1424,21 +1507,20 @@ export class PracticeSession {
   }
 
   /**
-   * The microphone follower for this play-through (DECISIONS P15): built and opened on the first
-   * Start (the browser may ask for the microphone); later Starts reuse it. False, with the reason
-   * in `ui.micStatus`, when it could not start: play-through stays on but does not play.
+   * The microphone follower (DECISIONS P15): built and opened on the first Start (the browser may
+   * ask for the microphone); later Starts reuse it. False, with the reason in `ui.micStatus`, when
+   * it could not start: nothing plays.
    */
   async #startMic(position: Rational): Promise<boolean> {
     const create = this.#deps.createMicFollower
     if (!create) return false
     if (this.#mic) return true
     // One hand: the follower listens for that hand's onset groups, the play timeline's (P22).
-    const hands = this.#sel.hands === 'none' ? 'both' : this.#sel.hands
     const mic = create(
       this.#model,
       (e) => this.#onMicEstimate(mic, e),
       (reason) => this.#onMicLost(mic, reason),
-      hands,
+      this.#sel.hands,
     )
     this.#mic = mic
     this.#setMicStatus(MIC_STARTING)
@@ -1477,7 +1559,7 @@ export class PracticeSession {
   }
 
   /**
-   * The microphone stopped by itself (unplugged, taken by the system): play-through pauses with
+   * The microphone stopped by itself (unplugged, taken by the system): Follow pauses with
    * the reason in the status line, and the next Start opens the microphone again.
    */
   #onMicLost(mic: MicFollowerLike, reason: string): void {
@@ -1496,7 +1578,7 @@ export class PracticeSession {
     if (!this.#disposed) this.#publishUi()
   }
 
-  /** Closes the microphone (play-through off, hands changed, the setting off, dispose). */
+  /** Closes the microphone (another mode, hands changed, the setting off, dispose). */
   #disposeMic(): void {
     const mic = this.#mic
     this.#mic = null
@@ -1504,7 +1586,7 @@ export class PracticeSession {
     this.#setMicStatus(null)
   }
 
-  /** A new play-through transport and follower at the first group at or after `position` (null: the start). */
+  /** A new Follow transport and follower at the first group at or after `position` (null: the start). */
   #buildPlay(position: Rational | null, now: number): void {
     this.#disposePlay(false)
     // Nothing plays with both hands, nor while the microphone follows (P22: no accompaniment).
@@ -1562,7 +1644,7 @@ export class PracticeSession {
     this.#playVersion = -1
   }
 
-  /** Play on from where play-through is; from the start of the piece once it reached the end. */
+  /** Play on from where Follow is; from the start of the piece once it reached the end. */
   #playFrom(now: number): void {
     const p = this.#play
     if (!p) return
@@ -1590,7 +1672,6 @@ export class PracticeSession {
     p.playing = false
     this.#mic?.pause()
     this.#clearSounding()
-    this.#saveResume(now, true)
   }
 
   /** A seek: the first group at or after `position`, playing on if it played (U70 spirit). */
@@ -1609,13 +1690,12 @@ export class PracticeSession {
     this.#lastSeek = { position: g.position }
     this.#clearSounding()
     this.#processPlay()
-    this.#saveResume(now, true)
     this.#process(now)
     return true
   }
 
   /**
-   * Speed and hands while play-through runs. Speed applies live (the follower's patience follows
+   * Speed and hands once Follow was started. Speed applies live (the follower's patience follows
    * the new timeline); new hands rebuild the transport at the same group, playing on if it
    * played. Returns false for any other change (the ordinary path handles it).
    */
@@ -1635,7 +1715,7 @@ export class PracticeSession {
       this.#process(now)
       return true
     }
-    if (reason !== 'hand-change' || next.hands === 'none') return false
+    if (reason !== 'hand-change') return false
     const wasPlaying = p.playing
     const position = p.follower.state.position
     this.#sel = next
@@ -1700,13 +1780,12 @@ export class PracticeSession {
     this.#mic?.pause()
     this.#clearSounding()
     this.#rewindPiece()
-    this.#saveResume(now, true, null)
     this.#process(now)
   }
 
   /**
-   * Drop the play-through transport and follower. `keepPosition`: the engine (paused reading)
-   * moves to the follower's group so a later Start, or leaving the mode, continues there.
+   * Drop Follow's transport and follower, and close the microphone. `keepPosition`: the engine
+   * (paused) moves to the follower's group so a later Start continues there.
    */
   #disposePlay(keepPosition: boolean): void {
     const p = this.#play
@@ -1719,18 +1798,17 @@ export class PracticeSession {
     this.#lastVersion = -1
     if (!keepPosition) return
     const now = this.#deps.clock()
-    // After the end of the piece the next Start (or reading) begins at the start.
+    // After the end of the piece the next Start begins at the start.
     const position = p.follower.state.position
     const group = position ? groupAtOrAfter(this.#engine.timeline, position) : 0
     if (group < this.#engine.timeline.groups.length) this.#engine.seek(group, now)
     this.#playResumable = position !== null
-    // Records of the reading pass this ends are dropped (`#handle`), so drain while still on.
     this.#drain(now)
   }
 
   requestHint(): void {
-    // Play-through has no hints (`canHint` false); the hint pedal reveals names instead.
-    if (this.#playThrough) return
+    // Follow has no hints (`canHint` false); the hint pedal reveals names instead.
+    if (this.#mode === 'follow') return
     const now = this.#deps.clock()
     this.#engine.requestHint(now)
     this.#process(now)
@@ -1738,7 +1816,7 @@ export class PracticeSession {
 
   /**
    * Names the notes at the cursor (both hands' onset group there) for the hint lifetime, then
-   * fades them out (Study mode, DECISIONS U72). The engine's hints need a running attempt;
+   * fades them out (DECISIONS U72). The engine's hints need a running attempt;
    * this one works whenever the score is shown, paused or playing. Persistent labels stay; a
    * note already labeled keeps its label. Returns false when no note is at the cursor.
    */
@@ -1778,159 +1856,140 @@ export class PracticeSession {
   }
 
   /**
+   * The learner's mode, saved on the piece. What the old one was doing ends (recorded, when it
+   * records) and nothing of it stays: no sound, count-in, Start still loading, microphone or result.
+   * The cursor stays where it is, at the next playable onset, and nothing starts. Entering Follow
+   * puts Repeat away; leaving it brings Repeat back as it was.
+   */
+  setMode(mode: PracticeMode): void {
+    if (this.#disposed || mode === this.#mode) return
+    const now = this.#deps.clock()
+    const position = this.#cursorOnset()
+    this.#leaveMode(now)
+    if (mode === 'follow') {
+      this.#repeatAfterFollow = this.#repeat
+      this.#repeat = false
+    } else if (this.#mode === 'follow') {
+      this.#repeat = this.#repeatAfterFollow
+      this.#repeatAfterFollow = false
+    }
+    this.#mode = mode
+    this.#playPedal = mode === 'follow' ? this.#hintPedal(this.#settings) : null
+    const range = this.#repeat ? this.#loop : null
+    if (!samePassage(range, this.#sel.range)) {
+      this.#sel = { ...this.#sel, range }
+      this.#timeline = selectionTimeline(this.#model, this.#tempo, this.#sel)
+    }
+    this.#bothTimeline = null
+    this.#placeCursor(position, now)
+    this.#deps.piece.save({ mode, lastHands: this.#sel.hands }, true)
+    this.#lockState = ''
+    this.#applySelectionVisuals()
+    this.#syncLock()
+    this.#process(now)
+    this.#publishUi()
+  }
+
+  /**
+   * Where the cursor is, as the next onset of the current hands at or after it; null past the last
+   * one. Music that has played past the loop's last note goes on at the loop's start: null too.
+   */
+  #cursorOnset(): Rational | null {
+    const at = this.#cursorPosition()
+    const onset = this.#onsetAtOrAfter(at)
+    if (!onset || !this.#sel.range) return onset
+    const loop = passageRange(this.#model, this.#sel.range)
+    const [start, end] = [toNumber(loop.start), toNumber(loop.end)]
+    // The loop's own first stop, which can be a note held over its start.
+    if (Math.abs(at - start) < 1e-9) return loop.start
+    // A finished pass rests exactly at the loop's end.
+    const inLoop = at > start && (at < end - 1e-9 || this.#engine.mode === 'scored')
+    return inLoop && !lt(onset, loop.end) ? null : onset
+  }
+
+  /** Ends what the current mode does, recording it when it records (`setMode`). */
+  #leaveMode(now: number): void {
+    // Also a Start still loading sounds or opening the microphone, and a browse hold's continuation.
+    this.#startGen++
+    // The next mode's Start does not wait for it (the browser may be asking for the microphone).
+    this.#starting = null
+    this.#browseHold = null
+    if (isPractice(this.#mode)) {
+      this.#cancelCountIn(now)
+      this.#pauseTransports()
+      this.#awaitPrepared = false
+      this.#pendingRepeat = false
+      this.#ladderNext = null
+      if (this.#engine.mode === 'reading' && this.#engine.state.phase === 'running') {
+        this.#engine.pause(now)
+        this.#saveResume(now, true)
+      }
+      this.#leaving = true
+      try {
+        this.#engine.interrupt('mode-change', now)
+        this.#drain(now)
+      } finally {
+        this.#leaving = false
+      }
+      this.#leadIn = null
+      this.#disposeAccompaniment()
+    }
+    this.#dropRun()
+    this.#stopListening()
+    this.#disposePlay(false)
+    this.#playResumable = false
+    this.#clearSounding()
+    this.#clearPreview()
+    this.#clearCorrections()
+    this.#lastResult = null
+    this.#cue = null
+    this.#wrongPending = 0
+    this.#missedPending = 0
+    this.#flash?.clear()
+  }
+
+  /**
+   * The cursor at the first playable onset at or after `position` in the current mode, paused (the
+   * start of the loop or the piece when there is none). In Repeat, Wait leads in from anywhere but
+   * the loop's first note, as a seek does (U38), and Keep time rests anywhere on the score (U128);
+   * Listen stays in the loop.
+   */
+  #placeCursor(position: Rational | null, now: number): void {
+    const loop = this.#sel.range ? passageRange(this.#model, this.#sel.range) : null
+    const outside =
+      loop !== null && position !== null && (lt(position, loop.start) || groupAtOrAfter(this.#timeline, position) > 0)
+    let group = 0
+    if (!outside || this.#mode !== 'wait' || !this.#setUpLeadIn(position, now, 'mode-change')) {
+      const timeline =
+        outside && this.#mode === 'time'
+          ? selectionTimeline(this.#model, this.#tempo, { ...this.#sel, range: null })
+          : this.#timeline
+      const next = position ? groupAtOrAfter(timeline, position) : 0
+      if (next < timeline.groups.length) group = next
+      this.#engine.reconfigure(
+        { reason: 'mode-change', mode: 'reading', timeline, transport: 'accompaniment', startGroup: group },
+        now,
+      )
+    }
+    // A new traversal, paused there: nothing of the old mode's (a hint, label exposure) carries over.
+    this.#engine.seek(group, now)
+    this.#readingStarted = false
+  }
+
+  /**
    * Open or close Repeat mode (U10). Opening uses the remembered loop, or `at` (the bar under
    * the cursor line, the browsed bar while browsing) as a one-bar loop. Closing ends a running
    * scored attempt ('mode-change', P4) and returns to reading at the loop's start; nothing
-   * starts by itself. The loop stays remembered.
+   * starts by itself. The loop stays remembered. Not available in Follow.
    */
   setRepeatMode(open: boolean, at?: number): void {
-    if (open === this.#repeat) return
-    // Without a piano a hand plays through the microphone; Repeat (scored) needs the piano (P22).
-    if (open && this.#playRequired()) return
+    if (open === this.#repeat || this.#mode === 'follow') return
     let loop = this.#loop
     if (open && !loop) {
       const occ = Math.max(0, Math.min(this.#model.occurrences.length - 1, at ?? this.progress.get().occ))
       loop = { fromOcc: occ, toOcc: occ }
     }
     this.#select({ hands: this.#sel.hands, multiplier: this.#sel.multiplier }, loop, open)
-  }
-
-  /**
-   * Play-through mode (DECISIONS P12): a performance aid, not practice. On: Repeat mode closes
-   * (the loop stays remembered), what plays stops (reading pauses at its position; a scored
-   * attempt ends by closing Repeat) and Start plays through from the cursor with wrong notes
-   * never blocking. Off: back to ordinary reading, paused at the same position. Unavailable
-   * while the hands are off (Listen, also held without a piano). Nothing is persisted. Without a
-   * piano it cannot go off while a hand is selected (DECISIONS P22: it is how a hand plays then).
-   */
-  setPlayThrough(on: boolean): void {
-    if (this.#disposed) return
-    if (on && this.#sel.hands === 'none') return
-    if (!on && this.#playRequired()) return
-    this.#playThroughChosen = on
-    this.#setPlayThrough(on)
-  }
-
-  /** Switches the mode (the learner's choice, or the no-piano rule in `#syncPlayMode`). */
-  #setPlayThrough(on: boolean): void {
-    if (on === this.#playThrough || this.#disposed) return
-    const now = this.#deps.clock()
-    if (on) {
-      if (this.#sel.hands === 'none') return
-      if (this.#rhythm) {
-        // Without a piano Keep time comes back with it; the piece keeps its choice meanwhile.
-        const held = !this.#inputAvailable
-        this.#setRhythm(false, !held)
-        this.#rhythmHeld = held
-      }
-      if (this.#repeat) {
-        // Without a piano Repeat comes back with it; the piece keeps it open meanwhile (U98). The
-        // learner's own play-through choice (with a piano) closes it for good.
-        if (this.#playRequired()) this.#repeatHeld = true
-        this.setRepeatMode(false)
-      }
-      this.#stopListening()
-      this.#pauseTransports()
-      this.#awaitPrepared = false
-      this.#pendingRepeat = false
-      if (this.#engine.mode === 'scored' && ACTIVE.includes(this.#engine.state.phase))
-        this.#engine.interrupt('mode-change', now)
-      else if (this.#engine.state.phase === 'running') this.#engine.pause(now)
-      if (this.#engine.mode === 'reading' && this.#engine.state.phase === 'paused') {
-        // The reading pass so far is recorded before play-through drops what the engine ends:
-        // the keep-progress path ends the traversal and continues a new one at the same target.
-        this.#engine.reconfigure({ reason: 'mode-change' }, now)
-        this.#drain(now)
-      }
-      this.#playThrough = true
-      // The reading transport goes; Start in reading builds a new one from the engine's position.
-      this.#disposeAccompaniment()
-      this.#clearPreview()
-      this.#clearCorrections()
-      this.#lastResult = null
-      this.#cue = null
-      this.#flash?.clear()
-      this.#playPedal = this.#hintPedal(this.#settings)
-      this.#saveResume(now, true)
-    } else {
-      this.#disposePlay(true)
-      this.#playThrough = false
-      this.#playResumable = false
-      this.#playPedal = null
-      this.#lastVersion = -1
-      this.#flash?.clear()
-    }
-    this.#lockState = ''
-    this.#syncLock()
-    this.#process(now)
-    this.#publishUi()
-  }
-
-  /**
-   * Keep time (rhythm mode, DECISIONS P13), saved on the piece. On: every Start is a scored
-   * attempt on the strict transport after a count-in, over the loop in Repeat mode, else
-   * from the cursor to the end; play-through goes off; needs a hand selected and a numerical
-   * tempo. Switching either way ends an attempt in progress ('mode-change'); off returns to
-   * ordinary reading, paused at the attempt's current position.
-   */
-  setRhythmMode(on: boolean): void {
-    if (this.#disposed) return
-    // Keep time needs a piano: without one a hand plays through the microphone (P22).
-    if (on && this.#playRequired()) return
-    this.#rhythmHeld = false
-    this.#setRhythm(on, true)
-  }
-
-  /** `persist` false: switched off by the no-piano rule, so the piece keeps its choice. */
-  #setRhythm(on: boolean, persist: boolean): void {
-    if (on === this.#rhythm || this.#disposed) return
-    if (on && (this.#sel.hands === 'none' || !hasTempo(this.#tempo))) return
-    if (on && this.#playThrough) this.setPlayThrough(false)
-    const now = this.#deps.clock()
-    this.#cancelCountIn(now)
-    this.#pauseTransports()
-    this.#awaitPrepared = false
-    this.#pendingRepeat = false
-    this.#ladderNext = null
-    if (this.#leadIn) {
-      if (this.#engine.mode === 'reading') this.#leaveLeadIn(now)
-      else this.#endLeadIn()
-    }
-    if (this.#engine.mode === 'scored') {
-      const position = this.#engine.state.position
-      const startGroup = !on && position ? groupAtOrAfter(this.#timeline, position) : 0
-      this.#engine.reconfigure(
-        {
-          reason: 'mode-change',
-          mode: 'reading',
-          timeline: this.#timeline,
-          transport: 'accompaniment',
-          startGroup: Math.min(startGroup, Math.max(0, this.#timeline.groups.length - 1)),
-        },
-        now,
-      )
-      this.#readingStarted = false
-    } else if (!samePassage(this.#engine.timeline.range, this.#timeline.range)) {
-      // Keep time read across the whole score after a seek outside the loop: back to the loop start.
-      this.#engine.reconfigure(
-        { reason: 'mode-change', mode: 'reading', timeline: this.#timeline, transport: 'accompaniment', startGroup: 0 },
-        now,
-      )
-      this.#readingStarted = false
-    }
-    if (this.#engine.state.phase === 'running') this.#engine.pause(now)
-    // The next Start builds the transport for the new mode.
-    this.#disposeAccompaniment()
-    this.#rhythm = on
-    this.#lastResult = null
-    this.#clearCorrections()
-    this.#cue = null
-    this.#flash?.clear()
-    if (persist) this.#deps.piece.save({ rhythm: on }, true)
-    this.#lockState = ''
-    this.#syncLock()
-    this.#process(now)
-    this.#publishUi()
   }
 
   #toleranceMs(settings: SessionSettings): number {
@@ -1947,12 +2006,14 @@ export class PracticeSession {
 
   /** The engine transport and rhythm parameters of a scored attempt (strict in Keep time). */
   #scoredKind(): { transport: TransportKind; rhythm?: RhythmParams } {
-    return this.#rhythm ? { transport: 'strict', rhythm: this.#rhythmParams() } : { transport: 'accompaniment' }
+    return this.#mode === 'time'
+      ? { transport: 'strict', rhythm: this.#rhythmParams() }
+      : { transport: 'accompaniment' }
   }
 
   /** Keep the loop selection independent of a one-off attempt from the visible cursor. */
   #startTimeline(): Timeline {
-    if (!this.#rhythm || this.#repeat || this.#sel.hands === 'none') return this.#timeline
+    if (this.#mode !== 'time' || this.#repeat) return this.#timeline
     if (this.#engine.transport === 'strict' && ACTIVE.includes(this.#engine.state.phase)) return this.#engine.timeline
     const browsed = this.#strip?.isBrowsing() ? this.#strip.browsedPosition?.() : null
     if (browsed) return this.#timelineFrom(browsed)
@@ -2297,7 +2358,7 @@ export class PracticeSession {
    * cursor's bar), replacing a remembered loop.
    */
   repeatFrom(occ: number): void {
-    if (this.#playRequired()) return
+    if (this.#mode === 'follow') return
     const at = Math.max(0, Math.min(this.#model.occurrences.length - 1, Math.trunc(occ)))
     this.#select({ hands: this.#sel.hands, multiplier: this.#sel.multiplier }, { fromOcc: at, toOcc: at }, true)
   }
@@ -2309,6 +2370,7 @@ export class PracticeSession {
    * the cursor's), else the cursor's bar. It is never shown in Repeat mode, so there is no toggle.
    */
   repeatAtCursor(occ?: number): void {
+    if (this.#mode === 'follow') return
     const at = occ ?? occAt(this.#model, this.#cursorPosition())
     if (this.#isPlaying() || this.#browseHold) this.pause()
     this.repeatFrom(at)
@@ -2320,7 +2382,7 @@ export class PracticeSession {
    * shows Pause, Ready and a finished pass's music playing on included), sound holds while the
    * finger is down, and the attempt or reading pass in progress ends unrecorded: a scored attempt
    * is interrupted; a reading pass pauses where it was and starts over from that note; Listen and
-   * play-through pause. The release (`browseReleased`) then continues from the note under the
+   * Follow pause. The release (`browseReleased`) then continues from the note under the
    * fixed cursor line. Nothing happens when nothing plays, nor in the page layout, whose cursor
    * moves with the notation (`browsedPosition()` null): scrolling there moves no position (U52),
    * so playback goes on.
@@ -2330,8 +2392,8 @@ export class PracticeSession {
     if (strip?.browsedPosition && strip.isBrowsing() && strip.browsedPosition() === null) return
     if (!this.#isPlaying() && !this.#pendingRepeat) return
     const hold = { from: this.#continueFrom() }
-    if (this.#playThrough) {
-      // Play-through pauses where it is; nothing is recorded to discard.
+    if (this.#mode === 'follow') {
+      // Follow pauses where it is; nothing is recorded to discard.
       this.pause()
       this.#browseHold = hold
       this.#publishUi()
@@ -2351,7 +2413,8 @@ export class PracticeSession {
     } finally {
       this.#discarding = false
     }
-    this.#browseHold = hold
+    // A reading whose last chord was still held open had ended: nothing is left to play on.
+    if (this.#engine.mode !== 'reading' || this.#engine.state.phase !== 'completed') this.#browseHold = hold
     this.#process(now)
   }
 
@@ -2407,56 +2470,26 @@ export class PracticeSession {
   }
 
   /**
-   * Whether a piano input is connected (U27, DECISIONS P22). Without one a hand plays through the
-   * microphone: play-through is on while a hand is selected and follows the microphone. Only when
-   * this browser cannot use a microphone either do the hands go off (Listen) without touching the
-   * piece's remembered hands; they come back with the piano. A play-through that followed the
-   * piano pauses (the next Start opens the microphone), and the reverse when the piano returns.
+   * Whether a piano input is connected. Without one, Wait and Keep time cannot start (nothing else
+   * changes: the mode, the hands and Repeat stay) and Follow uses the microphone (DECISIONS P22).
+   * A run still going without its piano ends as a disconnect; a Follow started for the other
+   * source pauses.
    */
   setInputAvailable(available: boolean): void {
-    if (available === this.#inputAvailable) {
-      this.#syncHeldHands()
-      return
-    }
+    if (available === this.#inputAvailable) return
     this.#inputAvailable = available
-    this.#syncHeldHands()
-    this.#syncPlayMode()
-    if (available && this.#repeatHeld) this.#returnHeldRepeat()
-    if (available && this.#rhythmHeld) {
-      this.#rhythmHeld = false
-      if (!this.#playThrough && this.#sel.hands !== 'none') this.#setRhythm(true, false)
-    }
+    const now = this.#deps.clock()
+    const run = this.#isPlaying() || this.#browseHold !== null || this.#pendingRepeat
+    if (!available && run && isPractice(this.#mode)) this.#loseInput(now)
     this.#syncFollowSource()
+    this.#process(now)
     this.#publishUi()
   }
 
   /**
-   * The piano came back while Repeat was held closed by the no-piano rule (DECISIONS U98): Repeat
-   * reopens over the remembered loop, paused at its start (nothing starts by itself). When it
-   * cannot (play-through stayed on by the learner's choice, or no loop), the piece's stored
-   * Repeat is closed so storage matches the screen.
-   */
-  #returnHeldRepeat(): void {
-    this.#repeatHeld = false
-    if (this.#repeat) return
-    if (!this.#playThrough && this.#loop) this.setRepeatMode(true)
-    if (!this.#repeat) this.#deps.piece.save({ repeatOpen: false }, true)
-  }
-
-  /**
-   * Without a piano, play-through is how a hand plays (DECISIONS P22): on while a hand is selected,
-   * whatever the learner chose; with the piano, the learner's choice.
-   */
-  #syncPlayMode(): void {
-    if (this.#disposed) return
-    const want = this.#playRequired() || (this.#playThroughChosen && this.#sel.hands !== 'none')
-    if (want !== this.#playThrough) this.#setPlayThrough(want)
-  }
-
-  /**
-   * What the play-through follows changed (a piano came or went, the Follow choice): a started
-   * play-through pauses where it is and is rebuilt for the new source on the next Start (the
-   * microphone opens or closes then; one hand gets or loses its accompaniment).
+   * What Follow follows changed (a piano came or went, the Follow choice): once started it pauses
+   * where it is and is rebuilt for the new source on the next Start (the microphone opens or
+   * closes then; one hand gets or loses its accompaniment).
    */
   #syncFollowSource(): void {
     const p = this.#play
@@ -2464,25 +2497,6 @@ export class PracticeSession {
     this.#pausePlay(this.#deps.clock())
     this.#disposePlay(true)
     this.#process(this.#deps.clock())
-  }
-
-  /** The hands are held off while no piano is connected and no microphone can stand in (U27, P22). */
-  #syncHeldHands(): void {
-    const available = this.#inputAvailable || this.#micPossible()
-    if (available === (this.#heldHands === null)) {
-      this.#publishUi()
-      return
-    }
-    const multiplier = this.#sel.multiplier
-    if (available) {
-      const hands = this.#heldHands ?? this.#sel.hands
-      this.#heldHands = null
-      this.#select({ hands, multiplier }, this.#loop, this.#repeat, false)
-    } else {
-      this.#heldHands = this.#sel.hands
-      this.#select({ hands: 'none', multiplier }, this.#loop, this.#repeat, false)
-    }
-    this.#publishUi()
   }
 
   /** Consecutive clean passes after which Repeat stops restarting (null: no limit). */
@@ -2525,11 +2539,19 @@ export class PracticeSession {
     return { attemptId: result.id, records: this.#resultRecords, timeline, marks }
   }
 
-  /** Opening Keep time details makes room for bar playback by stopping the tail or next count-in. */
+  /**
+   * Opening the details makes room for bar playback: Keep time stops the tail or the next count-in, a
+   * Wait run's tail ends at once (the piece rewinds, U126).
+   */
   openResultDetails(attemptId: string): void {
-    if (this.#lastResult?.id !== attemptId || this.#engine.transport !== 'strict') return
+    if (this.#lastResult?.id !== attemptId) return
     const phase = this.#engine.state.phase
     const finishing = phase === 'completed' && this.#accomp?.state === 'playing'
+    if (this.#lastResult.run) {
+      if (finishing) this.#onAccompanimentEnd()
+      return
+    }
+    if (this.#engine.transport !== 'strict') return
     if (!finishing && !this.#pendingRepeat && !this.#countIn && phase !== 'preparing') return
     this.#reviewReturnBy = null
     this.pause()
@@ -2553,8 +2575,7 @@ export class PracticeSession {
     )
       return msg('Plays once the music stops.')
     if (!this.#destination()) return msg('No sound output: connect the piano or allow this device to play.')
-    if (kind === 'played' && this.#playedSnippet(attemptId, occ).notes.length === 0)
-      return msg('No keys were captured in this bar.')
+    if (kind === 'played' && !this.#pressedBars(attemptId).has(occ)) return msg('No keys were captured in this bar.')
     return null
   }
 
@@ -2604,12 +2625,36 @@ export class PracticeSession {
   }
 
   #playedSnippet(attemptId: string, occ: number) {
-    const pass = this.#capture.pass(attemptId)
+    const pass = this.#capturedPass(attemptId)
     const timeline = this.#resultTimeline
     if (!pass || !timeline) return { notes: [], pedals: [], length: 0, shortened: false }
     const groups = new Set<number>()
     for (const g of timeline.groups) if (g.occ === occ) groups.add(g.index)
     return playedSnippet(pass.keys, groups, pass.pedals, this.#lastResult?.timing !== undefined)
+  }
+
+  /**
+   * What was captured of a pass. A Wait run keeps the latest time each group was played (U142): the
+   * presses of the other times are not part of it.
+   */
+  #capturedPass(passId: string): CapturedPass | null {
+    const pass = this.#capture.pass(passId)
+    const record = this.#resultRecords.at(-1)
+    if (!pass || record?.kind !== 'run' || record.id !== passId) return pass
+    const { visits } = record
+    return { ...pass, keys: pass.keys.filter((k) => k.velocity === 0 || visits.get(k.group) === k.visit) }
+  }
+
+  /** The bars of a pass with captured key presses, worked out once (the card asks per excerpt). */
+  #pressedBars(passId: string): ReadonlySet<number> {
+    if (this.#resultPressed?.id === passId) return this.#resultPressed.occs
+    const occs = new Set<number>()
+    for (const k of this.#capturedPass(passId)?.keys ?? []) {
+      const occ = k.velocity > 0 ? this.#resultTimeline?.groups[k.group]?.occ : undefined
+      if (occ !== undefined) occs.add(occ)
+    }
+    this.#resultPressed = { id: passId, occs }
+    return occs
   }
 
   /** The speed the last result's pass ran at (its record's), else the current one. */
@@ -2631,8 +2676,8 @@ export class PracticeSession {
   /**
    * Hands, passage or speed changed. A scored attempt in progress is interrupted and, when the
    * new selection still allows it, a fresh attempt is prepared (new comparison context);
-   * reading continues from the current position; Preview reschedules speed live. A loop changed
-   * while Repeat plays keeps playing (U94, `#select`).
+   * reading continues from the current position; Listen and Follow go on with the new hands and
+   * speed. A loop changed while Repeat plays keeps playing (U94, `#select`).
    */
   setSelection(patch: Partial<Selection>): void {
     const speed = patch.multiplier
@@ -2652,59 +2697,40 @@ export class PracticeSession {
       loop,
       repeat,
     )
-    // Without a piano a hand chosen means play-through (DECISIONS P22).
-    this.#syncPlayMode()
   }
 
   /**
-   * `persist` false: a selection the session imposes (hands held without a piano), not the
-   * learner's. `ladder`: the speed ladder's step after a completed attempt: the result card and
-   * its marks stay, and a fresh attempt is prepared at the new speed.
+   * `ladder`: the speed ladder's step after a completed attempt: the result card and its marks
+   * stay, and a fresh attempt is prepared at the new speed.
    *
    * A loop changed while Repeat plays (U94; the main button shows Pause, or a browse hold waits)
    * keeps playing over the new loop from where it played when that lies inside the new loop, else
-   * from its start: Listen rebuilds its transport there; with a hand on, an attempt in progress
-   * ends as interrupted ('range-change', never a result; the streak starts over), then a lead-in
-   * plays from there (U70), or the next attempt waits at the loop start at Ready (always so in
-   * Keep time, and for an attempt that was still waiting at Ready). Paused, interrupted or never
+   * from its start: Listen rebuilds its transport there; in Wait and Keep time an attempt in
+   * progress ends as interrupted ('range-change', never a result; the streak starts over), then a
+   * lead-in plays from there (U70), or the next attempt waits at the loop start at Ready (always so
+   * in Keep time, and for an attempt that was still waiting at Ready). Paused, interrupted or never
    * started, a loop change only moves the loop, as before.
    */
-  #select(
-    base: Omit<Selection, 'range'>,
-    loop: PassageRange | null,
-    repeat: boolean,
-    persist = true,
-    ladder = false,
-  ): void {
+  #select(base: Omit<Selection, 'range'>, loop: PassageRange | null, repeat: boolean, ladder = false): void {
     // Any selection change cancels a ladder speed waiting for the Repeat reset.
     this.#ladderNext = null
-    // Repeat mode and Listen (hands off, also held without a piano) are not play-through. Without a
-    // piano, choosing a hand in Repeat mode turns it back on and closes Repeat (`#syncPlayMode`).
-    if (this.#playThrough && (repeat || base.hands === 'none')) {
-      this.#playThroughChosen = false
-      this.#setPlayThrough(false)
-    }
     const next: Selection = { ...base, range: repeat ? loop : null }
     const prev = this.#sel
-    const modeChanged = repeat !== this.#repeat
-    // While the hands are held without a piano (U27) the learner's own hands are saved, never 'none'.
-    const handsChanged = this.#heldHands === null && base.hands !== prev.hands
+    const repeatChanged = repeat !== this.#repeat
     const loopChanged = !samePassage(loop, this.#loop)
-    // Repeat closed by the no-piano rule stays open on the piece until the piano returns (U98).
-    const heldClose = modeChanged && !repeat && this.#repeatHeld
-    if (repeat || !loop) this.#repeatHeld = false
+    if (!loop) this.#repeatAfterFollow = false
     // Repeat opened or closed, or the loop cleared, is saved on the piece (U98).
-    const saveMode = (modeChanged && !heldClose) || (loopChanged && !loop)
-    if (persist && (handsChanged || base.multiplier !== prev.multiplier || loopChanged || saveMode)) {
+    const saveRepeat = repeatChanged || (loopChanged && !loop)
+    if (base.hands !== prev.hands || base.multiplier !== prev.multiplier || loopChanged || saveRepeat) {
       // The learner's own change comes from a tap or a drag (never the MIDI path) and a reload
       // right after must find it: written at once (the saver coalesces). Only the speed ladder's
       // step stays debounced: it runs from the MIDI path, which never starts a write.
       this.#deps.piece.save(
         {
-          lastHands: this.#heldHands ?? base.hands,
+          lastHands: base.hands,
           lastPassage: loop,
           lastMultiplier: base.multiplier,
-          ...(saveMode ? { repeatOpen: repeat } : {}),
+          ...(saveRepeat ? { repeatOpen: repeat } : {}),
         },
         !ladder,
       )
@@ -2713,12 +2739,14 @@ export class PracticeSession {
     this.#repeat = repeat
     if (!repeat) this.#pendingRepeat = false
     if (sameSelection(next, prev)) {
-      if (modeChanged) this.#process(this.#deps.clock())
+      if (repeatChanged) this.#process(this.#deps.clock())
       return
     }
     // A completed Keep time pass still waiting for its last bar is recorded; the change then ends
     // its result and its ladder step as for any finished pass.
     if (this.#releaseKeepTime()) this.#ladderNext = null
+    // Other hands, or Repeat, end a Wait run; a speed is part of it.
+    if (next.hands !== prev.hands || repeatChanged) this.#dropRun()
     // The result card goes with its corrections (U39), unless the ladder set the speed after it.
     if (!ladder) {
       this.#lastResult = null
@@ -2732,7 +2760,7 @@ export class PracticeSession {
     const reason: InterruptReason =
       next.hands !== prev.hands
         ? 'hand-change'
-        : modeChanged
+        : repeatChanged
           ? 'mode-change'
           : !samePassage(next.range, prev.range)
             ? 'range-change'
@@ -2757,6 +2785,10 @@ export class PracticeSession {
         this.#timeline = selectionTimeline(this.#model, this.#tempo, next)
         this.#bothTimeline = null
         this.#process(now)
+        return
+      }
+      if (reason === 'hand-change' && samePassage(next.range, prev.range)) {
+        this.#listenToHands(next, now)
         return
       }
       if (keepLoop && this.#replayListen(next, from, now)) return
@@ -2801,28 +2833,16 @@ export class PracticeSession {
     }
 
     const phase = this.#engine.state.phase
-    if (!persist && phase === 'interrupted' && this.#engine.state.interruptReason === 'disconnect') {
-      // The hands held while the piano is away (U27), or given back: the attempt's disconnect
-      // interruption stays for the piano's return (U32). The engine keeps the learner's timeline
-      // and transport; only the session's selection follows the hold.
-      this.#pauseTransports()
-      this.#sel = next
-      this.#timeline = selectionTimeline(this.#model, this.#tempo, next)
-      this.#bothTimeline = null
-      this.#applySelectionVisuals()
-      this.#process(now)
-      return
-    }
-    // A loop change while Repeat plays with a hand on goes on as a new run (U94): an attempt in
+    // A loop change while Repeat plays in Wait or Keep time goes on as a new run (U94): an attempt in
     // progress ends ('range-change'), then the next attempt waits at the loop start at Ready, or a
     // lead-in plays from where it played (below).
-    const keepScored = keepLoop && next.hands !== 'none'
+    const keepScored = keepLoop && isPractice(this.#mode)
     const scoredActive = (this.#engine.mode === 'scored' && (ladder || ACTIVE.includes(phase))) || keepScored
     // Any other change ends a lead-in: the session stops where Repeat mode would (P4).
     const leadReading = lead !== null && this.#engine.mode === 'reading'
     const leadPosition = leadReading ? (this.#engine.state.position ?? lead.start) : null
     const readingRunning = !leadReading && this.#engine.mode === 'reading' && phase === 'running'
-    const keepCursor = this.#rhythm && !repeat && !prev.range && this.#engine.transport === 'strict'
+    const keepCursor = this.#mode === 'time' && !repeat && !prev.range && this.#engine.transport === 'strict'
     const cursor = keepCursor ? this.#cursorPosition() : null
     this.#pauseTransports()
     this.#disposeAccompaniment()
@@ -2845,7 +2865,7 @@ export class PracticeSession {
           ? groupAtOrAfter(this.#timeline, cursorOnset)
           : 0
 
-    if (keepScored && from && plan.action === 'scored' && plan.enabled && !this.#rhythm) {
+    if (keepScored && from && plan.action === 'scored' && plan.enabled && this.#mode === 'wait') {
       // Inside the new loop but not at its start, or before it while a lead-in read toward the
       // loop: a lead-in from there that plays at once, as a seek while Repeat plays (U70). Past the
       // loop, or at its start: the attempt at the loop start below. Keep time has no lead-ins.
@@ -2876,7 +2896,7 @@ export class PracticeSession {
         { reason, timeline: this.#timeline, transport: 'accompaniment', ...(rangeChanged ? { startGroup } : {}) },
         now,
       )
-      if (readingRunning && plan.enabled && plan.action !== 'listen') {
+      if (readingRunning && plan.enabled) {
         this.#ensureTransport((t) => {
           if (this.#engine.mode === 'reading' && this.#engine.state.phase === 'running')
             this.#playAccompanimentFromCurrent(t)
@@ -2950,7 +2970,7 @@ export class PracticeSession {
       }
     }
     if (prev.pedal !== next.pedal) {
-      if (this.#playThrough) this.#playPedal = this.#hintPedal(next)
+      if (this.#mode === 'follow') this.#playPedal = this.#hintPedal(next)
       this.#engine.updateSettings(
         { hintPedal: this.#hintPedal(next), hintPedalAction: next.pedal.hintPedalAction },
         now,
@@ -2960,11 +2980,11 @@ export class PracticeSession {
       this.#destinationChanged()
     } else if (performanceKey(prev) !== performanceKey(next) && !this.#isPlaying()) {
       this.#disposeAccompaniment()
-      // A paused one-hand play-through is rebuilt with the new automatic part on Start.
+      // A paused one-hand Follow is rebuilt with the new automatic part on Start.
       if (this.#play && this.#play.outputKey !== '') this.#disposePlay(true)
     }
     if ((prev.mic?.follow ?? false) !== (next.mic?.follow ?? false)) {
-      // The Follow choice (P22): a started play-through pauses and is rebuilt for the new source.
+      // The Follow choice (P22): once started, it pauses and is rebuilt for the new source.
       this.#syncFollowSource()
       this.#play?.transport.setMetronomeEnabled(this.#playMetronome())
       this.#publishUi()
@@ -3089,11 +3109,11 @@ export class PracticeSession {
     // The monitor hears releases under an overlay too, so no key or pedal stays down in it.
     this.#monitor?.(ev)
     if (this.#inputHeld) return
-    // Echoes of Preview output on an echoing route must never reach the engine (spec).
+    // Echoes of Listen's output on an echoing route must never reach the engine (spec).
     if (this.#listen && this.#settings.route.echo === 'echo-detected' && this.#outputKind === 'midi') return
-    // Play-through: the hint pedal names the notes at the cursor; once started, the follower
-    // has the keys (the engine stays paused where it was).
-    if (this.#playThrough && this.#playPedal?.feed(ev)) this.revealAtCursor()
+    // Follow: the hint pedal names the notes at the cursor; once started, the follower has the keys
+    // (the engine stays paused where it was).
+    if (this.#playPedal?.feed(ev)) this.revealAtCursor()
     const play = this.#play
     if (play) {
       // The microphone has the cursor (P22): the piano's keys never move it, so nothing counts twice.
@@ -3121,21 +3141,34 @@ export class PracticeSession {
   }
 
   /**
-   * O(1): the key and pedal events of a scored pass, for "What you played" (U100, U101). A press
-   * at Ready starts a pass; releases and pedal moves after the pass ended still land on it (its
-   * last chord's keys and the pedal come up later). The hint pedal is never kept: it is no sound.
+   * O(1): the key and pedal events of a scored pass or a Wait run, for "What you played" (U100,
+   * U101). A press at Ready starts a pass, a run's first press starts the run's; releases and pedal
+   * moves after it ended still land on it (its last chord's keys and the pedal come up later). The
+   * hint pedal is never kept: it is no sound.
    */
   #captureKey(ev: MidiInputEvent): void {
+    const reading = this.#reading()
     if (ev.kind === 'cc') {
       if (!SNIPPET_PEDALS.includes(ev.controller)) return
       const hint = this.#settings.pedal.hintPedal
       if (hint && hint.controller === ev.controller && (hint.channel === null || hint.channel === ev.channel)) return
-      this.#capture.pedal(ev.time, ev.controller, ev.value, this.#engine.mode === 'scored')
+      this.#capture.pedal(ev.time, ev.controller, ev.value, this.#engine.mode === 'scored' || reading)
+      return
+    }
+    const phase = this.#engine.state.phase
+    const velocity = ev.kind === 'noteon' ? ev.velocity : 0
+    if (reading) {
+      if (velocity > 0) {
+        if (phase !== 'running') return
+        if (!this.#runCaptured) this.#capture.begin(ev.time)
+        this.#runCaptured = true
+      }
+      if (this.#runCaptured)
+        this.#capture.add(ev.time, ev.note, velocity, this.#engine.state.groupIndex ?? -1, this.#visit)
+      else this.#capture.release(ev.time, ev.note)
       return
     }
     if (this.#engine.mode !== 'scored') return
-    const phase = this.#engine.state.phase
-    const velocity = ev.kind === 'noteon' ? ev.velocity : 0
     if (phase === 'ready' && velocity > 0) this.#capture.begin(ev.time)
     if (phase === 'ready' || phase === 'running') {
       if (velocity > 0 || phase === 'running')
@@ -3146,7 +3179,7 @@ export class PracticeSession {
 
   /** The group presses are previewed against (U31): nothing plays, not Listen, a group exists. */
   #previewGroupNow(): number | null {
-    if (this.#listen || this.#sel.hands === 'none' || this.#isPlaying()) return null
+    if (this.#mode === 'listen' || this.#isPlaying()) return null
     return this.#engine.state.groupIndex
   }
 
@@ -3220,28 +3253,19 @@ export class PracticeSession {
   #onRoute(ev: MidiRouteEvent): void {
     const now = this.#deps.clock()
     switch (ev.kind) {
-      case 'input-disconnected': {
+      case 'input-disconnected':
         // Nothing continues when a browse is released (U95).
         this.#browseHold = null
         this.#inputDisconnected = true
-        if (this.#playThrough) {
-          // Play-through pauses (not while the microphone follows); nothing is interrupted or recorded.
-          if (!this.#play?.mic) this.#pausePlay(now)
-          this.#play?.follower.resetPhysical(now)
-          this.#engine.resetPhysical(now)
+        if (isPractice(this.#mode)) {
+          this.#loseInput(now)
           break
         }
-        const phase = this.#engine.state.phase
-        const active =
-          this.#engine.mode === 'scored' ? ACTIVE.includes(phase) : this.#readingStarted && phase !== 'completed'
-        this.#pauseTransports()
-        this.#awaitPrepared = false
-        this.#pendingRepeat = false
-        if (active) this.#engine.interrupt('disconnect', now)
-        else this.#engine.resetPhysical(now)
-        this.#saveResume(now, true)
+        // Follow pauses (not while the microphone follows); Listen needs no input.
+        if (!this.#play?.mic) this.#pausePlay(now)
+        this.#play?.follower.resetPhysical(now)
+        this.#engine.resetPhysical(now)
         break
-      }
       case 'input-reconnected':
         this.#inputDisconnected = false
         this.#engine.resetPhysical(now)
@@ -3266,13 +3290,30 @@ export class PracticeSession {
     this.#process(now)
   }
 
+  /**
+   * The piano is gone in Wait or Keep time: the attempt or reading pass in progress ends as a
+   * disconnect (Start resumes the reading once it is back, U42).
+   */
+  #loseInput(now: number): void {
+    const phase = this.#engine.state.phase
+    const active =
+      this.#engine.mode === 'scored' ? ACTIVE.includes(phase) : this.#readingStarted && phase !== 'completed'
+    this.#browseHold = null
+    this.#pauseTransports()
+    this.#awaitPrepared = false
+    this.#pendingRepeat = false
+    if (active) this.#engine.interrupt('disconnect', now)
+    else this.#engine.resetPhysical(now)
+    this.#saveResume(now, true)
+  }
+
   /** A new sound destination: stop what plays now; the next Start builds the new backend. */
   #destinationChanged(): void {
     if (this.#play && this.#play.outputKey !== '') {
-      // A one-hand play-through is rebuilt for the new destination on the next Start.
+      // A one-hand Follow is rebuilt for the new destination on the next Start.
       this.#disposePlay(true)
     }
-    if (this.#playsNothing() && !this.#listen) {
+    if (this.#playsNothing()) {
       this.#disposeOutput()
       return
     }
@@ -3284,7 +3325,7 @@ export class PracticeSession {
 
   #onOutputLost(): void {
     if (this.#outputKind !== 'midi') return
-    if (this.#playsNothing() && !this.#listen) {
+    if (this.#playsNothing()) {
       this.#midiBackend?.disconnected()
       this.#disposeOutput()
       this.#soundStatus = null
@@ -3297,7 +3338,7 @@ export class PracticeSession {
     this.#listen?.transport.interrupt()
     if (this.#listen) this.#listen.playing = false
     if (this.#play) {
-      // The next Start rebuilds play-through for the new destination at the same group.
+      // The next Start rebuilds Follow for the new destination at the same group.
       this.#play.transport.interrupt()
       this.#play.playing = false
       this.#play.follower.pause(now)
@@ -3356,7 +3397,7 @@ export class PracticeSession {
         // Decide Repeat only after the whole batch, so the attempt record has been seen.
         if (this.#completedPending) {
           this.#completedPending = false
-          this.#afterAttempt(Math.max(now, this.#deps.clock()))
+          if (!this.#leaving) this.#afterAttempt(Math.max(now, this.#deps.clock()))
         }
         if (events.length === 0 && !this.#again) break
       }
@@ -3410,16 +3451,24 @@ export class PracticeSession {
         this.#onPhase(ev.phase, now)
         break
       case 'attempt-ended':
-        // Play-through records nothing: the reading before it was recorded when it went on;
-        // what the engine ends during play-through (and when it goes off) stays unrecorded.
-        if (this.#discarding || this.#playThrough) break
+        // Listen and Follow record nothing: leaving Wait or Keep time recorded what they did
+        // (`#leaveMode`), and the engine only waits meanwhile.
+        if (!isPractice(this.#mode)) break
+        if (this.#discarding && !(ev.record.kind === 'reading' && ev.record.completion === 'completed')) {
+          // Browsing away drops a reading pass from the history (U41), not from its run (U142).
+          this.#addToRun(ev.record)
+          break
+        }
         if (this.#keepTimeActivity && ev.record.completion === 'completed') {
           this.#keepTimeActivity.completed = ev.record
           this.#finishKeepTimeActivity(this.#keepTimeActivity)
         } else this.#onRecord(ev.record)
         break
+      case 'attempt-discarded':
+        if (ev.reason !== 'tempo-change') this.#visit++
+        break
       case 'abandon':
-        if (this.#playThrough) break
+        if (!isPractice(this.#mode)) break
         // Leaving during a lead-in (user stop) abandons nothing: it is not recorded.
         if (this.#leadIn && !this.#leadIn.handedOver && this.#engine.mode === 'reading') break
         this.#deps.history.queueAbandon(ev.event)
@@ -3440,14 +3489,15 @@ export class PracticeSession {
   }
 
   /**
-   * O(1), in the input path: a correct note of the next pass while the last result shows (U101).
-   * Wrong keys leave the result as it was (full strength, the strip reviewing the loop). The first
-   * correct note ends the review (the strip zooms back in the next frame, the marks go): the
-   * result dims until the cursor leaves that bar, or goes at once when the loop is one bar.
+   * O(1), in the input path: a correct note of the next pass, or reading run (U142), while the last
+   * result shows (U101). Wrong keys leave the result as it was (full strength, the strip reviewing
+   * the loop). The first correct note ends the review (the strip zooms back in the next frame, the
+   * marks go): the result dims until the cursor leaves that bar, or goes at once when the loop is one
+   * bar.
    */
   #resultPlayed(group: number): void {
     if (this.#lastResult === null || this.#resultPlayedIn !== null) return
-    if (this.#engine.mode !== 'scored' || this.#engine.state.phase !== 'running') return
+    if (this.#engine.state.phase !== 'running' || (this.#engine.mode !== 'scored' && !this.#reading())) return
     const timeline = this.#engine.timeline
     const occ = timeline.groups[group]?.occ
     if (occ === undefined) return
@@ -3553,8 +3603,12 @@ export class PracticeSession {
     // A lead-in only leads into the attempt: nothing read in it is recorded.
     if (record.kind === 'reading' && this.#leadInKeys.has(passageKey(record.context.passage))) return
     this.#deps.history.queueAttempt(record)
-    if (record.kind === 'scored') this.#rememberScored(record)
-    if (record.kind !== 'scored' || record.completion !== 'completed') return
+    if (record.kind === 'reading') {
+      this.#addToRun(record)
+      return
+    }
+    this.#rememberPass(record)
+    if (record.completion !== 'completed') return
     this.#capture.finish(record.id)
     this.#streak = record.passed ? this.#streak + 1 : 0
     this.#ladderNext = null
@@ -3574,10 +3628,13 @@ export class PracticeSession {
     // A climb keeps Repeat going: the target applies again at the new speed.
     const climbing = ladder?.climbedTo !== undefined
     const targetReached = !climbing && this.#repeatTarget !== null && this.#streak >= this.#repeatTarget
-    this.#resultPlayedIn = null
-    this.#reviewReturnBy = null
-    this.#resultExit = 'dismissed'
-    this.#lastResult = {
+    const timeline = [this.#engine.timeline, this.#timeline].find(
+      (t) =>
+        contextKey(
+          comparisonContextOf(t, record.context.transport, record.context.matchingRules, record.context.scorePlayback),
+        ) === record.contextKey,
+    )
+    const summary: AttemptSummary = {
       id: record.id,
       passed: record.passed,
       wrongAttacks: record.wrongAttacks,
@@ -3590,39 +3647,114 @@ export class PracticeSession {
       ...(ladder ? { ladder } : {}),
       ...timingSummary(record),
     }
-    const timeline = [this.#engine.timeline, this.#timeline].find(
-      (t) =>
-        contextKey(
-          comparisonContextOf(t, record.context.transport, record.context.matchingRules, record.context.scorePlayback),
-        ) === record.contextKey,
-    )
+    this.#showResult(summary, record, timeline ?? null)
+  }
+
+  /** A finished pass's result: the pill, the score's marks and what the card ranks. */
+  #showResult(summary: AttemptSummary, record: PassRecord, timeline: Timeline | null): void {
+    this.#resultPlayedIn = null
+    this.#reviewReturnBy = null
+    this.#resultExit = 'dismissed'
+    this.#lastResult = summary
     this.#corrections = timeline ? correctionMarks(record, timeline, this.#model, this.#settings.naming) : []
     this.#correctionsVisible = true
     this.#strip?.setCorrections?.(this.#corrections)
-    // Repeated mistakes are worked out in the next UI publish, outside the input path.
-    this.#repeatedPending = timeline ? { id: record.id, timeline } : null
-    this.#resultRecords = this.#recentScored.slice()
-    this.#resultTimeline = timeline ?? null
+    // Repeated mistakes and rough bars are worked out in the next UI publish, outside the input path.
+    this.#resultPending = timeline ? { id: record.id, timeline, repeat: this.#repeat } : null
+    this.#resultRecords = this.#recentPasses.slice()
+    this.#resultTimeline = timeline
+    this.#resultPressed = null
   }
 
-  /** O(1): keeps the last few scored records of the current comparison context (P24). */
-  #rememberScored(record: AttemptRecord): void {
-    const recent = this.#recentScored
+  /** O(1): keeps the last few passes of the current comparison context (P24). */
+  #rememberPass(record: PassRecord): void {
+    const recent = this.#recentPasses
     if (recent.length > 0 && recent[recent.length - 1]!.contextKey !== record.contextKey) recent.length = 0
     recent.push(record)
     if (recent.length > REPEATED_MISTAKE_HISTORY) recent.shift()
   }
 
-  /** The result card's summary, with the latest pass's repeated mistakes once they are worked out. */
+  /** The result card's summary, with its repeated mistakes and rough bars once they are worked out. */
   #resultForUi(): AttemptSummary | null {
-    const pending = this.#repeatedPending
+    const pending = this.#resultPending
     const result = this.#lastResult
-    if (pending && result?.id === pending.id) {
-      this.#repeatedPending = null
+    const record = this.#resultRecords.at(-1)
+    if (pending && result?.id === pending.id && record) {
+      this.#resultPending = null
       const found = repeatedMistakes(this.#resultRecords, pending.timeline, this.#model)
-      if (found.length > 0) this.#lastResult = { ...result, repeatedMistakes: found }
+      const rough = pending.repeat
+        ? null
+        : roughPassage(
+            record.groups ?? [],
+            pending.timeline,
+            this.#model.occurrences.length,
+            record.context.transport === 'strict',
+          )
+      if (found.length > 0 || rough) {
+        this.#lastResult = {
+          ...result,
+          ...(found.length > 0 ? { repeatedMistakes: found } : {}),
+          ...(rough ? { rough } : {}),
+        }
+      }
     }
     return this.#lastResult
+  }
+
+  // ── Wait run (U142) ───────────────────────────────────────────────────────────────────
+
+  /** Wait outside Repeat: what is read belongs to a run. */
+  #reading(): boolean {
+    return this.#mode === 'wait' && !this.#repeat && this.#engine.mode === 'reading'
+  }
+
+  /**
+   * A reading traversal ended (a seek, a speed change, browsing, a disconnect, the end of the piece):
+   * the run takes it in, and the piece's last note ends the run. One of other hands, or given up by
+   * Restart, belonged to a run that was dropped. At the end of a traversal, never per key press.
+   */
+  #addToRun(record: AttemptRecord): void {
+    const visit = this.#visit
+    if (record.interruptReason !== 'tempo-change') this.#visit++
+    if (record.kind !== 'reading' || !this.#reading()) return
+    if (record.context.hands !== this.#sel.hands || record.completion === 'abandoned') return
+    this.#run = addTraversal(this.#run, record, visit)
+    if (record.completion === 'completed') this.#finishRun()
+  }
+
+  /** The run reached the piece's last note: its result shows, as a loop's does. Nothing is stored. */
+  #finishRun(): void {
+    const record = this.#run && runRecord(this.#run)
+    this.#run = null
+    if (this.#runCaptured && record) {
+      this.#capture.finish(record.id)
+      this.#runCaptured = false
+    }
+    if (!record) return
+    this.#rememberPass(record)
+    this.#showResult(
+      {
+        id: record.id,
+        run: true,
+        passed: record.passed,
+        wrongAttacks: record.wrongAttacks,
+        groupsFirstPass: record.groupsFirstPass,
+        groupsTotal: record.groupsTotal,
+        completionTimeSec: null,
+        expectedTimeSec: null,
+        streak: 0,
+        targetReached: false,
+      },
+      record,
+      this.#engine.timeline,
+    )
+  }
+
+  /** The run is given up: other hands, another mode, Repeat, Restart or Again. */
+  #dropRun(): void {
+    this.#run = null
+    if (this.#runCaptured) this.#capture.discard()
+    this.#runCaptured = false
   }
 
   #setCorrectionsVisible(visible: boolean): void {
@@ -3683,7 +3815,7 @@ export class PracticeSession {
     this.#pendingRepeat = false
     this.#accomp?.stop()
     this.#clearSounding()
-    this.#select({ hands: this.#sel.hands, multiplier: speed }, this.#loop, true, true, true)
+    this.#select({ hands: this.#sel.hands, multiplier: speed }, this.#loop, true, true)
     this.#strip?.wrapTo?.(this.#cursorPosition())
   }
 
@@ -3898,9 +4030,9 @@ export class PracticeSession {
     }
   }
 
-  /** Every practice mode uses the same transport for its gates, clock, click and score sound. */
+  /** Wait and Keep time use the same transport for their gates, clock, click and score sound. */
   #ensureAccompaniment(updateSound = false): void {
-    if (this.#sel.hands === 'none' || !hasTempo(this.#tempo)) return
+    if (!hasTempo(this.#tempo)) return
     const scorePlayback = this.#scorePlayback()
     const scoreVolume = scorePlayback ? level(this.#settings.rhythm?.scorePlaybackVolume ?? 1) : 1
     // At 0% nothing is played (P27), so no echo-free route is needed.
@@ -3911,7 +4043,7 @@ export class PracticeSession {
       return
     const silent = this.#practiceSilent()
     // Follow human-held MIDI keys from the count-in, even if Playback is first enabled mid-note.
-    if (silent && this.#rhythm && this.#destination() === 'midi') this.#ensureOutputSync()
+    if (silent && this.#mode === 'time' && this.#destination() === 'midi') this.#ensureOutputSync()
     const output = silent ? null : this.#ensureOutputSync()
     if (!silent && !output) return
     // Record the choice once its audio is available. Loading or a blocked route leaves grading alone.
@@ -3999,9 +4131,11 @@ export class PracticeSession {
    */
   #ensureTransport(then: (now: number) => void): void {
     this.#ensureAccompaniment()
-    if (this.#accomp || this.#practiceSilent() || this.#sel.hands === 'none' || !this.#plan().enabled) return
+    if (this.#accomp || this.#practiceSilent() || !this.#plan().enabled) return
+    const gen = this.#startGen
     void this.#ensureOutput().then(() => {
-      if (this.#disposed) return
+      // Paused, or in another mode, meanwhile: the next Start builds it.
+      if (this.#startCanceled(gen)) return
       this.#ensureAccompaniment()
       const t = this.#deps.clock()
       then(t)
@@ -4113,8 +4247,8 @@ export class PracticeSession {
     const previewChanged = this.#previewDirty
     this.#previewDirty = false
     const versionChanged = s.version !== this.#lastVersion || force
-    // Listen mode (both hands off, U9) shows no targets, even before Play.
-    const quiet = this.#listen !== null || this.#sel.hands === 'none'
+    // Listen shows no targets, even before Play.
+    const quiet = this.#mode === 'listen'
     const timingEnabled = this.#timingRowEnabled()
     const timing = this.#engine.transport === 'strict' ? this.#timingDrift : this.#practiceTiming
     strip?.setTimingCue?.(timingEnabled && s.phase === 'running' ? timing.directionAt(now) : null, timingEnabled)
@@ -4192,7 +4326,7 @@ export class PracticeSession {
       else if (hint.expiresAt !== null && now >= hint.expiresAt - this.#settings.hints.fadeMs) tempChanging = true
       else for (const v of temp.values()) if (v < 1) tempChanging = true
     }
-    // Names revealed at the cursor on request (Study mode) are a third source, merged the same way.
+    // Names revealed at the cursor on request are a third source, merged the same way.
     const reveal = this.#revealOpacity(now)
     const revealFading = this.#reveal !== null && now >= this.#reveal.until - this.#settings.hints.fadeMs
     if (
@@ -4225,10 +4359,10 @@ export class PracticeSession {
   }
 
   /**
-   * The play-through frame (DECISIONS P12): the follower's targets, accepted marks and keys,
-   * the timing cue, the cursor at the transport position, and the resume position.
+   * Follow's frame (DECISIONS P12): the follower's targets, accepted marks and keys, the timing cue
+   * and the cursor at the transport position.
    */
-  #framePlay(now: number, force: boolean, p: PlayThrough): void {
+  #framePlay(now: number, force: boolean, p: Following): void {
     const strip = this.#strip
     const s = this.#engine.state
     const f = p.follower.state
@@ -4256,7 +4390,6 @@ export class PracticeSession {
     if (s.keyboardVisible && (changed || this.#soundingDirty)) this.#updateGuide(false, f)
     this.#soundingDirty = false
     this.progress.set(this.#computeProgress())
-    if (p.playing && now - this.#lastResumeSave >= RESUME_SAVE_MS) this.#saveResume(now, false)
     this.#syncLock()
     this.#publishUi()
     strip?.flushFrame?.()
@@ -4269,14 +4402,13 @@ export class PracticeSession {
   }
 
   /**
-   * The cue row above the score is reserved whenever live timing feedback is on (DECISIONS U122):
-   * the setting, a hand practiced (not Listen), and in play-through a piano to time (the microphone
-   * gives no live timing, P22). It does not follow the phase, so the score stays put on Start,
-   * Pause and each new pass; the cue itself shows only while the music runs.
+   * The cue row above the score is reserved whenever live timing feedback is on (DECISIONS U122,
+   * U131): the setting, not in Listen, and in Follow a piano to time (the microphone gives no live
+   * timing, P22). It does not follow the phase, so the score stays put on Start, Pause and each new
+   * pass; the cue itself shows only while the music runs.
    */
   #timingRowEnabled(): boolean {
-    if (!this.#settings.hints.showTimingCues || this.#listen !== null || this.#sel.hands === 'none') return false
-    return !this.#playThrough || !this.#micActive()
+    return this.#settings.hints.showTimingCues && this.#mode !== 'listen' && !this.#micActive()
   }
 
   /** Wake for engine deadlines (pending presses, hint expiry and fades), label fades before Ready. */
@@ -4340,24 +4472,16 @@ export class PracticeSession {
   #plan(timeline = this.#timeline.scoredAllowed ? this.#timeline : this.#startTimeline()) {
     const out = this.#deps.midi.output()
     const browser = this.#browserSoundPossible()
-    return startPlan(
-      timeline,
-      this.#sel,
-      {
-        hasOutput: hasSoundOutput(this.#settings, out, browser),
-        noOutputReason: noPlaybackReason(this.#settings, out, browser),
-        accompanimentAllowed: accompanimentAllowed(this.#settings, out, browser),
-        hasTempo: hasTempo(this.#tempo),
-        hasInput: this.#inputAvailable,
-        micSupported: this.#micPossible(),
-      },
-      {
-        playThrough: this.#playThrough,
-        rhythm: this.#rhythm,
-        scorePlayback: this.#playbackHeard(),
-        mic: this.#micActive(),
-      },
-    )
+    return startPlan(timeline, this.#sel, this.#mode, {
+      hasOutput: hasSoundOutput(this.#settings, out, browser),
+      noOutputReason: noPlaybackReason(this.#settings, out, browser),
+      accompanimentAllowed: accompanimentAllowed(this.#settings, out, browser),
+      otherHand: otherHandSound(out, browser),
+      hasTempo: hasTempo(this.#tempo),
+      hasInput: this.#inputAvailable,
+      scorePlayback: this.#playbackHeard(),
+      mic: this.#micActive(),
+    })
   }
 
   /** This app can follow the microphone here: a follower to build and a browser that can open one (P22). */
@@ -4366,29 +4490,24 @@ export class PracticeSession {
   }
 
   /**
-   * What a play-through follows is the microphone (DECISIONS P22): always without a piano, and with
-   * one when `settings.mic.follow` (the Practice menu's Follow choice) says so.
+   * Follow's source is the microphone (DECISIONS P22): always without a piano, and with one when
+   * `settings.mic.follow` (the menu's choice) says so.
    */
   #followsMic(): boolean {
     return this.#micPossible() && (!this.#inputAvailable || this.#settings.mic?.follow === true)
   }
 
   /**
-   * The microphone follows this play-through (any hand, P22): the app then plays nothing, neither
-   * the other hand nor the metronome, since the microphone must never hear the app's own sound.
+   * Follow, through the microphone (any hand, P22): the app then plays nothing, neither the other
+   * hand nor the metronome, since the microphone must never hear the app's own sound.
    */
   #micActive(): boolean {
-    return this.#followsMic() && this.#sel.hands !== 'none'
-  }
-
-  /** No piano and a hand selected: play-through is how that hand plays, on and locked (P22). */
-  #playRequired(): boolean {
-    return !this.#inputAvailable && this.#sel.hands !== 'none'
+    return this.#mode === 'follow' && this.#followsMic()
   }
 
   /** Keep time's Playback switch is on (the score's sound follows it, P27: none at 0%). */
   #scorePlayback(): boolean {
-    return this.#rhythm && this.#sel.hands !== 'none' && this.#settings.rhythm?.scorePlayback === true
+    return this.#mode === 'time' && this.#settings.rhythm?.scorePlayback === true
   }
 
   /**
@@ -4397,39 +4516,36 @@ export class PracticeSession {
    * it on mid-pass.
    */
   #playbackHeard(): boolean {
-    return this.#rhythm && this.#sel.hands !== 'none' && playbackHeard(this.#settings)
+    return this.#mode === 'time' && playbackHeard(this.#settings)
   }
 
+  /** Wait and Keep time play nothing with both hands (Keep time's Playback aside). */
   #practiceSilent(): boolean {
     return this.#sel.hands === 'both' && !this.#playbackHeard()
   }
 
   /** Whether a route change can remove the backend without stopping the active transport. */
   #playsNothing(): boolean {
-    return this.#practiceSilent() || (this.#playThrough && this.#micActive())
+    if (this.#mode === 'listen') return this.#listen === null
+    return this.#mode === 'follow' ? this.#playSilent() : this.#practiceSilent()
   }
 
-  /** The play-through transport plays nothing: both hands, or the microphone follows. */
+  /** Follow's transport plays nothing: both hands, or the microphone follows. */
   #playSilent(): boolean {
     return this.#sel.hands === 'both' || this.#micActive()
   }
 
   /**
-   * The metronome clicks in play-through unless the microphone follows: the clicks come out of
-   * this device right beside its microphone, louder there than the piano (DECISIONS P16).
+   * The metronome clicks in Follow unless the microphone follows: the clicks come out of this
+   * device right beside its microphone, louder there than the piano (DECISIONS P16).
    */
   #playMetronome(): boolean {
     return this.#settings.metronome.enabled && !this.#micActive()
   }
 
-  /** Which Metronome preference the current mode uses (DECISIONS P20; `ui.metronomeScope`). */
-  #metronomeScope(): MetronomeScope {
-    return metronomeScope(this.#rhythm, this.#sel.hands)
-  }
-
   /** The gated practice transport's click: Keep time's own preference in its attempts, else the general one. */
   #practiceClick(): boolean {
-    return metronomeOn(this.#settings.metronome, this.#metronomeScope())
+    return metronomeOn(this.#settings.metronome, metronomeScope(this.#mode))
   }
 
   /**
@@ -4447,7 +4563,7 @@ export class PracticeSession {
           : plan.action === 'listen'
             ? this.#settings.metronome.enabled
             : // The Keep time count-in always clicks.
-              (this.#rhythm && plan.action === 'scored') || this.#practiceClick()
+              this.#mode === 'time' || this.#practiceClick()
       if (click) void Promise.resolve(metronomeAudioOutput(this.#settings.metronome.outputId)).catch(() => undefined)
     } catch {
       // No Web Audio: the Start goes on without a click.
@@ -4455,15 +4571,15 @@ export class PracticeSession {
   }
 
   #isPlaying(): boolean {
-    if (this.#playThrough) return this.#play?.playing ?? false
-    if (this.#listen) return this.#listen.playing
+    if (this.#mode === 'follow') return this.#play?.playing ?? false
+    if (this.#mode === 'listen') return this.#listen?.playing ?? false
     const phase = this.#engine.state.phase
     if (this.#engine.mode === 'scored') return ACTIVE.includes(phase) || this.#keepTimeActivity !== null
     return phase === 'running' || this.#leadInTail()
   }
 
   #activity(): Activity {
-    if (this.#playThrough) return 'playing'
+    if (this.#mode === 'follow') return 'playing'
     if (this.#listen) return 'listening'
     if (this.#engine.mode === 'scored') return 'scored'
     return this.#readingStarted ? 'reading' : 'idle'
@@ -4471,7 +4587,7 @@ export class PracticeSession {
 
   #interruption(): Interruption | null {
     const s = this.#engine.state
-    if (s.phase !== 'interrupted' || this.#listen || this.#playThrough) return null
+    if (s.phase !== 'interrupted') return null
     const reason = s.interruptReason ?? 'pause'
     // No "Paused" banner: the main button reads Resume / Start (user, 2026-10-31).
     if (reason === 'mode-change' || reason === 'user-stop' || reason === 'pause') return null
@@ -4482,7 +4598,7 @@ export class PracticeSession {
     }
   }
 
-  /** The play-through UI (DECISIONS P12): no attempt states, results, interruptions or hints. */
+  /** Follow's UI (DECISIONS P12): no attempt states, results, interruptions or hints. */
   #computePlayUi(s: EngineState, plan: StartPlan): SessionUi {
     const p = this.#play
     const phase: Phase | null = p
@@ -4499,13 +4615,14 @@ export class PracticeSession {
       phase,
       // A browse hold reads Pause until the release continues (U95).
       playing: (p?.playing ?? false) || this.#browseHold !== null,
+      mode: this.#mode,
       hands: this.#sel.hands,
-      handsAvailable: this.#heldHands === null,
       range: this.#sel.range,
       multiplier: this.#sel.multiplier,
       startAction: plan.action,
       startEnabled: plan.enabled,
       startReason: plan.reason,
+      ...(plan.otherHand ? { otherHand: plan.otherHand } : {}),
       waiting: null,
       hintVisible: s.hint !== null,
       keyboardVisible: s.keyboardVisible,
@@ -4523,31 +4640,28 @@ export class PracticeSession {
       interruption: null,
       soundStatus: this.#soundStatus,
       inputDisconnected: this.#inputDisconnected,
-      playThrough: true,
       micStatus: this.#micStatus,
       ...this.#followUi(),
-      rhythm: false,
       countIn: null,
-      metronomeScope: this.#metronomeScope(),
+      metronomeScope: metronomeScope(this.#mode),
       metronomeMuted: this.#micActive(),
       finished: false,
     }
   }
 
-  /** The Follow choice and the no-piano lock (DECISIONS P22, U92). */
-  #followUi(): Pick<SessionUi, 'follow' | 'pianoConnected' | 'micSupported' | 'playThroughLocked'> {
+  /** Follow's source and what it could be (DECISIONS P22, U92). */
+  #followUi(): Pick<SessionUi, 'follow' | 'pianoConnected' | 'micSupported'> {
     return {
       follow: this.#followsMic() ? 'mic' : 'piano',
       pianoConnected: this.#inputAvailable,
       micSupported: this.#micPossible(),
-      playThroughLocked: !this.#inputAvailable && this.#micPossible(),
     }
   }
 
   #computeUi(): SessionUi {
     const s = this.#engine.state
     const plan = this.#plan()
-    if (this.#playThrough) return this.#computePlayUi(s, plan)
+    if (this.#mode === 'follow') return this.#computePlayUi(s, plan)
     let waiting: string | null = null
     if (s.phase === 'preparing') {
       if (s.readyBlockers.includes('keys-held')) {
@@ -4563,13 +4677,14 @@ export class PracticeSession {
       activity: this.#activity(),
       phase: s.phase,
       playing,
+      mode: this.#mode,
       hands: this.#sel.hands,
-      handsAvailable: this.#heldHands === null,
       range: this.#sel.range,
       multiplier: this.#sel.multiplier,
       startAction: plan.action,
       startEnabled: plan.enabled,
       startReason: plan.reason,
+      ...(plan.otherHand ? { otherHand: plan.otherHand } : {}),
       waiting,
       hintVisible: s.hint !== null,
       keyboardVisible: s.keyboardVisible,
@@ -4578,7 +4693,7 @@ export class PracticeSession {
         !s.inputComplete &&
         s.phase !== 'completed' &&
         s.phase !== 'interrupted' &&
-        !this.#listen,
+        this.#mode !== 'listen',
       repeat: this.#repeat,
       canRestartLoop: this.#repeat && !playing && !this.#inputHeld && plan.enabled && this.#accomp?.state !== 'playing',
       leadIn,
@@ -4592,12 +4707,10 @@ export class PracticeSession {
       interruption: this.#interruption(),
       soundStatus: this.#soundStatus,
       inputDisconnected: this.#inputDisconnected,
-      playThrough: false,
       micStatus: null,
       ...this.#followUi(),
-      rhythm: this.#rhythm,
       countIn: this.#countIn?.remaining ?? null,
-      metronomeScope: this.#metronomeScope(),
+      metronomeScope: metronomeScope(this.#mode),
       metronomeMuted: false,
       // A lead-in that read to its end is not the end of the piece: it wraps into the attempt.
       finished: this.#engine.mode === 'reading' && s.phase === 'completed' && !leadIn,
@@ -4694,8 +4807,8 @@ export class PracticeSession {
   }
 
   /**
-   * Note onsets the strip snaps the playhead and loop edges to (U19): the learner's hands, all
-   * onsets in Listen. Cached per hand selection so the strip rebuilds its knots only on a change.
+   * Note onsets of the learner's hands, which the strip snaps the playhead and loop edges to (U19).
+   * Cached per hand selection so the strip rebuilds its knots only on a change.
    */
   get snapOnsets(): readonly Rational[] {
     const hands = this.#sel.hands
@@ -4733,8 +4846,7 @@ export class PracticeSession {
       this.#lastResult !== null &&
       this.#resultPlayedIn === null &&
       this.#reviewReturnBy === null &&
-      this.#sel.range !== null &&
-      !this.#playThrough
+      this.#sel.range !== null
     )
   }
 
@@ -4755,9 +4867,8 @@ export class PracticeSession {
     // playhead can be dragged only while paused outside Repeat mode (U23): there every pass
     // starts at the loop start.
     const playing = this.#isPlaying() || this.#browseHold !== null
-    // Play-through covers the whole piece: no repeat button (P12).
-    const cursorAction =
-      this.#cursorActionAllowed && !this.#repeat && !this.#playThrough && (!playing || this.#chromeRevealed)
+    // Follow covers the whole piece: no repeat button (P12).
+    const cursorAction = !this.#repeat && this.#mode !== 'follow' && (!playing || this.#chromeRevealed)
     const draggable = !this.#repeat && !playing
     const key = `${editable}|${browse}|${cursorAction}|${draggable}`
     if (key === this.#lockState) return
@@ -4768,17 +4879,18 @@ export class PracticeSession {
     strip.setCursorDraggable(draggable)
   }
 
+  /** The practice place: Listen and Follow never move it (U72). */
   #saveResume(now: number, immediate: boolean, override?: null): void {
+    if (!isPractice(this.#mode)) return
     if (this.#engine.mode !== 'reading' && override === undefined) return
     this.#lastResumeSave = now
     if (override === null) {
       this.#deps.piece.save({ resume: null }, immediate)
       return
     }
-    // Play-through saves where the follower is, as reading saves where the engine is.
-    const s = this.#play ? this.#play.follower.state : this.#engine.state
+    const s = this.#engine.state
     if (!s.position || s.groupIndex === null) return
-    const g = (this.#play ? this.#play.follower.timeline : this.#engine.timeline).groups[s.groupIndex]
+    const g = this.#engine.timeline.groups[s.groupIndex]
     this.#deps.piece.save(
       {
         resume: {

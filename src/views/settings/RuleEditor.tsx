@@ -3,7 +3,7 @@ import { msg } from '../../i18n/messages'
  * One clef's conditional label rule (spec "Persistent score labels"): independent Show below and
  * Show above conditions with strict comparisons, validation, a plain-language summary and a live
  * sample of which pitches would be labeled. Editing stages the rule; nothing applies until the
- * Labels section's Apply button.
+ * Note names section's Apply button.
  */
 import type { ClefKey } from '../../core/model/score'
 import { TREBLE_PRESET, type ClefLabelRule, type LabelCondition } from '../../core/model/settings'
@@ -100,7 +100,7 @@ export function RuleEditor({
   }
   const isTreble = clef === 'G2'
   return (
-    <div class={styles.rule} role="group" aria-label={msg('{0} label rule', clefDisplayName(clef))}>
+    <div class={styles.rule} role="group" aria-label={msg('{0} note name rule', clefDisplayName(clef))}>
       <h4 class={styles.groupTitle}>{clefDisplayName(clef)}</h4>
       <Condition
         clef={clef}

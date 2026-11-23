@@ -8,25 +8,27 @@ describe('parseHash', () => {
     expect(parseHash('#/')).toEqual({ view: 'library', overlay: null })
     expect(parseHash('#/practice/p1')).toEqual({ view: 'practice', pieceId: 'p1', overlay: null })
     expect(parseHash('#/practice')).toEqual({ view: 'practice', overlay: null })
-    expect(parseHash('#/results/p1')).toEqual({ view: 'results', pieceId: 'p1', overlay: null })
-    expect(parseHash('#/results/p1/a9')).toEqual({ view: 'results', pieceId: 'p1', attemptId: 'a9', overlay: null })
-    expect(parseHash('#/study/p1')).toEqual({ view: 'study', pieceId: 'p1', overlay: null })
-    expect(parseHash('#/study')).toEqual({ view: 'study', overlay: null })
-    expect(parseHash('#/study/p1?settings')).toEqual({ view: 'study', pieceId: 'p1', overlay: 'settings' })
-    // The view was called Consult until 7 November 2026 (U79): old links still open it.
-    expect(parseHash('#/consult/p1')).toEqual({ view: 'study', pieceId: 'p1', overlay: null })
-    expect(parseHash('#/consult')).toEqual({ view: 'study', overlay: null })
+  })
+
+  it('opens old links to the Results page in Practice (U148)', () => {
+    expect(parseHash('#/results/p1')).toEqual({ view: 'practice', pieceId: 'p1', overlay: null })
+    expect(parseHash('#/results/p1/a9?settings')).toEqual({ view: 'practice', pieceId: 'p1', overlay: 'settings' })
+    expect(parseHash('#/results')).toEqual({ view: 'practice', overlay: null })
+  })
+
+  it('opens old links to the Sheet music screen in Practice, in Listen (U141)', () => {
+    const listen = { view: 'practice', pieceId: 'p1', mode: 'listen' }
+    expect(parseHash('#/study/p1')).toEqual({ ...listen, overlay: null })
+    expect(parseHash('#/study/p1?settings')).toEqual({ ...listen, overlay: 'settings' })
+    expect(parseHash('#/study')).toEqual({ view: 'practice', overlay: null })
+    // Its name until 7 November 2026 (U79).
+    expect(parseHash('#/consult/p1')).toEqual({ ...listen, overlay: null })
+    expect(parseHash('#/consult')).toEqual({ view: 'practice', overlay: null })
   })
 
   it('reads overlays from the query and the #/settings, #/connection aliases', () => {
     expect(parseHash('#/?settings')).toEqual({ view: 'library', overlay: 'settings' })
     expect(parseHash('#/practice/p1?connection')).toEqual({ view: 'practice', pieceId: 'p1', overlay: 'connection' })
-    expect(parseHash('#/results/p1/a9?settings')).toEqual({
-      view: 'results',
-      pieceId: 'p1',
-      attemptId: 'a9',
-      overlay: 'settings',
-    })
     expect(parseHash('#/connection')).toEqual({ view: 'library', overlay: 'connection' })
     expect(parseHash('#/settings')).toEqual({ view: 'library', overlay: 'settings' })
   })
@@ -54,16 +56,13 @@ describe('formatHash', () => {
     expect(formatHash({ view: 'library', overlay: null })).toBe('#/')
     expect(formatHash({ view: 'practice', pieceId: 'p1', overlay: null })).toBe('#/practice/p1')
     expect(formatHash({ view: 'practice', overlay: null })).toBe('#/practice')
-    expect(formatHash({ view: 'study', pieceId: 'p1', overlay: null })).toBe('#/study/p1')
-    expect(formatHash({ view: 'study', pieceId: 'p1', overlay: 'settings' })).toBe('#/study/p1?settings')
-    expect(formatHash({ view: 'study', overlay: null })).toBe('#/study')
-    expect(formatHash({ view: 'results', pieceId: 'p1', attemptId: 'a9', overlay: null })).toBe('#/results/p1/a9')
+    // A mode is never part of it.
+    expect(formatHash({ view: 'practice', pieceId: 'p1', mode: 'listen', overlay: null })).toBe('#/practice/p1')
     expect(formatHash({ view: 'library', overlay: 'connection' })).toBe('#/?connection')
     expect(formatHash({ view: 'practice', pieceId: 'p1', overlay: 'settings' })).toBe('#/practice/p1?settings')
   })
 
-  it('never writes an attempt without a piece, and encodes ids', () => {
-    expect(formatHash({ view: 'results', attemptId: 'a9', overlay: null })).toBe('#/results')
+  it('encodes ids', () => {
     expect(formatHash({ view: 'practice', pieceId: 'a/b c?', overlay: null })).toBe('#/practice/a%2Fb%20c%3F')
   })
 
@@ -73,8 +72,6 @@ describe('formatHash', () => {
       { view: 'library', overlay: 'settings' },
       { view: 'practice', pieceId: 'id with / and ? and #', overlay: 'connection' },
       { view: 'practice', overlay: null },
-      { view: 'results', pieceId: '8f5c-1', attemptId: 'x y', overlay: null },
-      { view: 'results', pieceId: '8f5c-1', overlay: 'settings' },
     ]
     for (const route of routes) expect(parseHash(formatHash(route))).toEqual(route)
   })
@@ -92,19 +89,13 @@ describe('route comparison', () => {
     expect(
       sameBase({ view: 'practice', pieceId: 'a', overlay: null }, { view: 'practice', pieceId: 'b', overlay: null }),
     ).toBe(false)
-    expect(sameBase({ view: 'practice', overlay: null }, { view: 'results', overlay: null })).toBe(false)
-    expect(
-      sameBase({ view: 'study', pieceId: 'a', overlay: null }, { view: 'study', pieceId: 'a', overlay: 'settings' }),
-    ).toBe(true)
-    expect(
-      sameBase({ view: 'study', pieceId: 'a', overlay: null }, { view: 'practice', pieceId: 'a', overlay: null }),
-    ).toBe(false)
+    expect(sameBase({ view: 'practice', overlay: null }, { view: 'library', overlay: null })).toBe(false)
     expect(
       sameBase(
-        { view: 'results', pieceId: 'a', attemptId: '1', overlay: null },
-        { view: 'results', pieceId: 'a', overlay: null },
+        { view: 'practice', pieceId: 'a', mode: 'listen', overlay: null },
+        { view: 'practice', pieceId: 'a', overlay: null },
       ),
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('sameRoute also compares the overlay', () => {

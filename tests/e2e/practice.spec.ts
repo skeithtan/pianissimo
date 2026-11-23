@@ -53,7 +53,7 @@ test.describe('practice', () => {
     await openSeededPractice(page)
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const settings = page.getByRole('dialog', { name: 'Settings', exact: true })
-    await settings.getByRole('tab', { name: 'Hints', exact: true }).click()
+    await settings.getByRole('tab', { name: 'Reading help', exact: true }).click()
     const toggle = settings.getByRole('switch', { name: 'Rushing and Dragging indicators', exact: true })
     await expect(toggle).toBeChecked()
     await toggle.uncheck()

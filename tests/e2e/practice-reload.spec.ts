@@ -7,7 +7,16 @@
  * check waits through Playwright's auto-waiting assertions.
  */
 import { expect, test, type Page } from '../browser-test'
-import { installFakeMidi, openSeededPractice, PIECE_ID, playWhenDue, seedPiece } from './practice-helpers'
+import { idbAll } from './app-helpers'
+import {
+  chooseMode,
+  expectMode,
+  installFakeMidi,
+  openSeededPractice,
+  PIECE_ID,
+  playWhenDue,
+  seedPiece,
+} from './practice-helpers'
 
 const TABLET = { width: 1180, height: 820 }
 const TABLET_PORTRAIT = { width: 820, height: 1180 }
@@ -205,17 +214,27 @@ test('a note-level loop edge survives a reload', async ({ page }) => {
   await expect(loopEnd(page)).toHaveText(edge ?? '')
 })
 
-test('visiting Study preserves the Practice loop and the X clears it', async ({ page }) => {
+test('Follow puts the loop away and brings it back, and the X clears it', async ({ page }) => {
   await openPractice(page, TABLET)
   await openRepeat(page)
   await loopBarTwo(page)
-  await page.getByRole('button', { name: 'Back to Library' }).click()
-  await page.getByRole('button', { name: 'Open sheet music for Two Hands' }).click()
-  await expect(page.getByRole('button', { name: 'Follow my playing', exact: true })).toBeVisible()
+  await chooseMode(page, 'Follow')
+  await expect(panelOf(page)).toHaveCount(0)
+  await expect(page.locator('.pn-loop.pn-on')).toHaveCount(0)
+  await expect(page.locator('.pn-action-on')).toHaveCount(0)
+  // Also after leaving the piece and a reload, still in Follow.
   await page.getByRole('button', { name: 'Back to Library' }).click()
   await openSeededPractice(page)
+  await expectMode(page, 'Follow')
+  await expect(panelOf(page)).toHaveCount(0)
+  await reloadPractice(page)
+  await expectMode(page, 'Follow')
+  await expect(panelOf(page)).toHaveCount(0)
+  await chooseMode(page, 'Listen')
   await expect(loopStart(page)).toContainText('Bar 2')
   await expect(loopEnd(page)).toContainText('Bar 2')
+  await chooseMode(page, 'Wait')
+  await expect(loopStart(page)).toContainText('Bar 2')
 
   // The panel's X clears the loop and leaves Repeat.
   await panelOf(page).getByRole('button', { name: 'Exit repeat' }).click()
@@ -225,6 +244,24 @@ test('visiting Study preserves the Practice loop and the X clears it', async ({ 
   await expect(panelOf(page)).toHaveCount(0)
   await expect(page.locator('.pn-loop.pn-on')).toHaveCount(0)
 })
+
+for (const [name, mode, button] of [
+  ['Listen', 'listen', 'Play'],
+  ['Keep time', 'time', 'Start'],
+  ['Follow', 'follow', 'Start'],
+] as const)
+  test(`a reload keeps ${name}, and so does opening the piece from the Library`, async ({ page }) => {
+    await openPractice(page, TABLET)
+    await chooseMode(page, name)
+    // Written at once, but a script can reload before that write has reached the disk.
+    await expect.poll(async () => (await idbAll<{ mode?: string }>(page, 'pieces'))[0]?.mode).toBe(mode)
+    await reloadPractice(page)
+    await expectMode(page, name)
+    await expect(page.getByRole('button', { name: button, exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Back to Library' }).click()
+    await openSeededPractice(page)
+    await expectMode(page, name)
+  })
 
 test('a completed pass is not brought back by a reload', async ({ page }) => {
   await openPractice(page, TABLET)

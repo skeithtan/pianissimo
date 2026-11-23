@@ -185,10 +185,10 @@ export interface ContextResults {
   readonly unassistedWithErrors: readonly AttemptRecord[]
   /** Completed with assistance (names or keyboard), newest first; kept apart from rankings. */
   readonly assisted: readonly AttemptRecord[]
-  /** Every clean completion, assisted or not, best first (the practice result, U144). */
+  /** Every clean completion, assisted or not, best first (U144). */
   readonly cleanCompletions: readonly AttemptRecord[]
-  /** Completed with wrong attacks, assisted or not, newest first (the practice result, U144). */
-  readonly withErrors: readonly AttemptRecord[]
+  /** Completed, not clean, assisted or not, newest first (U144). */
+  readonly notClean: readonly AttemptRecord[]
   /** Interrupted or abandoned: diagnostics only, never ranked, newest first. */
   readonly incomplete: readonly AttemptRecord[]
   readonly streak: PracticeStreak
@@ -211,7 +211,7 @@ function summarize(contextKey: string, attempts: readonly AttemptRecord[]): Cont
     unassistedWithErrors: completed.filter((a) => !isAssistedAttempt(a) && a.wrongAttacks > 0).sort(newestFirst),
     assisted: completed.filter(isAssistedAttempt).sort(newestFirst),
     cleanCompletions: completed.filter(isCleanCompletion).sort(compareCleanRuns),
-    withErrors: completed.filter((a) => a.wrongAttacks > 0).sort(newestFirst),
+    notClean: completed.filter((a) => !isCleanCompletion(a)).sort(newestFirst),
     incomplete: scored.filter((a) => a.completion !== 'completed').sort(newestFirst),
     streak: practiceStreak(scored),
     lastAttemptAt: scored.reduce((latest, a) => Math.max(latest, a.createdAt), 0),

@@ -2,9 +2,8 @@ import { msg } from '../../../i18n/messages'
 /**
  * Suggested practice (spec "Suggested practice"): up to three suggestions with their affected
  * bars, context bars kept visibly apart, hand and speed, specific evidence, recovery progress,
- * and an Improved list. Presentational: it fetches nothing and starts nothing. "Practice this
- * passage" and the other actions are callbacks, so the Library and Results decide what they do
- * (open Practice with the range, hands and speed preselected, never auto-start).
+ * and a folded Improved list. Presentational: it fetches nothing and starts nothing. "Practice these
+ * bars" and the other actions are callbacks (Progress, U148).
  */
 import type { ComponentChildren } from 'preact'
 import { useId } from 'preact/hooks'
@@ -23,17 +22,13 @@ export interface SuggestionListProps {
   readonly improved?: readonly Suggestion[]
   /** Suggestions are switched off (globally or for this piece): show that instead of the list. */
   readonly disabled?: boolean
-  /** Tighter cards for the Library's per-piece section. */
+  /** Tighter cards, without the context-bar legend. */
   readonly compact?: boolean
-  /** Section heading level (default 2). Cards use the next level, or this level when the title is omitted. */
+  /** Section heading level (default 2). Cards use the next level. */
   readonly headingLevel?: HeadingLevel
   /** Section title (default "Suggested practice"). */
   readonly title?: string
-  /** Show the section heading (default true). Omit it when the parent already labels the list. */
-  readonly showHeading?: boolean
-  /** Omit the empty explanation when a Library entry already hides an empty list. */
-  readonly hideEmpty?: boolean
-  /** "Practice this passage": open Practice with `suggestion.passage`, `hands` and `multiplier`. */
+  /** "Practice these bars": Repeat over `suggestion.passage` with its `hands` and `multiplier`. */
   readonly onPractice: (suggestion: Suggestion) => void
   /** "Dismiss for this session". Omit to hide the button. */
   readonly onDismiss?: (suggestion: Suggestion) => void
@@ -136,7 +131,6 @@ export function SuggestionCard({
         {preview ? <div class={styles.preview}>{preview}</div> : null}
 
         <p class={styles.evidence}>{s.evidence}</p>
-        {s.prompt !== '' ? <p class={styles.prompt}>{s.prompt}</p> : null}
         {s.bars.some((b) => b.role === 'context') && !compact ? (
           <p class={styles.legend}>
             {msg('Context bars give you a lead-in and lead-out. They do not need to come out clean.')}
@@ -153,9 +147,9 @@ export function SuggestionCard({
             variant="primary"
             icon="target"
             onClick={() => onPractice(s)}
-            aria-label={msg('Practice this passage, {0}', barsTitle(s.bars).toLowerCase())}
+            aria-label={msg('Practice these bars, {0}', barsTitle(s.bars).toLowerCase())}
           >
-            {msg('Practice this passage')}
+            {msg('Practice these bars')}
           </Button>
           {onDismiss ? (
             <Button
@@ -199,8 +193,6 @@ export function SuggestionList({
   compact = false,
   headingLevel = 2,
   title: titleText,
-  showHeading = true,
-  hideEmpty = false,
   onPractice,
   onDismiss,
   onDisableSuggestions,
@@ -210,29 +202,12 @@ export function SuggestionList({
 }: SuggestionListProps) {
   const titleId = useId()
   const title = titleText ?? msg('Suggested practice')
-  const cardLevel = headingLevel + (showHeading ? 1 : 0)
-  const showCount = !disabled && suggestions.length > 0
+  const cardLevel = headingLevel + 1
   return (
-    <section
-      class={styles.root}
-      data-compact={compact ? '' : undefined}
-      aria-labelledby={showHeading ? titleId : undefined}
-      aria-label={showHeading ? undefined : title}
-    >
-      {showHeading || showCount ? (
-        <header class={styles.head}>
-          {showHeading ? (
-            <Heading level={headingLevel} id={titleId} class={styles.title}>
-              {title}
-            </Heading>
-          ) : null}
-          {showCount ? (
-            <span class={styles.count}>
-              {suggestions.length} {msg('of up to 3')}
-            </span>
-          ) : null}
-        </header>
-      ) : null}
+    <section class={styles.root} data-compact={compact ? '' : undefined} aria-labelledby={titleId}>
+      <Heading level={headingLevel} id={titleId} class={styles.title}>
+        {title}
+      </Heading>
 
       {disabled ? (
         <div class={styles.empty} data-state="disabled">
@@ -244,15 +219,9 @@ export function SuggestionList({
           {onEnableSuggestions ? <Button onClick={onEnableSuggestions}>{msg('Turn on suggestions')}</Button> : null}
         </div>
       ) : suggestions.length === 0 ? (
-        hideEmpty ? null : (
-          <div class={styles.empty} data-state="none">
-            <p>
-              {msg(
-                'Nothing to suggest right now. A bar appears here when mistakes recur across several comparable passes, never after a single bad one.',
-              )}
-            </p>
-          </div>
-        )
+        <p class={styles.none} data-state="none">
+          {msg('Nothing to work on right now.')}
+        </p>
       ) : (
         <ul class={styles.cards}>
           {suggestions.map((s) => (
@@ -270,7 +239,7 @@ export function SuggestionList({
       )}
 
       {improved.length > 0 ? (
-        <details class={styles.improved} open={improved.length <= 3}>
+        <details class={styles.improved}>
           <summary>
             <Icon name="check" size={16} />
             <span>{msg('Improved ({0})', improved.length)}</span>

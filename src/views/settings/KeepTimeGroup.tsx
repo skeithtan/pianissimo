@@ -3,7 +3,7 @@ import { msg } from '../../i18n/messages'
  * Keep time (rhythm mode, DECISIONS P13): how close to its scheduled time a note must be to count
  * as on time. Tight ±80 ms / Normal ±150 ms (the default) / Loose ±250 ms. Applies immediately;
  * a change during a Keep time attempt stops it (a different tolerance is a different comparison
- * context, like a label change).
+ * context, like a Note names change).
  */
 import { settings, updateSettings } from '../../app/state'
 import { Segmented } from '../../ui/controls'
@@ -25,7 +25,7 @@ export function KeepTimeGroup() {
       <Setting
         label={msg('Timing window')}
         description={msg(
-          'With Keep time on, the music never waits: a note played within this window of its beat counts as on time, a later one is missed.',
+          'In Keep time, the music never waits: a note played within this window of its beat counts as on time, a later one is missed.',
         )}
       >
         <Segmented

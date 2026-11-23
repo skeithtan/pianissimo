@@ -267,9 +267,31 @@ describe('restore into an empty browser', () => {
     expect((await target.getPackage('ren'))?.model.meta.title).toBe('Etude')
   })
 
-  it('a Keep time (strict) attempt and the piece setting survive export and restore', async () => {
+  it('the mode survives export and restore, and an invalid one is refused', async () => {
     const source = await fresh()
-    const { piece } = await importPiece(source, 'kt', { rhythm: true })
+    const { piece } = await importPiece(source, 'mode', { mode: 'follow', lastHands: 'left' })
+    const target = await fresh()
+    const report = await target.restore(await source.exportAll())
+    expect(report.warnings).toEqual([])
+    expect(await target.getPiece(piece.id)).toMatchObject({ mode: 'follow', lastHands: 'left' })
+    await expect(target.putPiece({ ...piece, mode: 'study' as never })).rejects.toThrow(/mode/)
+    await expect(target.updatePiece(piece.id, { mode: 'study' as never })).rejects.toThrow(/mode/)
+  })
+
+  it('a piece from an older version (Keep time on, both hands off) restores as it was', async () => {
+    const source = await fresh()
+    const { piece } = await importPiece(source, 'older', { rhythm: true, lastHands: 'none' })
+    const target = await fresh()
+    const report = await target.restore(await source.exportAll())
+    expect(report.warnings).toEqual([])
+    const restored = await target.getPiece(piece.id)
+    expect(restored).toMatchObject({ rhythm: true, lastHands: 'none' })
+    expect(restored).not.toHaveProperty('mode')
+  })
+
+  it('a Keep time (strict) attempt survives export and restore', async () => {
+    const source = await fresh()
+    const { piece } = await importPiece(source, 'kt')
     const context = { ...comparisonContext(), transport: 'strict' as const, matchingRules: 'strict-v1-tol-150ms' }
     const strict = attemptFor(piece.id, [[1, 'clean']], {
       context,
@@ -285,7 +307,6 @@ describe('restore into an empty browser', () => {
     expect(report.stores.attempts.added).toBe(1)
     const [restored] = await target.listAttempts({ pieceId: piece.id })
     expect(restored).toEqual(strict)
-    expect((await target.getPiece(piece.id))?.rhythm).toBe(true)
   })
 
   it('label settings (mode and per-clef conditions) survive export and restore', async () => {
@@ -630,6 +651,44 @@ describe('settings policy', () => {
       const { bytes, target } = await outputs()
       await target.restore(bytes, { route: 'backup' })
       expect((await target.loadSettings()).metronome.outputId).toBe('other-machine-speakers')
+    })
+  })
+
+  describe('the recording input follows the route rule', () => {
+    async function inputs() {
+      const source = await fresh()
+      await source.saveSettings({
+        ...CUSTOM_SETTINGS,
+        recording: { inputId: 'other-machine-mic', inputLabel: 'Other microphone' },
+      })
+      const bytes = await source.exportAll()
+      const target = await fresh()
+      await target.saveSettings({
+        ...DEFAULT_SETTINGS,
+        recording: { inputId: 'my-usb', inputLabel: 'USB Audio' },
+      })
+      return { bytes, target }
+    }
+
+    it("keeps this device's input by default", async () => {
+      const { bytes, target } = await inputs()
+      await target.restore(bytes)
+      const restored = await target.loadSettings()
+      expect(restored.recording).toEqual({ inputId: 'my-usb', inputLabel: 'USB Audio' })
+      expect(restored.labels).toEqual(CUSTOM_SETTINGS.labels)
+    })
+
+    it('remembers none from the backup on a device that has none', async () => {
+      const { bytes } = await inputs()
+      const target = await fresh()
+      await target.restore(bytes)
+      expect((await target.loadSettings()).recording).toEqual({ inputId: null, inputLabel: null })
+    })
+
+    it("takes the backup's input when the route is restored too", async () => {
+      const { bytes, target } = await inputs()
+      await target.restore(bytes, { route: 'backup' })
+      expect((await target.loadSettings()).recording.inputId).toBe('other-machine-mic')
     })
   })
 

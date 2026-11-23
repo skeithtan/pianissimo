@@ -57,15 +57,28 @@
 .screen[data-recede='true'][data-recording-header] .bar > :not([data-recording-control], .overviewInline) {
   visibility: hidden;
 }
+/* The four modes sit centered; the composer and the title shorten first, then the connection chip,
+   down to its dot. Where that is not enough (`useModeFit`) one button names the mode, after the
+   title, and the rest is the tools'. */
 .header {
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-3);
+  column-gap: var(--space-3);
   min-width: 0;
   min-height: 60px;
   padding: 6px calc(20px + var(--safe-r)) 6px calc(20px + var(--safe-l));
+  /* The tools at their narrowest: the chip's dot, Settings and the gap. */
+  --tools-min: calc(2 * var(--touch) + var(--space-2));
+}
+.header[data-modes='one'] {
+  grid-template-columns: fit-content(42%) max-content minmax(var(--tools-min), 1fr);
+}
+/* A take: the pill without its words, the chip's dot and Settings, whatever it shows now, so the mode
+   button stays in place. The mode's name is whole; a long title gives way. */
+.header[data-modes='one']:has([data-recording-control]) {
+  --tools-min: 364px;
 }
 /* A take in progress keeps its controls and the connection pill; only the title and Settings fade.
    A tap on the header brings everything back before it acts. */
@@ -85,7 +98,10 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  flex: 1 1 auto;
+}
+.modes {
+  display: flex;
+  min-width: 0;
 }
 .titleText {
   min-width: 0;
@@ -131,17 +147,11 @@
 .headerTools {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
   min-width: 0;
-  /* The connection chip truncates before the title does. */
-  max-width: 58%;
-}
-/* Narrow phones: the chip is a dot (ConnectionChip `compact="narrow"`), so the title keeps the room. */
-@media (max-width: 419px) {
-  .headerTools {
-    max-width: none;
-    flex: none;
-  }
+  /* The chip's dot, Settings and the gaps. */
+  --take-beside: calc(2 * var(--touch) + 2 * var(--space-2));
 }
 
 /* ── Overview ───────────────────────────────────────────────────────────── */
@@ -332,10 +342,6 @@
 .resultRow:empty {
   display: none;
 }
-.resultDock:has(.result[data-expandable]),
-.resultRow:has(.result[data-expandable]) {
-  padding-top: var(--space-5);
-}
 /* The expanded card rises over the stage above it. */
 .resultRow {
   position: relative;
@@ -344,8 +350,8 @@
 
 /* The attempt result: a badge in the outcome's tone (a check
    for a clean pass, the count of wrong notes otherwise), the headline with the Repeat goal as
-   dots, one muted status line and an optional note line, then Again and Hide. A clipped preview
-   of the details sits below the summary inside the same outline. No shadow
+   dots, one muted status line and an optional note line, then Hide. Below it the top of the card
+   shows, cut off at the pill's bottom edge, and a chevron just above the pill says it opens. No shadow
    (A11): a 1 px border tinted by the tone. It fades and rises in from below, fades and sinks out
    (`data-phase` from `useFadePresence`, RESULT_FADE_MS in Banners.tsx); reduced motion keeps only
    a short fade.
@@ -359,7 +365,10 @@
   --result-tone: var(--fg-muted);
   --result-tone-bg: var(--bg-sunken);
   --result-border: color-mix(in srgb, var(--result-tone) 30%, var(--border));
-  --result-preview-height: 25px;
+  --result-peek: 48px;
+  /* The chevron's room above the pill, the air around its badge (the peek under it included). */
+  --result-lift: 24px;
+  --result-air: var(--space-3);
   --result-panel-width: min(760px, 100%);
   position: relative;
   pointer-events: auto;
@@ -437,9 +446,16 @@
 .resultOutline > [data-edge='r'] {
   right: 0;
 }
-/* Reserve the collapsed preview's space so opening over the score doesn't reframe it. */
+/* A pill wide enough for what it peeks at (which never widens it). */
+.resultCard[data-preview]:not([data-expanded]) {
+  min-width: min(480px, 100%);
+}
+/* Reserve the chevron's and the peek's space, so opening over the score doesn't reframe it. */
+.resultCard[data-preview]:not([data-expanded]) {
+  margin-top: var(--result-lift);
+}
 .resultCard[data-expanded][data-preview] {
-  margin-top: calc(var(--result-preview-height) + var(--space-1));
+  margin-top: calc(var(--result-lift) + var(--result-peek) + 2 * var(--result-air) - 2 * var(--space-2));
 }
 .result {
   position: relative;
@@ -463,28 +479,100 @@
   gap: var(--space-3);
   min-width: 0;
 }
-.resultPreview {
-  --result-preview-fade: linear-gradient(currentColor calc(100% - 8px), transparent);
-  margin: var(--space-1) var(--space-2) 0;
-  padding: 0;
-  height: var(--result-preview-height);
+/* The pill: the summary, then the peek down to its bottom edge, without padding. Its sides are the
+   expanded row's too, so opening moves the badge by the card's growth only. */
+.resultCard[data-preview]:not([data-expanded]) .result {
+  padding: var(--result-air) var(--space-2) 0;
+}
+.resultCard[data-preview] .resultSummary {
+  padding: 0 calc(var(--result-air) - var(--space-2));
+}
+/* The top of the card, cut off partway: a short fade leaves what is cut recognizable. The content is
+   clipped at a fixed height and never widens the pill, so nothing drawn later changes its size. */
+.resultPeek {
+  --result-peek-fade: linear-gradient(#000 calc(100% - 8px), rgb(0 0 0 / 35%));
+  box-sizing: border-box;
+  contain: inline-size;
+  height: var(--result-peek);
+  margin: var(--result-air) calc(-1 * var(--space-2)) 0;
+  padding: 0 var(--space-3);
   overflow: hidden;
-  list-style: none;
-  color: var(--fg-muted);
+  border-radius: 0 0 calc(var(--radius-l) - 1px) calc(var(--radius-l) - 1px);
+  color: var(--fg);
   font-size: var(--text-s);
-  line-height: 17px;
-  -webkit-mask-image: var(--result-preview-fade);
-  mask-image: var(--result-preview-fade);
+  -webkit-mask-image: var(--result-peek-fade);
+  mask-image: var(--result-peek-fade);
+}
+/* While the card grows from the pill (its motion shows it), where it was: under the summary. */
+.resultPeek[data-ghost] {
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  width: calc(var(--result-pill-width) - 2px);
+  margin: 0;
+  translate: -50% 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.resultCard[data-opening] .resultSummary {
+  position: relative;
+  z-index: 1;
+}
+/* The card's clean line and facts, or the first mistake's excerpt card (its shell from the start). */
+/* Two lines and a half of facts, at every size. */
+.peekClean,
+.peekHeading,
+.peekFacts {
+  margin: 0 var(--space-1);
+  line-height: calc(0.4 * var(--result-peek));
+}
+.peekHeading {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.peekClean {
+  color: var(--success);
+  font-weight: 600;
+}
+.peekFacts {
+  padding: 0;
+  list-style: inside;
+}
+:is(.peekClean, .peekHeading, .peekFacts > li) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peekMistake {
+  box-sizing: border-box;
+  min-height: 160px;
+  padding: 3px var(--space-3) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--bg);
+}
+.peekMistake[data-keeps] {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+}
+.peekMistake > * {
+  animation: result-peek-in 220ms var(--ease-out) both;
+}
+@keyframes result-peek-in {
+  from {
+    opacity: 0;
+  }
 }
 /* A new Repeat result first shows a taller preview, then settles (U110). The pill's box keeps its
    settled size throughout, so the dock (and the review frame it sets) never changes: the extra
    height is drawn above the box. A cap (`::before`, the pill's top edge) slides down from the
-   taller top onto the box's own; the summary slides down with it; the preview, as tall as its
-   lines (its extra height given back by a negative margin), slides down while it is clipped at the
-   box's bottom, where a gradient stands in for its fade until the intro ends. */
+   taller top onto the box's own; the summary slides down with it; the peek, taller by as much (given
+   back by a negative margin), slides down while it is clipped at the box's bottom, where a gradient
+   stands in for its fade until the intro ends. */
 .result {
-  --result-preview-tall: 52px;
-  --result-intro-shift: calc(var(--result-preview-tall) - var(--result-preview-height));
+  --result-intro-shift: 33px;
 }
 .resultCard[data-intro] .result {
   isolation: isolate;
@@ -510,15 +598,15 @@
 }
 .resultCard[data-intro] .result::after {
   z-index: 1;
-  /* Over the preview's lines only (clear of the rounded corners). */
-  left: calc(2 * var(--space-2));
-  right: calc(2 * var(--space-2));
-  bottom: var(--space-2);
+  left: 0;
+  right: 0;
+  bottom: 0;
   height: 8px;
-  background: linear-gradient(transparent, var(--bg-elevated));
+  border-radius: 0 0 calc(var(--radius-l) - 1px) calc(var(--radius-l) - 1px);
+  background: linear-gradient(transparent, color-mix(in srgb, var(--bg-elevated) 65%, transparent));
 }
-.resultCard[data-intro] .resultPreview {
-  height: var(--result-preview-tall);
+.resultCard[data-intro] .resultPeek {
+  height: calc(var(--result-peek) + var(--result-intro-shift));
   margin-bottom: calc(-1 * var(--result-intro-shift));
   -webkit-mask-image: none;
   mask-image: none;
@@ -549,21 +637,12 @@
   0%,
   48% {
     transform: translateY(calc(-1 * var(--result-intro-shift)));
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(0 0 0 0 round 0 0 21px 21px);
   }
   100% {
     transform: translateY(0);
-    clip-path: inset(0 0 var(--result-intro-shift) 0);
+    clip-path: inset(0 0 var(--result-intro-shift) 0 round 0 0 21px 21px);
   }
-}
-.resultPreview > li {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Clip the full time comparison to the width set by the pill's summary and first fact. */
-.resultPreview > li:nth-child(2) {
-  contain: inline-size;
 }
 .resultCard[data-expanded] .result {
   border-radius: 0 0 24px 24px;
@@ -603,7 +682,7 @@
    and a transform on the card would carry them along). */
 .resultCard[data-exit='played'][data-phase='leaving']:not([data-expanded]) {
   opacity: 1;
-  transform: translateY(calc(100% + var(--space-5)));
+  transform: translateY(calc(100% + var(--result-lift) + var(--space-5)));
   transition:
     opacity 220ms var(--ease-standard),
     transform 320ms var(--ease-in);
@@ -655,15 +734,36 @@
 .resultDetails[data-phase='leaving'] {
   pointer-events: none;
 }
-/* Padded as the details it stands in for (`.details`), so the opening waits for the same room. */
+/* What the card offers to do next, directly under its verdict (U142): whole buttons, side by side or,
+   on a phone with long words, on two lines. */
+.resultChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.resultChoices > button {
+  max-width: 100%;
+}
+/* Padded as the details it stands in for (`.details`), so the opening waits for the same room, with
+   the same verdict and actions at its top, which stay put when the details replace it. */
 .resultDetailsLoading {
-  display: grid;
-  place-items: center;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
   min-height: 160px;
-  height: 100%;
   padding: var(--space-5);
   color: var(--fg-muted);
   font-size: var(--text-s);
+}
+.resultDetailsLoading > p {
+  margin: 0;
+}
+.resultLoadingVerdict {
+  color: var(--fg);
+  font-size: var(--text-m);
+  font-weight: 650;
+  line-height: var(--leading-tight);
 }
 .resultBadge {
   flex: none;
@@ -743,10 +843,6 @@
   position: relative;
   z-index: 2;
 }
-.resultAgain {
-  min-height: 44px;
-  border-radius: 22px;
-}
 .resultIconButton {
   display: inline-grid;
   place-items: center;
@@ -769,7 +865,7 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
-/* The summary surface is one native button, with the Again and Hide actions raised above it. */
+/* The summary surface is one native button, with Hide raised above it. */
 .resultSurface {
   position: absolute;
   z-index: 1;
@@ -781,19 +877,27 @@
   background: transparent;
   cursor: pointer;
 }
-.resultCard:not([data-expanded]) .resultSurface {
-  top: calc(-1 * var(--space-5));
+/* The pill's own control reaches over the chevron above it. */
+.resultCard[data-preview]:not([data-expanded]) .resultSurface {
+  top: calc(-1px - var(--result-lift));
 }
 .resultLift {
   position: absolute;
   top: 0;
   left: 50%;
+  display: grid;
+  place-content: start center;
+  height: var(--result-lift);
   translate: -50% 0;
   line-height: 0;
-  color: var(--fg-muted);
+  color: var(--fg);
 }
+/* All of the pill answers the pointer: it is one control. */
 .result:has(.resultSurface:hover) {
   background-color: color-mix(in srgb, var(--fg) 4%, var(--bg-elevated));
+}
+.result:has(.resultSurface:active) {
+  background-color: color-mix(in srgb, var(--fg) 9%, var(--bg-elevated));
 }
 .resultSurface:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -829,7 +933,7 @@
 .resultDetailsButton[aria-expanded='true'] {
   background: var(--bg-sunken);
 }
-/* A phone held upright: Again keeps its name for assistive technology but shows only its icon. */
+/* A phone held upright. */
 @media (max-width: 480px) {
   .resultDock {
     left: calc(var(--space-2) + var(--safe-l));
@@ -842,6 +946,7 @@
   }
   .resultCard[data-preview]:not([data-expanded]) {
     width: calc(100% - 16px);
+    min-width: 0;
   }
   .resultSummary {
     gap: var(--space-2);
@@ -852,19 +957,6 @@
   }
   .resultDetailsLabel {
     display: none;
-  }
-  .resultAgain {
-    padding: 0;
-    width: 44px;
-    min-width: 44px;
-  }
-  .resultAgain > span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
   }
 }
 /* The expanded result, by screen size (U99, 17 November 2026).
@@ -888,9 +980,12 @@
 
 /* Phone (the app's phone layouts, upright and on its side): the expanded result is a screen, not
    a card. It covers the whole viewport, top bar and footer included, edge to edge inside the
-   safe areas, with its own header (the chevron down, the verdict, Again, Hide) that never scrolls
+   safe areas, with its own header (the chevron down, the verdict, Hide) that never scrolls
    away, and the content scrolling beneath it. No border, no radius, no gap around it. */
 @media (max-width: 520px), (orientation: landscape) and (max-height: 520px) {
+  .resultCard {
+    --result-peek: 44px;
+  }
   .resultCard[data-expanded] {
     width: 100%;
     max-width: 100%;
@@ -901,6 +996,10 @@
     border-top-color: var(--result-border);
   }
   .resultDetailsLoading {
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    gap: var(--space-3);
     padding: var(--space-4) calc(var(--space-3) + var(--safe-r)) var(--space-4) calc(var(--space-3) + var(--safe-l));
   }
   .resultCard .resultDetails[data-layout='screen'] {
@@ -982,13 +1081,15 @@
 }
 /* A phone on its side has the least height: a compact header. */
 @media (orientation: landscape) and (max-height: 520px) {
+  .resultCard {
+    --result-peek: 40px;
+  }
   .screenHeader {
     min-height: calc(48px + env(safe-area-inset-top, 0px));
     padding-top: calc(2px + env(safe-area-inset-top, 0px));
     padding-bottom: 2px;
   }
   .screenBack,
-  .screenHeader .resultAgain,
   .screenHeader .resultIconButton {
     height: 40px;
     min-height: 40px;
@@ -1349,6 +1450,11 @@
   gap: var(--space-1);
 }
 .startReason {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  column-gap: var(--space-2);
   margin: 0;
   /* The center column is as wide as its content. Each side column needs about 170 px for Speed
      (plus the gap and the padding: 404 px for both), or the hands would sit off center. */
@@ -1356,6 +1462,34 @@
   text-align: center;
   font-size: var(--text-xs);
   color: var(--fg-muted);
+}
+/* Beside the reason that only a missing piano gives (a 44 px target around its words). */
+.connectPiano {
+  position: relative;
+  padding: 2px var(--space-1);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.connectPiano::after {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 44px;
+  transform: translateY(-50%);
+}
+.connectPiano:hover {
+  text-decoration: underline;
+}
+.connectPiano:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .tool {
   display: inline-flex;
@@ -1420,6 +1554,18 @@
 .muted {
   margin: 0;
   color: var(--fg-muted);
+}
+.otherHand {
+  display: grid;
+  gap: var(--space-5);
+}
+.otherHand p {
+  margin: 0;
+}
+.otherHandActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
 .recent {
   width: 100%;
@@ -1538,9 +1684,9 @@
 }
 
 /* ── Phone-size screens (`data-compact`, usePhone, U80) ──────────────────── */
-/* No header and no footer: one top bar (Back, the title or, on its side, the overview, the hand
-   toggles around Start, Menu) and a menu sheet for the rest (the connection status too). The bar is
-   as short as its touch targets allow. In focus mode the whole bar slides up, fades and its row
+/* No header and no footer: one top bar (Back, the title over the mode or, on its side, the overview
+   and the mode, the hand toggles around Start, Menu) and a menu sheet for the rest (the connection
+   status too). The bar is as short as its touch targets allow. In focus mode the whole bar slides up, fades and its row
    collapses (`.headerSlot`, U93): with the phone on its side the overview goes with it; a tap on
    the score brings it back (and does not seek). Nothing pads the top safe-area inset: the page
    starts below the status bar (U84's `black` status bar; Safari's own bar in the browser). */
@@ -1551,37 +1697,23 @@
   gap: var(--space-1);
   min-height: 52px;
   padding: 4px calc(4px + var(--safe-r)) 4px calc(4px + var(--safe-l));
+  /* Back, the hands, Menu and, on its side, the mode and what is left of the overview. */
+  --take-beside: 420px;
 }
-.bar .titleText {
+/* The title, and the mode under it: one button. */
+.barTitle {
   flex: 1 1 auto;
 }
-.bar .title {
-  font-size: 0.9375rem;
-}
-.bar .subtitle {
-  font-size: 0.6875rem;
+/* Its place on a phone on its side, between the timeline and the hands. */
+.barMode {
+  max-width: 200px;
+  margin-inline: var(--space-1) var(--space-2);
 }
 /* The overview between the bar's buttons (a phone on its side), instead of a row of its own. */
 .overviewInline {
   flex: 1 1 auto;
   min-width: 0;
   padding: 0 var(--space-1);
-}
-.menuButton {
-  position: relative;
-}
-/* Keep time is on: a small metronome on the Menu button's corner (as the footer's, U78). */
-.menuBadge {
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-fg);
 }
 .screen[data-compact='true'] .stage {
   min-height: 120px;
@@ -1599,6 +1731,12 @@
 }
 /* Why Start is unavailable: a pill over the bottom of the score, so the layout never shifts. */
 .stageNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 var(--space-2);
+  width: max-content;
   position: absolute;
   left: 50%;
   bottom: var(--space-2);
@@ -1686,7 +1824,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .resultCard[data-intro] .result::before,
-  .resultCard[data-intro] .resultPreview,
+  .resultCard[data-intro] .resultPeek,
+  .peekMistake > *,
   .resultCard[data-intro]
     :is(.resultBadge, .resultText, .resultActions > button:not(.resultSurface), .resultLift) {
     animation: none;

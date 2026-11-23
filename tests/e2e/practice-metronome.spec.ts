@@ -1,12 +1,21 @@
 /**
- * The Metronome switch (DECISIONS U87, P20) in the real app: the Practice menu's row and the Study
- * menu's row (U90), which preference each edits, and the clicks themselves. With the fake MIDI piano and both
+ * The Metronome switch (DECISIONS U87, P20) in the real app: the menu's row, which preference it
+ * edits in each mode, and the clicks themselves. With the fake MIDI piano and both
  * hands selected the app makes no other browser sound, so the metronome's oscillators are the
  * clicks: a wrapper around `AudioContext.prototype.createOscillator` counts them.
  */
 import { expect, test, type Page } from '../browser-test'
 import { sheet, storedSettings } from './app-helpers'
-import { installFakeMidi, openFooterMenu, openSeededPractice, seedPiece } from './practice-helpers'
+import { DEFAULT_SETTINGS } from '../../src/core/model/settings'
+import {
+  chooseMode,
+  expectMode,
+  installFakeMidi,
+  openFooterMenu,
+  openSeededPractice,
+  seedPiece,
+  type ModeName,
+} from './practice-helpers'
 
 declare global {
   interface Window {
@@ -36,9 +45,10 @@ async function metronomeSwitch(page: Page) {
   return menu.getByRole('switch', { name: 'Metronome' })
 }
 
-async function keepTimeSwitch(page: Page) {
-  const menu = await openFooterMenu(page)
-  return menu.getByRole('switch', { name: 'Keep time' })
+/** The switch in the menu of this mode. */
+async function metronomeIn(page: Page, mode: ModeName) {
+  await chooseMode(page, mode)
+  return metronomeSwitch(page)
 }
 
 test.describe('Practice Metronome switch', () => {
@@ -52,33 +62,28 @@ test.describe('Practice Metronome switch', () => {
   test('is off by default, reads the Keep time preference in Keep time and leaves the general one alone', async ({
     page,
   }) => {
-    const metronome = await metronomeSwitch(page)
-    await expect(metronome).not.toBeChecked()
+    await expect(await metronomeSwitch(page)).not.toBeChecked()
     // Keep time's own preference is on by default.
-    await (await keepTimeSwitch(page)).click()
-    await expect(metronome).toBeChecked()
-    // Turn it off there: it stays off after Keep time goes off and on again.
-    await metronome.click()
-    await expect(metronome).not.toBeChecked()
-    await (await keepTimeSwitch(page)).click()
-    await expect(metronome).not.toBeChecked()
-    await (await keepTimeSwitch(page)).click()
-    await expect(metronome).not.toBeChecked()
-    // The general preference (Keep time off) was never touched.
-    await (await keepTimeSwitch(page)).click()
-    await expect(metronome).not.toBeChecked()
-    // And turning the general one on does not change Keep time's.
-    await metronome.click()
-    await expect(metronome).toBeChecked()
-    await (await keepTimeSwitch(page)).click()
-    await expect(metronome).not.toBeChecked()
+    const inKeepTime = await metronomeIn(page, 'Keep time')
+    await expect(inKeepTime).toBeChecked()
+    // Turn it off there: it stays off after another mode and back.
+    await inKeepTime.click()
+    await expect(inKeepTime).not.toBeChecked()
+    await expect(await metronomeIn(page, 'Wait')).not.toBeChecked()
+    await expect(await metronomeIn(page, 'Keep time')).not.toBeChecked()
+    // The general preference was never touched, and turning it on does not change Keep time's.
+    const inListen = await metronomeIn(page, 'Listen')
+    await expect(inListen).not.toBeChecked()
+    await inListen.click()
+    await expect(inListen).toBeChecked()
+    await expect(await metronomeIn(page, 'Follow')).toBeChecked()
+    await expect(await metronomeIn(page, 'Keep time')).not.toBeChecked()
   })
 
   test('Keep time clicks through the attempt after the count-in; with the switch off only the count-in clicks', async ({
     page,
   }) => {
-    await (await keepTimeSwitch(page)).click()
-    await expect(await metronomeSwitch(page)).toBeChecked()
+    await expect(await metronomeIn(page, 'Keep time')).toBeChecked()
     await page.keyboard.press('Escape')
     expect(await clicks(page)).toBe(0)
     await page.getByRole('button', { name: 'Start', exact: true }).click()
@@ -119,29 +124,32 @@ test.describe('Practice Metronome switch', () => {
   })
 })
 
-test.describe('Study Metronome switch', () => {
+test.describe('the Metronome switch without a piano', () => {
   test.use({ viewport: { width: 820, height: 1180 }, hasTouch: true })
 
-  test("toggles in the tablet footer's Sheet music menu (U90)", async ({ page }) => {
-    await seedPiece(page)
-    await page.getByRole('button', { name: 'Open sheet music for Two Hands' }).click()
-    await expect(page.locator('main')).toHaveAttribute('data-view', 'study')
-    await expect(page.locator('.pn-strip')).toBeVisible({ timeout: 60_000 })
-    await page.getByTestId('study-screen').locator('footer').getByRole('button', { name: 'Menu', exact: true }).click()
-    const metronome = page.getByRole('dialog', { name: 'Sheet music menu' }).getByRole('switch', { name: 'Metronome' })
+  test('toggles in the footer menu in Listen, also while it plays', async ({ page }) => {
+    await seedPiece(page, { route: DEFAULT_SETTINGS.route })
+    await openSeededPractice(page)
+    await expectMode(page, 'Listen')
+    const metronome = await metronomeSwitch(page)
     await expect(metronome).not.toBeChecked()
     await metronome.click()
     await expect(metronome).toBeChecked()
     await expect.poll(async () => (await storedSettings(page))?.['metronome']).toMatchObject({ enabled: true })
-    await metronome.click()
-    await expect(metronome).not.toBeChecked()
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Play', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible({ timeout: 20_000 })
+    const live = await metronomeSwitch(page)
+    await live.click()
+    await expect(live).not.toBeChecked()
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
   })
 })
 
 async function openSoundSettings(page: Page) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const settings = sheet(page)
-  await settings.getByRole('tab', { name: 'Sound' }).click()
+  await settings.getByRole('tab', { name: 'Piano and sound' }).click()
   return settings
 }
 
@@ -202,8 +210,7 @@ test('the saved audio output plays the test click and the Keep time count-in', a
 
   await page.reload()
   await openSeededPractice(page)
-  await (await keepTimeSwitch(page)).click()
-  await page.keyboard.press('Escape')
+  await chooseMode(page, 'Keep time')
   await page.getByRole('button', { name: 'Start', exact: true }).click()
   await expect(page.getByTestId('count-in')).toBeVisible()
   await expect.poll(clickOutputs).toEqual(Array<string>(4).fill('usb-piano'))

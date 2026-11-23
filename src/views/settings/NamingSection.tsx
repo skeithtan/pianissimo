@@ -1,6 +1,6 @@
 import { msg } from '../../i18n/messages'
 /**
- * Note names (spec "Mistake feedback and hints"): letter or fixed-do names, si/ti, octave display,
+ * Naming style (spec "Mistake feedback and hints"): letter or fixed-do names, si/ti, octave display,
  * "Always show effective accidentals" (default on) and "Simplify enharmonic names" (default off).
  * Naming only changes label text, so every change applies immediately and never interrupts
  * practice; the examples below recompute from the same `core/naming` code the hints use.
@@ -62,7 +62,7 @@ export function NamingSection() {
         />
       </Group>
       <Group title={msg('Example')}>
-        <ul class={styles.examples} aria-label={msg('Example labels')}>
+        <ul class={styles.examples} aria-label={msg('Example names')}>
           {exampleLabels(naming).map(({ example, label }) => (
             <li key={example.id} class={styles.example}>
               <span class={styles.exampleWritten}>{msg(example.description)}</span>
@@ -77,7 +77,7 @@ export function NamingSection() {
         </ul>
         <Help>
           {msg(
-            'These preferences only change label text. The printed score, matching and which notes are labeled stay the same.',
+            'These preferences only change how names are written. The printed score, matching and which notes are labeled stay the same.',
           )}
         </Help>
       </Group>

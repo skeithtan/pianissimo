@@ -5,9 +5,10 @@ import { msg, messageLanguage } from '../../i18n/messages'
  * (`rankMistakes`), each place shown as a small excerpt of the score (`render/excerpt`) with the
  * teacher's ring and a ghost note for each key pressed that is not written there, and a plain
  * sentence per wrong key ("You pressed D♭ where D♮ is written"). The same wrong key pass after
- * pass leads the excerpts, under "Keeps happening". The pill previews the pass facts at the top.
- * Timing evidence and playback sit with each bar's other corrections. The pass numbers and earlier
- * passes sit below the corrections. Nothing here
+ * pass leads the excerpts, under "Keeps happening". Under the verdict come the actions, then the
+ * first thing the pill peeks at: the mistakes, or the pass facts when it was clean or has none (U142).
+ * Timing evidence and playback sit with each bar's other corrections. The facts, numbers and earlier
+ * passes sit below the corrections (a Wait run has none: it is not stored, U142). Nothing here
  * navigates: a history row shows that pass's numbers in the card; an excerpt is only a picture.
  */
 import { memo } from 'preact/compat'
@@ -28,7 +29,7 @@ import { ScorecardPanel } from '../results/ScorecardPanel'
 import { loadResultsData, type ResultsData } from '../results/data'
 import { handsAndSpeed } from '../results/format'
 import { deriveResults, passageText } from '../results/model'
-import { passFacts } from './format'
+import { cleanText, passFacts, verdict } from './format'
 import type { ResultDetailsProps } from './resultDetailsTypes'
 import { TimingBarPlot } from './TimingBarPlot'
 import { buildTimingReview, timingBarDetail, timingBarTitle, type TimingReviewData } from './timingReview'
@@ -42,6 +43,102 @@ const MORE_STEP = 6
 const LINES_PER_PLACE = 4
 
 const KEEPS: ReadonlySet<RankedMistake['level']> = new Set(['repeated', 'habit', 'trouble'])
+
+const keepsHappening = (plan: ExcerptPlan<RankedMistake>) => KEEPS.has(plan.items[0]?.level ?? 'timing')
+
+/** The bars to show: the ranked mistakes', then Keep time's other affected bars (U108). */
+function planBars(mistakes: readonly RankedMistake[], timing: TimingReviewData | null, limit: number) {
+  const plans = planExcerpts(mistakes, timing?.bars.size ? Infinity : limit)
+  if (timing?.bars.size) {
+    const rankedBars = new Set(plans.shown.map((plan) => plan.occ))
+    for (const occ of timing.bars.keys()) {
+      if (!rankedBars.has(occ)) plans.shown.push({ occ, items: [] })
+    }
+  }
+  return plans
+}
+
+/** One bar's music with its rings and ghost notes, cut from the prepared layout. */
+function drawBar(
+  plan: ExcerptPlan<RankedMistake>,
+  layout: PreparedLayout,
+  model: ScoreModel,
+  measurer: ExcerptProps['measurer'],
+) {
+  const marks: CorrectionMark[] = plan.items
+    .filter((m) => m.mark)
+    .map((m) => ({ notes: m.notes, kind: m.mark!.kind as CorrectionMark['kind'], text: m.mark!.text }))
+  const ghosts = plan.items.flatMap((m) =>
+    m.presses.map((press) => pressGhost(press, m.notes, model)).filter((g): g is GhostNote => g !== null),
+  )
+  return excerptMarkup(layout, plan.occ, { marks, ghosts, ...(measurer ? { measurer } : {}) })
+}
+
+const cardMeasurer = () =>
+  typeof document === 'undefined' ? estimateMeasurer : (canvasMeasurer(document) ?? estimateMeasurer)
+
+/** The card's first excerpt, for the pill's peek (U142): its caption, and the top of its music. */
+export interface PeekDrawing {
+  readonly bar: string
+  readonly level: RankedMistake['level']
+  readonly reason: string
+  readonly keeps: boolean
+  readonly svg: string
+  readonly width: number
+  /** What the peek leaves out above the staff (its words and leaders), so that the music is what shows. */
+  readonly skip: number
+}
+
+/** Layout px the peek keeps above the top staff. */
+const PEEK_ABOVE = 4
+
+/** Draws it, outside the input path (`ResultPeek` picks a quiet moment); null when there is none. */
+export function drawPeek(p: ResultDetailsProps): PeekDrawing | null {
+  const details = p.session.resultDetails()
+  if (details?.attemptId !== p.result.id || !p.layout) return null
+  const mistakes = (p.rank ?? rankMistakes)(details.records, details.timeline, p.model, details.marks)
+  const { shown } = planBars(mistakes, null, EXCERPT_LIMIT)
+  const plan = shown.find(keepsHappening) ?? shown[0]
+  const lead = plan?.items[0]
+  if (!plan || !lead) return null
+  const markup = drawBar(plan, p.layout, p.model, cardMeasurer())
+  if (!markup) return null
+  return {
+    bar: lead.bar,
+    level: lead.level,
+    reason: lead.reason,
+    keeps: keepsHappening(plan),
+    svg: markup.svg,
+    width: markup.width,
+    skip: Math.max(0, markup.staffTop - PEEK_ABOVE),
+  }
+}
+
+export function PeekExcerpt({ drawing }: { drawing: PeekDrawing }) {
+  return (
+    <div class={styles.peek}>
+      <Caption bar={drawing.bar} level={drawing.level} reason={drawing.reason} />
+      <div
+        class={`${styles.music} pn-excerpt`}
+        style={{ '--excerpt-w': `${drawing.width}px`, '--peek-skip': `${(drawing.skip / drawing.width) * 100}%` }}
+      >
+        {/* Sanitized segment markup plus shapes built from numbers and escaped text (render/excerpt). */}
+        <div class={styles.score} dangerouslySetInnerHTML={{ __html: drawing.svg }} />
+      </div>
+    </div>
+  )
+}
+
+function Caption({ bar, level, reason }: { bar: string; level: RankedMistake['level']; reason: string }) {
+  return (
+    <div class={styles.caption}>
+      <span class={styles.bar}>{msg('Bar {0}', bar)}</span>
+      <span class={styles.reason} data-level={level}>
+        {reason}
+      </span>
+    </div>
+  )
+}
 
 export function ResultDetails(p: ResultDetailsProps) {
   // Ranked once per result, on this render after the tap, never in the input path.
@@ -59,27 +156,11 @@ export function ResultDetails(p: ResultDetailsProps) {
   )
   const [limit, setLimit] = useState(EXCERPT_LIMIT)
   const hasTimingCorrections = !!timing?.bars.size
-  const { shown, more } = useMemo(() => {
-    const plans = planExcerpts(mistakes, timing?.bars.size ? Infinity : limit)
-    if (timing?.bars.size) {
-      const rankedBars = new Set(plans.shown.map((plan) => plan.occ))
-      for (const occ of timing.bars.keys()) {
-        if (!rankedBars.has(occ)) plans.shown.push({ occ, items: [] })
-      }
-    }
-    return plans
-  }, [mistakes, timing, limit])
-  const noMistakes =
-    shown.length === 0 &&
-    p.result.wrongAttacks === 0 &&
-    p.result.groupsFirstPass === p.result.groupsTotal &&
-    (!p.result.timing || p.result.timing.onTime === p.result.timing.groups)
-  const keeps = shown.filter((plan) => KEEPS.has(plan.items[0]?.level ?? 'timing'))
-  const once = shown.filter((plan) => !KEEPS.has(plan.items[0]?.level ?? 'timing'))
-  const measurer = useMemo(
-    () => (typeof document === 'undefined' ? estimateMeasurer : (canvasMeasurer(document) ?? estimateMeasurer)),
-    [],
-  )
+  const { shown, more } = useMemo(() => planBars(mistakes, timing, limit), [mistakes, timing, limit])
+  const clean = shown.length === 0 && (p.result.passed || details) ? cleanText(p.result) : null
+  const keeps = shown.filter(keepsHappening)
+  const once = shown.filter((plan) => !keepsHappening(plan))
+  const measurer = useMemo(cardMeasurer, [])
   // Mistake playback (U100): what is playing, and it stops when the card folds or goes.
   const playing = useStore(p.session.snippet)
   const session = p.session
@@ -117,17 +198,21 @@ export function ResultDetails(p: ResultDetailsProps) {
       deferMusic={hasTimingCorrections && index >= EXCERPT_LIMIT}
     />
   )
+  const facts = <PassFacts result={p.result} goal={p.goal} />
+  // A clean pass leads with its facts, whatever marks it has; any other with what to correct.
+  const factsFirst = p.result.passed
   return (
     <div class={styles.details}>
       <p class={styles.verdict} data-testid="result-verdict">
         {verdict(p.result)}
       </p>
-      {noMistakes && (p.result.passed || details) ? (
+      {p.actions}
+      {clean ? (
         <p class={styles.clean} data-testid="result-clean">
-          {p.result.passed ? msg('No mistakes in this pass.') : msg('No wrong keys or timing marks in this pass.')}
+          {clean}
         </p>
       ) : null}
-      <PassFacts result={p.result} goal={p.goal} />
+      {factsFirst ? facts : null}
       {keeps.length ? (
         <section class={styles.group} data-group="keeps" aria-labelledby="result-keeps">
           <h3 id="result-keeps" class={styles.keepsHeading}>
@@ -138,7 +223,8 @@ export function ResultDetails(p: ResultDetailsProps) {
       ) : null}
       {once.length ? (
         <section class={styles.group} data-group="once" aria-labelledby="result-once">
-          <h3 id="result-once" class={styles.groupHeading}>
+          {/* Alone, the list says what it is: the heading is for assistive technology. */}
+          <h3 id="result-once" class={keeps.length ? styles.groupHeading : 'visually-hidden'}>
             {keeps.length ? msg('Also in this pass') : msg('In this pass')}
           </h3>
           {once.map(excerpt)}
@@ -149,16 +235,19 @@ export function ResultDetails(p: ResultDetailsProps) {
           {more.length === 1 ? msg('Show 1 more bar') : msg('Show {0} more bars', more.length)}
         </Button>
       ) : null}
-      <div class={styles.folds}>
-        {/* Only when scoring agrees: a group it counted early, late or missed is not "near the beat". */}
-        {timing && !hasTimingCorrections && !timing.scoredOff ? (
-          <details class={styles.fold} data-testid="timing-review-steady">
-            <summary>{msg('Timing strip')}</summary>
-            <p class={styles.muted}>{msg('All measured attacks were within {0} ms of the beat.', timing.nearBeat)}</p>
-          </details>
-        ) : null}
-        <Earlier pieceId={p.pieceId} attemptId={p.result.id} {...(p.loadHistory ? { load: p.loadHistory } : {})} />
-      </div>
+      {factsFirst ? null : facts}
+      {p.result.run ? null : (
+        <div class={styles.folds}>
+          {/* Only when scoring agrees: a group it counted early, late or missed is not "near the beat". */}
+          {timing && !hasTimingCorrections && !timing.scoredOff ? (
+            <details class={styles.fold} data-testid="timing-review-steady">
+              <summary>{msg('Timing strip')}</summary>
+              <p class={styles.muted}>{msg('All measured attacks were within {0} ms of the beat.', timing.nearBeat)}</p>
+            </details>
+          ) : null}
+          <Earlier pieceId={p.pieceId} attemptId={p.result.id} {...(p.loadHistory ? { load: p.loadHistory } : {})} />
+        </div>
+      )}
     </div>
   )
 }
@@ -297,14 +386,7 @@ const Excerpt = memo(function Excerpt({
     return () => observer.disconnect()
   }, [observable])
   const markup = useMemo(() => {
-    if (!layout || !showMusic) return null
-    const marks: CorrectionMark[] = plan.items
-      .filter((m) => m.mark)
-      .map((m) => ({ notes: m.notes, kind: m.mark!.kind as CorrectionMark['kind'], text: m.mark!.text }))
-    const ghosts = plan.items.flatMap((m) =>
-      m.presses.map((press) => pressGhost(press, m.notes, model)).filter((g): g is GhostNote => g !== null),
-    )
-    return excerptMarkup(layout, plan.occ, { marks, ghosts, ...(measurer ? { measurer } : {}) })
+    return layout && showMusic ? drawBar(plan, layout, model, measurer) : null
   }, [layout, plan, model, measurer, showMusic])
   const score = markup ? (
     <div
@@ -324,11 +406,8 @@ const Excerpt = memo(function Excerpt({
       data-level={level}
       aria-label={msg('Bar {0}', barLabel)}
     >
-      <figcaption class={styles.caption}>
-        <span class={styles.bar}>{msg('Bar {0}', barLabel)}</span>
-        <span class={styles.reason} data-level={level}>
-          {lead?.reason ?? timingTitle}
-        </span>
+      <figcaption>
+        <Caption bar={barLabel} level={level} reason={lead?.reason ?? timingTitle} />
       </figcaption>
       {showMusic && (markup || timedBar) ? (
         <div
@@ -403,15 +482,6 @@ function itemLines(m: RankedMistake, model: ScoreModel, naming: NamingSettings):
   return [{ text: msg(words), flag: '' }]
 }
 
-/** "Clean pass: no wrong notes." or why not, in one plain sentence. */
-export function verdict(r: AttemptSummary): string {
-  if (r.passed) return msg('Clean pass: no wrong notes.')
-  if (r.wrongAttacks === 1) return msg('Not clean: 1 wrong note.')
-  if (r.wrongAttacks > 0) return msg('Not clean: {0} wrong notes.', r.wrongAttacks)
-  if (r.timing && r.timing.onTime < r.timing.groups) return msg('Not clean: the timing slipped.')
-  return msg('Completed, but not counted as clean.')
-}
-
 function PassFacts({ result, goal }: { result: AttemptSummary; goal: number | null }) {
   return (
     <section class={styles.group} aria-labelledby="result-facts">
@@ -434,8 +504,8 @@ async function storedHistory(pieceId: string, attemptId: string): Promise<Result
 }
 
 /**
- * Folded: all the numbers of this pass (the Results scorecard) and the earlier passes of this
- * loop (the Results history of its comparison context). A history row shows that pass's numbers
+ * Folded: all the numbers of this pass (the scorecard) and the earlier passes of this
+ * loop (the history of its comparison context). A history row shows that pass's numbers
  * here, with a way back to this pass; nothing opens another screen. Help is left out (U144).
  */
 function Earlier({
@@ -486,18 +556,12 @@ function Earlier({
             {msg('Back to this pass')}
           </Button>
         ) : null}
-        <ScorecardPanel attempt={attempt} scorecard={model.scorecard} isLatest={isThis} assistance={false} />
+        <ScorecardPanel attempt={attempt} scorecard={model.scorecard} isLatest={isThis} />
       </details>
       {model.history && model.historyCount > 1 ? (
         <details class={styles.fold} data-testid="result-history">
           <summary>{msg('Earlier passes of this loop ({0})', model.historyCount - 1)}</summary>
-          <HistoryPanel
-            history={model.history}
-            contextText={context}
-            selectedId={attempt.id}
-            onSelect={setSelected}
-            assistance={false}
-          />
+          <HistoryPanel history={model.history} contextText={context} selectedId={attempt.id} onSelect={setSelected} />
         </details>
       ) : null}
     </>

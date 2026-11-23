@@ -1,6 +1,6 @@
 import { msg } from '../../i18n/messages'
 /**
- * The teacher's corrections after a scored attempt: one red-pen mark per onset group that went
+ * The teacher's corrections after a scored attempt or a Wait run: one red-pen mark per onset group that went
  * wrong, came too soon or too late (or, in rhythm mode, was missed), was spread out or re-attacked a tie, built from the record's
  * per-group outcomes (pure).
  */
@@ -20,6 +20,9 @@ export const LATE_MARK_MS = 350
 /** A chord whose first and last attacks are at least this far apart is marked "Together" (ms). */
 export const SPREAD_MARK_MS = 90
 
+/** The parts of a pass `correctionMarks` reads (a scored attempt or a Wait run). */
+export type CorrectedPass = Pick<AttemptRecord, 'groups' | 'context' | 'rhythm'>
+
 /** The parts of the score `correctionMarks` reads (`ScoreModel` satisfies it). */
 export type CorrectionScore = Pick<ScoreModel, 'notes' | 'occurrences' | 'totalDuration'>
 
@@ -38,7 +41,7 @@ type Group = Timeline['groups'][number]
  * only the older classes.
  */
 export function correctionMarks(
-  record: AttemptRecord,
+  record: CorrectedPass,
   timeline: Timeline,
   score: CorrectionScore,
   naming: NamingSettings,
@@ -48,7 +51,7 @@ export function correctionMarks(
 
 /** `correctionMarks` keyed by engine group index (in group order), for the expanded result card (U99). */
 export function correctionMarksByGroup(
-  record: AttemptRecord,
+  record: CorrectedPass,
   timeline: Timeline,
   score: CorrectionScore,
   naming: NamingSettings,
@@ -70,7 +73,7 @@ export function correctionMarksByGroup(
 }
 
 /** The attempt's passage bounds; null (no filter) when the record's passage does not fit the score. */
-function attemptBounds(record: AttemptRecord, score: CorrectionScore): PassageBounds | null {
+function attemptBounds(record: CorrectedPass, score: CorrectionScore): PassageBounds | null {
   const passage = record.context?.passage
   if (!passage) return null
   try {

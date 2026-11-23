@@ -19,6 +19,7 @@ import {
   storedDraft,
   storedReviewChanges,
 } from './review'
+import { matchesSearch, searchWords } from './search'
 import { candidateTitle, describePart, needsChoice, selectionProblem, togglePart } from './selection'
 
 describe('format', () => {
@@ -55,6 +56,18 @@ describe('format', () => {
       false,
     )
     expect(detectAppleMobile({ userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/140' })).toBe(false)
+  })
+})
+
+describe('Library search (L13)', () => {
+  const find = (query: string, title: string, composer?: string) =>
+    matchesSearch({ title, ...(composer ? { composer } : {}) }, searchWords(query))
+  it('finds every typed word in the title or the composer, ignoring case and diacritics', () => {
+    expect(find('fur elise', 'Für Elise')).toBe(true)
+    expect(find('  FÜR  beet ', 'Fur Elise', 'Ludwig van Beethoven')).toBe(true)
+    expect(find('elise chopin', 'Für Elise', 'Ludwig van Beethoven')).toBe(false)
+    expect(find('undefined', 'Ode')).toBe(false)
+    expect(searchWords('  ')).toEqual([])
   })
 })
 

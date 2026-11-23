@@ -1,20 +1,17 @@
 import { importMessage } from '../../i18n/importMessage'
-import { decimal, messageLanguage, msg, percentage } from '../../i18n/messages'
+import { msg, percentage } from '../../i18n/messages'
 /**
  * The scorecard of one attempt (spec "Results and timing"): a transparent set of results, no
- * points total and no "missed notes" metric. Persistent score labels, temporary hints and the
- * keyboard guide are reported on separate lines. Timing is neutral: faster is not better.
+ * points total and no "missed notes" metric. Help is left out (U144). Timing is neutral: faster is
+ * not better.
  */
 import type { ComponentChildren } from 'preact'
 import { useId } from 'preact/hooks'
 import { COMPLETION_TIME_DEFINITION, formatSeconds } from '../../core/history'
 import type { Scorecard, ScorecardRowId } from '../../core/history'
 import type { AttemptRecord } from '../../core/model/practice'
-import { describeRule } from '../../core/naming'
-import type { ClefKey } from '../../core/model/score'
-import type { ClefLabelRule } from '../../core/model/settings'
 import { Icon } from '../../ui/icons'
-import { LABEL_MODE_TEXT, incompleteReason, plural, whenText } from './format'
+import { incompleteReason, whenText } from './format'
 import { earlyAttackCount, passReason } from './model'
 import type { PassReason } from './model'
 import styles from './results.module.css'
@@ -42,110 +39,22 @@ function Tile({
   value,
   detail,
   tone,
-  wide,
-  children,
   testId,
 }: {
   label: string
   value: ComponentChildren
   detail?: ComponentChildren
   tone?: 'good' | 'muted' | undefined
-  wide?: boolean
-  children?: ComponentChildren
   testId?: string
 }) {
   return (
-    <div class={styles.tile} data-wide={wide ? '' : undefined} data-tone={tone} data-row={testId}>
+    <div class={styles.tile} data-tone={tone} data-row={testId}>
       <dt>{label}</dt>
       <dd>
         <span class={styles.tileValue}>{value}</span>
         {detail ? <span class={styles.tileDetail}>{detail}</span> : null}
-        {children}
       </dd>
     </div>
-  )
-}
-
-/** A counted noun ("3 groups"). French counts zero in the singular ("0 demande d’indice"). */
-function counted(count: number, one: string): string {
-  return count === 0 && messageLanguage().startsWith('fr') ? `${decimal(0)} ${msg(one)}` : plural(count, one)
-}
-
-function isCondition(value: unknown): value is { enabled: boolean } {
-  return typeof value === 'object' && value !== null && typeof (value as { enabled?: unknown }).enabled === 'boolean'
-}
-
-/** The label rules recorded with the attempt (`rulesJson`: the per-clef rules, or the labels settings holding them). */
-export function labelRules(rulesJson: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(rulesJson)
-    if (typeof parsed !== 'object' || parsed === null) return []
-    const holder = parsed as Record<string, unknown>
-    const rules =
-      typeof holder['rules'] === 'object' && holder['rules'] !== null
-        ? (holder['rules'] as Record<string, unknown>)
-        : holder
-    const out: string[] = []
-    for (const [clef, rule] of Object.entries(rules)) {
-      if (typeof rule !== 'object' || rule === null) continue
-      const { below, above } = rule as { below?: unknown; above?: unknown }
-      if (!isCondition(below) || !isCondition(above) || (!below.enabled && !above.enabled)) continue
-      out.push(describeRule(rule as ClefLabelRule, clef as ClefKey))
-    }
-    return out
-  } catch {
-    return []
-  }
-}
-
-function Assistance({ attempt, card }: { attempt: AttemptRecord; card: Scorecard }) {
-  const a = card.assistance
-  const rules = a.labelMode === 'conditional' ? labelRules(attempt.assistance.labelSettings.rulesJson) : []
-  const labelsUsed = a.persistentLabelNotes > 0
-  const hintsUsed = a.hintRequests + a.autoHints + a.hintGroups > 0
-  return (
-    <ul class={styles.assistList} aria-label={msg('Assistance details')}>
-      <li data-used={labelsUsed ? '' : undefined} data-row="assist-labels">
-        <strong>{msg('Persistent score labels')}</strong>
-        <span>
-          {msg('Setting:')} {msg(LABEL_MODE_TEXT[a.labelMode])}.{' '}
-          {labelsUsed
-            ? msg(
-                'Revealed {0} in {1}, including labels seen in advance.',
-                counted(a.persistentLabelNotes, 'note'),
-                counted(a.persistentLabelGroups, 'group'),
-              )
-            : msg('No notes were revealed by labels.')}
-        </span>
-        {rules.length > 0 ? (
-          <details class={styles.inlineDetails}>
-            <summary>{msg('Label rules at the time')}</summary>
-            <ul>
-              {rules.map((r) => (
-                <li key={r}>{r}</li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
-      </li>
-      <li data-used={hintsUsed ? '' : undefined} data-row="assist-hints">
-        <strong>{msg('Temporary hints')}</strong>
-        <span>
-          {hintsUsed
-            ? msg(
-                '{0} (manual), {1}. {2} revealed.',
-                counted(a.hintRequests, 'hint request'),
-                counted(a.autoHints, 'automatic hint'),
-                counted(a.hintGroups, 'group'),
-              )
-            : msg('No hints were requested or shown automatically.')}
-        </span>
-      </li>
-      <li data-used={a.keyboardShown ? '' : undefined} data-row="assist-keyboard">
-        <strong>{msg('Keyboard guide')}</strong>
-        <span>{a.keyboardShown ? msg('Shown during this attempt.') : msg('Not shown.')}</span>
-      </li>
-    </ul>
   )
 }
 
@@ -153,12 +62,10 @@ export interface ScorecardPanelProps {
   readonly attempt: AttemptRecord
   readonly scorecard: Scorecard
   readonly isLatest: boolean
-  /** Shows the Assistance tile (default); the practice result card leaves help out (U144). */
-  readonly assistance?: boolean
   readonly now?: number
 }
 
-export function ScorecardPanel({ attempt, scorecard: card, isLatest, assistance = true, now }: ScorecardPanelProps) {
+export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: ScorecardPanelProps) {
   const headingId = useId()
   const early = earlyAttackCount(attempt)
   const reason = passReason(attempt)
@@ -295,24 +202,6 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, assistance 
             value={streakRow.value}
             detail={msg('{0} in this setting', streakRow.detail ?? '').trim()}
           />
-        ) : null}
-
-        {assistance ? (
-          <Tile
-            testId="assistance"
-            label={msg('Assistance')}
-            wide
-            value={
-              card.assistance.level === 'none'
-                ? msg('No assistance')
-                : card.assistance.level === 'names'
-                  ? msg('Note names')
-                  : msg('Keyboard guide')
-            }
-            tone={card.assistance.assisted ? undefined : 'good'}
-          >
-            <Assistance attempt={attempt} card={card} />
-          </Tile>
         ) : null}
       </dl>
 

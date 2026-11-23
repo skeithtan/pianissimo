@@ -1,6 +1,6 @@
 /* The whole row opens Practice through one real button, `.stretched` (the chevron, or Continue
    practice on the featured card): its ::after covers the card. Every other control in the card
-   (`.above`, `.options`, `.suggestions`) sits above that layer, so its own dead space never opens
+   (`.options`, `.workOn`) sits above that layer, so its own dead space never opens
    Practice. Nothing interactive is nested. */
 .card {
   position: relative;
@@ -52,9 +52,8 @@
   background-image: linear-gradient(var(--hover), var(--hover)), linear-gradient(var(--hover), var(--hover));
 }
 
-.above,
 .options,
-.suggestions {
+.workOn {
   position: relative;
   z-index: 1;
 }
@@ -153,19 +152,6 @@
   text-align: left;
 }
 
-.menu p {
-  margin: 0;
-  padding: var(--space-2);
-  color: var(--fg-muted);
-  font-size: var(--text-xs);
-}
-
-.suggestions {
-  margin-top: var(--space-5);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border);
-}
-
 /* Ordinary rows stay on one line; the featured card stacks its actions under the text. */
 @media (max-width: 760px) {
   .main {
@@ -207,6 +193,14 @@
 
   .card[data-featured] .actions > :first-child {
     margin-right: var(--space-1);
+  }
+}
+
+@media (max-width: 480px) {
+  /* Under Continue practice and Options, which keep one row. */
+  .card[data-featured] .workOn {
+    order: 1;
+    margin-top: var(--space-2);
   }
 }
 

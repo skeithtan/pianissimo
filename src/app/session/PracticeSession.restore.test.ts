@@ -1,17 +1,18 @@
 /**
- * Repeat mode survives a reload (DECISIONS U98): the session saves whether Repeat is open with
- * the loop, and a session opened from the stored piece the way `PracticeScreen` does finds Repeat
- * on over the same loop, paused at its start. Without a piano (P22) Repeat is held closed and
- * comes back with the piano; the piece keeps it open meanwhile.
+ * A reload restores what was on screen (DECISIONS U98): the session saves the mode, the hands, the
+ * speed, the loop and whether Repeat is open, in every mode, and a session opened from the stored
+ * piece the way `PracticeScreen` does finds them, paused at the loop start. A piano that is away
+ * changes none of it.
  */
 import { describe, expect, it } from 'vitest'
 import { buildScore } from '../../core/engine/testkit'
-import type { PassageRange } from '../../core/model/practice'
+import type { PassageRange, PracticeMode } from '../../core/model/practice'
 import type { HandSelection, ScoreModel } from '../../core/model/score'
-import { type Rational, rat } from '../../core/music/rational'
+import { rat } from '../../core/music/rational'
 import type { LadderSettings, ResumePosition } from '../../core/storage/records'
-import { harness, testSettings, type Harness } from './testkit'
-import type { MicFollowerLike, PiecePatch, SessionDeps } from './types'
+import { learnerHands, openingMode, type OpeningEnv } from './openingMode'
+import { harness, type Harness } from './testkit'
+import type { PiecePatch } from './types'
 
 /** Three bars of quarters, quarter = 60: note k at k/4. */
 const melody = buildScore({
@@ -27,6 +28,7 @@ interface Stored {
   resume: ResumePosition | null
   repeatTarget: number | null
   ladder?: LadderSettings | null
+  mode?: PracticeMode
   rhythm?: boolean
   repeatOpen?: boolean
 }
@@ -40,36 +42,23 @@ function stored(saves: readonly { patch: PiecePatch }[], base: Stored = FRESH): 
   return record
 }
 
-class QuietMic implements MicFollowerLike {
-  async start(_position: Rational): Promise<void> {}
-  reset(): void {}
-  pause(): void {}
-  resume(): void {}
-  dispose(): void {}
-}
-
-const micDeps: Partial<SessionDeps> = {
-  createMicFollower: () => new QuietMic(),
-  micSupported: () => true,
-}
+const PIANO: OpeningEnv = { pianoConnected: true, pianoRemembered: true, midiSupported: true }
 
 /** A session opened from `record` the way `PracticeScreen` does without a preset. */
-function reopen(record: Stored, deps: Partial<SessionDeps> = {}): Harness {
+function reopen(record: Stored, env = PIANO): Harness {
   const repeat = record.repeatOpen === true && record.lastPassage !== null
   const resume = !repeat ? record.resume : null
   return harness(
     melody as ScoreModel,
-    { hands: record.lastHands, range: record.lastPassage, multiplier: record.lastMultiplier },
+    { hands: learnerHands(record.lastHands), range: record.lastPassage, multiplier: record.lastMultiplier },
     {
-      settings: testSettings(deps.createMicFollower ? { mic: { follow: false } } : {}),
       options: {
+        mode: openingMode(record, env),
         startPosition: resume?.position ?? null,
         repeatTarget: record.repeatTarget,
         ladder: record.ladder ?? null,
-        rhythm: record.rhythm === true,
         repeat,
       },
-      deps,
     },
   )
 }
@@ -204,69 +193,91 @@ describe('PracticeSession: a reload keeps Repeat mode (U98)', () => {
   })
 })
 
-describe('PracticeSession: Repeat waits for the piano (U98, P22)', () => {
-  it('no piano at open: play-through, Repeat held (still open on the piece), back with the piano and Keep time', () => {
-    const h = reopen({ ...FRESH, lastHands: 'right', lastPassage: BAR_2, repeatOpen: true, rhythm: true }, micDeps)
-    expect(ui(h)).toMatchObject({ repeat: true, rhythm: true })
+describe('PracticeSession: the mode is the piece’s (U98)', () => {
+  it('is saved at once when the learner changes it, and only then', () => {
+    const h = reopen(FRESH)
+    expect(ui(h).mode).toBe('wait')
     h.session.setInputAvailable(false)
-    expect(ui(h)).toMatchObject({ repeat: false, rhythm: false, playThrough: true })
-    expect(h.session.loop).toEqual(BAR_2)
-    expect(h.saves.some((s) => s.patch.repeatOpen === false || s.patch.rhythm === false)).toBe(false)
-    expect(stored(h.saves, { ...FRESH, repeatOpen: true }).repeatOpen).toBe(true)
-
     h.session.setInputAvailable(true)
-    expect(ui(h)).toMatchObject({ repeat: true, rhythm: true, playThrough: false, playing: false })
-    expect(h.session.loop).toEqual(BAR_2)
-    expect(h.session.selection.range).toEqual(BAR_2)
-    expect(stored(h.saves, { ...FRESH, repeatOpen: true }).repeatOpen).toBe(true)
+    h.session.setSelection({ hands: 'right', multiplier: 0.8 })
+    h.session.setRepeatMode(true, 1)
+    expect(h.saves.some((s) => s.patch.mode !== undefined)).toBe(false)
+    h.session.setMode('wait')
+    expect(h.saves.some((s) => s.patch.mode !== undefined)).toBe(false)
+    h.session.setMode('time')
+    expect(h.saves.at(-1)).toEqual({ patch: { mode: 'time', lastHands: 'right' }, immediate: true })
   })
 
-  it('a piano unplugged mid-session gives Repeat back when it returns', () => {
-    const h = reopen({ ...FRESH, lastHands: 'both', lastPassage: BAR_2, repeatOpen: true }, micDeps)
+  it.each(['listen', 'wait', 'time', 'follow'] as const)(
+    '%s: mode, hands, speed, loop and Repeat reopen as they were, and none of it is saved by opening',
+    (mode) => {
+      const first = reopen({ ...FRESH, mode: mode === 'wait' ? 'listen' : 'wait' })
+      first.session.setMode(mode)
+      first.session.setSelection({ hands: 'left' })
+      first.session.setSelection({ multiplier: 0.7 })
+      if (mode !== 'follow') first.session.setRepeatMode(true, 1)
+      const record = stored(first.saves)
+      expect(record).toMatchObject({ mode, lastHands: 'left', lastMultiplier: 0.7 })
+      const h = reopen(record)
+      expect(ui(h)).toMatchObject({
+        mode,
+        hands: 'left',
+        multiplier: 0.7,
+        playing: false,
+        repeat: mode !== 'follow',
+      })
+      expect(h.session.loop).toEqual(mode === 'follow' ? null : BAR_2)
+      expect(h.saves).toEqual([])
+    },
+  )
+
+  it('Follow keeps Repeat open on the piece: a reload there, then another mode, has it back', () => {
+    const first = reopen({ ...FRESH, lastPassage: BAR_2, repeatOpen: true })
+    first.session.setMode('follow')
+    const record = stored(first.saves, { ...FRESH, lastPassage: BAR_2, repeatOpen: true })
+    expect(record).toMatchObject({ mode: 'follow', repeatOpen: true, lastPassage: BAR_2 })
+    const h = reopen(record)
+    expect(ui(h)).toMatchObject({ mode: 'follow', repeat: false })
+    h.session.setMode('wait')
+    expect(ui(h)).toMatchObject({ mode: 'wait', repeat: true, range: BAR_2 })
+  })
+
+  it('an older record opens in its mode and hands, and a first change writes the new ones', () => {
+    const listened = reopen({ ...FRESH, lastHands: 'none' })
+    expect(ui(listened)).toMatchObject({ mode: 'listen', hands: 'both' })
+    listened.session.setMode('wait')
+    expect(stored(listened.saves, { ...FRESH, lastHands: 'none' })).toMatchObject({ mode: 'wait', lastHands: 'both' })
+    const kept = reopen({ ...FRESH, rhythm: true })
+    expect(ui(kept).mode).toBe('time')
+    expect(kept.saves).toEqual([])
+  })
+})
+
+describe('PracticeSession: the piano away changes nothing on the piece', () => {
+  it.each(['wait', 'time'] as const)('%s at open: blocked, with Repeat, loop and hands as they were', (mode) => {
+    const h = reopen({ ...FRESH, mode, lastHands: 'right', lastPassage: BAR_2, repeatOpen: true })
     h.session.setInputAvailable(false)
-    expect(ui(h)).toMatchObject({ repeat: false, playThrough: true })
+    expect(ui(h)).toMatchObject({ mode, hands: 'right', repeat: true, range: BAR_2, startEnabled: false })
+    expect(h.saves).toEqual([])
     h.session.setInputAvailable(true)
-    expect(ui(h)).toMatchObject({ repeat: true, playThrough: false, playing: false })
+    expect(ui(h)).toMatchObject({ mode, hands: 'right', repeat: true, range: BAR_2, startEnabled: true })
+    expect(ui(h).playing).toBe(false)
     expect(h.session.engine.state.position).toEqual(rat(1))
+    expect(h.saves).toEqual([])
   })
 
-  it('held, then the learner chooses play-through: it stays at the piano’s return, Repeat closed and saved so', () => {
-    const h = reopen({ ...FRESH, lastPassage: BAR_2, repeatOpen: true }, micDeps)
+  it('the learner can change the loop, the hands and Repeat meanwhile', () => {
+    const h = reopen({ ...FRESH, lastPassage: BAR_2, repeatOpen: true })
     h.session.setInputAvailable(false)
-    h.session.setPlayThrough(true)
-    const saved = h.saves.length
-    h.session.setInputAvailable(true)
-    expect(ui(h)).toMatchObject({ repeat: false, playThrough: true })
-    expect(h.saves.slice(saved)).toContainEqual({ patch: { repeatOpen: false }, immediate: true })
-    expect(stored(h.saves, { ...FRESH, repeatOpen: true }).repeatOpen).toBe(false)
-  })
-
-  it('the learner’s own play-through with a piano closes Repeat for good', () => {
-    const h = reopen({ ...FRESH, lastPassage: BAR_2, repeatOpen: true }, micDeps)
-    h.session.setPlayThrough(true)
-    expect(ui(h)).toMatchObject({ repeat: false, playThrough: true })
-    expect(h.saves.find((s) => 'repeatOpen' in s.patch)).toMatchObject({
-      patch: { repeatOpen: false },
-      immediate: true,
-    })
-    expect(stored(h.saves, { ...FRESH, repeatOpen: true }).repeatOpen).toBe(false)
-  })
-
-  it('the loop cleared while held: the piano’s return reopens nothing', () => {
-    const h = reopen({ ...FRESH, lastPassage: BAR_2, repeatOpen: true }, micDeps)
-    h.session.setInputAvailable(false)
+    h.session.setSelection({ range: { fromOcc: 0, toOcc: 1 } })
+    h.frames.flush()
+    expect(ui(h)).toMatchObject({ repeat: true, range: { fromOcc: 0, toOcc: 1 } })
     h.session.setSelection({ range: null })
     expect(h.saves.at(-1)).toMatchObject({ patch: { lastPassage: null, repeatOpen: false } })
+    h.session.repeatFrom(2)
+    h.frames.flush()
+    expect(ui(h)).toMatchObject({ repeat: true, range: { fromOcc: 2, toOcc: 2 } })
     h.session.setInputAvailable(true)
-    expect(ui(h).repeat).toBe(false)
-  })
-
-  it('no piano and no microphone: Repeat stays open in Listen', () => {
-    const h = reopen({ ...FRESH, lastPassage: BAR_2, repeatOpen: true }, { micSupported: () => false })
-    h.session.setInputAvailable(false)
-    expect(ui(h)).toMatchObject({ repeat: true, hands: 'none', playThrough: false })
-    expect(h.saves.some((s) => s.patch.repeatOpen === false)).toBe(false)
-    h.session.setInputAvailable(true)
-    expect(ui(h)).toMatchObject({ repeat: true, hands: 'both' })
+    expect(ui(h)).toMatchObject({ repeat: true, range: { fromOcc: 2, toOcc: 2 } })
   })
 })

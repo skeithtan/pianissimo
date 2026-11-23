@@ -6,14 +6,7 @@
 import { join } from 'node:path'
 import { expect, test, type Page } from '../browser-test'
 import { importFixture } from '../unit/import/fixtures'
-import {
-  SHOT_DIR,
-  installFakeMidi,
-  openFooterMenu,
-  openSeededPractice,
-  playWhenDue,
-  seedPiece,
-} from './practice-helpers'
+import { SHOT_DIR, chooseMode, installFakeMidi, openSeededPractice, playWhenDue, seedPiece } from './practice-helpers'
 
 /** Performed-note index of a pitch in the first bar of the Two Hands fixture (the strip's `data-n`). */
 async function noteIndex(midi: number): Promise<number> {
@@ -46,9 +39,7 @@ test.describe('note-level practice', () => {
     await page.getByRole('button', { name: /Passage end/ }).press('ArrowLeft')
     await expect(end).toContainText(/Bar 1, beat/)
 
-    const menu = await openFooterMenu(page)
-    await menu.getByRole('switch', { name: 'Keep time' }).click()
-    await page.keyboard.press('Escape')
+    await chooseMode(page, 'Keep time')
 
     await page.clock.install()
     const start = page.getByRole('button', { name: 'Start', exact: true })
@@ -69,10 +60,9 @@ test.describe('note-level practice', () => {
   for (const action of ['pause', 'browse'] as const) {
     test(`the stage X clears the loop after Listen stops through ${action}`, async ({ page }) => {
       await page.setViewportSize({ width: 958, height: 846 })
-      await page.getByRole('button', { name: 'Left hand', exact: true }).click()
-      await page.getByRole('button', { name: 'Right hand', exact: true }).click()
+      await chooseMode(page, 'Listen')
       await page.getByRole('button', { name: 'Repeat from here' }).click()
-      await page.getByRole('button', { name: 'Listen', exact: true }).click()
+      await page.getByRole('button', { name: 'Play', exact: true }).click()
       await expect(page.locator('.pn-strip')).toHaveClass(/pn-loop-locked/)
       if (action === 'pause') {
         await page.getByRole('button', { name: 'Pause', exact: true }).click()
