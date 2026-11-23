@@ -594,6 +594,11 @@
   pointer-events: auto;
 }
 
+/* Carried off to the pinned signatures while browsing (U151): not shown, not touched. */
+.pn-cursor-out > * {
+  pointer-events: none !important;
+}
+
 .pn-cursor-dragging .pn-cursor-action {
   opacity: 0;
   pointer-events: none;

@@ -335,8 +335,10 @@ test.describe('practice without a piano', () => {
   })
 })
 
-test.describe('browsing while playing (U41, U95)', () => {
-  test('scrolling the score during an attempt discards it, holds, and plays on at the release', async ({ page }) => {
+test.describe('browsing while playing (U151)', () => {
+  test('scrolling the score during an attempt only looks elsewhere: it goes on and the view springs back', async ({
+    page,
+  }) => {
     await installFakeMidi(page)
     await seedPiece(page)
     await openSeededPractice(page)
@@ -351,16 +353,14 @@ test.describe('browsing while playing (U41, U95)', () => {
     await page.mouse.move(box.x + box.width * 0.5, y)
     await page.mouse.down()
     await page.mouse.move(box.x + box.width * 0.8, y, { steps: 8 })
-    // Held while the button is down: the main button still reads Pause.
     await expect(strip).toHaveClass(/pn-browsing/)
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
     await page.mouse.up()
-    // Released: playback goes on from the note under the cursor line and follows it again; the
-    // discarded attempt never reaches storage.
+    // Released: the view follows the cursor again, and the same attempt can be finished.
     await expect(strip).not.toHaveClass(/pn-browsing/)
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
-    await page.waitForTimeout(1500)
-    expect(await idbAll(page, 'attempts')).toHaveLength(0)
+    for (const notes of [...REST.slice(1), [LAST]]) await playWhenDue(page, ...notes)
+    await expect.poll(async () => (await idbAll(page, 'attempts')).length).toBe(1)
   })
 })
 

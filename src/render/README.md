@@ -51,8 +51,8 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   `onCursorSeek(position) → boolean|void` (dragged playhead released on a note; `false` puts it
   back), `cursorDragLabel(position)` (readout text), `onLoopChange(range|null)`,
   `onLoopSelectModeChange`, `onVisibleLabels(addedNotes)`, `onZoomChange`, `onCursorAction(occ?)`
-  (`cursorActionLabel` overrides the accessible name; while browsing, `occ` is the bar under the
-  fixed cursor line, which the button sits over, and browsing ends with the press).
+  (`cursorActionLabel` overrides the accessible name; the button stays with the cursor, so `occ` is
+  never passed; browsing ends with the press).
 - Pure helpers: `positionToX`, `occAtX`, `occAtPosition`.
 - **Page mode (portrait)**: `PrepareOptions.mode: 'page'` + `pageWidth` (layout px the systems
   wrap to; `pageWidthFor(stageWidth, zoom)` = (stage − 2 × 16 px) / zoom, rounded to 8) prepares
@@ -171,10 +171,14 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   device, once the music has been still), then drives `browseTx` (or the review's frame) unclamped until
   it settles (`scrollend`, or `SWIPE_SETTLE_MS` without a scroll event); that is the browse release.
   Nothing writes the scroller meanwhile, and playback never does. Two fingers are canceled for it.
-  After browsing, `browsedPosition()` returns the exact nearest snap onset under the rendered
-  fixed cursor, so the session can seek there before resuming and call `returnToCurrent()` to
-  restore following. Keyboard seeks also start from that visible note and end browsing when
-  accepted. Returning without a seek still restores the original current position.
+  A released pinch (U152, `strip/stretch.ts`) coasts or bounces as a display factor (`stretch`) on the
+  unchanged zoom: no `--pn-zoom` on the root per frame, only on the cursor and loop controls; `settleZoom`
+  sets the zoom where it lands and `flush` reports it once.
+  Browsing moves no position (U151): the cursor stays on its note (screen x = the drawn translate plus the
+  note's), `browsedPosition()` is null, and `returnToCurrent()` springs music and cursor back to the fixed
+  line together (`springBack`, an offset from the live target decayed per frame, never a CSS transition).
+  Keyboard seeks start from the cursor's note and end browsing when accepted. A cursor grabbed while
+  browsing (`cursorDrag.free`) moves over the still music.
 - **Theme**: no colors in cached SVG; `--score-paper/--score-ink/--score-ink-muted`, `--danger`,
   `--color-loop`, `--color-target/accepted`, `--accent`, motion tokens with fallbacks; switching
   `data-theme` / `data-score-paper` recolors instantly without re-engraving.

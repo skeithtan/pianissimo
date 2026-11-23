@@ -1,4 +1,4 @@
-/** Playback must start at the visible cursor after browsing and keep following the sound. */
+/** Browsing the strip only looks elsewhere: playback starts at the cursor's own note and is followed (U151). */
 import { expect, test, type Page } from '../browser-test'
 import { importFixture } from '../unit/import/fixtures'
 import { chooseMode, installFakeMidi, openSeededPractice, playWhenDue, seedPiece } from './practice-helpers'
@@ -11,7 +11,7 @@ async function headX(page: Page, midi: number): Promise<number> {
   return box.x + box.width / 2
 }
 
-/** Pan the notation until an exact onset sits beneath the fixed playhead. */
+/** Pan the notation until an exact onset sits where the playhead rests while following. */
 async function browseTo(page: Page, midi: number, wheel = false): Promise<number> {
   const strip = page.locator('.pn-strip')
   const box = (await strip.boundingBox())!
@@ -40,62 +40,56 @@ async function seekBarTwo(page: Page): Promise<void> {
   await expect.poll(async () => Math.abs((await headX(page, 67)) - box.x - box.width / 3)).toBeLessThan(3)
 }
 
-test.describe('playback from the visible cursor', () => {
+test.describe('playback from the cursor after browsing', () => {
   test.beforeEach(async ({ page }) => {
     await installFakeMidi(page)
     await seedPiece(page)
     await openSeededPractice(page)
   })
 
-  for (const resumed of [false, true]) {
-    test(`${resumed ? 'resumed' : 'first'} Listen starts at the note browsed backward to and follows playback`, async ({
+  for (const wheel of [false, true]) {
+    test(`Listen starts at the cursor, not where it was browsed to by ${wheel ? 'wheel' : 'drag'}`, async ({
       page,
     }) => {
       await chooseMode(page, 'Listen')
       await seekBarTwo(page)
-      if (resumed) {
-        await page.getByRole('button', { name: 'Play', exact: true }).click()
-        await page.getByRole('button', { name: 'Pause', exact: true }).click()
-      }
-      const line = await browseTo(page, 62, resumed)
+      const line = await browseTo(page, 62, wheel)
       await page.evaluate(() => (window.__midi.sent.length = 0))
       await page.getByRole('button', { name: 'Play', exact: true }).click()
-      // D4 is inside bar 1: choosing only the browsed bar would incorrectly sound C4 instead.
       await expect
         .poll(() =>
           page.evaluate(() => window.__midi.sent.find((m) => (m[0]! & 0xf0) === 0x90 && m[2]! > 0 && m[1]! >= 60)?.[1]),
         )
-        .toBe(62)
+        .toBe(67)
       await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-browsing/)
-      // The fixed line stays put as the score advances beyond the selected D4 onset.
+      // The view came back: bar 1's D4 is left of the line again.
       await expect.poll(async () => (await headX(page, 62)) - line).toBeLessThan(-20)
       await page.getByRole('button', { name: 'Pause', exact: true }).click()
     })
   }
 
-  test('reading starts at the exact browsed onset', async ({ page }) => {
+  test('reading starts at the cursor’s own note, and the view comes back to it', async ({ page }) => {
     await seekBarTwo(page)
     const line = await browseTo(page, 64)
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-browsing/)
-    await expect.poll(async () => Math.abs((await headX(page, 64)) - line)).toBeLessThan(3)
-    await playWhenDue(page, 64)
-    await playWhenDue(page, 65)
+    await expect.poll(async () => Math.abs((await headX(page, 67)) - line)).toBeLessThan(3)
     await playWhenDue(page, 67, 71, 74, 43)
     await playWhenDue(page, 48)
     await expect(page.locator('[data-phase="completed"]')).toHaveCount(1)
     await expect(page.getByTestId('feedback-chip')).toHaveCount(0)
   })
 
-  test('keyboard seeking after browsing starts from the visible note and restores following', async ({ page }) => {
+  test('keyboard seeking after browsing starts from the cursor’s note and restores following', async ({ page }) => {
     const grip = page.getByTestId('cursor-grip')
     await seekBarTwo(page)
     const line = await browseTo(page, 62)
     await grip.focus()
-    await page.keyboard.press('ArrowRight')
-    await expect(grip).toHaveAttribute('aria-valuetext', 'Bar 1, beat 3')
+    await page.keyboard.press('ArrowLeft')
+    // One note before bar 2's first.
+    await expect(grip).toHaveAttribute('aria-valuetext', /^Bar 1, beat/)
     await expect(page.locator('.pn-strip')).not.toHaveClass(/pn-browsing/)
-    await expect.poll(async () => Math.abs((await headX(page, 64)) - line)).toBeLessThan(3)
+    await expect.poll(async () => Math.abs((await headX(page, 65)) - line)).toBeLessThan(3)
   })
 })
 

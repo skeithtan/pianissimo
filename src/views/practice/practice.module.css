@@ -320,6 +320,14 @@
     bottom: calc(100% + var(--space-2));
   }
 }
+/* The strip looks elsewhere: the cue's place beside the cursor line is over other music (U151). */
+.stage:has(> .stripHost :global(.pn-browsing:not(.pn-page))) > .stageCue {
+  visibility: hidden;
+}
+/* While something plays the strip springs back by itself: no Return button for that moment (U151). */
+.screen[data-playing] .stripHost :global(.pn-browsing:not(.pn-page) .pn-return) {
+  display: none;
+}
 /* A narrow page: while the score view shows Return to current position on the same line, the
    action moves up above it (both pills do not fit side by side, P11). */
 @media (max-width: 640px) {

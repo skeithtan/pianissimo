@@ -33,8 +33,8 @@ Controls: `setMode(mode)` (below), `togglePlay()`, `start()` (what the mode says
 (its Loop action, below), `requestHint()`, `setKeyboardVisible(v)`, `setRepeatMode(open, at?)` (saved on the piece as `repeatOpen`, U98; `SessionOptions.repeat` opens
 with it on over `selection.range`, clamped), `repeatFrom(occ)` (a fresh
 one-bar loop), `repeatAtCursor(occ?)` (the cursor's repeat button: pauses what plays, then opens
-Repeat at the bar the button was over: `occ` when the view reports one, the strip's bar under its
-fixed cursor line while browsing, else the cursor's bar), `setChromeRevealed(bool)` (the view's chrome is revealed, not in
+Repeat at the bar the button was over: `occ` when the view reports one, else the
+cursor's bar), `setChromeRevealed(bool)` (the view's chrome is revealed, not in
 focus mode; default true), `setInputAvailable(bool)` (a piano input is connected), `setRepeatTarget(n)`,
 `setLadder(ladder | null)` (speed ladder, below), `dismissResult()`,
 `setSelection({hands?, range?, multiplier?})` (hands are always both, left or right), `updateSettings(settings)`,
@@ -108,6 +108,11 @@ reason})` plays a lead-in from a position inside the new loop (or before it, whe
 reading toward the loop), and otherwise the next attempt waits at the loop start at Ready (Keep
 time always; an attempt still at Ready too). Paused, a loop change only moves the loop.
 
+Browsing only looks elsewhere in both views (U151; `browsedPosition()` null while browsing): nothing pauses
+or is discarded, and `browseReleased()` (`StripOptions.onBrowseRelease`, the strip only: the gesture and its
+glide are over) makes the view follow again while something plays. The hold described next serves a view that
+does report a browsed position; none does now.
+
 Browsing (U41, U95): `browseStarted()` (the view's `onBrowse(true)`) while something plays (Pause
 showing, Ready and a finished pass's music included) pauses it and discards the attempt or reading
 pass in progress, and records a hold (`#browseHold`, with `#continueFrom()`); `ui.playing` stays
@@ -118,9 +123,8 @@ browsed note as below. Any Pause (`pause()`, an overlay, a lost input or output,
 `returnToCurrent()`. The page layout (`browsedPosition()` null while browsing) pauses nothing.
 
 Start adopts the notation's optional `browsedPosition()` before resuming playback, then calls
-`returnToCurrent()` to restore cursor following. The fixed strip returns the onset underneath
-its visible cursor, while the page layout returns null because its cursor already marks the
-session position. This is checked again after sound loading so a later browse or seek wins.
+`returnToCurrent()` to restore cursor following. Both views return null because their cursor
+already marks the session position. This is checked again after sound loading so a later browse or seek wins.
 Reading and scored lead-ins use the existing seek rules. Listen honors the selected onset
 inside its loop and keeps playback within that loop. A seek made while changing sound outputs
 also replaces the paused Listen position captured before the new output finished loading.

@@ -155,7 +155,7 @@ export interface RepeatPanelProps extends RepeatOptionsProps {
   readonly loop: PassageRange | null
   /** Hands whose notes the edge texts count. */
   readonly hands: HandSelection
-  /** The bar being browsed in the strip, or null (the steppers then act on the cursor's bar). */
+  /** The bar being browsed on the page, or null (the steppers then act on the cursor's bar, U151). */
   readonly browsedOcc: number | null
   readonly zone: RecedeZone
   readonly layout: RepeatLayout

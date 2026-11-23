@@ -2383,9 +2383,9 @@ export class PracticeSession {
    * finger is down, and the attempt or reading pass in progress ends unrecorded: a scored attempt
    * is interrupted; a reading pass pauses where it was and starts over from that note; Listen and
    * Follow pause. The release (`browseReleased`) then continues from the note under the
-   * fixed cursor line. Nothing happens when nothing plays, nor in the page layout, whose cursor
-   * moves with the notation (`browsedPosition()` null): scrolling there moves no position (U52),
-   * so playback goes on.
+   * fixed cursor line. Nothing happens when nothing plays, nor in a view whose cursor stays with
+   * the notation (`browsedPosition()` null): scrolling there moves no position, so playback goes
+   * on. Since U151 that is both views, the strip and the page: no view holds playback now.
    */
   browseStarted(): void {
     const strip = this.#strip
@@ -2422,12 +2422,16 @@ export class PracticeSession {
    * The browse gesture was released (the finger lifted, the pointer was canceled, or the wheel
    * went idle; `StripOptions.onBrowseRelease`, U95). When it began while something played,
    * playback continues from the note under the fixed cursor line, exactly as Start after browsing
-   * does (`#followBrowsedCursor`), and following is restored. Otherwise nothing happens. Resolves
-   * when that Start has.
+   * does (`#followBrowsedCursor`), and following is restored. Without a hold, a view released
+   * while something plays follows the cursor again (the strip springs back, U151); while paused it
+   * stays. Resolves when that Start has.
    */
   browseReleased(): Promise<void> {
-    if (!this.#browseHold || this.#disposed) return Promise.resolve()
-    return this.start()
+    if (this.#disposed) return Promise.resolve()
+    if (this.#browseHold) return this.start()
+    // Looking elsewhere while something plays (U151): the view springs back to the cursor.
+    if (this.#isPlaying() || this.#pendingRepeat) this.#followCursorAgain()
+    return Promise.resolve()
   }
 
   /**

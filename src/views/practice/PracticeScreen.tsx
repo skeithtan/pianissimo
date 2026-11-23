@@ -574,8 +574,8 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
             onMagnify: (m) => {
               magnifyRef.current = m
             },
-            // Browsing while something plays holds it and drops that attempt (U41); the release
-            // continues from the note under the cursor line (U95).
+            // Browsing only looks elsewhere: what plays goes on, and the strip springs back to the
+            // cursor at the release (U151).
             onBrowse: (browsing) => {
               if (browsing) session.browseStarted()
               browsed.onBrowse(browsing)
@@ -590,8 +590,7 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
             onCursorSeek: (position) => session.seekPosition(position),
             cursorDragLabel: (position) => positionText(model, position),
             onLoopChange: (range) => session.setSelection({ range }),
-            // The repeat button on the cursor pauses and loops the bar it is over: the bar under
-            // the strip's fixed cursor line while browsing, else the cursor's bar (U14).
+            // The repeat button on the cursor pauses and loops the cursor's bar (U14, U151).
             onCursorAction: (occ) => session.repeatAtCursor(occ),
             onVisibleLabels: (added) => session.onVisibleLabels(added),
             // Strip: a CSS scale. Page: a new page width, so the layout is re-prepared (above).
@@ -890,6 +889,7 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
       data-activity={ui.activity}
       data-phase={ui.phase ?? ''}
       data-mode={ui.mode}
+      data-playing={ui.playing || undefined}
       data-recede={receded ? 'true' : undefined}
       data-recording-header={recordingInBar || undefined}
       data-compact={phone ? 'true' : undefined}
@@ -1012,7 +1012,7 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
               repeatTarget={ui.repeatTarget}
               multiplier={ui.multiplier}
               ladder={ui.ladder}
-              browsedOcc={browsed.occ}
+              browsedOcc={mode === 'page' ? browsed.occ : null}
               zone={recede.zone}
               layout="docked"
               playing={ui.playing}
@@ -1062,7 +1062,7 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
               repeatTarget={ui.repeatTarget}
               multiplier={ui.multiplier}
               ladder={ui.ladder}
-              browsedOcc={browsed.occ}
+              browsedOcc={mode === 'page' ? browsed.occ : null}
               zone={recede.zone}
               layout={phone ? 'compact' : 'float'}
               playing={ui.playing}

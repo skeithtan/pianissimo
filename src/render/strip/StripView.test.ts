@@ -308,6 +308,57 @@ describe('StripView pinch', () => {
     expect(v.zoom()).toBeCloseTo(1.4)
     expect(transformX(content) + (50 + 10 * MEASURE + 40) * 1.4).toBeCloseTo(before)
   })
+
+  it('coasts on release at any zoom, reports once it lands, and a finger stops it (U152)', () => {
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const zooms: number[] = []
+    const { v } = view(40, { onZoomChange: (z) => zooms.push(z), onSeekRequest: () => zooms.push(NaN) })
+    const content = host.querySelector('.pn-content') as HTMLElement
+    const shown = () => Number(/scale\(([\d.]+)\)/.exec(content.style.transform)![1])
+    const ev = (type: string, id: number, x: number) => {
+      const e = new PointerEvent(type, { pointerId: id, clientX: x, clientY: 150, pointerType: 'touch', bubbles: true })
+      Object.defineProperty(e, 'timeStamp', { value: now })
+      host.querySelector('.pn-strip')!.dispatchEvent(e)
+    }
+    const pinch = (): void => {
+      ev('pointerdown', 1, 400)
+      ev('pointerdown', 2, 500)
+      for (let d = 102; d <= 110; d += 2) {
+        now += 16
+        ev('pointermove', 2, 400 + d)
+      }
+      ev('pointerup', 2, 510)
+      ev('pointerup', 1, 400)
+    }
+    const frames = (n: number): void => {
+      for (let i = 0; i < n; i++) {
+        v.flushNow()
+        now += 16
+      }
+    }
+    pinch()
+    zooms.length = 0
+    frames(8)
+    const coasting = shown()
+    expect(coasting).toBeGreaterThan(1.13)
+    expect(v.zoom()).toBeCloseTo(1.1)
+    frames(80)
+    expect(shown()).toBeGreaterThan(coasting)
+    expect(zooms).toEqual([shown()])
+    expect(v.zoom()).toBe(shown())
+    // The next one is stopped by a touch, which is no tap.
+    pinch()
+    frames(4)
+    ev('pointerdown', 1, 600)
+    ev('pointerup', 1, 600)
+    frames(1)
+    const stopped = shown()
+    frames(20)
+    expect(shown()).toBe(stopped)
+    expect(zooms.some(Number.isNaN)).toBe(false)
+    vi.restoreAllMocks()
+  })
 })
 
 describe('StripView overlays', () => {
@@ -527,9 +578,12 @@ describe('StripView passage selection', () => {
 
   it('browses by dragging when enabled and returns to the cursor', () => {
     const browse: boolean[] = []
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
     const { v } = view(40, { onBrowse: (b) => browse.push(b) })
     const root = host.querySelector('.pn-strip')!
     const content = host.querySelector('.pn-content')!
+    const cursor = host.querySelector('.pn-cursor')!
     const drag = (): void => {
       root.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, clientX: 600, clientY: 150, bubbles: true }))
       root.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, clientX: 300, clientY: 150, bubbles: true }))
@@ -542,11 +596,24 @@ describe('StripView passage selection', () => {
     drag()
     expect(browse).toEqual([true])
     expect(transformX(content)).toBe(210 - 300)
+    // The cursor leaves with its note (U151).
+    expect(transformX(cursor)).toBe(0)
     expect(root.classList.contains('pn-browsing')).toBe(true)
     v.returnToCurrent()
-    v.flushNow()
     expect(browse).toEqual([true, false])
-    expect(transformX(content)).toBe(210)
+    // Both spring back together, also while playback moves the cursor on every frame.
+    const seen: number[] = []
+    for (let i = 0; i < 60; i++) {
+      v.setCursor(i / 400, { smooth: false })
+      v.flushNow()
+      seen.push(transformX(content))
+      expect(transformX(cursor) - transformX(content)).toBeCloseTo(90 + (i / 400) * 160, -1)
+      now += 16
+    }
+    expect(seen[0]).toBeCloseTo(-90)
+    expect(seen.filter((x) => x > -60 && x < 180).length).toBeGreaterThan(5)
+    expect(transformX(cursor)).toBe(300)
+    vi.restoreAllMocks()
   })
 
   it.each(['pointerup', 'pointercancel'])('reports the release of a browse drag on %s (U95)', (type) => {
@@ -724,29 +791,6 @@ describe('StripView passage selection', () => {
     v.flushNow()
     expect(transformX(content)).toBeCloseTo(210)
   })
-
-  it('resolves the exact onset under the rendered cursor while browsing at a zoom', () => {
-    const { v } = view(40)
-    const root = host.querySelector('.pn-strip')!
-    v.setSnapPositions(halfBarOnsets(40))
-    v.setBrowseEnabled(true)
-    v.setZoom(1.2)
-    v.flushNow()
-    expect(v.browsedPosition()).toBeNull()
-    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 280 * 1.2, bubbles: true }))
-    v.flushNow()
-    // The half-bar onset at x=370 is under the line, while the old cursor is still at x=90.
-    expect(v.browsedPosition()).toEqual(rat(3, 2))
-    // A pending gesture update does not change which note is actually visible yet.
-    root.dispatchEvent(new WheelEvent('wheel', { deltaX: 120 * 1.2, bubbles: true }))
-    expect(v.browsedPosition()).toEqual(rat(3, 2))
-    v.flushNow()
-    expect(v.browsedPosition()).toEqual(rat(2))
-    v.returnToCurrent()
-    v.flushNow()
-    expect(v.browsedPosition()).toBeNull()
-    expect(transformX(host.querySelector('.pn-content')!) + 90 * 1.2).toBeCloseTo(300)
-  })
 })
 
 describe('StripView continuous motion and cursor action', () => {
@@ -861,7 +905,7 @@ describe('StripView continuous motion and cursor action', () => {
     expect(root.classList.contains('pn-browsing')).toBe(false)
   })
 
-  it('while browsing, the cursor action names the bar under the fixed cursor line and ends browsing', () => {
+  it('while browsing, the cursor action stays the own bar of the cursor and ends browsing (U151)', () => {
     const presses: (number | undefined)[] = []
     const browse: boolean[] = []
     const { v } = view(40, { onCursorAction: (occ) => presses.push(occ), onBrowse: (b) => browse.push(b) })
@@ -872,14 +916,13 @@ describe('StripView continuous motion and cursor action', () => {
     // Not browsing: the action belongs to the cursor's own position.
     btn.click()
     expect(presses).toEqual([undefined])
-    // Browse 300 px to the left: the music under the line (screen x 300) is now layout x 390, bar 2.
     root.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, clientX: 600, clientY: 150, bubbles: true }))
     root.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, clientX: 300, clientY: 150, bubbles: true }))
     root.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2, clientX: 300, clientY: 150, bubbles: true }))
     v.flushNow()
     expect(browse).toEqual([true])
     btn.click()
-    expect(presses).toEqual([undefined, 1])
+    expect(presses).toEqual([undefined, undefined])
     expect(browse).toEqual([true, false])
     expect(root.classList.contains('pn-browsing')).toBe(false)
   })
@@ -1358,19 +1401,14 @@ describe('StripView playhead drag (U23)', () => {
     expect(transformX(cursor)).toBe(300)
   })
 
-  it('a keyboard seek after browsing starts at the visible cursor and restores following', () => {
+  it('a keyboard seek after browsing starts at the cursor’s own note and restores following (U151)', () => {
     const { v, seeks, grip, root } = draggable()
     v.setBrowseEnabled(true)
     root.dispatchEvent(new WheelEvent('wheel', { deltaX: 280, bubbles: true }))
     v.flushNow()
-    grip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
-    v.flushNow()
-    expect(seeks).toEqual([rat(1)])
+    grip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    expect(seeks).toEqual([rat(1, 2)])
     expect(v.isBrowsing()).toBe(false)
-    expect(transformX(host.querySelector('.pn-content')!) + 290).toBe(300)
-    v.setCursor(1.5, { smooth: false })
-    v.flushNow()
-    expect(transformX(host.querySelector('.pn-content')!) + 370).toBe(300)
   })
 
   it('a refused keyboard seek after browsing preserves the inspected position', () => {

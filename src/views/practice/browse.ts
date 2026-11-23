@@ -1,6 +1,6 @@
 /**
  * The bar being browsed (DECISIONS U6: the loop steppers act on "the bar under the cursor line in
- * the view, including while browsing"). While the learner drags or wheels the strip away from
+ * the view, including while browsing"; used on the page, since the strip's cursor stays on its bar, U151). While the learner drags or wheels the strip away from
  * the cursor, this is the bar at the cursor's resting place in the viewport (`CURSOR_ANCHOR`
  * from the left, the strip's default); otherwise null and callers use the cursor's own bar.
  *
