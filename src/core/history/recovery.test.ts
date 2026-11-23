@@ -18,7 +18,7 @@ const shown = (h: PieceHistory) => selectSuggestions(h, SCORE, { scoreVersionId:
 const flagged = (): PieceHistory => play(fresh(), BAR, ['error', 'error', 'error'])
 
 describe('suggestion recovery', () => {
-  it('resolves a flagged bar after three consecutive clean unassisted complete traversals', () => {
+  it('resolves a flagged bar after three consecutive clean complete traversals', () => {
     let h = flagged()
     expect(active(h)).toHaveLength(1)
 
@@ -37,15 +37,12 @@ describe('suggestion recovery', () => {
   })
 
   it.each<Outcome>(['assisted', 'label', 'keyboard'])(
-    'an assisted success (%s) neither resolves nor counts toward the streak',
+    'a clean pass with help (%s) counts like any other (U145)',
     (assistedOutcome) => {
-      let h = play(flagged(), BAR, ['clean', 'clean', assistedOutcome])
-      expect(streakOf(h)).toBe(0)
-      expect(active(h)).toHaveLength(1)
-      h = play(h, BAR, ['clean', 'clean'])
-      expect(active(h)).toHaveLength(1)
+      let h = play(flagged(), BAR, ['clean', assistedOutcome])
       expect(streakOf(h)).toBe(2)
-      h = play(h, BAR, ['clean'])
+      expect(shown(h).active[0]?.progress.text).toBe('2 of 3 clean passes')
+      h = play(h, BAR, [assistedOutcome])
       expect(active(h)).toHaveLength(0)
       expect(improved(h)).toHaveLength(1)
     },
@@ -111,9 +108,10 @@ describe('suggestion recovery', () => {
       expect(active(h)).toHaveLength(1)
     })
 
-    it('break the streak when assistance was revealed', () => {
+    it('leave the streak alone when only assistance was revealed', () => {
       const h = play(flagged(), BAR, ['clean', 'clean', 'partial-hint'])
-      expect(streakOf(h)).toBe(0)
+      expect(streakOf(h)).toBe(2)
+      expect(active(h)).toHaveLength(1)
     })
 
     it('a partial pass at the end does not turn two clean passes into three', () => {
@@ -125,7 +123,7 @@ describe('suggestion recovery', () => {
   })
 
   it('keeps the suggestion active when the rolling window falls below the detection threshold', () => {
-    const h = play(flagged(), BAR, ['assisted', 'assisted', 'assisted', 'assisted'])
+    const h = play(flagged(), BAR, ['clean', 'clean', 'error', 'clean', 'clean'])
     const bar = h.bars[barKey(MKEY, BAR)]
     expect(bar?.recent.filter((s) => s.errorBearing)).toHaveLength(1)
     expect(active(h)).toHaveLength(1)

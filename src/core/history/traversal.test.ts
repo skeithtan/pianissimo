@@ -50,15 +50,21 @@ describe('applyTraversal', () => {
     expect(applyTraversal(bar, traversal(4, 'partial-error'), source(3))).toBeUndefined()
   })
 
-  it('an error-bearing or assisted complete traversal resets the streak but stays in the window', () => {
+  it('a partial traversal with assistance alone changes nothing', () => {
+    const bar = applyTraversal(undefined, traversal(4, 'clean'), source(1))
+    expect(applyTraversal(bar, traversal(4, 'partial-hint'), source(2))).toBeUndefined()
+  })
+
+  it('an assisted complete traversal advances the streak and an error-bearing one resets it', () => {
     let bar = applyTraversal(undefined, traversal(4, 'clean'), source(1))
-    bar = applyTraversal(bar, traversal(4, 'clean'), source(2))
-    bar = applyTraversal(bar, traversal(4, 'label'), source(3))
+    bar = applyTraversal(bar, traversal(4, 'label'), source(2))
+    expect(bar?.cleanStreak).toBe(2)
+    bar = applyTraversal(bar, traversal(4, 'error'), source(3))
     expect(bar?.cleanStreak).toBe(0)
     expect(bar?.recent.map((s) => [s.errorBearing, s.assisted])).toEqual([
       [false, false],
-      [false, false],
       [false, true],
+      [true, false],
     ])
   })
 })

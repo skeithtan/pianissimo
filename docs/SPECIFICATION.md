@@ -286,7 +286,7 @@ A Practice this passage button opens the existing repeat workflow with the sugge
 
 ### Recognizing improvement
 
-Once flagged, a suggestion remains active until every flagged bar has three consecutive complete, clean, unassisted traversals in the same comparison context. Clean means zero wrong attacks and no persistent note labels, temporary note-name hints, or keyboard hints revealed for that traversal, including earlier read-ahead exposure. An error-bearing or assisted traversal resets that bar's clean streak. Partial traversals never advance it; observed mistakes in a partial traversal break it. Merely falling below the rolling detection threshold does not remove the suggestion.
+Once flagged, a suggestion remains active until every flagged bar has three consecutive complete, clean traversals in the same comparison context. Clean means zero wrong attacks; assistance (persistent note labels, temporary hints, or keyboard hints) is recorded but does not affect it. An error-bearing traversal resets that bar's clean streak. Partial traversals never advance it; observed mistakes in a partial traversal break it. Merely falling below the rolling detection threshold does not remove the suggestion.
 
 Show progress, such as “2 of 3 clean passes,” and move resolved suggestions to an Improved section. New recurring errors can flag the passage again. Context bars do not need to be mastered to resolve a suggestion.
 
@@ -414,7 +414,7 @@ For notation-only rolled chords, create a deterministic reference performance. U
 | Attempt clock | Starts on the first fresh key press in Ready, including a wrong press; repeats return directly to Ready after reset |
 | Metronome | Off; optional audible reference without forcing advancement |
 | Repeat target | Unlimited attempts; optional consecutive-pass target |
-| Clean pass | Zero wrong attacks; assistance does not affect it (suggested-practice recovery defines its own clean traversal) |
+| Clean pass | Zero wrong attacks; assistance does not affect it |
 | Input monitoring through browser sound | Off |
 | Reference playback | Both hands |
 
@@ -532,7 +532,7 @@ Prefer device wake prevention where the browser supports it, but recover correct
 | Conditional pitch and clef | Key-signature and carried accidentals affect eligibility correctly; enharmonic respelling does not. Written C5 under 8va qualifies for above C5 because its sounding pitch is C6. Clef changes and cross-staff notes use the governing displayed clef, independently of hand selection. Chords can contain both labeled and unlabeled notes. |
 | Adjacent label layout | Dense chords, fast passages, ledger lines, and multiple voices remain readable with all qualifying labels beside their notes. Labels never cover adjacent notes or markings, are never silently omitted, and both staves retain onset alignment through zoom, orientation changes, and scrolling. |
 | Persistent and temporary labels | Persistent labels survive group completion, pauses, and loop resets. A Hint request can reveal otherwise excluded notes without duplicate labels. Temporary expiry cannot hide a still-persistent label; disabling persistent mode cannot hide an active temporary hint. Labels fade only when neither visibility source remains. |
-| Label assistance and persistence | Settings survive reload and export/restore. Visible persistent labels mark attempts as assisted, including exposure while waiting for the first key press and during read-ahead attributed to the revealed groups. Hiding labels cannot produce an unassisted result or false suggestion recovery; a conditional mode revealing nothing does not add assistance by itself. |
+| Label assistance and persistence | Settings survive reload and export/restore. Visible persistent labels mark attempts as assisted, including exposure while waiting for the first key press and during read-ahead attributed to the revealed groups. Hiding labels cannot produce an unassisted result; a conditional mode revealing nothing does not add assistance by itself. |
 | Import mapping | MusicXML fixtures across supported file extensions and target browsers for simultaneous hands, unequal hand rhythms, ties across bars, pickups, tuplets, tempo changes, and alternative endings map every expected attack to its visible notes and produce the expected matching, hints, and timing. |
 | Tempo mathematics | Four quarter-note attacks at quarter note = 60 yield a 3-second attack span. A complete 6/8 bar at dotted quarter = 60 has a 2-second nominal duration. |
 | Loop boundaries | A tie crossing the loop start is reattacked deliberately; old notes and pedals do not satisfy the next attempt. |
@@ -543,7 +543,7 @@ Prefer device wake prevention where the browser supports it, but recover correct
 | Endurance | A 30-minute practice session retains reliable matching, audio, pedal state, and saved progress. |
 | Suggested practice | Three error-bearing complete passes out of five flag a bar; one bad pass does not. Unvisited or partial bars never count as clean, and device interruptions do not trigger repeated-restart suggestions. |
 | Suggested passage action | Practice this passage opens the correct bars, hand, and tempo with context clearly distinguished. Suggestions never interrupt an active performance. |
-| Suggestion recovery | Three consecutive clean, unassisted traversals resolve each flagged bar. Assisted success, practice at another tempo, and partial passes cannot falsely resolve it. |
+| Suggestion recovery | Three consecutive clean traversals, with or without assistance, resolve each flagged bar. Practice at another tempo and partial passes cannot falsely resolve it. |
 | Supported file formats | .musicxml and .mxl import directly; .xml is accepted only when it contains a MusicXML score. No other score import format is supported. |
 | MusicXML import validation | Malformed XML and compressed files receive clear errors. Missing numerical tempo and ambiguous hand assignments are resolved before scored practice; unsupported musical content is never silently dropped. |
 | MusicXML timing | Numerical playback tempo and displayed dotted-beat metronome marks normalize correctly. Conflicting tempo values are reported for review. |

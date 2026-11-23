@@ -44,7 +44,6 @@ listen without a piano.
 ```bash
 npm install
 npm run dev          # Vite dev server
-npm run check        # types, formatting and the unit tests your changes reach
 npm test             # Vitest unit tests
 npm run typecheck    # strict tsc
 npm run build        # production build for /pianissimo/

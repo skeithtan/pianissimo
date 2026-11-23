@@ -49,10 +49,9 @@ context bar before and after (where the score has them), a passage never exceeds
 Context bars are reported with `role: 'context'`, difficult bars with `role: 'difficult'`.
 
 Recovery. A suggestion stays active until every flagged bar has `RECOVERY_STREAK` (3)
-consecutive complete, clean, unassisted traversals in the same context. An error-bearing or
-assisted complete traversal resets the streak; a partial traversal never advances it and
-breaks it when a mistake or assistance was observed in it (a partial pass with neither leaves
-it alone). Falling below the detection threshold alone never resolves a suggestion. Resolved
+consecutive complete, clean traversals in the same context, assisted or not (U145). An
+error-bearing complete traversal resets the streak; a partial traversal never advances it and
+breaks it when a mistake was observed in it (a partial pass without one leaves it alone). Falling below the detection threshold alone never resolves a suggestion. Resolved
 suggestions move to `improved` (newest first, ten kept per piece) and the bars can flag again.
 Context bars need not be mastered.
 

@@ -137,7 +137,7 @@ describe('repeated-restart suggestions', () => {
     expect(shown(h).active.map((s) => s.kind)).toEqual(['traversal'])
   })
 
-  it('is resolved by three clean unassisted complete traversals and its events are cleared', () => {
+  it('is resolved by three clean complete traversals and its events are cleared', () => {
     let h = fresh()
     for (let i = 0; i < 3; i += 1) h = abandon(h, BAR, 'user-restart', 100 + i)
     h = play(h, BAR, ['clean', 'clean'])

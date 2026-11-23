@@ -24,13 +24,13 @@ export interface TraversalSource {
 
 /**
  * Fold one traversal into a bar's record. Returns undefined when nothing changes
- * (a partial traversal with no observed mistakes or assistance).
+ * (a partial traversal with no observed mistakes).
  *
  * - Complete: enters the rolling window of five. It advances the clean streak only when it
- *   has no wrong attack and no assistance; otherwise the streak resets.
+ *   has no wrong attack; otherwise the streak resets. Assistance is recorded but does not
+ *   affect the streak (U145).
  * - Partial: never enters the window (so never counts as clean and stays out of the
- *   percentages), never advances the streak, and breaks it when mistakes or assistance
- *   were observed.
+ *   percentages), never advances the streak, and breaks it when mistakes were observed.
  */
 export function applyTraversal(
   bar: BarRecord | undefined,
@@ -38,7 +38,6 @@ export function applyTraversal(
   source: TraversalSource,
 ): BarRecord | undefined {
   const errorBearing = isErrorBearing(t)
-  const assisted = isAssisted(t)
   const base: BarRecord = bar ?? {
     pieceId: source.pieceId,
     measureContextKey: source.measureContextKey,
@@ -50,7 +49,7 @@ export function applyTraversal(
   }
 
   if (!t.complete) {
-    if ((!errorBearing && !assisted) || base.cleanStreak === 0) return undefined
+    if (!errorBearing || base.cleanStreak === 0) return undefined
     return { ...base, cleanStreak: 0, lastAttemptId: source.attemptId, updatedAt: source.at }
   }
 
@@ -58,12 +57,12 @@ export function applyTraversal(
     at: source.at,
     attemptId: source.attemptId,
     errorBearing,
-    assisted,
+    assisted: isAssisted(t),
   }
   return {
     ...base,
     recent: [...base.recent, sample].slice(-RECENT_TRAVERSALS),
-    cleanStreak: errorBearing || assisted ? 0 : base.cleanStreak + 1,
+    cleanStreak: errorBearing ? 0 : base.cleanStreak + 1,
     lastAttemptId: source.attemptId,
     updatedAt: source.at,
   }

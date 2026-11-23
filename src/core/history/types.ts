@@ -13,7 +13,7 @@ export const FLAG_MIN_COMPLETE = 3
 export const FLAG_MIN_ERROR_PASSES = 3
 /** Flag rule: at least this percentage of the available traversals must contain mistakes. */
 export const FLAG_MIN_ERROR_PERCENT = 60
-/** Recovery: consecutive complete, clean, unassisted traversals needed per flagged bar. */
+/** Recovery: consecutive complete, clean traversals needed per flagged bar. */
 export const RECOVERY_STREAK = 3
 /** Repeated-abandonment trigger: user-initiated restarts/stops after wrong notes in one bar. */
 export const ABANDON_TRIGGER = 3
@@ -50,7 +50,7 @@ export interface BarRecord {
   readonly occ: number
   /** Up to five most recent complete traversals, oldest first. Partial traversals never appear. */
   readonly recent: readonly TraversalSample[]
-  /** Consecutive complete, clean, unassisted traversals since the last break. */
+  /** Consecutive complete, clean traversals (assisted or not, U145) since the last break. */
   readonly cleanStreak: number
   /** Last attempt applied here (makes re-ingesting an attempt a no-op). */
   readonly lastAttemptId: string

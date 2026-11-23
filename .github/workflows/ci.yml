@@ -4,11 +4,6 @@ on:
   push:
   pull_request:
 
-# A newer push replaces the run of the push before it.
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -25,17 +20,9 @@ jobs:
       - run: npm run build
       - run: npm run size
 
-  # The whole browser suite takes about 19 minutes per browser one test at a time, so it is split.
-  # Public repositories only: there the minutes are free.
   e2e:
-    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        browser: [chromium, webkit]
-        shard: [1, 2, 3, 4]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,11 +30,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps ${{ matrix.browser }}
-      - run: npm run test:e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/4
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report-${{ matrix.browser }}-${{ matrix.shard }}
+          name: playwright-report
           path: playwright-report
           retention-days: 7
