@@ -8,6 +8,7 @@ import { defineConfig, devices } from '@playwright/test'
  *    its own Vite dev server so it never enters the production bundle.
  * Chromium uses the cloud container's browser when present, unless PW_CHROMIUM_PATH says
  * otherwise ('' = Playwright's own). APP_PORT moves the preview server (parallel worktrees).
+ * For one change use `npm run check -- <spec>`; the whole suite is CI's job (DECISIONS D19).
  */
 const containerChromium = '/opt/pw-browsers/chromium'
 const chromiumPath = process.env['PW_CHROMIUM_PATH'] ?? (existsSync(containerChromium) ? containerChromium : '')
@@ -16,7 +17,7 @@ const harnessPort = Number(process.env['HARNESS_PORT'] ?? 4174)
 
 export default defineConfig({
   testDir: 'tests/e2e',
-  timeout: 120_000,
+  timeout: 90_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
   workers: 1,
@@ -25,7 +26,10 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${appPort}/pianissimo/`,
     headless: true,
-    trace: 'retain-on-failure',
+    // A stuck step fails by itself, instead of waiting out the whole test.
+    actionTimeout: 30_000,
+    // Recording every step slows every test; locally, ask for it with --trace on.
+    trace: process.env['CI'] ? 'retain-on-failure' : 'off',
   },
   projects: [
     {
@@ -42,7 +46,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `npm run build && npx vite preview --port ${appPort} --strictPort`,
+      command: `npx vite build --logLevel warn && npx vite preview --port ${appPort} --strictPort`,
       url: `http://localhost:${appPort}/pianissimo/`,
       reuseExistingServer: !process.env['CI'],
       timeout: 240_000,
