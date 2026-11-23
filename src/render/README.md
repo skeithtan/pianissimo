@@ -62,7 +62,7 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   is unchanged. `new PageView(host, layout, opts: PageOptions)` implements the strip's whole
   public API (the practice session's `StripSink` + the view's `StripHandle`) with page
   semantics, plus `occAt(clientX, clientY?)`, `cursorClientX()`, `currentSystem()`;
-  `PageOptions.followOffset` (default 1/4) and `zoomDebounceMs` (250).
+  `PageOptions.zoomDebounceMs` (250).
 
 ## Design
 
@@ -265,7 +265,7 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   U73) rides on the sheet at the position's x along its system's `CursorPath` (knots = that
   system's onsets); 180 ms glide per seek, per-frame while following, a jump at a system change.
   The repeat button rides on it. **Follow**: when the system changes, and on a seek / wrap /
-  return, the sheet scrolls so that system's top sits a quarter down (one `scrollTop` write plus
+  return, the sheet scrolls so that system's staves sit in the middle (U146; the opening systems stay until one is past it; one `scrollTop` write plus
   a 300 ms Web Animations FLIP glide in `--ease-standard`; reduced motion: instant). Wider
   systems also pan horizontally as the cursor approaches the right third, keeping read-ahead
   visible. Both axes are captured in respacing frames. Following stops while browsing (a scroll the view did not write, with browsing enabled →

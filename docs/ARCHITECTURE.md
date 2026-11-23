@@ -487,9 +487,8 @@ to one second from the playhead. The session sends the direction and enabled sta
 `StripSink.setTimingCue` in the animation frame. The shared cue follows the viewport
 x-coordinate of the playhead, clamped at the edges (U123). In the strip, the cue sits just
 above the full engraving or uses the reserved row when the engraving reaches the top edge.
-In page view, the cue holds in the row and the active system scrolls to 8 px into the score
-viewport. The page adds only the bottom room needed for the last system to reach that
-position. The cursor shares the cue's color and returns to its standard tint when the cue
+In page view, the active system's staves rest in the middle of the viewport and the cue sits
+just above that system (U146). The cursor shares the cue's color and returns to its standard tint when the cue
 clears. The result card's timing line comes from `timingAccuracy`.
 The lazy Details view uses `buildTimingReview` on the completed record and its timeline.
 `ResultDetails` merges bars with timing deviations into the ranked correction excerpts by

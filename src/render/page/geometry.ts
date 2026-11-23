@@ -132,16 +132,16 @@ export class PageGeometry {
   }
 
   /**
-   * The scroll offset (screen px) that puts system `system`'s top `offset` of the way down the
-   * viewport, clamped to the scrollable range.
+   * The scroll offset (screen px) that puts system `system`'s staves in the middle of the
+   * viewport (U146), clamped to the scrollable range: the opening systems stay where they are
+   * until one is past the middle. Staves taller than the viewport start at its top.
    */
-  followScroll(
-    system: number,
-    o: { scale: number; padTop: number; viewport: number; max: number; offset?: number },
-  ): number {
-    const s = this.systems[system]
-    if (!s) return 0
-    const y = o.padTop + (s.y0 - this.layout.top) * o.scale - o.viewport * (o.offset ?? 0.25)
+  followScroll(system: number, o: { scale: number; padTop: number; viewport: number; max: number }): number {
+    if (!this.systems[system]) return 0
+    const span = this.staffSpan(system)
+    const top = o.padTop + (span.top - this.layout.top) * o.scale
+    const spare = o.viewport - (span.bottom - span.top) * o.scale
+    const y = top - Math.max(0, spare) / 2
     return Math.max(0, Math.min(Math.max(0, o.max), Math.round(y)))
   }
 

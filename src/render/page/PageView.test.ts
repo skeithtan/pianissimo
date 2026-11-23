@@ -157,6 +157,8 @@ export function testPageLayout(n: number): PreparedLayout {
 
 const VIEW_W = 772
 const VIEW_H = 600
+/** Scroll that rests the system starting at page y `y0` (staves 60–200 below it) in the middle. */
+const restAt = (y0: number): number => PAGE_PAD_TOP + y0 + 130 - VIEW_H / 2
 
 let host: HTMLElement
 let views: PageView[] = []
@@ -263,7 +265,11 @@ describe('page geometry', () => {
   it('computes the follow scroll and the page width for a zoom', () => {
     const g = new PageGeometry(testPageLayout(24))
     expect(g.followScroll(0, { scale: 1, padTop: 16, viewport: 600, max: 5000 })).toBe(0)
-    expect(g.followScroll(3, { scale: 1, padTop: 16, viewport: 600, max: 5000 })).toBe(900 + 16 - 150)
+    expect(g.followScroll(3, { scale: 1, padTop: 16, viewport: 600, max: 5000 })).toBe(restAt(900))
+    // The second system of a short page is not past the middle yet: the page stays at the top.
+    expect(g.followScroll(1, { scale: 1, padTop: 16, viewport: 900, max: 5000 })).toBe(0)
+    // Staves taller than the viewport start at its top.
+    expect(g.followScroll(3, { scale: 5, padTop: 16, viewport: 600, max: 9000 })).toBe(16 + 960 * 5)
     expect(g.followScroll(5, { scale: 1, padTop: 16, viewport: 600, max: 1000 })).toBe(1000)
     expect(pageWidthFor(820, 1)).toBe(792)
     expect(pageWidthFor(820, 2)).toBe(392)
@@ -298,7 +304,7 @@ describe('PageView', () => {
     expect(scroller(root).scrollTop).toBe(0)
   })
 
-  it('jumps to the next system and scrolls it to a quarter of the viewport', () => {
+  it('jumps to the next system and scrolls its staves to the middle of the viewport, cues on or off', () => {
     const { v, root } = view()
     v.setCursor(9)
     v.flushNow()
@@ -306,8 +312,17 @@ describe('PageView', () => {
     const [x, y] = cursorXY(root)
     expect(x).toBe(GX + 230)
     expect(y).toBe(PAGE_PAD_TOP + 600 + 60 - PAGE_CURSOR_MARGIN)
-    expect(scroller(root).scrollTop).toBe(PAGE_PAD_TOP + 600 - VIEW_H / 4)
+    expect(scroller(root).scrollTop).toBe(restAt(600))
     expect(root.classList.contains('pn-instant')).toBe(true)
+    v.setTimingCue('rushing')
+    v.flushNow()
+    expect(scroller(root).scrollTop).toBe(restAt(600))
+    // The cue sits above this system, in the middle of the page (its extent starts at 600).
+    const cue = host.querySelector<HTMLElement>('[data-testid="timing-cue"]')!
+    const top = PAGE_PAD_TOP + 600 - restAt(600)
+    const bottom = Number(/, (-?[\d.]+)px, 0/.exec(cue.style.transform)![1]) + 36
+    expect(bottom).toBeGreaterThan(top - 10)
+    expect(bottom).toBeLessThanOrEqual(top)
   })
 
   it('glides back to the first system without mounting the full score during a long rewind', () => {
@@ -593,7 +608,7 @@ describe('PageView', () => {
     v.returnToCurrent()
     v.flushNow()
     expect(browse).toEqual([true, false])
-    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 300 - VIEW_H / 4)
+    expect(sc.scrollTop).toBe(restAt(300))
   })
 
   it('a keyboard seek after browsing restores following to the chosen system', () => {
@@ -613,10 +628,10 @@ describe('PageView', () => {
     v.flushNow()
     expect(seeks).toEqual([rat(9, 2)])
     expect(v.isBrowsing()).toBe(false)
-    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 300 - VIEW_H / 4)
+    expect(sc.scrollTop).toBe(restAt(300))
     v.setCursor(8, { smooth: false })
     v.flushNow()
-    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 600 - VIEW_H / 4)
+    expect(sc.scrollTop).toBe(restAt(600))
   })
 
   it.each([true, false])('a dragged playhead ends browsing only when the seek is accepted (%s)', (accepted) => {
@@ -645,7 +660,7 @@ describe('PageView', () => {
     v.flushNow()
     expect(seeks).toEqual([rat(9, 2)])
     expect(v.isBrowsing()).toBe(!accepted)
-    expect(sc.scrollTop).toBe(accepted ? PAGE_PAD_TOP + 300 - VIEW_H / 4 : 1200)
+    expect(sc.scrollTop).toBe(accepted ? restAt(300) : 1200)
   })
 
   it('locks manual scrolling while browsing is disabled', () => {
@@ -1093,7 +1108,7 @@ describe('PageView fixes', () => {
     v.setLoop({ fromOcc: 4, toOcc: 5 })
     v.setCursor(8)
     v.flushNow()
-    expect(scroller(root).scrollTop).toBe(466)
+    expect(scroller(root).scrollTop).toBe(restAt(600))
     Object.defineProperty(sheet, 'getBoundingClientRect', {
       configurable: true,
       value: () => ({ ...root.getBoundingClientRect(), y: -80, top: -80, bottom: VIEW_H - 80 }),
@@ -1214,7 +1229,7 @@ describe('PageView with a page wider than the viewport', () => {
     v.setCursor(4, { smooth: false })
     v.flushNow()
     expect(sc.scrollLeft).toBe(0)
-    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 300 - VIEW_H / 4)
+    expect(sc.scrollTop).toBe(restAt(300))
     expect(onBrowse).not.toHaveBeenCalled()
   })
 
@@ -1999,7 +2014,7 @@ describe('PageView leaves a scroll the learner drives alone until it settles (mo
       vi.advanceTimersByTime(2)
       v.flushNow()
       expect(writes).toEqual(['scrollTop'])
-      expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 300 - VIEW_H / 4)
+      expect(sc.scrollTop).toBe(restAt(300))
       v.flushNow()
       expect(writes).toEqual(['scrollTop'])
     },
@@ -2017,11 +2032,12 @@ describe('PageView leaves a scroll the learner drives alone until it settles (mo
     touch(sc, 'touchend', 0)
     v.flushNow()
     expect(writes).toEqual(['scrollTop'])
-    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 600 - VIEW_H / 4)
+    expect(sc.scrollTop).toBe(restAt(600))
   })
 
   it('keeps the sheet size and the scroller unlocked until the scroll settles', () => {
     const browse: boolean[] = []
+    const notify = stubResizeObserver()
     const { v, root } = view(24, { fitWidth: true, onBrowse: (b) => browse.push(b) })
     v.setBrowseEnabled(true)
     const sc = scroller(root)
@@ -2030,8 +2046,10 @@ describe('PageView leaves a scroll the learner drives alone until it settles (mo
     touch(sc, 'touchstart', 1)
     native(400)
     const height = sheet.style.height
-    // The cue row opens (a taller sheet) and browsing is disabled, mid-scroll.
+    // The cue row opens (a shorter viewport, so a shorter sheet) and browsing is disabled, mid-scroll.
     v.setTimingCue(null, true)
+    setHost(VIEW_W, VIEW_H - 40)
+    notify()
     v.setBrowseEnabled(false)
     v.flushNow()
     expect(sheet.style.height).toBe(height)
@@ -2045,6 +2063,7 @@ describe('PageView leaves a scroll the learner drives alone until it settles (mo
     expect(sc.classList.contains('pn-page-locked')).toBe(true)
     expect(browse).toEqual([true, false])
     expect(writes).toEqual(['scrollTop'])
+    vi.unstubAllGlobals()
   })
 
   it('Return to current position ends a scroll still gliding and scrolls at once', () => {
@@ -2063,7 +2082,7 @@ describe('PageView leaves a scroll the learner drives alone until it settles (mo
     v.returnToCurrent()
     v.flushNow()
     expect(writes).toEqual(['scrollTop'])
-    expect(sc.scrollTop).toBe(PAGE_PAD_TOP + 600 - VIEW_H / 4)
+    expect(sc.scrollTop).toBe(restAt(600))
   })
 
   it('a ctrl-wheel zoom is not a scroll: the page refits and follows at once', () => {

@@ -75,8 +75,6 @@ import '../strip/strip.css'
 import './page.css'
 
 export interface PageOptions extends StripOptions {
-  /** Where the current system's top rests, as a fraction of the viewport height (default 1/4). */
-  readonly followOffset?: number
   /** Debounce before a zoom change is reported (`onZoomChange`), ms (default 250). */
   readonly zoomDebounceMs?: number
   /**
@@ -119,8 +117,6 @@ const TOUCH_EVENTS = typeof window !== 'undefined' && 'ontouchstart' in window
 const clampMagnify = (m: number): number => Math.max(1, Math.min(MAX_MAGNIFY, Number.isFinite(m) ? m : 1))
 /** Space above the first system (screen px). */
 export const PAGE_PAD_TOP = 16
-/** While timing is active, the current system reads just below the reserved cue row. */
-const PAGE_TIMING_INSET = 8
 /** The page's follow scroll (`--dur-slow`), ms. */
 const SCROLL_MS = 300
 /** `--ease-standard` (global.css); read from the theme when available. */
@@ -693,8 +689,9 @@ export class PageView {
     if (clientY !== undefined) y = (clientY - rect.top - PAGE_PAD_TOP) / this.scale + this.layout.top
     else if (this.browsing) {
       const sr = this.scroller.getBoundingClientRect()
-      y = (sr.top + this.hostH * this.followOffset() - rect.top - PAGE_PAD_TOP) / this.scale + this.layout.top
-      y += 1
+      // The opening systems never reach the middle: at the top of the page the first one reads.
+      const reading = rect.top >= sr.top ? 0 : this.hostH / 2
+      y = (sr.top + reading - rect.top - PAGE_PAD_TOP) / this.scale + this.layout.top
     } else {
       const span = this.geo.staffSpan(this.cursor.system)
       y = (span.top + span.bottom) / 2
@@ -1031,19 +1028,10 @@ export class PageView {
     return this.clampScrollX(Math.max(x - right, Math.min(this.scrollX, x - left)))
   }
 
+  /** The room under the music lets the last system reach the middle too. */
   private sheetHeight(): number {
     const content = PAGE_PAD_TOP + this.layout.height * this.scale
-    const normalHeight = content + Math.max(PAGE_PAD_TOP, this.hostH * 0.5)
-    const lastSystem = this.geo.systems.at(-1)
-    if (!this.timingCue.active || !lastSystem) return Math.ceil(normalHeight)
-    // Keep the last system reachable at the same reading position as the other systems.
-    const lastSystemY = PAGE_PAD_TOP + (lastSystem.y0 - this.layout.top) * this.scale
-    return Math.ceil(Math.max(normalHeight, lastSystemY + this.hostH - PAGE_TIMING_INSET))
-  }
-
-  private followOffset(): number {
-    if (this.timingCue.active && this.hostH > 0) return PAGE_TIMING_INSET / this.hostH
-    return this.opts.followOffset ?? 0.25
+    return Math.ceil(content + Math.max(PAGE_PAD_TOP, this.hostH * 0.5))
   }
 
   private schedule(): void {
@@ -1156,7 +1144,6 @@ export class PageView {
         padTop: PAGE_PAD_TOP,
         viewport: this.hostH,
         max: sheetH - this.hostH,
-        offset: this.followOffset(),
       })
       const animate = this.lastSystem >= 0 && request !== 'instant' && !this.reducedMotion
       const targetX = changed || requestX ? this.followScrollX(true) : this.scrollX
@@ -1250,7 +1237,12 @@ export class PageView {
     }
     // Placed while hidden too (with the row reserved), so the next cue appears in place.
     if (this.timingCue.active || this.timingCue.visible) {
-      this.timingCue.place(sx - gx + this.screenFrame().dx, this.hostW)
+      const frame = this.screenFrame()
+      const sys = this.geo.systems[this.cursor.system]
+      const prev = this.geo.systems[this.cursor.system - 1]
+      const top = frame.dy + (sys?.y0 ?? L.top) * s
+      const room = prev && sys ? (sys.y0 - prev.y1) * s : Infinity
+      this.timingCue.place(sx - gx + frame.dx, this.hostW, top, room, this.hostH)
     }
     this.placeActionButton(span.top, h, margin.top)
   }

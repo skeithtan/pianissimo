@@ -29,7 +29,7 @@
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
 /* A phone's top bar (U93): in focus mode the slot's row collapses and the bar slides up and fades.
-   A tablet's or desktop's header (`.header`) stays, upright or on its side. */
+   A tablet's or desktop's header (`.header`) keeps its place; upright, its contents fade (U147). */
 .headerSlot {
   flex: none;
   display: grid;
@@ -66,6 +66,19 @@
   min-width: 0;
   min-height: 60px;
   padding: 6px calc(20px + var(--safe-r)) 6px calc(20px + var(--safe-l));
+}
+/* A take in progress keeps its controls and the connection pill; only the title and Settings fade.
+   A tap on the header brings everything back before it acts. */
+.header[data-fades] > .titleBlock,
+.header[data-fades] > .headerTools > * {
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+.screen[data-recede='true'] .header[data-fades] > .titleBlock,
+.screen[data-recede='true'] .header[data-fades]:not([data-recording]) > .headerTools > *,
+.screen[data-recede='true'] .header[data-fades][data-recording] > .headerTools > .settingsButton {
+  opacity: var(--practice-recede);
+  pointer-events: none;
+  transition-duration: calc(var(--dur-slow) * 2);
 }
 .titleBlock {
   display: flex;

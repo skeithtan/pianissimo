@@ -1,6 +1,6 @@
 /**
  * Focus mode recedes chrome without replacing the score or interrupting playback. A tablet's or
- * desktop's header stays, upright or on its side; a phone's top bar collapses (U93).
+ * desktop's header keeps its place, faded when upright (U147); a phone's top bar collapses (U93).
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -16,11 +16,15 @@ const stage = (page: Page) => page.getByTestId('strip-host')
 const speedButton = (page: Page) => page.getByRole('button', { name: /Open speed options/ })
 const menuButton = (page: Page) => page.locator('footer').getByRole('button', { name: 'Menu', exact: true })
 
-/** How strongly a footer control shows: its opacity times every ancestor's, up to the footer. */
+/** How strongly a control shows: its opacity times every ancestor's, up to the footer or header. */
 const strength = (locator: Locator) =>
   locator.evaluate((el) => {
     let value = 1
-    for (let node: Element | null = el; node && node.tagName !== 'FOOTER'; node = node.parentElement)
+    for (
+      let node: Element | null = el;
+      node && node.tagName !== 'FOOTER' && node.tagName !== 'HEADER';
+      node = node.parentElement
+    )
       value *= Number(getComputedStyle(node).opacity)
     return Math.round(value * 100) / 100
   })
@@ -36,24 +40,27 @@ async function focused(page: Page): Promise<void> {
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
 }
 
-/** The header is there in full, and takes input: not inert, at full strength, on top at Back. */
-async function headerStays(page: Page, box: { x: number; y: number; width: number; height: number }) {
+/**
+ * The header keeps its place: in full and taking input, or faded (upright focus mode, U147), when a
+ * tap on it only brings it back.
+ */
+async function headerStays(
+  page: Page,
+  box: { x: number; y: number; width: number; height: number },
+  { faded = false } = {},
+) {
   await expect(header(page)).toBeVisible()
   expect(await header(page).boundingBox()).toEqual(box)
   expect(await header(page).evaluate((el) => el.hasAttribute('inert') || !!el.closest('[inert]'))).toBe(false)
-  const strength = await header(page).evaluate((el) => {
-    let value = 1
-    for (let node: Element | null = el; node; node = node.parentElement) value *= Number(getComputedStyle(node).opacity)
-    return value
-  })
-  expect(strength).toBe(1)
   const back = header(page).getByRole('button', { name: 'Back to Library' })
+  await expect.poll(() => strength(back)).toBe(faded ? 0.12 : 1)
+  expect(await strength(header(page).getByRole('button', { name: /MIDI status/ }))).toBe(faded ? 0.12 : 1)
   expect(
     await back.evaluate((el) => {
       const r = el.getBoundingClientRect()
       return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
     }),
-  ).toBe(true)
+  ).toBe(!faded)
 }
 
 async function reveal(page: Page): Promise<void> {
@@ -90,7 +97,7 @@ for (const size of [
     if (size.wraps) await expect.poll(() => height(tools(page))).toBeLessThan(1)
     await expect.poll(() => height(stage(page))).toBeGreaterThan(originalHeight + releasedHeight - 2)
     expect(await height(stage(page))).toBeLessThan(originalHeight + releasedHeight + 2)
-    await headerStays(page, headerBox)
+    await headerStays(page, headerBox, { faded: true })
     if (!size.wraps) {
       // Speed and Menu stay exactly where they were and dim, as in landscape.
       await expect.poll(() => strength(menuButton(page))).toBe(0.12)
@@ -257,8 +264,8 @@ test.describe('tablet Repeat options', () => {
 })
 
 /**
- * Focus mode on a tablet keeps the header, held upright or on its side (U93 revised): there is room
- * for it. The score's stage keeps its size (the header never leaves), and the footer tools dim as
+ * Focus mode on a tablet keeps the header, in full on its side, faded when upright (U132, U147):
+ * there is room for it. The score's stage keeps its size (the header never leaves), and the footer tools dim as
  * before. A phone's top bar still recedes (below).
  */
 test.describe('a tablet keeps its header in focus mode', () => {
@@ -267,7 +274,9 @@ test.describe('a tablet keeps its header in focus mode', () => {
     { name: 'upright', width: 834, height: 1194, mode: 'page' },
     { name: 'on its side', width: 1194, height: 834, mode: 'strip' },
   ] as const) {
-    test(`${size.name}: the header stays in full and takes input while the footer tools recede`, async ({ page }) => {
+    test(`${size.name}: the header ${size.mode === 'page' ? 'fades in place' : 'stays in full and takes input'} while the footer tools recede`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width: size.width, height: size.height })
       await open(page)
       await expect(stage(page)).toHaveAttribute('data-mode', size.mode)
@@ -280,10 +289,17 @@ test.describe('a tablet keeps its header in focus mode', () => {
       await expect.poll(() => strength(menuButton(page))).toBe(0.12)
       // Past the recede delay and its transitions: nothing moved, the header is all there.
       await page.waitForTimeout(800)
-      await headerStays(page, headerBox)
+      await headerStays(page, headerBox, { faded: size.mode === 'page' })
       expect(Math.abs((await height(stage(page))) - stageHeight)).toBeLessThan(1)
       await expect(screen(page)).toHaveAttribute('data-recede', 'true')
       // It takes a tap at once: Settings opens over Practice (and pauses it).
+      if (size.mode === 'page') {
+        // The first tap on the faded header, here where Settings is, only brings it back.
+        const gear = (await header(page).getByRole('button', { name: 'Settings' }).boundingBox())!
+        await page.touchscreen.tap(gear.x + gear.width / 2, gear.y + gear.height / 2)
+        await headerStays(page, headerBox)
+        await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+      }
       await header(page).getByRole('button', { name: 'Settings' }).tap()
       await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
     })

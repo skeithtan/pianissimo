@@ -4,7 +4,7 @@ import { openHarness } from './render-helpers'
 test.use({ reducedMotion: 'reduce' })
 
 for (const mode of ['strip', 'page'] as const) {
-  test(`the timing cue stays close to the cursor at one height in the ${mode}`, async ({ page }) => {
+  test(`the timing cue stays close to the cursor at one height per system in the ${mode}`, async ({ page }) => {
     await openHarness(page)
     const result = await page.evaluate(async (mode) => {
       await window.harness.prepare('changes', 3, { mode, pageWidth: 600 })
@@ -23,7 +23,12 @@ for (const mode of ['strip', 'page'] as const) {
       view.flushNow()
       const scoreTop = score.getBoundingClientRect().top
       const overlaps: number[] = []
-      const cueTops = new Set<number>()
+      const cueTops = new Map<number, Set<number>>()
+      const noteCueTop = () => {
+        const system = 'currentSystem' in view ? view.currentSystem() : 0
+        const tops = cueTops.get(system) ?? new Set<number>()
+        cueTops.set(system, tops.add(cue.getBoundingClientRect().top))
+      }
       let maxHorizontalOffset = 0
       let maxVerticalGap = 0
       let cueInStage = true
@@ -38,10 +43,20 @@ for (const mode of ['strip', 'page'] as const) {
         const expectedX = Math.max(stage.left + inset, Math.min(bar.left + bar.width / 2, stage.right - inset))
         maxHorizontalOffset = Math.max(maxHorizontalOffset, Math.abs(badge.left + badge.width / 2 - expectedX))
         maxVerticalGap = Math.max(maxVerticalGap, bar.top - badge.bottom)
-        cueTops.add(badge.top)
+        noteCueTop()
         cueInStage &&= badge.top >= stage.top && badge.bottom <= stage.bottom
         const coversNote = [...document.querySelectorAll('.pn-music [data-n]')].some((head) => {
-          const note = head.getBoundingClientRect()
+          const rect = head.getBoundingClientRect()
+          // This page is drawn at 65%, where the gap between systems is shorter than the cue: it may
+          // reach 8 px into the line above (U146), never into its own.
+          const reach = mode === 'page' && rect.bottom < badge.bottom ? 8 : 0
+          const note = {
+            left: rect.left,
+            right: rect.right,
+            top: rect.top,
+            bottom: rect.bottom - reach,
+            width: rect.width,
+          }
           // A page system can scroll above the score viewport and is clipped there.
           const visibleTop = Math.max(note.top, scoreTop)
           return (
@@ -66,7 +81,7 @@ for (const mode of ['strip', 'page'] as const) {
         getComputedStyle(signal).scale.startsWith('-1')
       view.setTimingCue('dragging')
       view.flushNow()
-      cueTops.add(cue.getBoundingClientRect().top)
+      noteCueTop()
       const draggingGradient = getComputedStyle(sweep).backgroundImage
       const draggingCursor = getComputedStyle(playhead).backgroundColor
       const pointsRight =
@@ -77,12 +92,12 @@ for (const mode of ['strip', 'page'] as const) {
       const clearedCursor = getComputedStyle(playhead).backgroundColor
       view.setTimingCue('dragging')
       view.flushNow()
-      cueTops.add(cue.getBoundingClientRect().top)
+      noteCueTop()
       return {
         overlaps,
         scoreStayedPut: scoreTop === score.getBoundingClientRect().top,
         cueInStage,
-        cueVerticalPositions: cueTops.size,
+        cueVerticalPositions: Math.max(...[...cueTops.values()].map((tops) => tops.size)),
         maxHorizontalOffset,
         maxVerticalGap,
         size: { width: size.width, height: size.height },

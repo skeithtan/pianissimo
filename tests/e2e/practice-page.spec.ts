@@ -196,7 +196,7 @@ test.describe('practice page mode (portrait)', () => {
     await page.screenshot({ path: join(SHOT_DIR, `${browserName}-page-playing.png`) })
 
     // Pause, then seek to a late bar from the overview: the page scrolls to its system, which
-    // rests about a quarter down the score, with the cursor on it.
+    // rests in the middle of the score, with the cursor on it.
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
     await expect.poll(chromeHeights).toEqual(expandedChrome)
     const overview = (await page.getByRole('slider', { name: 'Piece overview' }).boundingBox())!
@@ -205,8 +205,7 @@ test.describe('practice page mode (portrait)', () => {
     await page.waitForTimeout(500)
     const stage = (await page.getByTestId('page-scroll').boundingBox())!
     const bar = (await cursorBox(page))!
-    expect(bar.y + bar.height / 2).toBeGreaterThan(stage.y)
-    expect(bar.y + bar.height / 2).toBeLessThan(stage.y + stage.height)
+    expect(Math.abs(bar.y + bar.height / 2 - (stage.y + stage.height / 2))).toBeLessThan(12)
     await page.screenshot({ path: join(SHOT_DIR, `${browserName}-page-seek.png`) })
   })
 })

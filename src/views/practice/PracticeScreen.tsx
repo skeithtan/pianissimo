@@ -385,10 +385,11 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
   // Focus mode waits for the review to end (U102), even when Repeat at Ready counts as playing.
   const recede = useRecede(ui.playing && !ui.reviewing, env.timers)
   // Focus mode hides the top bar of a phone only (U93): a tablet's or desktop's header has room to
-  // stay, upright or on its side. While recording, a phone on its side keeps Stop and the status
+  // stay, faded when upright (U147). While recording, a phone on its side keeps Stop and the status
   // pills in its bar; an upright phone has them in its footer.
   const recordingInBar = phone && sideways && recorder.isOpen
   const barInert = recede.receded && !recordingInBar
+  const headerRevealTap = useRef(false)
   // An upright phone gives the Repeat controls a row of their own that folds away while playing;
   // elsewhere they float over the score (U14, U80, revised 15 November 2026). Their options open
   // in a sheet on a phone, which closes when playback starts, like the menu.
@@ -874,8 +875,25 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
           </div>
         </div>
       ) : (
-        // A tablet's or desktop's header stays in focus mode, upright or on its side: there is room.
-        <header class={styles.header} data-testid="practice-header" {...recede.zone}>
+        // A tablet's or desktop's header keeps its place in focus mode: there is room. Upright, its
+        // contents fade (U147); a take in progress keeps its controls and the connection pill.
+        <header
+          class={styles.header}
+          data-testid="practice-header"
+          data-fades={mode === 'page' || undefined}
+          data-recording={recorder.isOpen || undefined}
+          {...recede.zone}
+          // The touch that brings a faded header back must not also press what it uncovers; a take's
+          // own controls never fade, so they act at once.
+          onPointerDownCapture={(event) => {
+            const kept = (event.target as Element).closest('button') !== null
+            headerRevealTap.current = mode === 'page' && recede.receded && !kept
+          }}
+          onClickCapture={(event) => {
+            if (headerRevealTap.current) event.stopPropagation()
+            headerRevealTap.current = false
+          }}
+        >
           <div class={styles.titleBlock}>
             {back}
             {titleText}
@@ -885,7 +903,7 @@ export function PracticeScreen({ env, piece, pkg, preset, autoStart, onAutoStart
             <ConnectionChip compact="narrow" />
             <button
               type="button"
-              class={styles.iconButton}
+              class={`${styles.iconButton} ${styles.settingsButton}`}
               aria-label={msg('Settings')}
               title={msg('Settings')}
               onClick={openSettings}

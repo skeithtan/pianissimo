@@ -24,7 +24,7 @@ export class TimingCue {
   /** The last place the view reported (`place`), kept while hidden; NaN before the first. */
   private cursorX = NaN
   private width = NaN
-  private scoreTop = NaN
+  private cueY = 0
   private x = NaN
   private y = NaN
 
@@ -106,13 +106,16 @@ export class TimingCue {
   }
 
   /**
-   * The playhead's screen x, the viewport width and the top of the score (px). Views report it on
-   * every frame, hidden or not; only a visible cue is moved.
+   * The playhead's screen x, the viewport width and the top of the music the cue sits above (px),
+   * which is the score or the current system. `room` is the free height above that music: the cue
+   * is centered in a gap too small for its usual distance. `maxY` is the viewport's bottom edge.
+   * Views report it on every frame, hidden or not; only a visible cue is moved.
    */
-  place(cursorX: number, width: number, scoreTop = 0): void {
+  place(cursorX: number, width: number, scoreTop = 0, room = Infinity, maxY = Infinity): void {
     this.cursorX = cursorX
     this.width = width
-    this.scoreTop = scoreTop
+    const gap = Math.max(0, Math.min(GAP, (room - HEIGHT) / 2))
+    this.cueY = Math.max(RESERVED_ROW_Y, Math.min(Math.floor(scoreTop - gap) - HEIGHT, maxY - HEIGHT))
     if (this.direction !== null) this.apply()
   }
 
@@ -123,7 +126,7 @@ export class TimingCue {
     }
     const inset = Math.min(WIDTH / 2 + EDGE, this.width / 2)
     const x = Math.round(Math.max(inset, Math.min(this.cursorX, this.width - inset)))
-    const y = Math.max(RESERVED_ROW_Y, Math.floor(this.scoreTop) - HEIGHT - GAP)
+    const y = this.cueY
     if (this.bubble.style.visibility) this.bubble.style.visibility = ''
     if (x === this.x && y === this.y) return
     this.x = x
