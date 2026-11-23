@@ -12,7 +12,8 @@ import { bindScoreLanguage } from '../shared/scoreLanguage'
  *   continuously moving transport (R12). A loop wrap pans back quickly (`wrapTo`).
  * - Live updates to learner notes, ottava emphasis and label opacity write to mounted nodes,
  *   batched in one requestAnimationFrame and O(changed notes). Nothing is re-engraved.
- * - Pinch/ctrl-wheel zoom is a CSS scale (R2); drag inspection while browsing is enabled;
+ * - Pinch/ctrl-wheel zoom is a CSS scale (R2), and a pinch gives a little past its limits; while
+ *   browsing is enabled a finger swipes natively (`SwipeScroller`), a mouse drags;
  *   passage selection with handles (snapping to note onsets, U21), tap selection and a clear
  *   button; the playhead itself can be dragged onto a note while nothing plays (U23).
  * - A new engraving of the same score with other spacing (Labels Off ↔ on) glides in from the
@@ -54,6 +55,8 @@ import {
   zoomAround,
 } from './scroll'
 import { clampReviewTranslate, reviewEase, reviewFrame } from './review'
+import { springBack, stretchFor, stretchSource } from './stretch'
+import { SwipeScroller } from './swipe'
 import { SegmentStore, type MountedSegment } from './segments'
 import {
   buildCursorKnots,
@@ -152,6 +155,9 @@ const FLAG_CLASSES: readonly [number, string][] = [
   [ACCEPTED, 'pn-acc'],
 ]
 const TAP_SLOP = 8
+/** A touch that has gone this far sideways, this long after it landed, without a native pan drags by itself. */
+const TOUCH_DRAG_PX = 24
+const TOUCH_DRAG_MS = 180
 /** Wheel / trackpad browsing has no finger to lift: this long without a wheel event is the release (U95). */
 export const WHEEL_RELEASE_MS = 250
 /** Pointer distance from a strip edge where a drag scrolls the music (px). */
@@ -218,6 +224,7 @@ export class StripView {
   private readonly root: HTMLDivElement
   private readonly stage: HTMLDivElement
   private readonly content: HTMLDivElement
+  private readonly swipe: SwipeScroller
   private readonly segLayer: HTMLDivElement
   private readonly cursorEl: HTMLDivElement
   private readonly timingCue: TimingCue
@@ -331,8 +338,20 @@ export class StripView {
   private stickyContext = -1
 
   private readonly pointers = new Map<number, Pointer>()
-  private gesture: { startX: number; startY: number; startTx: number; t: number; moved: boolean } | null = null
+  private gesture: {
+    startX: number
+    startY: number
+    startTx: number
+    t: number
+    moved: boolean
+    /** A finger or pen: its swipe is native (`swipe`), only its tap is handled here. */
+    touch: boolean
+  } | null = null
   private pinch: { dist: number; scale: number } | null = null
+  /** What a pinch past the zoom limits draws on top of the zoom, around screen x `stretchX`; 1 at rest. */
+  private stretch = 1
+  private stretchX = 0
+  private stretchAnim: { from: number; t0: number } | null = null
   private handleDrag: {
     pointerId: number
     which: 'start' | 'end'
@@ -459,7 +478,16 @@ export class StripView {
     this.stickyEl.append(this.stickyStaff, this.stickyInner)
     this.root.classList.toggle('pn-pin-opening', layout.contextChanges[0]?.openingX !== undefined)
     this.stage.append(this.content)
-    this.root.append(this.stage, this.stickyEl, this.cursorEl)
+    this.swipe = new SwipeScroller(doc, {
+      width: () => this.hostW,
+      tx: () => (Number.isNaN(this.applied.tx) ? this.tx : this.applied.tx),
+      range: () => this.browseRange(),
+      begin: () => this.swipeBegan(),
+      move: () => this.schedule(),
+      settle: (tx) => this.swipeSettled(tx),
+    })
+    // Under the stage: the music lets touches through to it, its loop controls do not.
+    this.root.append(this.swipe.el, this.stage, this.stickyEl, this.cursorEl)
     if (opts.returnButton !== false) {
       const ret = this.button('pn-score-action pn-return', `${icon.back}<span></span>`, '')
       ret.addEventListener('click', () => this.returnToCurrent())
@@ -489,7 +517,12 @@ export class StripView {
     this.measureHost()
     if (typeof ResizeObserver !== 'undefined') {
       this.resize = new ResizeObserver(() => {
+        const width = this.hostW
         this.measureHost()
+        if (this.hostW !== width && this.swipe.active) {
+          this.swipe.stop()
+          this.swipeSettled(this.tx)
+        }
         this.instant = true
         this.schedule()
       })
@@ -740,6 +773,9 @@ export class StripView {
    */
   setReview(on: boolean, returnBy?: number): void {
     if (on === this.reviewOn) return
+    this.endSwipe()
+    this.stretch = 1
+    this.stretchAnim = null
     if (!on) this.reviewFrozen = this.reviewTarget()
     this.reviewOn = on
     if (on) {
@@ -798,6 +834,7 @@ export class StripView {
 
   returnToCurrent(): void {
     if (!this.browsing) return
+    this.endSwipe()
     this.browsing = false
     this.root.classList.remove('pn-browsing')
     this.instant = false
@@ -949,6 +986,7 @@ export class StripView {
     if (this.corrLeaveTimer) clearTimeout(this.corrLeaveTimer)
     if (this.wheelRelease) clearTimeout(this.wheelRelease)
     this.resize?.disconnect()
+    this.swipe.destroy()
     for (const off of this.cleanup) off()
     this.store.destroy()
     this.timingCue.destroy()
@@ -1007,6 +1045,7 @@ export class StripView {
     if (this.browsing) {
       const center = (this.hostW / 2 - this.browseTx) / this.scale
       this.browseTx = this.clampTx(zoomAround(this.browseTx, this.scale, scale, center), scale)
+      this.swipe.rebase(this.browseTx)
     }
     this.scale = scale
     this.instant = true
@@ -1021,6 +1060,29 @@ export class StripView {
     const z = this.clampZoom(scale)
     this.requestedZoom = z
     this.applyZoom(z, true)
+  }
+
+  /** A pinch asks for `raw`: past the limits the score stretches and the zoom stays. */
+  private pinchTo(raw: number, x: number): void {
+    const zoom = this.reviewOn ? this.zoomReview(raw, x) : this.clampZoom(raw)
+    if (!this.reviewOn) this.userZoom(raw)
+    if (zoom === null || this.reducedMotion) return
+    // What stays put: the cursor's note, what a browsed view is centered on, the fingers in the review.
+    this.stretchX = this.reviewOn ? x : this.browsing ? this.hostW / 2 : this.hostW * (this.opts.cursorAnchor ?? 1 / 3)
+    this.stretch = stretchFor(raw, zoom)
+    this.instant = true
+    this.schedule()
+  }
+
+  /** Advances the spring back to the zoom's limit; true while the score is stretched. */
+  private stepStretch(now: number): boolean {
+    const a = this.stretchAnim
+    if (a) {
+      if (Number.isNaN(a.t0)) a.t0 = now
+      this.stretch = springBack(a.from, now - a.t0)
+      if (this.stretch === 1) this.stretchAnim = null
+    }
+    return this.stretch !== 1
   }
 
   /** The zoom for CSS: the cursor's width and the counter-scale of the loop controls. */
@@ -1045,6 +1107,55 @@ export class StripView {
   /** Browse bounds: the first cursor stop to the content's right edge under the cursor line. */
   private clampTx(tx: number, scale = this.scale): number {
     return clampTranslate(tx, this.firstCursorX, this.layout.width, this.hostW, scale, this.opts.cursorAnchor)
+  }
+
+  /** Where a swipe may rest: the browse bounds, or the review's. */
+  private browseRange(): { min: number; max: number } {
+    const base = this.reviewOn ? this.reviewBase() : null
+    const clamp = (tx: number) => (base ? this.clampReview(tx, base.scale) : this.clampTx(tx))
+    return { min: clamp(-Infinity), max: clamp(Infinity) }
+  }
+
+  private clampReview(tx: number, scale: number): number {
+    return clampReviewTranslate(tx, this.firstCursorX, this.layout.width, this.hostW, scale)
+  }
+
+  private swipeBegan(): boolean {
+    if (this.reviewOn) return this.reviewBase() !== null
+    if (!this.browseEnabled || this.dragTx !== null || this.cursorDrag) return false
+    if (!this.browsing) {
+      this.browsing = true
+      this.browseTx = this.tx
+      this.root.classList.add('pn-browsing')
+      this.opts.onBrowse?.(true)
+    }
+    return true
+  }
+
+  /** Ends a swipe before its time. Its browse gesture is over too: the release still follows (U95). */
+  private endSwipe(): void {
+    const browse = this.swipe.active && this.browsing && !this.reviewOn
+    this.swipe.stop()
+    if (!browse) return
+    // After the caller, which may be a Start or a seek that the hold no longer waits for.
+    setTimeout(() => {
+      if (!this.destroyed) this.opts.onBrowseRelease?.()
+    })
+  }
+
+  /** The swipe's momentum and bounce are over: the browse gesture's release (U95). */
+  private swipeSettled(tx: number): void {
+    if (this.destroyed) return
+    if (this.reviewOn) {
+      this.panReview(tx)
+      return
+    }
+    if (!this.browsing) return
+    this.browseTx = this.clampTx(tx)
+    this.schedule()
+    // Drawn first: the release reads the note under the cursor line.
+    this.flushFrame()
+    this.opts.onBrowseRelease?.()
   }
 
   /** Translate placing `cursorX` under the fixed cursor (U28). */
@@ -1131,27 +1242,25 @@ export class StripView {
   private panReview(tx: number): void {
     const base = this.reviewBase()
     if (!base) return
-    this.reviewManual = {
-      scale: base.scale,
-      tx: clampReviewTranslate(tx, this.firstCursorX, this.layout.width, this.hostW, base.scale),
-    }
+    this.reviewManual = { scale: base.scale, tx: this.clampReview(tx, base.scale) }
     this.instant = true
     this.schedule()
   }
 
-  /** The learner zooms the review (pinch, ctrl-wheel) around screen x `at`: never saved. */
-  private zoomReview(scale: number, at: number): void {
+  /** The learner zooms the review (pinch, ctrl-wheel) around screen x `at`: never saved. The zoom in its limits. */
+  private zoomReview(scale: number, at: number): number | null {
     const base = this.reviewBase()
-    if (!base) return
+    if (!base) return null
     const span = this.staffSpan()
     const h = Math.max(1, this.hostH - this.reviewInset - this.reviewTop)
     const max = Math.min(this.opts.maxZoom ?? 2.5, span > 0 ? h / span : Infinity)
     const min = Math.min(this.opts.minZoom ?? 0.5, max)
     const s = Math.max(min, Math.min(max, scale))
     const tx = zoomAround(base.tx, base.scale, s, (at - base.tx) / base.scale)
-    this.reviewManual = { scale: s, tx: clampReviewTranslate(tx, this.firstCursorX, this.layout.width, this.hostW, s) }
+    this.reviewManual = { scale: s, tx: this.clampReview(tx, s) }
     this.instant = true
     this.schedule()
+    return s
   }
 
   /** Ends a wrap (a pan still running then finishes under the normal transition). */
@@ -1178,6 +1287,16 @@ export class StripView {
     const L = this.layout
     const prevTx = this.applied.tx
     const prevScale = this.applied.scale
+    let coasting = false
+    if (this.swipe.active) {
+      // Drawn where the native scroller is, past the ends too (its bounce).
+      const { tx, done } = this.swipe.step()
+      const base = this.reviewOn ? this.reviewBase() : null
+      if (base) this.reviewManual = { scale: base.scale, tx }
+      else this.browseTx = tx
+      this.instant = true
+      coasting = !done
+    }
     // Browsing or a drag takes over the translate: a wrap in progress ends.
     if (this.wrap && (this.browsing || this.dragTx !== null)) this.endWrap()
     const wrap = this.wrap
@@ -1185,7 +1304,9 @@ export class StripView {
       this.dragTx !== null && !this.cursorDrag
         ? this.clampTx(this.dragTx)
         : this.browsing && !this.cursorDrag?.moved
-          ? this.clampTx(this.browseTx)
+          ? this.swipe.active
+            ? this.browseTx
+            : this.clampTx(this.browseTx)
           : wrap?.phase === 'lead'
             ? wrap.from
             : this.cursorTranslate()
@@ -1211,12 +1332,24 @@ export class StripView {
         reviewView = { x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1) }
       }
     }
+    // A pinch past the zoom limits: the same frame, stretched about what stays put.
+    const wasStretched = this.stretch !== 1
+    const stretched = this.stepStretch(performance.now())
+    if (stretched) {
+      const k = this.stretch
+      this.tx = this.stretchX - (this.stretchX - this.tx) * k
+      if (review) cursorSx = this.stretchX - (this.stretchX - cursorSx) * k
+      scale *= k
+      const top = review ? this.reviewTop : 0
+      const bottom = review ? this.reviewInset : 0
+      this.ty = top + verticalTranslate(L, Math.max(1, this.hostH - top - bottom), scale)
+    }
     this.shown = scale
     // A far jump (seek) is not animated: it would sweep past everything in between and need it all
     // mounted. A wrap (`wrapTo`) has its own rules: an instant lead, then a quick pan. A review
     // zoom is driven frame by frame here, so it never runs under a CSS transition.
     const far = !review && !Number.isNaN(prevTx) && Math.abs(this.tx - prevTx) > this.hostW * FAR_JUMP_VIEWPORTS
-    const instant = wrap ? wrap.phase === 'lead' : this.instant || far || animating
+    const instant = wrap ? wrap.phase === 'lead' : this.instant || far || animating || stretched || wasStretched
     this.instant = false
     if (wrap?.phase === 'pan' && !this.wrapTimer) {
       this.root.classList.add('pn-wrap')
@@ -1239,10 +1372,11 @@ export class StripView {
       this.applied.tx = tx
       this.applied.ty = this.ty
       this.applied.scale = scale
+      this.swipe.moved()
     }
     // The cursor's width and the loop controls' counter-scale follow once a review zoom has landed
     // (a custom property restyles every mounted node: never per frame).
-    if (!animating && scale !== this.zoomProp) this.setZoomProperties(scale)
+    if (!animating && !stretched && scale !== this.zoomProp) this.setZoomProperties(scale)
     this.respace?.follow(this.screenFrame())
 
     // Mount for both the old and the new view so a smooth scroll never reveals a gap; during a
@@ -1300,7 +1434,7 @@ export class StripView {
       // The lead is in place (committed when the browser renders this frame): pan next frame.
       wrap.phase = 'pan'
       this.schedule()
-    } else if (!done || animating || glide) this.schedule()
+    } else if (!done || animating || glide || coasting || this.stretchAnim) this.schedule()
   }
 
   /**
@@ -1908,10 +2042,14 @@ export class StripView {
       this.pointers.size === 0 &&
       !!(e.target as Element).closest?.('.pn-cursor-grip')
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-    try {
-      this.root.setPointerCapture(e.pointerId)
-    } catch {
-      // Synthetic events in tests have no active pointer.
+    const touch = (e.pointerType === 'touch' || e.pointerType === 'pen') && !onGrip
+    // A touch is left to the native scroller under the music (and captured by it already).
+    if (!touch) {
+      try {
+        this.root.setPointerCapture(e.pointerId)
+      } catch {
+        // Synthetic events in tests have no active pointer.
+      }
     }
     if (onGrip) {
       // One layout read per drag; every move after that is arithmetic on cached numbers.
@@ -1931,12 +2069,23 @@ export class StripView {
     }
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()] as [Pointer, Pointer]
-      this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, scale: this.reviewOn ? this.shown : this.scale }
+      // A pinch that catches the spring back goes on from what is on screen.
+      const scale = this.reviewOn ? this.shown / this.stretch : this.scale
+      this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, scale: scale * stretchSource(this.stretch) }
+      this.stretchAnim = null
       this.gesture = null
       return
     }
     if (this.pointers.size === 1) {
-      this.gesture = { startX: e.clientX, startY: e.clientY, startTx: this.tx, t: e.timeStamp, moved: false }
+      this.gesture = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startTx: this.tx,
+        t: e.timeStamp,
+        // A finger that catches coasting music stops it: not a tap.
+        moved: touch && this.swipe.active,
+        touch,
+      }
     }
   }
 
@@ -1965,8 +2114,7 @@ export class StripView {
       const dist = Math.hypot(a.x - b.x, a.y - b.y)
       const scale = (this.pinch.scale * dist) / this.pinch.dist
       // In the review a pinch zooms the review only: the playing zoom stays (U97).
-      if (this.reviewOn) this.zoomReview(scale, (a.x + b.x) / 2 - this.root.getBoundingClientRect().left)
-      else this.userZoom(scale)
+      this.pinchTo(scale, this.reviewOn ? (a.x + b.x) / 2 - this.root.getBoundingClientRect().left : 0)
       return
     }
     const g = this.gesture
@@ -1974,6 +2122,10 @@ export class StripView {
     const dx = e.clientX - g.startX
     if (!g.moved && Math.hypot(dx, e.clientY - g.startY) > TAP_SLOP) g.moved = true
     if (!g.moved) return
+    if (g.touch) {
+      this.adoptTouch(g, e, dx)
+      return
+    }
     if (this.reviewOn) {
       // The review pans; nothing is browsed, so playback is not held (U97).
       this.root.classList.add('pn-dragging')
@@ -1993,6 +2145,18 @@ export class StripView {
     this.schedule()
   }
 
+  /**
+   * A platform that pans cancels the pointer at once. A finger still reporting a sideways drag got
+   * no native pan (a scroller that did not engage): it drags the music from here, as a mouse does.
+   */
+  private adoptTouch(g: { startX: number; startTx: number; t: number; touch: boolean }, e: PointerEvent, dx: number) {
+    if (this.swipe.active || Math.abs(dx) < TOUCH_DRAG_PX || e.timeStamp - g.t < TOUCH_DRAG_MS) return
+    this.swipe.stop()
+    g.touch = false
+    g.startX = e.clientX
+    g.startTx = this.tx
+  }
+
   private pointerUp(e: PointerEvent, canceled = false): void {
     const d = this.cursorDrag
     if (d && d.pointerId === e.pointerId) {
@@ -2008,7 +2172,13 @@ export class StripView {
       this.opts.onBrowseRelease?.()
     }
     if (this.pinch) {
-      if (this.pointers.size < 2) this.pinch = null
+      if (this.pointers.size < 2) {
+        this.pinch = null
+        if (this.stretch !== 1) {
+          this.stretchAnim = { from: this.stretch, t0: NaN }
+          this.schedule()
+        }
+      }
       return
     }
     const g = this.gesture

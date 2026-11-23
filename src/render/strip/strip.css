@@ -93,8 +93,31 @@
   pointer-events: none;
 }
 
-.pn-stage > .pn-content {
-  pointer-events: auto;
+/* The native scroller a finger swipes (SwipeScroller, U150): empty and invisible, under the music,
+   which lets touches through to it. `contain` keeps the platform's own bounce at the ends. */
+.pn-scroll {
+  position: absolute;
+  inset: 0;
+  contain: strict;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  outline: none;
+  touch-action: none;
+}
+
+.pn-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.pn-browse-enabled > .pn-scroll,
+.pn-review > .pn-scroll {
+  touch-action: pan-x;
+}
+
+.pn-scroll-track {
+  height: 100%;
 }
 
 .pn-content {

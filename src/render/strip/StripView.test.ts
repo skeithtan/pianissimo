@@ -12,6 +12,7 @@ import {
 } from '../types'
 import { type Rational, rat } from '../../core/music/rational'
 import { StripView, WHEEL_RELEASE_MS, type StripOptions } from './StripView'
+import { SWIPE_SETTLE_MS } from './swipe'
 
 const MEASURE = 200
 const STAVES = [
@@ -588,6 +589,98 @@ describe('StripView passage selection', () => {
     vi.advanceTimersByTime(50)
     expect(releases).toBe(1)
     expect(v.isBrowsing()).toBe(true)
+  })
+
+  it('draws a native swipe where its scroller is, bounce included, and is released once it rests (U150)', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const events: string[] = []
+    const { v } = view(40, {
+      onBrowse: (b) => events.push(b ? 'browse' : 'back'),
+      onBrowseRelease: () => events.push('release'),
+      onSeekRequest: () => events.push('seek'),
+    })
+    v.setBrowseEnabled(true)
+    const root = host.querySelector('.pn-strip')!
+    const content = host.querySelector('.pn-content')!
+    const scroller = host.querySelector<HTMLElement>('.pn-scroll')!
+    const start = transformX(content)
+    let left = 0
+    let writes = 0
+    Object.defineProperty(scroller, 'scrollLeft', {
+      get: () => left,
+      set: (x: number) => {
+        left = x
+        writes++
+      },
+    })
+    const touch = (type: string, fingers: number) =>
+      scroller.dispatchEvent(
+        Object.assign(new Event(type, { bubbles: true, cancelable: true }), {
+          touches: { length: fingers },
+          targetTouches: { length: fingers },
+        }),
+      )
+    const pointer = (type: string) =>
+      root.dispatchEvent(new PointerEvent(type, { pointerId: 1, clientX: 600, pointerType: 'touch', bubbles: true }))
+    const scrollTo = (x: number) => {
+      left = x
+      scroller.dispatchEvent(new Event('scroll'))
+      v.flushNow()
+    }
+    pointer('pointerdown')
+    touch('touchstart', 1)
+    writes = 0
+    scrollTo(120)
+    pointer('pointercancel')
+    expect(transformX(content)).toBeCloseTo(start - 120)
+    touch('touchend', 0)
+    expect(events).toEqual(['browse'])
+    // It coasts back and bounces past the start: drawn there, the limit (U96) is where it rests.
+    scrollTo(-40)
+    scrollTo(-40)
+    scrollTo(-40)
+    expect(transformX(content)).toBeGreaterThan(start + 30)
+    // A finger that catches it is no tap.
+    pointer('pointerdown')
+    touch('touchstart', 1)
+    pointer('pointerup')
+    touch('touchend', 0)
+    scrollTo(0)
+    vi.advanceTimersByTime(SWIPE_SETTLE_MS)
+    v.flushNow()
+    expect(events).toEqual(['browse', 'release'])
+    expect(writes).toBe(0)
+    expect(transformX(content)).toBeCloseTo(start)
+    // Returning while it coasts ends it there; the release still comes, for what it holds.
+    touch('touchstart', 1)
+    scrollTo(120)
+    touch('touchend', 0)
+    v.returnToCurrent()
+    vi.advanceTimersByTime(SWIPE_SETTLE_MS)
+    expect(events).toEqual(['browse', 'release', 'back', 'release'])
+    scrollTo(300)
+    expect(v.isBrowsing()).toBe(false)
+  })
+
+  it('drags a touch that the platform does not pan (U150)', () => {
+    const { v } = view(40)
+    v.setBrowseEnabled(true)
+    const root = host.querySelector('.pn-strip')!
+    const content = host.querySelector('.pn-content')!
+    const start = transformX(content)
+    const pointer = (type: string, x: number, t: number) => {
+      const e = new PointerEvent(type, { pointerId: 1, clientX: x, pointerType: 'touch', bubbles: true })
+      Object.defineProperty(e, 'timeStamp', { value: t })
+      root.dispatchEvent(e)
+    }
+    pointer('pointerdown', 600, 0)
+    // A fast finger just before the platform takes it.
+    pointer('pointermove', 540, 16)
+    expect(v.isBrowsing()).toBe(false)
+    pointer('pointermove', 530, 200)
+    pointer('pointermove', 430, 216)
+    v.flushNow()
+    expect(transformX(content)).toBeCloseTo(start - 100)
   })
 
   it('cannot browse back past the first cursor stop by drag, wheel or edge scroll (U96)', () => {
@@ -1955,7 +2048,10 @@ describe('StripView review after a completed pass (U97)', () => {
     ev('pointerup', 2, 450)
     ev('pointerup', 1, 400)
     v.flushNow()
-    // Halved, held at the strip's minimum zoom.
+    // Halved: stretched a little past the strip's minimum zoom, sprung back to it once released.
+    expect(scaleOf(content())).toBeLessThan(0.5)
+    now += 1000
+    v.flushNow()
     expect(scaleOf(content())).toBe(0.5)
     expect(zooms).toEqual([])
     expect(v.zoom()).toBe(1)

@@ -166,6 +166,11 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   fixed at construction; the same x `scrollTranslate` uses at the start) and the content's right edge.
   Drag, wheel, handle-drag edge scroll and zoom while browsing all go through it, so the clefs, key and
   time signature never slide under the line; at the limit the view equals the piece at its start.
+  A finger's swipe (U150, `strip/swipe.ts`) is native: `.pn-scroll`, an empty scroller under the music
+  (whose layers let touches through), is lined up with the translate when a finger lands (and, on a touch
+  device, once the music has been still), then drives `browseTx` (or the review's frame) unclamped until
+  it settles (`scrollend`, or `SWIPE_SETTLE_MS` without a scroll event); that is the browse release.
+  Nothing writes the scroller meanwhile, and playback never does. Two fingers are canceled for it.
   After browsing, `browsedPosition()` returns the exact nearest snap onset under the rendered
   fixed cursor, so the session can seek there before resuming and call `returnToCurrent()` to
   restore following. Keyboard seeks also start from that visible note and end browsing when

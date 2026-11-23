@@ -20,7 +20,8 @@ export interface BrowsableStrip {
   occAt(clientX: number): number
 }
 
-const MOVES = ['pointermove', 'pointerup', 'wheel', 'keyup'] as const
+// `scroll`: a swipe's momentum moves the view with no finger down. It does not bubble, hence capture.
+const MOVES = ['pointermove', 'pointerup', 'wheel', 'keyup', 'scroll'] as const
 
 export interface BrowsedBar {
   /** The browsed bar, or null when the view follows the cursor. */
@@ -62,9 +63,9 @@ export function useBrowsedBar(
     const onMove = () => {
       if (strip.current?.isBrowsing()) latest.current.schedule()
     }
-    for (const type of MOVES) el.addEventListener(type, onMove, { passive: true })
+    for (const type of MOVES) el.addEventListener(type, onMove, { passive: true, capture: true })
     return () => {
-      for (const type of MOVES) el.removeEventListener(type, onMove)
+      for (const type of MOVES) el.removeEventListener(type, onMove, { capture: true })
       if (pending.current !== null) frames.cancel(pending.current)
       pending.current = null
     }
