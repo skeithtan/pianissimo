@@ -267,9 +267,10 @@ export interface AttemptRecord {
   readonly timingUnscoredReason?: string
   readonly assistance: AssistanceRecord
   /**
-   * Passed the selected pass condition: zero wrong attacks, no assistance and the optional total
-   * time tolerance; in strict transport (rhythm mode) no missed group and every group within
-   * `rhythm.toleranceMs` of its scheduled time instead of the time tolerance.
+   * Passed the selected pass condition: zero wrong attacks and the optional total time tolerance;
+   * in strict transport (rhythm mode) no missed group and every group within `rhythm.toleranceMs`
+   * of its scheduled time instead of the time tolerance. Assistance does not affect it (U144); a
+   * record stored before U144 is false when assisted, so read it with `meetsPassCondition`.
    */
   readonly passed: boolean
   readonly onsets: readonly OnsetTimestamp[]

@@ -197,8 +197,8 @@ onset group is judged against its scheduled time, the transport's arrival at its
    missed); `completionTimeSec` runs from the clock start to the last group's completion or
    close. Records carry `context.transport = 'strict'`, `matchingRules = strict-v1-tol-<n>ms`,
    `rhythm`, `missedGroups` and per-group `offsetMs` / `missed`. `passed` = completed ∧ no wrong
-   attack ∧ no assistance ∧ no missed group ∧ every completed group within ±`toleranceMs`; the
-   total-time tolerance does not apply. Hints, labels, keyboard assistance and ottava warnings
+   attack ∧ no missed group ∧ every completed group within ±`toleranceMs`; assistance is recorded
+   but does not affect it (U144) and the total-time tolerance does not apply. Hints, labels, keyboard assistance and ottava warnings
    are unchanged. Pause, seek, restart, reconfigure and interruptions behave as for any scored
    attempt (`restart` → Preparing → Ready; the session calls `startRunning` after its next
    count-in).

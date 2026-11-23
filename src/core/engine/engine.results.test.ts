@@ -274,9 +274,20 @@ describe('Acceptance: Label assistance', () => {
     expect(d.state.assistance).toBe('names')
     playAll(d, [C4, D4, E4, F4, G4, A4, B4, C5], 100)
     const [r] = d.records()
-    expect(r).toMatchObject({ passed: false })
+    expect(r).toMatchObject({ passed: true }) // recorded, but no bar to a pass (U144)
     expect(r!.assistance).toMatchObject({ level: 'names', persistentLabelGroups: [0], hintRequests: 0, autoHints: 0 })
     expect(r!.measures.map((m) => m.persistentLabel)).toEqual([true, false])
+  })
+
+  it('a requested hint or the keyboard guide is recorded and does not affect the pass (U144)', () => {
+    const hinted = scored()
+    hinted.engine.requestHint(hinted.now)
+    playAll(hinted, [C4, D4, E4, F4, G4, A4, B4, C5], 100)
+    expect(hinted.records()[0]).toMatchObject({ passed: true, assistance: { level: 'names', hintRequests: 1 } })
+    const guided = scored()
+    guided.engine.setKeyboardVisible(true, guided.now)
+    playAll(guided, [C4, D4, E4, F4, G4, A4, B4, C5], 100)
+    expect(guided.records()[0]).toMatchObject({ passed: true, assistance: { level: 'keyboard', keyboardShown: true } })
   })
 
   it('read-ahead exposure is attributed to the revealed note’s group and bar, and survives hiding', () => {

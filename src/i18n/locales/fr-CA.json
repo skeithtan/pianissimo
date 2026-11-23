@@ -79,5 +79,6 @@
   "1571": "Ce navigateur n’affiche ses sorties audio qu’après l’autorisation du microphone. Pianissimo coupe aussitôt le microphone et n’enregistre rien.",
   "1752": "Pianissimo n’est pas autorisé à utiliser l’entrée audio. Autorisez l’accès au microphone pour ce site dans les paramètres du navigateur, puis réessayez.",
   "1769": "Les morceaux, les résultats et l’historique de la sauvegarde sont ajoutés sans rien supprimer. Si un morceau existe déjà, la version la plus récente est conservée. Les paramètres de la sauvegarde sont appliqués, sauf la connexion au piano et la sortie du métronome de cet appareil.",
-  "1770": "Les paramètres de la sauvegarde ont été restaurés. La connexion au piano et la sortie du métronome de cet appareil sont conservées."
+  "1770": "Les paramètres de la sauvegarde ont été restaurés. La connexion au piano et la sortie du métronome de cet appareil sont conservées.",
+  "1903": "Aucun essai terminé sans fausse note avec ces paramètres."
 }

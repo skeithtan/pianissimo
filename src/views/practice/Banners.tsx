@@ -124,13 +124,13 @@ export function ladderResultText(r: AttemptSummary, multiplier: number): string 
 
 /**
  * The result card's headline (U97): "Clean pass", else what kept the pass from being clean, the
- * first of: wrong notes ("2 wrong notes"), timing (Keep time), help; "Completed" otherwise.
+ * first of: wrong notes ("2 wrong notes"), timing (Keep time); "Completed" otherwise. Help never
+ * keeps a pass from being clean and is not mentioned (U144).
  */
 export function resultTitle(r: AttemptSummary): string {
   if (r.passed) return msg('Clean pass')
   if (r.wrongAttacks > 0) return wrongText(r.wrongAttacks)
   if (r.timing && r.timing.onTime < r.timing.groups) return msg('Timing slipped')
-  if (r.assistance !== 'none') return msg('Played with help')
   return msg('Completed')
 }
 
@@ -839,7 +839,7 @@ function ResultCard({
         {hasPreview && !open ? (
           <ul class={styles.resultPreview} data-testid="result-details-preview" aria-hidden="true">
             {passFacts(r, goal)
-              .slice(0, r.timing || r.completionTimeSec === null ? 2 : 3)
+              .slice(0, 2)
               .map((line) => (
                 <li key={line}>{line}</li>
               ))}

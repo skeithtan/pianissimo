@@ -223,14 +223,18 @@ test.describe('practice assistance and repeat', () => {
     await expect(details.getByRole('heading', { level: 2, name: 'Latest attempt' })).toBeVisible()
     await expect(details.locator('[data-row="wrong-attacks"]')).toContainText('2')
     await expect(details.getByText('Not a pass: wrong-note attacks')).toBeVisible()
-    await expect(details.locator('[data-row="assist-keyboard"]')).toContainText('Shown during this attempt.')
-    await expect(details.locator('[data-row="assist-hints"]')).toContainText('1 automatic hint. 1 group revealed')
+    // The practice result leaves help out (U144).
+    await expect(details.locator('[data-row="assistance"]')).toHaveCount(0)
     await expect(details.locator('[data-row="completion-time"]')).toBeVisible()
 
-    // The stored record matches what the card says.
-    const attempts = await idbAll<{ wrongAttacks: number; completion: string }>(page, 'attempts')
+    // The stored record matches what the card says, and keeps the help.
+    const attempts = await idbAll<{ wrongAttacks: number; completion: string; assistance: object }>(page, 'attempts')
     expect(attempts).toHaveLength(1)
-    expect(attempts[0]).toMatchObject({ wrongAttacks: 2, completion: 'completed' })
+    expect(attempts[0]).toMatchObject({
+      wrongAttacks: 2,
+      completion: 'completed',
+      assistance: { keyboardShown: true, autoHints: 1 },
+    })
   })
 
   test('Listen on the page plays MIDI with the score in its normal ink', async ({ page }) => {

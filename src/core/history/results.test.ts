@@ -5,6 +5,7 @@ import {
   compareCleanRuns,
   isAssistedAttempt,
   isCleanUnassistedCompletion,
+  meetsPassCondition,
   practiceStreak,
   summarizeByContext,
   summarizeContext,
@@ -103,6 +104,9 @@ describe('context results', () => {
     expect(r?.cleanRanking).toEqual([clean, lessClean])
     expect(r?.unassistedWithErrors).toEqual([withErrors])
     expect(r?.assisted).toEqual([keyboard, assisted])
+    // Without telling help apart (U144): equally close runs rank by recency.
+    expect(r?.cleanCompletions).toEqual([keyboard, assisted, clean, lessClean])
+    expect(r?.withErrors).toEqual([withErrors])
     expect(r?.incomplete).toEqual([paused])
   })
 
@@ -193,6 +197,11 @@ describe('practice streak', () => {
     expect(practiceStreak(list)).toEqual({ current: 2, best: 2 })
   })
 
+  it('counts an assisted pass, also one stored as failed for its help (U144)', () => {
+    const legacy = attempt({ passed: false, assistance: assistedWith({ level: 'names', persistentLabelNotes: [1] }) })
+    expect(practiceStreak([passed(), legacy, passed()])).toEqual({ current: 3, best: 3 })
+  })
+
   it('ignores ordinary reading and an empty list', () => {
     expect(practiceStreak([passed(), attempt({ kind: 'reading', passed: false, wrongAttacks: 3 }), passed()])).toEqual({
       current: 2,
@@ -218,6 +227,32 @@ const g = (group: number, extra: Partial<GroupOutcome> = {}): GroupOutcome => ({
 function strict(groups: GroupOutcome[], over: Partial<AttemptRecord> = {}): AttemptRecord {
   return attempt({ context: STRICT, rhythm: { toleranceMs: 150 }, groups, ...over })
 }
+
+describe('pass condition of stored records (U144)', () => {
+  const names = assistedWith({ level: 'names', persistentLabelNotes: [1] })
+  const legacy = (over: Partial<AttemptRecord> = {}) => attempt({ passed: false, assistance: names, ...over })
+
+  it('a gated record failed only for its help passes', () => {
+    expect(meetsPassCondition(attempt())).toBe(true)
+    expect(meetsPassCondition(legacy())).toBe(true)
+    expect(meetsPassCondition(legacy({ assistance: assistedWith({ keyboardShown: true }) }))).toBe(true)
+    expect(meetsPassCondition(attempt({ passed: false }))).toBe(false) // not failed for help
+    expect(meetsPassCondition(legacy({ wrongAttacks: 1 }))).toBe(false)
+    expect(meetsPassCondition(legacy({ completion: 'abandoned' }))).toBe(false)
+    expect(meetsPassCondition(legacy({ kind: 'reading' }))).toBe(false)
+  })
+
+  it('a strict record also needs every group on time', () => {
+    const onTime = [g(0, { offsetMs: -150 }), g(1, { offsetMs: 20 })]
+    const late = [g(0, { offsetMs: 0 }), g(1, { offsetMs: 151 })]
+    const missed = [g(0, { offsetMs: 0 }), g(1, { missed: true })]
+    const over = { passed: false, assistance: names }
+    expect(meetsPassCondition(strict(onTime, over))).toBe(true)
+    expect(meetsPassCondition(strict(late, over))).toBe(false)
+    expect(meetsPassCondition(strict(missed, { ...over, missedGroups: 1 }))).toBe(false)
+    expect(meetsPassCondition(attempt({ context: STRICT, ...over }))).toBe(false) // no per-group outcomes
+  })
+})
 
 describe('rhythm mode results', () => {
   it('a clean completion needs no missed groups, in any context', () => {

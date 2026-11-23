@@ -473,9 +473,6 @@
   --result-preview-tall: 52px;
   --result-intro-shift: calc(var(--result-preview-tall) - var(--result-preview-height));
 }
-.result:has(.resultPreview > li:nth-child(3)) {
-  --result-preview-tall: 64px;
-}
 .resultCard[data-intro] .result {
   isolation: isolate;
 }
@@ -551,8 +548,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Clip the full time comparison to the width set by the pill's summary and first two facts. */
-.resultPreview > li:nth-child(3) {
+/* Clip the full time comparison to the width set by the pill's summary and first fact. */
+.resultPreview > li:nth-child(2) {
   contain: inline-size;
 }
 .resultCard[data-expanded] .result {

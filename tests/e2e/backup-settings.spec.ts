@@ -103,9 +103,9 @@ test('export, delete the piece, restore the backup: the piece and its results ar
   await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
   await details.getByText(/Earlier passes of this loop/).click()
   const history = details.locator('[data-panel="history"]')
-  await expect(history.getByRole('heading', { name: 'Clean and unassisted' })).toBeVisible()
-  // The restored attempt had one wrong note, which now shows a hint (S5): assisted practice.
-  await expect(history.getByRole('heading', { name: 'Assisted practice' })).toBeVisible()
+  await expect(history.getByRole('heading', { name: 'Clean 1', exact: true })).toBeVisible()
+  // The restored attempt had one wrong note, which now shows a hint (S5): here only the note counts (U144).
+  await expect(history.getByRole('heading', { name: 'With wrong notes 1', exact: true })).toBeVisible()
   await expect(history.locator('ul > li')).toHaveCount(2) // the restored attempt and the new one
 })
 

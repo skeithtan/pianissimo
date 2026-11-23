@@ -81,8 +81,6 @@ function render(groups: GroupOutcome[], toleranceMs = 150) {
     groupsTotal: groups.length,
     completionTimeSec: null,
     expectedTimeSec: null,
-    assistance: 'none',
-    persistentLabels: false,
     streak: 0,
     targetReached: false,
     timing: { groups: groups.length, onTime: groups.length - 1, early: 0, late: 1, missed: 0 },

@@ -19,15 +19,14 @@ export function isAssistedAttempt(a: AttemptRecord): boolean {
   )
 }
 
+/** Completed scored attempt with zero wrong attacks and no missed group, assisted or not. */
+function isCleanCompletion(a: AttemptRecord): boolean {
+  return a.kind === 'scored' && a.completion === 'completed' && a.wrongAttacks === 0 && (a.missedGroups ?? 0) === 0
+}
+
 /** Completed scored attempt with zero wrong attacks and no assistance. */
 export function isCleanUnassistedCompletion(a: AttemptRecord): boolean {
-  return (
-    a.kind === 'scored' &&
-    a.completion === 'completed' &&
-    a.wrongAttacks === 0 &&
-    (a.missedGroups ?? 0) === 0 &&
-    !isAssistedAttempt(a)
-  )
+  return isCleanCompletion(a) && !isAssistedAttempt(a)
 }
 
 /** How a strict (rhythm mode) attempt kept time; see `timingAccuracy`. */
@@ -83,6 +82,20 @@ export function timingAccuracy(a: AttemptRecord): TimingAccuracy | null {
     meanOffsetMs: completed > 0 ? sum / completed : 0,
     meanAbsOffsetMs: completed > 0 ? sumAbs / completed : 0,
   }
+}
+
+/**
+ * Whether the attempt met the pass condition. Assistance does not affect it (U144), but a record
+ * stored before that has `passed: false` whenever it was assisted: such a record passes when it
+ * meets the rest of the condition (the app never sets the total-time tolerance, so a gated one has
+ * nothing else to meet).
+ */
+export function meetsPassCondition(a: AttemptRecord): boolean {
+  if (a.passed) return true
+  if (!isCleanCompletion(a) || !isAssistedAttempt(a)) return false
+  if (a.context.transport !== 'strict') return true
+  const timing = timingAccuracy(a)
+  return timing !== null && timing.onTime === timing.groups
 }
 
 /**
@@ -143,7 +156,7 @@ function isAbandonedAfterMistakes(a: AttemptRecord): boolean {
 
 /**
  * Practice streak: consecutive scored attempts meeting the selected pass condition
- * (`AttemptRecord.passed`) in one context. Pauses, disconnects, suspension, seeks and setting
+ * (`meetsPassCondition`) in one context. Pauses, disconnects, suspension, seeks and setting
  * changes are neutral: the spec says they never record a failed or successful completed
  * performance. A user stop or restart after wrong attacks is a failed pass and resets the run.
  */
@@ -154,7 +167,7 @@ export function practiceStreak(attempts: readonly AttemptRecord[]): PracticeStre
   let run = 0
   let best = 0
   for (const a of counted) {
-    run = a.completion === 'completed' && a.passed ? run + 1 : 0
+    run = a.completion === 'completed' && meetsPassCondition(a) ? run + 1 : 0
     if (run > best) best = run
   }
   return { current: run, best }
@@ -172,6 +185,10 @@ export interface ContextResults {
   readonly unassistedWithErrors: readonly AttemptRecord[]
   /** Completed with assistance (names or keyboard), newest first; kept apart from rankings. */
   readonly assisted: readonly AttemptRecord[]
+  /** Every clean completion, assisted or not, best first (the practice result, U144). */
+  readonly cleanCompletions: readonly AttemptRecord[]
+  /** Completed with wrong attacks, assisted or not, newest first (the practice result, U144). */
+  readonly withErrors: readonly AttemptRecord[]
   /** Interrupted or abandoned: diagnostics only, never ranked, newest first. */
   readonly incomplete: readonly AttemptRecord[]
   readonly streak: PracticeStreak
@@ -193,6 +210,8 @@ function summarize(contextKey: string, attempts: readonly AttemptRecord[]): Cont
     cleanRanking,
     unassistedWithErrors: completed.filter((a) => !isAssistedAttempt(a) && a.wrongAttacks > 0).sort(newestFirst),
     assisted: completed.filter(isAssistedAttempt).sort(newestFirst),
+    cleanCompletions: completed.filter(isCleanCompletion).sort(compareCleanRuns),
+    withErrors: completed.filter((a) => a.wrongAttacks > 0).sort(newestFirst),
     incomplete: scored.filter((a) => a.completion !== 'completed').sort(newestFirst),
     streak: practiceStreak(scored),
     lastAttemptAt: scored.reduce((latest, a) => Math.max(latest, a.createdAt), 0),

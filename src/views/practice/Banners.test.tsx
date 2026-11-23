@@ -86,8 +86,6 @@ const RESULT: AttemptSummary = {
   groupsTotal: 4,
   completionTimeSec: 3,
   expectedTimeSec: 3,
-  assistance: 'none',
-  persistentLabels: false,
   streak: 2,
   targetReached: false,
 }
@@ -207,10 +205,9 @@ describe('Banners', () => {
   it('heads the card with what kept the pass from being clean, the count of wrong notes in its badge', () => {
     expect(resultTitle(RESULT)).toBe('Clean pass')
     expect(resultTitle({ ...RESULT, passed: false, wrongAttacks: 1 })).toBe('1 wrong note')
-    expect(resultTitle({ ...RESULT, passed: false, wrongAttacks: 3, assistance: 'names' })).toBe('3 wrong notes')
+    expect(resultTitle({ ...RESULT, passed: false, wrongAttacks: 3 })).toBe('3 wrong notes')
     const timing = { groups: 4, onTime: 3, early: 0, late: 1, missed: 0 }
     expect(resultTitle({ ...RESULT, passed: false, timing })).toBe('Timing slipped')
-    expect(resultTitle({ ...RESULT, passed: false, assistance: 'keyboard' })).toBe('Played with help')
     expect(resultTitle({ ...RESULT, passed: false })).toBe('Completed')
     view = mount(result({ lastResult: { ...RESULT, passed: false, wrongAttacks: 2, streak: 0 } }))
     const card = $(view.container, '[data-testid="attempt-result"]')!
@@ -285,7 +282,6 @@ describe('Banners', () => {
     const preview = $(card()!, '[data-testid="result-details-preview"]')!
     expect(Array.from(preview.querySelectorAll('li'), (li) => li.textContent)).toEqual([
       'Right the first time at 4 of 4 places',
-      'No help used',
       'Took 3.0 s; the music lasts 3.0 s at this speed (0.0 s)',
     ])
     for (const gone of ['marks on the score', 'No wrong notes']) expect(card()?.textContent).not.toContain(gone)

@@ -252,7 +252,7 @@ Show the selected hand, measure range, repeat occurrence, and practice tempo bef
 
 Offer a speed ladder with 100% of the written tempo as its default goal. Start at the current speed if it is below 100%, or at 75% if it is already at or above 100%. Keep 100% selectable when the current speed is at or above it. The ladder advances one step after each set of consecutive clean passes. A failed pass resets the clean streak at the current speed.
 
-The default pass condition is completion with zero wrong-note attacks and no assistance, including persistent note labels, temporary hints, or keyboard rescue. Timing appears separately. An optional timing tolerance can be added to the pass condition, but it must be labeled as total completion-time tolerance, not proof of rhythm accuracy.
+The default pass condition is completion with zero wrong-note attacks. Assistance (persistent note labels, temporary hints, or keyboard rescue) is recorded but does not affect the pass, and the practice result does not mention it. Timing appears separately. An optional timing tolerance can be added to the pass condition, but it must be labeled as total completion-time tolerance, not proof of rhythm accuracy.
 
 After each attempt, show a compact result while preserving the score. Finish any remaining automatic part to the passage boundary and release app-owned output, then wait for physical keys and every sound-retaining pedal, including sustain and sostenuto where supported, to be released, then finish reset and return directly to Ready at the passage's beginning. The next attempt's clock starts only on its first fresh human key press; restarting the automatic part does not start it. Reset matching state, local error counts, and temporary hint visibility; retain the passage, settings, and qualifying persistent score labels. Record visible persistent labels in the next attempt's assistance data.
 
@@ -414,7 +414,7 @@ For notation-only rolled chords, create a deterministic reference performance. U
 | Attempt clock | Starts on the first fresh key press in Ready, including a wrong press; repeats return directly to Ready after reset |
 | Metronome | Off; optional audible reference without forcing advancement |
 | Repeat target | Unlimited attempts; optional consecutive-pass target |
-| Clean pass | Zero wrong attacks and no persistent-label, temporary-hint, or keyboard assistance |
+| Clean pass | Zero wrong attacks; assistance does not affect it (suggested-practice recovery defines its own clean traversal) |
 | Input monitoring through browser sound | Off |
 | Reference playback | Both hands |
 

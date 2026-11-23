@@ -3585,8 +3585,6 @@ export class PracticeSession {
       groupsTotal: record.groupsTotal,
       completionTimeSec: record.completionTimeSec ?? null,
       expectedTimeSec: record.expectedTimeSec,
-      assistance: record.assistance.level,
-      persistentLabels: record.assistance.persistentLabelNotes.length > 0,
       streak: this.#streak,
       targetReached,
       ...(ladder ? { ladder } : {}),

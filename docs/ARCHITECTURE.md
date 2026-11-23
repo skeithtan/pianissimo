@@ -121,7 +121,7 @@ tolerance on: the session hands them back after the count-in with `engine.countI
 time)`, judged at their own time like any press, so an early first downbeat counts with its
 negative offset. Strict records use `matchingRules` `strict-v1-tol-<n>ms` and
 carry `rhythm`, `missedGroups` and per-group `offsetMs` / `missed`; they pass only with no wrong
-attack, no assistance, no missed group and every group within the tolerance. Close times come
+attack, no missed group and every group within the tolerance. Close times come
 from injected arrivals and surface through `nextDeadline()`. Strict `input-complete` also
 carries `onsetOffsetMs`, the first matched attack's offset, for live timing feedback. The
 record stores the completion offset for grading and an optional differing first-attack

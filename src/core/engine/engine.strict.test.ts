@@ -748,6 +748,18 @@ describe('Strict transport: records', () => {
     expect(r.passed).toBe(false)
   })
 
+  it('labels, hints and the keyboard guide are recorded and do not affect the pass (U144)', () => {
+    const s = session()
+    const { engine } = s.d
+    engine.recordPersistentLabelExposure([...engine.timeline.groups[0]!.notes], s.d.now)
+    engine.requestHint(s.d.now)
+    engine.setKeyboardVisible(true, s.d.now)
+    playAll(s, [10, -40, 0, 120, -150])
+    const r = s.d.records()[0]!
+    expect(r.assistance).toMatchObject({ level: 'keyboard', hintRequests: 1, persistentLabelGroups: [0] })
+    expect(r.passed).toBe(true)
+  })
+
   it('free and accompaniment records carry no rhythm fields', () => {
     const model = buildScore(SCALE)
     const t = buildTimeline(model, { hands: 'right', range: { fromOcc: 0, toOcc: 1 }, multiplier: 1 })

@@ -150,9 +150,9 @@ for (const [lang, close, start, show, title, clean] of [
     'Magsimula',
     'Ipakita ang mga detalle ng ulit na ito',
     'Ulit na ito',
-    'Walang sablay: walang maling nota at walang tulong.',
+    'Walang sablay: walang maling nota.',
   ],
-  ['ja-JP', '閉じる', '開始', '今回の演奏の詳細を表示', '今回の演奏', 'ミスも補助もなく弾けました。'],
+  ['ja-JP', '閉じる', '開始', '今回の演奏の詳細を表示', '今回の演奏', 'ミスなく弾けました。'],
 ] as const) {
   test(`scores a MIDI performance in ${lang} after changing the language with a loop open`, async ({ page }) => {
     await installFakeMidi(page)

@@ -10,13 +10,16 @@ import {
 } from '../../app/session'
 import { buildTimeline } from '../../core/engine'
 import { buildScore } from '../../core/engine/testkit'
+import { attemptRecord, noAssistance, occurrences } from '../../core/history/testkit'
 import type { Language } from '../../core/model/language'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
+import { makePackage, makePiece } from '../../core/storage/testkit'
 import en from '../../i18n/locales/en-US.json'
 import fr from '../../i18n/locales/fr-FR.json'
 import ja from '../../i18n/locales/ja-JP.json'
 import { readMessagesWith } from '../../i18n/messages'
 import { $, $$, byText, click, mount, type Mounted } from '../shared/testing'
+import type { ResultsData } from '../results/data'
 import { ResultDetails, verdict } from './ResultDetails'
 import { passFacts } from './format'
 
@@ -50,8 +53,6 @@ const RESULT: AttemptSummary = {
   groupsTotal: 5,
   completionTimeSec: 6.5,
   expectedTimeSec: 6,
-  assistance: 'none',
-  persistentLabels: false,
   streak: 0,
   targetReached: false,
 }
@@ -72,7 +73,12 @@ function mistake(group: number, occ: number, level: RankedMistake['level'], over
   } satisfies RankedMistake
 }
 
-function render(mistakes: RankedMistake[], result: AttemptSummary = RESULT, goal: number | null = 3) {
+function render(
+  mistakes: RankedMistake[],
+  result: AttemptSummary = RESULT,
+  goal: number | null = 3,
+  history: ResultsData | null = null,
+) {
   const details: Details = { attemptId: result.id, records: [], timeline, marks: new Map() }
   const snippet = new Store<SnippetState | null>(null)
   const session = {
@@ -99,7 +105,7 @@ function render(mistakes: RankedMistake[], result: AttemptSummary = RESULT, goal
       layout={null}
       goal={goal}
       rank={() => mistakes}
-      loadHistory={() => Promise.resolve(null)}
+      loadHistory={() => Promise.resolve(history)}
     />,
   )
   return session
@@ -108,15 +114,12 @@ function render(mistakes: RankedMistake[], result: AttemptSummary = RESULT, goal
 describe('ResultDetails (U99)', () => {
   it('a clean pass: no excerpts, says so plainly, with this pass in a few lines', () => {
     render([], { ...RESULT, passed: true, wrongAttacks: 0, groupsFirstPass: 5, streak: 2 })
-    expect($(view!.container, '[data-testid="result-verdict"]')?.textContent).toBe(
-      'Clean pass: no wrong notes and no help.',
-    )
+    expect($(view!.container, '[data-testid="result-verdict"]')?.textContent).toBe('Clean pass: no wrong notes.')
     expect($(view!.container, '[data-testid="result-clean"]')?.textContent).toBe('No mistakes in this pass.')
     expect($$(view!.container, '[data-testid="result-excerpt"]')).toHaveLength(0)
     const facts = $(view!.container, '[data-testid="result-facts"]')!.textContent
     expect(facts).toContain('Took 6.5 s; the music lasts 6.0 s at this speed (+0.5 s)')
     expect(facts).toContain('Right the first time at 5 of 5 places')
-    expect(facts).toContain('No help used')
     expect(facts).toContain('2 of 3 clean in a row toward the goal')
   })
 
@@ -203,15 +206,59 @@ describe('ResultDetails (U99)', () => {
 
   it('words why a pass was not clean and the facts of a Keep time pass', () => {
     expect(verdict({ ...RESULT, wrongAttacks: 1 })).toBe('Not clean: 1 wrong note.')
-    expect(verdict({ ...RESULT, wrongAttacks: 0, assistance: 'names' })).toBe('Not clean: note names helped.')
+    expect(verdict({ ...RESULT, wrongAttacks: 0 })).toBe('Completed, but not counted as clean.')
     const timing = { groups: 8, onTime: 6, early: 1, late: 1, missed: 0 }
     expect(verdict({ ...RESULT, wrongAttacks: 0, timing })).toBe('Not clean: the timing slipped.')
-    expect(passFacts({ ...RESULT, timing }, null).slice(0, 3)).toEqual([
+    expect(passFacts({ ...RESULT, timing }, null).slice(0, 2)).toEqual([
       'Right the first time at 2 of 5 places',
-      'No help used',
       'On time 6 of 8 · 1 early · 1 late',
     ])
     expect(passFacts({ ...RESULT, targetReached: true }, 3)).toContain('Goal reached: 3 clean in a row')
+  })
+
+  it('never mentions help, in the card or its folds (U144)', async () => {
+    const names = {
+      ...noAssistance(),
+      level: 'names' as const,
+      persistentLabelNotes: [0, 1],
+      persistentLabelGroups: [0],
+      hintRequests: 1,
+      hintGroups: [1],
+      labelSettings: { mode: 'all' as const, rulesJson: '{}' },
+    }
+    const keyboard = { ...noAssistance(), level: 'keyboard' as const, keyboardShown: true }
+    const pkg = makePackage('v1', 'Minuet')
+    const attempts = [
+      attemptRecord({ id: 'plain', createdAt: 1, completionTimeSec: 9 }),
+      attemptRecord({ id: 'legacy', createdAt: 2, completionTimeSec: 8.1, assistance: keyboard, passed: false }),
+      attemptRecord({ id: 'wrong', createdAt: 3, assistance: names, wrongAttacks: 2, passed: false }),
+      attemptRecord({ id: 'a3', createdAt: 4, completionTimeSec: 8.5, assistance: names }),
+    ]
+    const data: ResultsData = {
+      piece: makePiece(pkg, { title: 'Minuet' }),
+      attempts,
+      occurrences: occurrences(40),
+      suggestions: { active: [], improved: [], disabled: false },
+    }
+    const passed = { ...RESULT, passed: true, wrongAttacks: 0, groupsFirstPass: 5, streak: 2 }
+    render([], passed, 3, data)
+    const root = view!.container
+    const row = (id: string) => $(root, `[data-attempt="${id}"]`)
+    await vi.waitFor(() => expect(row('a3')).not.toBeNull())
+    const silent = () => expect(root.textContent).not.toMatch(/help|assist|note names|keyboard guide|labels|hint/i)
+    silent()
+    expect($(root, '[data-row="assistance"]')).toBeNull()
+    expect($(root, '[data-testid="result-numbers"]')?.textContent).toContain('Pass: completed with no wrong notes')
+    const group = (kind: string) => $$(root, `[data-group="${kind}"] [data-attempt]`).map((b) => b.dataset['attempt'])
+    expect(group('clean')).toEqual(['legacy', 'a3', 'plain'])
+    expect(group('errors')).toEqual(['wrong'])
+    expect(group('assisted')).toEqual([])
+    expect($(root, '[data-row="best-clean"]')?.textContent).toContain('Best clean8.1 s')
+    // The legacy pass, stored as failed for its help, is a pass here too.
+    click(row('legacy'))
+    await vi.waitFor(() => expect(byText(root, 'Back to this pass')).not.toBeNull())
+    expect($(root, '[data-testid="result-numbers"] [data-reason]')?.dataset['reason']).toBe('passed')
+    silent()
   })
 
   it('words each sentence whole in other languages (P5)', () => {

@@ -348,15 +348,16 @@ export function comparisonContextOf(
 /**
  * Attempt record (spec "Results and timing"). Scored: completion time is the attack span from
  * the first fresh press to the final group's last missing correct attack; passed = completed
- * with zero wrong attacks and no assistance of any kind (persistent labels, temporary hints,
- * keyboard), plus the optional total-time tolerance. Interrupted and abandoned attempts never
- * pass and carry no completion time. Ordinary-reading traversals ('reading') carry their
- * mistakes, assistance and measure traversals for suggested practice but are not timed.
+ * with zero wrong attacks, plus the optional total-time tolerance. Assistance (persistent labels,
+ * temporary hints, keyboard) is recorded but does not affect the pass (U144). Interrupted and
+ * abandoned attempts never pass and carry no completion time. Ordinary-reading traversals
+ * ('reading') carry their mistakes, assistance and measure traversals for suggested practice but
+ * are not timed.
  *
  * Strict transport (rhythm mode): the clock starts at the end of the count-in, the final group's
- * completion or close ends it; passed = completed, zero wrong attacks, no assistance, no missed
- * group and every completed group within ±`rhythm.toleranceMs` of its scheduled time (the total
- * time tolerance does not apply). The record carries `rhythm` and `missedGroups`.
+ * completion or close ends it; passed = completed, zero wrong attacks, no missed group and every
+ * completed group within ±`rhythm.toleranceMs` of its scheduled time (the total time tolerance
+ * does not apply). The record carries `rhythm` and `missedGroups`.
  */
 export function buildAttemptRecord(input: RecordInput): AttemptRecord {
   const { log, timeline, completion, kind } = input
@@ -397,8 +398,7 @@ export function buildAttemptRecord(input: RecordInput): AttemptRecord {
     notatedDurationSec: timeline.notatedDurationSec,
     ...(unscoredReason !== null ? { timingUnscoredReason: unscoredReason } : {}),
     assistance,
-    passed:
-      scored && completion === 'completed' && log.wrongAttacks === 0 && assistance.level === 'none' && withinTolerance,
+    passed: scored && completion === 'completed' && log.wrongAttacks === 0 && withinTolerance,
     onsets: [...log.onsets],
     measures: [...log.measures],
     ...(scored ? { groups: log.groupOutcomes() } : {}),

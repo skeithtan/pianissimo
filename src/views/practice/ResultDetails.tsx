@@ -403,14 +403,12 @@ function itemLines(m: RankedMistake, model: ScoreModel, naming: NamingSettings):
   return [{ text: msg(words), flag: '' }]
 }
 
-/** "Clean pass: no wrong notes and no help." or why not, in one plain sentence. */
+/** "Clean pass: no wrong notes." or why not, in one plain sentence. */
 export function verdict(r: AttemptSummary): string {
-  if (r.passed) return msg('Clean pass: no wrong notes and no help.')
+  if (r.passed) return msg('Clean pass: no wrong notes.')
   if (r.wrongAttacks === 1) return msg('Not clean: 1 wrong note.')
   if (r.wrongAttacks > 0) return msg('Not clean: {0} wrong notes.', r.wrongAttacks)
   if (r.timing && r.timing.onTime < r.timing.groups) return msg('Not clean: the timing slipped.')
-  if (r.assistance === 'keyboard') return msg('Not clean: the keyboard guide helped.')
-  if (r.assistance === 'names') return msg('Not clean: note names helped.')
   return msg('Completed, but not counted as clean.')
 }
 
@@ -438,7 +436,7 @@ async function storedHistory(pieceId: string, attemptId: string): Promise<Result
 /**
  * Folded: all the numbers of this pass (the Results scorecard) and the earlier passes of this
  * loop (the Results history of its comparison context). A history row shows that pass's numbers
- * here, with a way back to this pass; nothing opens another screen.
+ * here, with a way back to this pass; nothing opens another screen. Help is left out (U144).
  */
 function Earlier({
   pieceId,
@@ -488,12 +486,18 @@ function Earlier({
             {msg('Back to this pass')}
           </Button>
         ) : null}
-        <ScorecardPanel attempt={attempt} scorecard={model.scorecard} isLatest={isThis} />
+        <ScorecardPanel attempt={attempt} scorecard={model.scorecard} isLatest={isThis} assistance={false} />
       </details>
       {model.history && model.historyCount > 1 ? (
         <details class={styles.fold} data-testid="result-history">
           <summary>{msg('Earlier passes of this loop ({0})', model.historyCount - 1)}</summary>
-          <HistoryPanel history={model.history} contextText={context} selectedId={attempt.id} onSelect={setSelected} />
+          <HistoryPanel
+            history={model.history}
+            contextText={context}
+            selectedId={attempt.id}
+            onSelect={setSelected}
+            assistance={false}
+          />
         </details>
       ) : null}
     </>

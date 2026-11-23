@@ -177,6 +177,7 @@ describe('scorecard', () => {
       },
     })
     let root = show(data([labels]))
+    expect(root.textContent).toContain('Pass: completed with no wrong notes') // help does not affect it (U144)
     expect(dd(root, 'assistance')).toContain('Note names')
     const lines = (id: string) => row(root, 'assistance')?.querySelector(`[data-row="${id}"]`)
     expect(lines('assist-labels')?.textContent).toContain('Setting: Conditional')
@@ -509,10 +510,10 @@ describe('in Japanese and French', () => {
     }),
   ]
   const cases = [
-    ['ja-JP', 'この条件での最高記録：2回', '0回のヒント要求'],
+    ['ja-JP', 'この条件での最高記録：3回', '0回のヒント要求'],
     [
       'fr-FR',
-      'Meilleure série avec ces réglages\u00a0: 2',
+      'Meilleure série avec ces réglages\u00a0: 3',
       '0 demande d’indice (sur demande), 2 indices automatiques.',
     ],
   ] as const

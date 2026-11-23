@@ -117,12 +117,13 @@ describe('deriveResults: special attempts', () => {
   })
 
   it('explains why an attempt was not a pass', () => {
-    expect(passReason(attempt(A, 1), false)).toBe('passed')
-    expect(passReason(attempt(A, 1, { passed: false, wrongAttacks: 1 }), false)).toBe('wrong-notes')
-    expect(passReason(attempt(A, 1, { passed: false }), true)).toBe('assistance')
-    expect(passReason(attempt(A, 1, { passed: false }), false)).toBe('timing')
-    expect(passReason(attempt(A, 1, { passed: false, missedGroups: 2 }), false)).toBe('missed')
-    expect(passReason(attempt(A, 1, { completion: 'abandoned' }), false)).toBe('incomplete')
+    expect(passReason(attempt(A, 1))).toBe('passed')
+    expect(passReason(attempt(A, 1, { passed: false, wrongAttacks: 1 }))).toBe('wrong-notes')
+    // Stored as failed only for its help (before U144).
+    expect(passReason(attempt(A, 1, { passed: false, assistance: names }))).toBe('passed')
+    expect(passReason(attempt(A, 1, { passed: false }))).toBe('timing')
+    expect(passReason(attempt(A, 1, { passed: false, missedGroups: 2 }))).toBe('missed')
+    expect(passReason(attempt(A, 1, { completion: 'abandoned' }))).toBe('incomplete')
   })
 
   it('labels the passage with printed bar numbers and repeat passes', () => {

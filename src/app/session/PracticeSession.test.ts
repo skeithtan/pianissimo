@@ -1813,7 +1813,8 @@ describe('PracticeSession: hints and labels', () => {
     expect(record.assistance.level).toBe('names')
     expect(record.assistance.persistentLabelNotes).toEqual([0, 1, 2, 3])
     expect(record.assistance.hintRequests).toBe(0)
-    expect(record.passed).toBe(false)
+    // Help never keeps a pass from being clean (U144).
+    expect(record.passed).toBe(true)
   })
 
   it('label mode changes fade out and delay Ready until the fade finished', async () => {

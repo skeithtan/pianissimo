@@ -14,6 +14,7 @@ export {
   compareCleanRuns,
   isAssistedAttempt,
   isCleanUnassistedCompletion,
+  meetsPassCondition,
   practiceStreak,
   summarizeByContext,
   summarizeContext,

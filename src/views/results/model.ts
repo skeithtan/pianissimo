@@ -8,7 +8,13 @@ import { msg } from '../../i18n/messages'
  * clean unassisted run is kept apart from assisted practice; incomplete attempts keep their
  * diagnostics but never enter rankings.
  */
-import { buildScorecard, createBarLabeler, practiceStreak, summarizeByContext } from '../../core/history'
+import {
+  buildScorecard,
+  createBarLabeler,
+  meetsPassCondition,
+  practiceStreak,
+  summarizeByContext,
+} from '../../core/history'
 import type { BarLabeler, ContextResults, PracticeStreak, Scorecard } from '../../core/history'
 import { describePassage, isWholeBars, type PassageWords } from '../../core/model/passage'
 import type { AttemptRecord, ComparisonContext } from '../../core/model/practice'
@@ -131,14 +137,13 @@ export function earlyAttackCount(attempt: AttemptRecord): number | null {
     : null
 }
 
-export type PassReason = 'passed' | 'wrong-notes' | 'assistance' | 'timing' | 'missed' | 'incomplete'
+export type PassReason = 'passed' | 'wrong-notes' | 'timing' | 'missed' | 'incomplete'
 
-/** Why an attempt did or did not meet the pass condition (completion, no wrong attacks, no assistance). */
-export function passReason(attempt: AttemptRecord, assisted: boolean): PassReason {
+/** Why an attempt did or did not meet the pass condition (completion, no wrong attacks, timing). */
+export function passReason(attempt: AttemptRecord): PassReason {
   if (attempt.completion !== 'completed') return 'incomplete'
-  if (attempt.passed) return 'passed'
+  if (meetsPassCondition(attempt)) return 'passed'
   if (attempt.wrongAttacks > 0) return 'wrong-notes'
-  if (assisted) return 'assistance'
   if ((attempt.missedGroups ?? 0) > 0) return 'missed'
   return 'timing'
 }

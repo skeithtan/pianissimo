@@ -21,18 +21,11 @@ export function wrongText(n: number): string {
   return n === 0 ? msg('No wrong notes') : n === 1 ? msg('1 wrong note') : msg('{0} wrong notes', n)
 }
 
-function passHelpText(result: AttemptSummary): string {
-  if (result.assistance === 'keyboard') return msg('Help: the keyboard guide')
-  if (result.assistance === 'names') return msg('Help: note names')
-  return result.persistentLabels ? msg('Help: note names on the score') : msg('No help used')
-}
-
 /** The "This pass" lines in display order. The pill previews the beginning of this list. */
 export function passFacts(result: AttemptSummary, goal: number | null): string[] {
   const facts: string[] = []
   if (result.groupsTotal > 0)
     facts.push(msg('Right the first time at {0} of {1} places', result.groupsFirstPass, result.groupsTotal))
-  facts.push(passHelpText(result))
 
   if (result.timing) facts.push(timingText(result.timing))
   else if (result.completionTimeSec !== null) {

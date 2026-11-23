@@ -1,6 +1,6 @@
 import { msg, plural, percentage, formatTenths } from '../../i18n/messages'
 import type { AttemptRecord, Completion, InterruptReason } from '../model/practice'
-import { isAssistedAttempt, timeDifferenceSec, timingAccuracy } from './results'
+import { isAssistedAttempt, meetsPassCondition, timeDifferenceSec, timingAccuracy } from './results'
 import type { PracticeStreak } from './results'
 
 /** Result-detail text for "Completion time" (spec "Results and timing"). */
@@ -292,7 +292,7 @@ export function buildScorecard(a: AttemptRecord, streak?: PracticeStreak): Score
     timeDifferenceSec: diff,
     timeDifferencePercent: diffPercent,
     assistance,
-    passed: a.passed,
+    passed: meetsPassCondition(a),
     rows,
   }
 }

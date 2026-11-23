@@ -20,9 +20,8 @@ import type { PassReason } from './model'
 import styles from './results.module.css'
 
 const PASS_TEXT: Readonly<Record<PassReason, string>> = {
-  passed: 'Pass: completed with no wrong notes and no assistance',
+  passed: 'Pass: completed with no wrong notes',
   'wrong-notes': 'Not a pass: wrong-note attacks',
-  assistance: 'Not a pass: assistance was used',
   timing: 'Not a pass: outside the timing tolerance',
   missed: 'Not a pass: some groups were missed',
   incomplete: 'Incomplete: not counted as a pass or a fail',
@@ -154,13 +153,15 @@ export interface ScorecardPanelProps {
   readonly attempt: AttemptRecord
   readonly scorecard: Scorecard
   readonly isLatest: boolean
+  /** Shows the Assistance tile (default); the practice result card leaves help out (U144). */
+  readonly assistance?: boolean
   readonly now?: number
 }
 
-export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: ScorecardPanelProps) {
+export function ScorecardPanel({ attempt, scorecard: card, isLatest, assistance = true, now }: ScorecardPanelProps) {
   const headingId = useId()
   const early = earlyAttackCount(attempt)
-  const reason = passReason(attempt, card.assistance.assisted)
+  const reason = passReason(attempt)
   const completed = card.completion === 'completed'
   // An incomplete attempt has no completion time or tempo comparison, whatever the record holds.
   const timing = completed ? card.timing : 'none'
@@ -181,7 +182,7 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: Scor
         <p
           class={styles.status}
           data-state={completed ? 'completed' : 'incomplete'}
-          data-pass={attempt.passed ? '' : undefined}
+          data-pass={card.passed ? '' : undefined}
         >
           <Icon name={completed ? 'check' : 'alert'} size={18} />
           <span>
@@ -296,21 +297,23 @@ export function ScorecardPanel({ attempt, scorecard: card, isLatest, now }: Scor
           />
         ) : null}
 
-        <Tile
-          testId="assistance"
-          label={msg('Assistance')}
-          wide
-          value={
-            card.assistance.level === 'none'
-              ? msg('No assistance')
-              : card.assistance.level === 'names'
-                ? msg('Note names')
-                : msg('Keyboard guide')
-          }
-          tone={card.assistance.assisted ? undefined : 'good'}
-        >
-          <Assistance attempt={attempt} card={card} />
-        </Tile>
+        {assistance ? (
+          <Tile
+            testId="assistance"
+            label={msg('Assistance')}
+            wide
+            value={
+              card.assistance.level === 'none'
+                ? msg('No assistance')
+                : card.assistance.level === 'names'
+                  ? msg('Note names')
+                  : msg('Keyboard guide')
+            }
+            tone={card.assistance.assisted ? undefined : 'good'}
+          >
+            <Assistance attempt={attempt} card={card} />
+          </Tile>
+        ) : null}
       </dl>
 
       {(timing === 'scored' || timing === 'ungraded') && attempt.context.transport !== 'strict' ? (

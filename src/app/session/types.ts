@@ -227,8 +227,6 @@ export interface AttemptSummary {
   readonly groupsTotal: number
   readonly completionTimeSec: number | null
   readonly expectedTimeSec: number | null
-  readonly assistance: 'none' | 'names' | 'keyboard'
-  readonly persistentLabels: boolean
   /** Consecutive passed attempts in this run (Repeat target). */
   readonly streak: number
   readonly targetReached: boolean

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { CHORD_SLIP_MS } from '../../core/engine'
 import { buildScore } from '../../core/engine/testkit'
+import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import type { LadderSettings } from '../../core/storage/records'
-import { harness, type Harness } from './testkit'
+import { harness, testSettings, type Harness } from './testkit'
 
 /** One bar of quarters (C D E F) and a second bar, quarter = 60. */
 const melody = buildScore({
@@ -22,8 +23,13 @@ const melody = buildScore({
 const LADDER: LadderSettings = { goal: 1, step: 0.05 }
 const LOOP = { fromOcc: 0, toOcc: 0 }
 
-async function open(multiplier: number, ladder: LadderSettings | null = LADDER, repeatTarget: number | null = null) {
-  const h = harness(melody, { range: LOOP, multiplier }, { options: { ladder, repeatTarget } })
+async function open(
+  multiplier: number,
+  ladder: LadderSettings | null = LADDER,
+  repeatTarget: number | null = null,
+  settings = testSettings(),
+) {
+  const h = harness(melody, { range: LOOP, multiplier }, { settings, options: { ladder, repeatTarget } })
   await h.session.start()
   h.frames.flush()
   return h
@@ -112,6 +118,32 @@ describe('PracticeSession: speed ladder', () => {
     // Climbing, the target does not stop Repeat.
     expect(ui(h).lastResult?.targetReached).toBe(false)
     expect(h.session.engine.state.phase).toBe('ready')
+  })
+
+  describe('with note names shown and a hint asked for in every pass (U144)', () => {
+    const labeled = testSettings({ labels: { ...DEFAULT_SETTINGS.labels, mode: 'all' } })
+    function helpedPass(h: Harness): void {
+      h.session.onVisibleLabels([0, 1, 2, 3])
+      h.session.requestHint()
+      pass(h)
+      expect(h.attempts.at(-1)).toMatchObject({ passed: true, assistance: { level: 'names', hintRequests: 1 } })
+    }
+
+    it('the streak climbs and the target is reached', async () => {
+      const h = await open(1, null, 2, labeled)
+      helpedPass(h)
+      expect(ui(h).lastResult).toMatchObject({ passed: true, streak: 1, targetReached: false })
+      helpedPass(h)
+      expect(ui(h).lastResult).toMatchObject({ passed: true, streak: 2, targetReached: true })
+    })
+
+    it('the ladder climbs', async () => {
+      const h = await open(0.6, LADDER, 2, labeled)
+      helpedPass(h)
+      helpedPass(h)
+      expect(ui(h).lastResult?.ladder).toEqual({ climbedTo: 0.65 })
+      expect(ui(h).multiplier).toBe(0.65)
+    })
   })
 
   it('keeps the new speed after consecutive failures and restarts the clean streak', async () => {

@@ -2,7 +2,8 @@ import { msg } from '../../i18n/messages'
 /**
  * History for one comparison context only (spec "Results and timing"): best clean unassisted
  * runs are ranked on their own, assisted practice is listed apart and never ranked, and
- * incomplete attempts are diagnostics outside every ranking.
+ * incomplete attempts are diagnostics outside every ranking. The practice result card shows the same
+ * history without telling assisted practice apart (`assistance={false}`, U144).
  */
 import { useId, useState } from 'preact/hooks'
 import { formatSeconds, timingAccuracy } from '../../core/history'
@@ -132,12 +133,22 @@ export interface HistoryPanelProps {
   readonly contextText: string
   readonly selectedId: string | null
   readonly onSelect: (attemptId: string) => void
+  /** Keeps assisted practice apart (default); the practice result card leaves help out (U144). */
+  readonly assistance?: boolean
   readonly now?: number
 }
 
-export function HistoryPanel({ history, contextText, selectedId, onSelect, now }: HistoryPanelProps) {
+export function HistoryPanel({
+  history,
+  contextText,
+  selectedId,
+  onSelect,
+  assistance = true,
+  now,
+}: HistoryPanelProps) {
   const headingId = useId()
-  const best = history.bestClean
+  const clean = assistance ? history.cleanRanking : history.cleanCompletions
+  const best = clean[0] ?? null
   return (
     <section class={styles.panel} aria-labelledby={headingId} data-panel="history">
       <header class={styles.panelHead}>
@@ -154,7 +165,7 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
 
       <div class={styles.bestRow}>
         <div class={styles.bestCard} data-state={best ? 'has-best' : 'no-best'} data-row="best-clean">
-          <h3>{msg('Best clean unassisted')}</h3>
+          <h3>{assistance ? msg('Best clean unassisted') : msg('Best clean')}</h3>
           {best ? (
             <>
               <p class={styles.bestValue}>
@@ -176,7 +187,9 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
             </>
           ) : (
             <p class={styles.muted}>
-              {msg('No completion with zero wrong notes and no assistance yet in this setting.')}
+              {assistance
+                ? msg('No completion with zero wrong notes and no assistance yet in this setting.')
+                : msg('No completion with zero wrong notes yet in this setting.')}
             </p>
           )}
         </div>
@@ -188,37 +201,41 @@ export function HistoryPanel({ history, contextText, selectedId, onSelect, now }
       </div>
 
       <Group
-        title={msg('Clean and unassisted')}
+        title={assistance ? msg('Clean and unassisted') : msg('Clean')}
         note={
-          history.cleanRanking.some((a) => a.context.transport === 'strict')
+          clean.some((a) => a.context.transport === 'strict')
             ? msg('Ranked by average offset from the music.')
             : msg('Ranked by closeness to the expected time.')
         }
         kind="clean"
-        attempts={history.cleanRanking}
+        attempts={clean}
         selectedId={selectedId}
         onSelect={onSelect}
         bestId={best?.id}
         now={now}
       />
       <Group
-        title={msg('Unassisted, with wrong notes')}
+        title={assistance ? msg('Unassisted, with wrong notes') : msg('With wrong notes')}
         note={msg('Newest first. Not ranked.')}
         kind="errors"
-        attempts={history.unassistedWithErrors}
+        attempts={assistance ? history.unassistedWithErrors : history.withErrors}
         selectedId={selectedId}
         onSelect={onSelect}
         now={now}
       />
-      <Group
-        title={msg('Assisted practice')}
-        note={msg('Note names or the keyboard guide were shown. Kept apart from your clean results and never ranked.')}
-        kind="assisted"
-        attempts={history.assisted}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        now={now}
-      />
+      {assistance ? (
+        <Group
+          title={msg('Assisted practice')}
+          note={msg(
+            'Note names or the keyboard guide were shown. Kept apart from your clean results and never ranked.',
+          )}
+          kind="assisted"
+          attempts={history.assisted}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          now={now}
+        />
+      ) : null}
       <Group
         title={msg('Incomplete attempts')}
         note={msg(

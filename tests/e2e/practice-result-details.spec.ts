@@ -376,7 +376,7 @@ test.describe('the result details open in place (U99)', () => {
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true')
     await expect(toggle(page)).toHaveText('Details')
     await expect(preview).toHaveCount(0)
-    await expect(details(page).getByTestId('result-verdict')).toHaveText('Clean pass: no wrong notes and no help.')
+    await expect(details(page).getByTestId('result-verdict')).toHaveText('Clean pass: no wrong notes.')
     const expandedFacts = details(page).getByTestId('result-facts')
     await expect(expandedFacts).toBeInViewport({ ratio: 0.9 })
     expect((await expandedFacts.locator('li').allTextContents()).slice(0, previewLines.length)).toEqual(previewLines)
@@ -777,7 +777,7 @@ test.describe('the expanded result by screen size (U99, 17 November 2026)', () =
     await page.setViewportSize({ width: 390, height: 844 })
     await page.waitForTimeout(2500)
     await toggle(page).click()
-    await expect(details(page).getByTestId('result-verdict')).toHaveText('Clean pass: no wrong notes and no help.')
+    await expect(details(page).getByTestId('result-verdict')).toHaveText('Clean pass: no wrong notes.')
     await expect(page.getByTestId('result-screen-header')).toContainText('Clean pass')
     // Rotated: still open, laid out again for the short screen.
     await page.setViewportSize({ width: 852, height: 360 })
