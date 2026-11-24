@@ -4,7 +4,7 @@
  * as `repeatedMistakes`.
  */
 import { describe, expect, it } from 'vitest'
-import { CHORD_SLIP_MS } from '../../core/engine'
+import { CHORD_SLIP_MS, STRIKE_GAP_MS } from '../../core/engine'
 import { buildScore } from '../../core/engine/testkit'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
 import { repeatedMistakeLine } from './mistakes'
@@ -46,47 +46,57 @@ function pass(h: Harness, wrong: number | null): void {
 }
 
 describe('replaying a group with a repeated extra key', () => {
-  it.each(['before', 'after'])('holds the cursor when the same extra key arrives %s the right keys', async (order) => {
-    const h = harness(score, { range: { fromOcc: 0, toOcc: 1 } })
-    await h.session.start()
-    h.play(60, 62, 64, 60, 64)
-    h.step(20)
-    h.tap(65)
-    expect(h.session.engine.state.groupIndex).toBe(4)
-    h.play(67)
-    expect(h.attempts[0]?.groups?.[3]?.wrongPitches).toEqual([65])
-
-    ready(h)
-    h.play(60, 62, 64)
-    h.step(1000)
-    const atChord = h.strip.cursor
-    if (order === 'before') h.tap(65, 60, 64)
-    else {
-      h.play(60, 64)
+  it.each(['before', 'before and between', 'after'])(
+    'holds the cursor when the same extra key arrives %s the right keys',
+    async (order) => {
+      const h = harness(score, { range: { fromOcc: 0, toOcc: 1 } })
+      await h.session.start()
+      h.play(60, 62, 64, 60, 64)
       h.step(20)
       h.tap(65)
-    }
-    h.step(CHORD_SLIP_MS * 2)
-    expect(h.session.engine.state).toMatchObject({
-      groupIndex: 3,
-      acceptedPitches: [],
-      retryGroup: true,
-    })
-    expect(h.strip.cursor).toBe(atChord)
-    expect(h.session.feedback.get().cue).toEqual({ kind: 'retry' })
+      expect(h.session.engine.state.groupIndex).toBe(4)
+      h.play(67)
+      expect(h.attempts[0]?.groups?.[3]?.wrongPitches).toEqual([65])
 
-    h.play(64, 60)
-    h.step(CHORD_SLIP_MS)
-    expect(h.session.engine.state.groupIndex).toBe(4)
-    h.play(67)
-    expect(h.attempts[1]).toMatchObject({ completion: 'completed', wrongAttacks: 1 })
+      ready(h)
+      h.play(60, 62, 64)
+      h.step(1000)
+      const atChord = h.strip.cursor
+      if (order === 'before') h.tap(65, 60, 64)
+      else if (order === 'before and between') {
+        // Hands not together: the rest of the strike comes well after the slip.
+        h.play(60)
+        h.step(90)
+        h.tap(65)
+        h.step(100)
+        h.play(60, 64)
+      } else {
+        h.play(60, 64)
+        h.step(20)
+        h.tap(65)
+      }
+      h.step(STRIKE_GAP_MS)
+      expect(h.session.engine.state).toMatchObject({
+        groupIndex: 3,
+        acceptedPitches: [],
+        retryGroup: true,
+      })
+      expect(h.strip.cursor).toBe(atChord)
+      expect(h.session.feedback.get().cue).toEqual({ kind: 'retry' })
 
-    ready(h)
-    h.play(60, 62, 64, 60, 64)
-    h.step(CHORD_SLIP_MS)
-    h.play(67)
-    expect(h.attempts[2]).toMatchObject({ completion: 'completed', wrongAttacks: 0 })
-  })
+      h.play(64, 60)
+      h.step(CHORD_SLIP_MS)
+      expect(h.session.engine.state.groupIndex).toBe(4)
+      h.play(67)
+      expect(h.attempts[1]).toMatchObject({ completion: 'completed', wrongAttacks: 1 })
+
+      ready(h)
+      h.play(60, 62, 64, 60, 64)
+      h.step(CHORD_SLIP_MS)
+      h.play(67)
+      expect(h.attempts[2]).toMatchObject({ completion: 'completed', wrongAttacks: 0 })
+    },
+  )
 })
 
 describe('repeated mistakes in the result summary (P24)', () => {

@@ -58,6 +58,8 @@ export interface OnsetGroup {
   readonly boundaryNotes: readonly number[]
   /** True when the group exists only because of the loop boundary (no written onset here). */
   readonly synthetic: boolean
+  /** A marked roll is among the required notes: one strike spread over time (DECISIONS P33). */
+  readonly rolled: boolean
   /** Seconds from the passage start to this position at the multiplier; null without tempo. */
   readonly onsetSec: number | null
   /** Earliest reference attack in the group (onset + smallest roll offset). */
@@ -352,6 +354,7 @@ export function buildTimeline(model: ScoreModel, options: TimelineOptions): Time
         notesByPitch,
         boundaryNotes,
         synthetic: b.required.length === 0,
+        rolled: pitches.length > 1 && notes.some((n) => model.notes[n]?.arpeggio !== undefined),
         onsetSec,
         firstAttackSec: onsetSec === null ? null : onsetSec + Math.min(...offsets) / multiplier,
         refAttackSec: onsetSec === null ? null : onsetSec + Math.max(...offsets) / multiplier,

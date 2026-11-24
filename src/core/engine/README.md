@@ -19,6 +19,7 @@ paragraphs of "Persistent score labels" and "Keyboard rescue", "Repeating passag
 | `fadeOutOpacity(elapsedMs, durationMs)`, `easeInOut(p)` | Shared eased fade curve (smoothstep): exactly 1 before, exactly 0 at the end. Renderer labels and keyboard-guide hiding use it too. |
 | `EARLY_PRESS_GRACE_MS` (120), `matchingRulesFor(graceMs)` | Early-press grace window and the matching-rules id recorded with it. |
 | `CHORD_SLIP_MS` (60) | Chord slips (P24): a wrong key this soon after a group completes is that group's. Also the session's `finalSlipMs`. |
+| `STRIKE_GAP_MS` (150) | One strike with a wrong key in it (P33): its right keys come at most this far apart; `ROLL_STRIKE_GAP_MS` (300) when `OnsetGroup.rolled`. |
 | `DEFAULT_RHYTHM_TOLERANCE_MS` (150), `rhythmMatchingRulesFor(toleranceMs)` | Rhythm mode (strict transport) default tolerance and its matching-rules id (`strict-v1-tol-<n>ms`). See "Strict transport (rhythm mode)". |
 | `buildAttemptRecord`, `comparisonContextOf` | Record builders (used internally; exported for history tests). Scored and reading records carry per-group outcomes (`groups: GroupOutcome[]`, type re-exported here). |
 | `testkit.ts` | Test-only: `buildScore` (compact note lists → valid `ScoreModel`), `MidiScript`, `EngineDriver`, `pedalDetector`. |
@@ -120,10 +121,24 @@ current bar when that one already closed. The `wrong` event carries the previous
 `lastWrongReason` and held-wrong marking as usual; no local marker, hint count or ottava warning
 on the current group. A pass's final chord: see `config.finalSlipMs`.
 
-On the automatic next waiting-practice pass (P26), a previously mistaken group holds provisional
+## A strike that fails (DECISIONS P33)
+
+Outside Keep time, a `'pitch'` or `'ahead'` wrong attack at an incomplete group erases nothing but
+bounds its strike: accepted attacks count while the next right key comes within `STRIKE_GAP_MS` of
+the latest one (or of the wrong key). More wrong keys do not extend it. When it ends first, the
+accepted attacks are cleared, so every pitch needs a fresh attack, also one whose key is still down.
+A right key struck while a wrong key of the group is still down starts a bounded strike too. The end
+is in `nextDeadline` and is applied by `tick` or the next input. Completion is never delayed. When a group that had a wrong key
+completes, its pitches accepted before that last strike may be pressed once more within the gap (`replay` of the
+completed group).
+
+## Repeated extra keys (DECISIONS P26)
+
+On the automatic next waiting-practice pass, a previously mistaken group holds provisional
 completion for up to `CHORD_SLIP_MS`, capped halfway to the next onset. A matching wrong pitch
 cancels completion, clears the group's accepted attacks and pending early presses, and requires
-fresh attacks after the remainder of the stroke. The extra key still counts as a wrong attack.
+fresh attacks after the remainder of the stroke (`STRIKE_GAP_MS` for a chord, `ROLL_STRIKE_GAP_MS` for a roll,
+extended by each discarded right key; `CHORD_SLIP_MS` for one note). The extra key still counts as a wrong attack.
 The completion event keeps the timestamp of the last accepted attack on the successful retry.
 
 ## Per-group outcomes (teacher corrections, E15–E16)

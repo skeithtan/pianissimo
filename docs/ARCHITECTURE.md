@@ -667,6 +667,7 @@ plays), and any other key stops it before being handled as usual.
   the engine keeps the finished pass's wrong-key index by group (P26). It holds input
   completion briefly at those groups so a recurring extra key can invalidate the stroke
   before the cursor or accompaniment gate is released. The feedback store shows the retry cue.
+  In every waiting mode a strike with a wrong key that ends incomplete is struck again whole (P33).
   While nothing plays, the session previews held keys against the current group (U37), using
   accepted noteheads and the keyboard guide. The strip's `wrapTo` method pans at a loop wrap.
   After a completed pass the session starts the review (U97) by calling the optional

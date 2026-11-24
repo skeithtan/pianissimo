@@ -55,6 +55,13 @@ export const EARLY_PRESS_GRACE_MS = 120
  * apart), longer than the usual gap between the keys of one chord. Not tempo-scaled.
  */
 export const CHORD_SLIP_MS = 60
+/**
+ * One strike with a wrong key in it (DECISIONS P33): its right keys come at most this many real
+ * milliseconds apart (hands not quite together, a roll). Correcting a key takes longer.
+ */
+export const STRIKE_GAP_MS = 150
+/** The same for a chord marked as a roll, played key after key in either direction. */
+export const ROLL_STRIKE_GAP_MS = 300
 const LABELS_OFF: LabelSettingsSnapshot = { mode: 'off', rulesJson: '{}' }
 
 /** Matching-rules id for a grace window (the default grace keeps `MATCHING_RULES_VERSION`). */
@@ -165,7 +172,21 @@ export class PracticeEngine {
   #clockGroup: number | null = null
 
   #group: number | null = null
-  readonly #accepted = new Set<number>()
+  /** Accepted pitches of the current group and the latest attack of each. */
+  readonly #accepted = new Map<number, number>()
+  /** Wrong pitches at the current group (P33). */
+  readonly #groupMistakes = new Set<number>()
+  /** When the current strike, which has a wrong key in it, ends (P33); Infinity without one. */
+  #strikeUntil = Infinity
+  /** The current group's latest strike, right and wrong keys alike: its first and last press. */
+  #strikeStart = -Infinity
+  #strikeLast = -Infinity
+  /**
+   * Keys the player may still be striking again: a group that had a wrong key completed, but these were
+   * accepted in an earlier strike. One press of each until then is a replay, not the next group's (P33).
+   */
+  readonly #restrikes = new Set<number>()
+  #restrikesUntil = -Infinity
   #inputComplete = false
   #previousWrongKeys: ReadonlyMap<number, ReadonlySet<number>> | null = null
   /** Fully played at a previously mistaken onset, with time for an extra key in the same stroke. */
@@ -293,6 +314,7 @@ export class PracticeEngine {
     this.#confirmPlayedGroup(ev.time, false)
     if (this.#strict) this.#runDue(ev.time, false)
     else this.#expirePending(ev.time)
+    this.#endFailedStrike(ev.time, false)
     if (ev.kind === 'noteon' && ev.velocity > 0) this.#press(ev.note, ev.channel, ev.time)
     else if (ev.kind === 'cc') this.#controller(ev)
     else this.#release(ev.note, ev.time)
@@ -375,8 +397,15 @@ export class PracticeEngine {
     const groups = this.#timeline.groups
     const g = groups[gi]!
     const k = g.pitches.indexOf(pitch)
+    if (this.#lastCompletedGroup === gi - 1 && time <= this.#restrikesUntil && this.#restrikes.delete(pitch)) {
+      this.#restrikesUntil = time + this.#strikeGap(groups[gi - 1]!)
+      this.#emit({ type: 'replay', group: gi - 1, pitch, time })
+      return false
+    }
     if (k >= 0) {
       if (this.#accepted.has(pitch)) {
+        this.#accepted.set(pitch, time)
+        this.#inStrike(g, time)
         this.#emit({ type: 'replay', group: gi, pitch, time })
         return false
       }
@@ -524,9 +553,14 @@ export class PracticeEngine {
   }
 
   #accept(gi: number, g: OnsetGroup, k: number, time: number): void {
-    if (time < this.#retryAfter) return
+    if (time < this.#retryAfter) {
+      if (g.pitches.length > 1) this.#retryAfter = Math.max(this.#retryAfter, time + this.#strikeGap(g))
+      return
+    }
     const pitch = g.pitches[k]!
-    this.#accepted.add(pitch)
+    this.#accepted.set(pitch, time)
+    this.#inStrike(g, time)
+    this.#extendStrike(g, time)
     if (time < this.#firstAcceptAt) this.#firstAcceptAt = time
     if (time > this.#lastAcceptAt) this.#lastAcceptAt = time
     this.#emit({ type: 'accepted', group: gi, pitch, notes: g.notesByPitch[k] ?? [], time })
@@ -540,6 +574,52 @@ export class PracticeEngine {
       }
     }
     this.#complete(gi, g, attack)
+  }
+
+  /**
+   * A correct press at `time` (P33): it keeps a strike that went wrong going, and starts another
+   * one while a wrong key of the group is still down.
+   */
+  #extendStrike(g: OnsetGroup, time: number): void {
+    if (this.#strict || (this.#strikeUntil === Infinity && !this.#mistakeHeld())) return
+    this.#strikeUntil = time + this.#strikeGap(g)
+  }
+
+  #strikeGap(g: OnsetGroup): number {
+    return g.rolled ? ROLL_STRIKE_GAP_MS : STRIKE_GAP_MS
+  }
+
+  #inStrike(g: OnsetGroup, time: number): void {
+    if (time - this.#strikeLast > this.#strikeGap(g)) this.#strikeStart = time
+    this.#strikeLast = Math.max(this.#strikeLast, time)
+  }
+
+  #mistakeHeld(): boolean {
+    for (const p of this.#groupMistakes) if (this.#heldWrong.has(p)) return true
+    return false
+  }
+
+  /**
+   * A wrong key at `time` erases nothing: the strike it belongs to can still complete the group, with
+   * the right keys before and after it (P33). It only bounds that strike; more wrong keys do not
+   * extend it. Keep time's groups close by the clock and never ask for another strike.
+   */
+  #boundStrike(g: OnsetGroup, pitch: number, time: number): void {
+    this.#groupMistakes.add(pitch)
+    this.#inStrike(g, time)
+    if (this.#strict || this.#inputComplete || this.#confirmation !== null) return
+    if (this.#strikeUntil === Infinity) this.#strikeUntil = Math.max(time, this.#lastAcceptAt) + this.#strikeGap(g)
+  }
+
+  /** A strike with a wrong key ended by `now` without completing its group: the next one needs every key (P33). */
+  #endFailedStrike(now: number, inclusive: boolean): boolean {
+    if (this.#inputComplete || this.#confirmation !== null) return false
+    if (inclusive ? this.#strikeUntil > now : this.#strikeUntil >= now) return false
+    this.#strikeUntil = Infinity
+    this.#accepted.clear()
+    this.#firstAcceptAt = Infinity
+    this.#lastAcceptAt = -Infinity
+    return true
   }
 
   /** Same short window as chord-slip attribution, cut off halfway to the next onset. */
@@ -573,10 +653,13 @@ export class PracticeEngine {
       this.#accepted.clear()
       this.#firstAcceptAt = Infinity
       this.#lastAcceptAt = -Infinity
-      this.#retryAfter = Math.max(this.#retryAfter, time + CHORD_SLIP_MS)
+      // The rest of the same strike is discarded: both hands' worth for a chord, a grazed key for one note.
+      const rest = g.pitches.length > 1 ? this.#strikeGap(g) : CHORD_SLIP_MS
+      this.#retryAfter = Math.max(this.#retryAfter, time + rest)
       this.#pending = []
     }
     if (this.#physical.isHeld(pitch)) this.#heldWrong.add(pitch)
+    this.#boundStrike(g, pitch, time)
     if (g.ottavas.length > 0 && this.#ottava !== g.ottavas) {
       this.#ottava = g.ottavas
       this.#emit({ type: 'ottava-warning', group: gi, spans: g.ottavas })
@@ -593,6 +676,12 @@ export class PracticeEngine {
     this.#retryAfter = -Infinity
     this.#lastCompleteAt = time
     this.#lastCompletedGroup = gi
+    this.#restrikes.clear()
+    if (!this.#strict && this.#groupMistakes.size > 0) {
+      const gap = this.#strikeGap(g)
+      for (const [p, at] of this.#accepted) if (at < this.#strikeStart) this.#restrikes.add(p)
+      this.#restrikesUntil = time + gap
+    }
     const spreadMs = g.pitches.length > 1 ? Math.max(0, Math.round(this.#lastAcceptAt - this.#firstAcceptAt)) : 0
     const offsetMs = this.#strict ? this.#offsetMs(gi, time) : null
     const onsetOffsetMs =
@@ -1133,7 +1222,7 @@ export class PracticeEngine {
   }
 
   /**
-   * Time-driven changes: pending presses whose grace window ended, hint expiry (re-arms the
+   * Time-driven changes: pending presses whose grace window ended, a failed strike's end (P33), hint expiry (re-arms the
    * automatic threshold), finished fades, Ready.
    */
   tick(now: number): void {
@@ -1142,6 +1231,7 @@ export class PracticeEngine {
     if (held) this.#finishHeld()
     const confirmed = this.#confirmPlayedGroup(this.#lastNow, true)
     let changed = this.#strict ? this.#runDue(this.#lastNow, true) : this.#expirePending(this.#lastNow)
+    if (this.#endFailedStrike(this.#lastNow, true)) changed = true
     const t = this.#clock.active(this.#lastNow)
     const expired = this.#hints.expire(t)
     if (expired !== null) {
@@ -1156,13 +1246,15 @@ export class PracticeEngine {
   }
 
   /**
-   * Real time of the next time-driven change (pending-press deadline, strict close of the current
-   * group, hint expiry or fade end); null when none. Hint deadlines are absent while an ordinary
+   * Real time of the next time-driven change (pending-press deadline, a failed strike's end, strict close of
+   * the current group, hint expiry or fade end); null when none. Hint deadlines are absent while an ordinary
    * reading pause freezes them.
    */
   nextDeadline(): number | null {
     let next: number | null = this.#finishAt ?? this.#confirmation?.until ?? this.#dueClose()
     for (const p of this.#pending) if (next === null || p.deadline < next) next = p.deadline
+    if (!this.#inputComplete && this.#confirmation === null && this.#strikeUntil < (next ?? Infinity))
+      next = this.#strikeUntil
     const d = this.#hints.nextDeadline()
     const hint = d === null ? null : this.#clock.toReal(d)
     if (hint !== null && (next === null || hint < next)) next = hint
@@ -1375,6 +1467,10 @@ export class PracticeEngine {
     this.#inputComplete = false
     this.#confirmation = null
     this.#retryAfter = -Infinity
+    this.#groupMistakes.clear()
+    this.#strikeUntil = Infinity
+    this.#strikeStart = -Infinity
+    this.#strikeLast = -Infinity
     this.#groupWrong = 0
     this.#sinceArm = 0
     this.#groupHasError = false
@@ -1393,6 +1489,10 @@ export class PracticeEngine {
     this.#inputComplete = false
     this.#confirmation = null
     this.#retryAfter = -Infinity
+    this.#groupMistakes.clear()
+    this.#strikeUntil = Infinity
+    this.#strikeStart = -Infinity
+    this.#strikeLast = -Infinity
     this.#groupWrong = 0
     this.#sinceArm = 0
     this.#groupHasError = false

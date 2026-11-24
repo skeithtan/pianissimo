@@ -4,7 +4,7 @@
  * Gate ETAs come from an injected pure table, so every case is deterministic.
  */
 import { describe, expect, it } from 'vitest'
-import { EARLY_PRESS_GRACE_MS } from './engine'
+import { EARLY_PRESS_GRACE_MS, STRIKE_GAP_MS } from './engine'
 import type { EngineConfig } from './types'
 import { EngineDriver, buildScore } from './testkit'
 import { buildTimeline } from './timeline'
@@ -163,9 +163,13 @@ describe('Next-group grace (both modes)', () => {
     // "ahead" behaves like a pitch error: ottava warning, hint threshold, held wrong key.
     expect(d.state).toMatchObject({ ottavaWarning: [0], heldWrongKeys: [G4], pendingPitches: [] })
     expect(d.of('hint-shown')).toHaveLength(1)
+    // Like one, it leaves the rest of its strike to complete the group, then asks for all of it (P33).
+    expect(d.engine.nextDeadline()).toBe(1000 + STRIKE_GAP_MS)
+    d.up(C4, G4).wait(STRIKE_GAP_MS)
     expect(d.engine.nextDeadline()).toBe(1120 + 30_000)
-    d.now += 20
     d.down(E4)
+    expect(d.state).toMatchObject({ groupIndex: 0, acceptedPitches: [E4] })
+    d.down(C4)
     expect(d.state.groupIndex).toBe(1)
     expect(d.state.acceptedPitches).toEqual([])
   })
@@ -173,8 +177,8 @@ describe('Next-group grace (both modes)', () => {
   it('an expired pending press is judged before the next input', () => {
     const d = driver('right', { transport: 'free', hints: { autoThreshold: null, lifetime: 30, fadeMs: 300 } })
     d.down(C4).down(G4)
-    d.now += 150
-    d.down(E4)
+    d.now += STRIKE_GAP_MS + 1
+    d.up(C4).down(E4, C4)
     expect(d.of('wrong').map((w) => [w.reason, w.time])).toEqual([['ahead', 1000]])
     expect(d.of('input-complete').map((e) => e.group)).toEqual([0])
     expect(d.records()).toHaveLength(0)

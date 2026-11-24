@@ -74,6 +74,47 @@ describe('Score following situation table', () => {
     expect(d.of('wrong')).toHaveLength(0)
   })
 
+  // DECISIONS P33: a roll is one strike spread over time, bottom to top or top to bottom.
+  describe('Marked rolled chord with a wrong key', () => {
+    const rolled = (): EngineDriver =>
+      reading({
+        notes: [
+          ...[A2, E3, C4, G4].map((midi, i) => ({ at: 0, midi, roll: 1, offset: 0.04 * i })),
+          { at: 1, midi: D4 },
+        ],
+      })
+
+    it.each([
+      ['up', [A2, E3, 61, C4, G4]],
+      ['down', [G4, 61, C4, E3, A2]],
+    ])('a slip in an unhurried roll %s advances', (_, keys) => {
+      const d = rolled()
+      for (const k of keys) d.wait(220).tap(k)
+      expect(d.state).toMatchObject({ groupIndex: 1, wrongAttacks: 1 })
+    })
+
+    it('the roll’s own first notes count at once when the next group repeats them', () => {
+      const d = reading({
+        notes: [
+          ...[A2, E3, C4, G4].map((midi, i) => ({ at: 0, midi, roll: 1, offset: 0.04 * i })),
+          { at: 1, midi: A2 },
+          { at: 2, midi: D4 },
+        ],
+      })
+      for (const k of [A2, E3, 61, C4, G4, A2]) d.wait(220).tap(k)
+      expect(d.state).toMatchObject({ groupIndex: 2, wrongAttacks: 1 })
+    })
+
+    it('a roll that stops at a wrong key is rolled again whole', () => {
+      const d = rolled()
+      d.down(A2).wait(100).down(E3).wait(100).tap(61).wait(1000).tap(C4).wait(100).tap(G4).wait(1000)
+      expect(d.state.groupIndex).toBe(0)
+      d.up(A2, E3)
+      for (const k of [A2, E3, C4, G4]) d.wait(100).tap(k)
+      expect(d.state.groupIndex).toBe(1)
+    })
+  })
+
   it('Reattack within an incomplete group: no progress, no error, cannot prefill a later group', () => {
     const d = reading({
       notes: [
@@ -111,7 +152,7 @@ describe('Score following situation table', () => {
     expect(d.state.missingPitches).toEqual([E4, G4])
   })
 
-  it('Wrong extra key: counted once immediately, keeps correct attacks, held wrong key never satisfies later', () => {
+  it('Wrong extra key: counted once immediately, never satisfies a later target, the group is struck again', () => {
     const d = reading({
       notes: [
         { at: 0, midi: C4 },
@@ -122,13 +163,14 @@ describe('Score following situation table', () => {
     })
     d.down(C4).up(C4).down(G4)
     expect(d.of('wrong').map((w) => w.reason)).toEqual(['pitch'])
-    expect(d.state.acceptedPitches).toEqual([C4])
     expect(d.state.heldWrongKeys).toEqual([G4])
     // A next-group pitch is judged after the grace window: still held, it is an "ahead" error.
     d.down(D4).wait(150)
     expect(d.of('wrong').map((w) => w.reason)).toEqual(['pitch', 'ahead'])
+    expect(d.state.acceptedPitches).toEqual([])
     expect(d.state.heldWrongKeys).toEqual([D4, G4])
-    d.up(G4).wait(1000).tap(E4)
+    // Both required keys in one stroke complete the group, also over held wrong keys.
+    d.up(G4).wait(1000).tap(E4, C4)
     expect(d.state.groupIndex).toBe(1)
     expect(d.state.wrongAttacks).toBe(2)
     // The still-held D4 is the next target but needs a fresh attack.
@@ -139,6 +181,93 @@ describe('Score following situation table', () => {
     expect(d.state.heldWrongKeys).toEqual([])
     d.tap(D4)
     expect(d.state.groupIndex).toBe(2)
+  })
+
+  // DECISIONS P33: one hand right and held, the other corrected.
+  describe.each(['reading', 'scored'] as const)('%s: after a wrong key both hands strike again', (mode) => {
+    const twoHands = buildScore({
+      notes: [
+        { at: 0, midi: C3, hand: 'L' },
+        { at: 0, midi: C4 },
+        { at: 1, midi: D4 },
+      ],
+      bars: 1,
+    })
+    function driver(): EngineDriver {
+      const range = mode === 'scored' ? { fromOcc: 0, toOcc: 0 } : null
+      const t = buildTimeline(twoHands, { hands: 'both', range, multiplier: 1 })
+      return new EngineDriver(t, { mode, pieceId: 'p', transport: 'free', prepared: true })
+    }
+
+    // The held hand came this long after (negative: before) the wrong key.
+    it.each([-100, -20, 0, 20, 100])('the held hand does not count (%i ms)', (lead) => {
+      const d = driver()
+      if (lead < 0) d.down(C3).wait(-lead).down(E4)
+      else d.down(E4).wait(lead).down(C3)
+      d.wait(1000).up(E4).wait(300).down(C4).wait(1000)
+      expect(d.state).toMatchObject({ groupIndex: 0, acceptedPitches: [C4], missingPitches: [C3] })
+      d.up(C3).wait(200).down(C3)
+      expect(d.state).toMatchObject({ groupIndex: 1, wrongAttacks: 1 })
+    })
+
+    it.each([
+      [C3, C4],
+      [C4, C3],
+    ])('then both hands together advance cleanly, whichever lands first (%i)', (first, second) => {
+      const d = driver()
+      d.down(C3).down(E4).wait(500).up(E4).wait(300).down(C4).wait(1000).up(C3, C4).wait(300)
+      d.down(first).wait(100).down(second)
+      expect(d.state).toMatchObject({ groupIndex: 1, wrongAttacks: 1, acceptedPitches: [], groupHasError: false })
+      // Once: the same key again is a press at the next group.
+      d.wait(20).up(C4).down(C4).wait(200)
+      expect(d.state.wrongAttacks).toBe(2)
+    })
+
+    it('nor when the corrected key goes down before the wrong one is up', () => {
+      const d = driver()
+      d.down(E4).wait(100).down(C3).wait(1000).down(C4).wait(100).up(E4).wait(1000)
+      expect(d.state).toMatchObject({ groupIndex: 0, acceptedPitches: [] })
+      d.up(C3, C4).wait(200).down(C3).wait(500).down(C4)
+      expect(d.state.groupIndex).toBe(1)
+    })
+
+    // [key, ms after the one before]: hands up to 120 ms apart, a slip anywhere, a left hand waiting already.
+    it.each([
+      [
+        [C3, 0],
+        [E4, 15],
+        [C4, 15],
+      ],
+      [
+        [E4, 0],
+        [C3, 15],
+        [C4, 15],
+      ],
+      [
+        [C3, 0],
+        [C4, 15],
+        [E4, 15],
+      ],
+      [
+        [E4, 0],
+        [C4, 5],
+        [C3, 120],
+      ],
+      [
+        [C3, 0],
+        [E4, 100],
+        [C4, 10],
+      ],
+      [
+        [C3, 0],
+        [E4, 2000],
+        [C4, 10],
+      ],
+    ])('all the right keys and a slip in one strike advance (%#)', (...keys) => {
+      const d = driver()
+      for (const [k, gap] of keys) d.wait(gap!).down(k!)
+      expect(d.state).toMatchObject({ groupIndex: 1, wrongAttacks: 1 })
+    })
   })
 
   it('Repeated untied pitch: a held note cannot satisfy the next occurrence', () => {
@@ -251,7 +380,9 @@ describe('Score following situation table', () => {
       ['ahead', D4],
       ['pitch', G4],
     ])
-    d.tap(E4)
+    d.wait(100).tap(E4)
+    expect(d.state.groupIndex).toBe(0)
+    d.tap(C4)
     expect(d.state.groupIndex).toBe(1)
     expect(d.state.acceptedPitches).toEqual([])
   })

@@ -11,6 +11,8 @@ export {
   DEFAULT_WRONG_FEEDBACK_MS,
   EARLY_PRESS_GRACE_MS,
   CHORD_SLIP_MS,
+  STRIKE_GAP_MS,
+  ROLL_STRIKE_GAP_MS,
 } from './engine'
 export {
   buildTimeline,
