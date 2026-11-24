@@ -5,6 +5,8 @@
 :root {
   color-scheme: light dark;
   --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Titles on the score screen's header and in the Library; the interface face elsewhere. */
+  --font-title: ui-rounded, 'SF Pro Rounded', var(--font-ui);
   --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* Type scale (system fonts; rem so it follows the user's text size). */
@@ -106,7 +108,32 @@
   --color-wrong: var(--danger);
   --color-ottava-alert: var(--danger);
   --color-loop: var(--accent);
-  --color-loop-control: var(--score-ink-muted);
+
+  /* The score screen's header (U154) and the notes drawn on it: the piece's, then the played part;
+     right hand, then left. */
+  --lid: #d6e0c6;
+  --lid-note: #9fb180;
+  --lid-note-left: #b9c6a1;
+  --lid-played: #59643b;
+  --lid-played-left: #8c9b68;
+  /* A filled control on the score's surface (U155). */
+  --fill: #e4e9de;
+  /* Library rows (U157): five quiet grounds, each with its two note colors. */
+  --tile-moss: #dbe4cd;
+  --tile-moss-note: #8a9b62;
+  --tile-moss-left: #b3c097;
+  --tile-sand: #ece4d0;
+  --tile-sand-note: #b29d67;
+  --tile-sand-left: #d2c49c;
+  --tile-clay: #eadcd5;
+  --tile-clay-note: #b98c7d;
+  --tile-clay-left: #d6b9ad;
+  --tile-fern: #d7e4dc;
+  --tile-fern-note: #7d9c8a;
+  --tile-fern-left: #adc5b7;
+  --tile-wheat: #e9e7cb;
+  --tile-wheat-note: #a5a058;
+  --tile-wheat-left: #cac792;
 
   --radius-s: 12px;
   --radius-m: 18px;
@@ -159,6 +186,27 @@
     --danger: #ff6b55;
     --danger-bg: #3f1b14;
     --color-accepted: #7fd68a;
+    --lid: #2b3228;
+    --lid-note: #67745a;
+    --lid-note-left: #4c5743;
+    --lid-played: #c9d5a1;
+    --lid-played-left: #8d9b73;
+    --fill: #232a24;
+    --tile-moss: #2a3127;
+    --tile-moss-note: #a3b37a;
+    --tile-moss-left: #5d6a49;
+    --tile-sand: #2e2a20;
+    --tile-sand-note: #b09c68;
+    --tile-sand-left: #645939;
+    --tile-clay: #2f2724;
+    --tile-clay-note: #b18a7d;
+    --tile-clay-left: #664e46;
+    --tile-fern: #232d29;
+    --tile-fern-note: #86a897;
+    --tile-fern-left: #48605a;
+    --tile-wheat: #2c2b1d;
+    --tile-wheat-note: #ada85f;
+    --tile-wheat-left: #5f5c36;
   }
 }
 
@@ -200,6 +248,27 @@
   --danger: #ff6b55;
   --danger-bg: #3f1b14;
   --color-accepted: #7fd68a;
+  --lid: #2b3228;
+  --lid-note: #67745a;
+  --lid-note-left: #4c5743;
+  --lid-played: #c9d5a1;
+  --lid-played-left: #8d9b73;
+  --fill: #232a24;
+  --tile-moss: #2a3127;
+  --tile-moss-note: #a3b37a;
+  --tile-moss-left: #5d6a49;
+  --tile-sand: #2e2a20;
+  --tile-sand-note: #b09c68;
+  --tile-sand-left: #645939;
+  --tile-clay: #2f2724;
+  --tile-clay-note: #b18a7d;
+  --tile-clay-left: #664e46;
+  --tile-fern: #232d29;
+  --tile-fern-note: #86a897;
+  --tile-fern-left: #48605a;
+  --tile-wheat: #2c2b1d;
+  --tile-wheat-note: #ada85f;
+  --tile-wheat-left: #5f5c36;
 }
 
 *,
@@ -322,4 +391,6 @@ a {
   --danger: #d4201a;
   --warning: #9a5b00;
   --color-loop: #59643b;
+  --accent-fill: #59643b;
+  --accent-fg: #ffffff;
 }

@@ -132,8 +132,8 @@ test.describe('in focus mode', () => {
     await expect(screen(page)).toHaveAttribute('data-recede', 'true')
     await expect(modes).toHaveCSS('opacity', '0.12')
     await expect(modes).toHaveAttribute('inert', '')
-    // The header's other controls never go (U132).
-    await expect(header(page).getByRole('button', { name: 'Settings' })).toHaveCSS('opacity', '1')
+    // The header's other controls fade with it (U147).
+    await expect(header(page).getByRole('button', { name: 'Settings' })).toHaveCSS('opacity', '0.12')
     const listen = (await modes.getByRole('radio', { name: 'Listen', includeHidden: true }).boundingBox())!
     const at = { x: listen.x + listen.width / 2, y: listen.y + listen.height / 2 }
     await page.touchscreen.tap(at.x, at.y)

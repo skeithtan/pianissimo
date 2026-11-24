@@ -40,9 +40,11 @@ export interface ConnectionChipProps {
   readonly onOpen?: () => void
   /** Only the dot shows (the label stays for assistive technology): the header has no room for words. */
   readonly dot?: boolean
+  /** On the score screen's header: no pill around it (U154). */
+  readonly plain?: boolean
 }
 
-export function ConnectionChip({ onOpen = openConnection, dot = false }: ConnectionChipProps) {
+export function ConnectionChip({ onOpen = openConnection, dot = false, plain = false }: ConnectionChipProps) {
   const status = connectionStatus.value
   const label = connectionLabel(status)
   return (
@@ -52,6 +54,7 @@ export function ConnectionChip({ onOpen = openConnection, dot = false }: Connect
       data-tone={TONE[status.state]}
       data-state={status.state}
       data-dot={dot || undefined}
+      data-plain={plain || undefined}
       title={
         status.state === 'unsupported'
           ? (getFeatures().features.webMidi.explanation ?? label)

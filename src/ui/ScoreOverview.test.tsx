@@ -183,6 +183,10 @@ const nextFrame = () =>
     await new Promise((resolve) => setTimeout(resolve, 50))
   })
 
+/** The window over the played notes (`ScoreOverview.module.css` `.played`). */
+const playedWindow = (root: HTMLElement): HTMLElement =>
+  root.querySelector<HTMLElement>(':scope > svg + div > svg + div') as HTMLElement
+
 describe('<ScoreOverview>', () => {
   it('is a slider with a spoken bar position', () => {
     const { root } = setup({ position: 2.3 })
@@ -200,10 +204,12 @@ describe('<ScoreOverview>', () => {
   it('moves the played fill and the marker by transform only; ticks are not re-rendered', () => {
     const { root } = setup({ position: 0 })
     const tick = root.querySelector('svg path')!
-    const played = root.children[1] as HTMLElement
-    expect(played.style.transform).toBe('scaleX(0)')
+    const played = playedWindow(root)
+    expect(played.style.transform).toBe('translateX(-100%)')
     view!.rerender(<ScoreOverview measures={MEASURES} position={4.75} loop={null} onScrub={() => undefined} />)
-    expect(played.style.transform).toBe('scaleX(0.5)')
+    expect(played.style.transform).toBe('translateX(-50%)')
+    // The drawing inside slides back by as much: the played notes stand still.
+    expect((played.firstElementChild as HTMLElement).style.transform).toBe('translateX(50%)')
     expect(root.querySelector('[data-testid="overview-marker"]')!.parentElement!.style.transform).toBe(
       'translateX(50%)',
     )
@@ -332,16 +338,16 @@ describe('<ScoreOverview>', () => {
       <ScoreOverview measures={MEASURES} follow={follow} loop={null} onScrub={() => undefined} describe={describe} />,
     )
     const root = $(view.container, '[role="slider"]')!
-    const played = root.children[1] as HTMLElement
+    const played = playedWindow(root)
     const track = root.querySelector<HTMLElement>('[data-testid="overview-marker"]')!.parentElement!
     expect(root.getAttribute('aria-valuenow')).toBe('1')
-    expect(played.style.transform).toBe(`scaleX(${Math.round((0.25 / 9.5) * 4096) / 4096})`)
+    expect(played.style.transform).toBe(`translateX(${(Math.round((0.25 / 9.5) * 4096) / 4096 - 1) * 100}%)`)
 
     // Within bar 1: the fill and marker move (in 1/4096 steps); nothing re-renders.
     const renders = describe.mock.calls.length
     emit(0.75)
     const step = Math.round((0.75 / 9.5) * 4096) / 4096
-    expect(played.style.transform).toBe(`scaleX(${step})`)
+    expect(played.style.transform).toBe(`translateX(${(step - 1) * 100}%)`)
     expect(track.style.transform).toBe(`translateX(${step * 100}%)`)
     expect(root.getAttribute('aria-valuenow')).toBe('1')
     expect(describe.mock.calls.length).toBe(renders)

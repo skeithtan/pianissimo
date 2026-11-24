@@ -1,8 +1,8 @@
 /* Practice view. Theme tokens only (U8); touch targets ≥ 44 px; motion tokens. Landscape first:
-   header / overview / stage (flex, full width, touches the footer) / keyboard guide / footer.
-   The header sits on the page background; the keyboard guide and the footer continue the stage's
-   theme's score surface below one thin line (no bar, no shadow, U12); narrow screens wrap the
-   footer tools above the hand cluster; the stage keeps the remaining height. */
+   header and overview (the lid) / stage (flex, full width, touches the footer) / keyboard guide /
+   footer. The lid is green and rounded below (U154); the keyboard guide and the footer continue the
+   stage's theme's score surface with nothing between them (U155); narrow screens wrap the footer
+   tools above the hand cluster; the stage keeps the remaining height. */
 
 .screen {
   /* How far receded chrome fades while playing (U13). */
@@ -27,9 +27,45 @@
   transition-duration: calc(var(--dur-slow) * 2);
 }
 
+/* ── The lid (U154) ─────────────────────────────────────────────────────── */
+/* One green ground under the header and the overview. In focus mode it fades away, and a faint gray
+   capsule fades in around a shorter, gray overview (`.overview::before`): the header is still there
+   and asks for no attention. Nothing changes shape; only the overview's height moves (user). */
+.lid {
+  flex: none;
+  position: relative;
+  isolation: isolate;
+  background: var(--practice-surface);
+  --overview-height: 48px;
+}
+.lid::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: 0 0 26px 26px;
+  background: var(--lid);
+  transition: opacity var(--dur-slow) var(--ease-standard);
+}
+.screen[data-recede='true'] .lid::before {
+  opacity: 0;
+}
+.screen[data-recede='true'] .lid {
+  --overview-height: 24px;
+  --overview-floor: 0px;
+  --overview-sections: 0px;
+  --overview-ticks: 0;
+  --overview-note: color-mix(in srgb, var(--fg) 14%, var(--practice-surface));
+  --overview-note-left: color-mix(in srgb, var(--fg) 10%, var(--practice-surface));
+  --overview-played: color-mix(in srgb, var(--fg) 32%, var(--practice-surface));
+  --overview-played-left: color-mix(in srgb, var(--fg) 20%, var(--practice-surface));
+  --overview-marker: color-mix(in srgb, var(--fg) 44%, var(--practice-surface));
+  --overview-loop: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
 /* ── Header ─────────────────────────────────────────────────────────────── */
 /* A phone's top bar (U93): in focus mode the slot's row collapses and the bar slides up and fades.
-   A tablet's or desktop's header (`.header`) keeps its place; upright, its contents fade (U147). */
+   A tablet's or desktop's header (`.header`) keeps its place and its contents fade (U147). */
 .headerSlot {
   flex: none;
   display: grid;
@@ -80,15 +116,15 @@
 .header[data-modes='one']:has([data-recording-control]) {
   --tools-min: 364px;
 }
-/* A take in progress keeps its controls and the connection pill; only the title and Settings fade.
-   A tap on the header brings everything back before it acts. */
-.header[data-fades] > .titleBlock,
-.header[data-fades] > .headerTools > * {
+/* In focus mode everything on the header fades in place (U147, on its side too); a take in progress
+   keeps its controls. A tap on the header brings everything back before it acts. */
+.header > .titleBlock,
+.header > .headerTools > * {
   transition: opacity var(--dur-base) var(--ease-standard);
 }
-.screen[data-recede='true'] .header[data-fades] > .titleBlock,
-.screen[data-recede='true'] .header[data-fades]:not([data-recording]) > .headerTools > *,
-.screen[data-recede='true'] .header[data-fades][data-recording] > .headerTools > .settingsButton {
+.screen[data-recede='true'] .header > .titleBlock,
+.screen[data-recede='true'] .header:not([data-recording]) > .headerTools > *,
+.screen[data-recede='true'] .header[data-recording] > .headerTools > .settingsButton {
   opacity: var(--practice-recede);
   pointer-events: none;
   transition-duration: calc(var(--dur-slow) * 2);
@@ -108,18 +144,19 @@
 }
 .title {
   margin: 0;
-  font-size: 1.125rem;
+  font-family: var(--font-title);
+  font-size: 1.25rem;
   line-height: var(--leading-tight);
-  font-weight: 500;
-  letter-spacing: -0.025em;
+  font-weight: 700;
+  letter-spacing: -0.015em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .subtitle {
   margin: 1px 0 0;
-  font-size: 0.75rem;
-  color: var(--fg-muted);
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--fg) 72%, var(--lid));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -155,22 +192,42 @@
 }
 
 /* ── Overview ───────────────────────────────────────────────────────────── */
-/* The whole-piece overview has its own full-width row and nothing else (U11). */
+/* The whole-piece overview has its own full-width row and nothing else (U11), with room above it. */
 .overview {
-  padding: 0 calc(20px + var(--safe-r)) var(--space-3) calc(20px + var(--safe-l));
+  position: relative;
+  padding: 10px calc(24px + var(--safe-r)) 14px calc(24px + var(--safe-l));
+  transition: padding var(--dur-slow) var(--ease-standard);
+}
+.screen[data-recede='true'] .overview {
+  padding-block: 7px 9px;
+}
+/* Focus mode's capsule: in its place all along, seen only then. */
+.overview::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 1px;
+  right: calc(10px + var(--safe-r));
+  left: calc(10px + var(--safe-l));
+  height: 36px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--fg) 6.5%, var(--practice-surface));
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-standard);
+}
+.screen[data-recede='true'] .overview::before {
+  opacity: 1;
 }
 
 /* ── Stage ──────────────────────────────────────────────────────────────── */
 /* Full width, edge to edge, no box (U12): score paper from the overview down to the footer. The
-   keyboard guide and the footer continue the same surface; one thin line on the stage's bottom
-   edge separates the score from them, whether or not the guide is open. */
+   keyboard guide and the footer continue the same surface, with no line between (U155). */
 .stage {
   position: relative;
   flex: 1 1 auto;
   min-height: 160px;
   overflow: hidden;
   background: var(--score-paper);
-  border-bottom: 1px solid var(--border);
 }
 .stripHost {
   position: absolute;
@@ -196,7 +253,7 @@
  */
 .stageCue {
   position: absolute;
-  left: calc(33.333% - 28px);
+  left: calc(var(--cursor-line, 33.333%) - 28px);
   top: 50%;
   transform: translate(-100%, -50%);
   display: flex;
@@ -222,7 +279,7 @@
   padding: 0;
 }
 .stageCue[data-kind='retry'] {
-  left: max(calc(33.333% - 28px), 92px);
+  left: max(calc(var(--cursor-line, 33.333%) - 28px), 92px);
   font-size: var(--text-s);
 }
 .stageCue strong {
@@ -345,7 +402,6 @@
   justify-content: center;
   padding: var(--space-2) calc(var(--space-3) + var(--safe-r)) var(--space-2) calc(var(--space-3) + var(--safe-l));
   background: var(--practice-surface);
-  border-bottom: 1px solid var(--border);
 }
 .resultRow:empty {
   display: none;
@@ -1110,8 +1166,8 @@
 
 /* ── Repeat panel (Repeat mode only, U14; revised 15 November 2026) ───────── */
 /* "Bars", the passage selector, the goal (a button with a popover, or ⋯ on a phone) and an
-   always-visible ✕. No outline (U49) and a solid surface. `float` and `compact` sit at the top
-   of the stage and recede; `docked` is the upright phone's own row under the overview. */
+   always-visible ✕ on one filled capsule, nothing inside it boxed (U156). `float` and `compact` sit
+   at the top of the stage and recede; `docked` is the upright phone's own row under the overview. */
 .repeatZone {
   pointer-events: auto;
   max-width: 100%;
@@ -1122,9 +1178,9 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  padding: var(--space-1);
-  border-radius: var(--radius-l);
-  background: var(--bg-elevated);
+  padding: 6px 8px 6px 10px;
+  border-radius: 30px;
+  background: var(--fill);
   animation: rise var(--dur-base) var(--ease-out) both;
 }
 .repeatPanel[data-layout='compact'] {
@@ -1136,9 +1192,8 @@
   flex-wrap: nowrap;
   justify-content: stretch;
   gap: 6px;
-  padding: 0 calc(var(--space-3) + var(--safe-r)) var(--space-2) calc(var(--space-3) + var(--safe-l));
-  border-radius: 0;
-  background: transparent;
+  margin: var(--space-2) calc(var(--space-3) + var(--safe-r)) 2px calc(var(--space-3) + var(--safe-l));
+  padding: 2px 6px;
   animation: none;
 }
 .repeatPanel[data-layout='docked'] .passage {
@@ -1174,23 +1229,21 @@
   gap: var(--space-2);
   min-height: 48px;
   padding: 0 var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-m);
-  background: var(--bg-raised);
+  border: 0;
+  border-radius: 24px;
+  background: transparent;
   color: var(--fg);
   font: inherit;
   font-size: var(--text-s);
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
   touch-action: manipulation;
   transition: background var(--dur-fast) var(--ease-standard);
 }
-.goalButton:hover {
-  background: var(--hover);
-}
+.goalButton:hover,
 .goalButton[aria-expanded='true'] {
-  border-color: var(--accent);
+  background: var(--hover);
 }
 .goalButton:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -1198,7 +1251,7 @@
 }
 .goalButton > svg {
   flex: none;
-  color: var(--accent);
+  color: var(--fg-muted);
 }
 .goalDivider {
   width: 1px;
@@ -1259,15 +1312,15 @@
   width: var(--touch);
   height: var(--touch);
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-m);
-  background: var(--bg-raised);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
   color: var(--fg);
   cursor: pointer;
   touch-action: manipulation;
 }
 .moreButton[aria-expanded='true'] {
-  border-color: var(--accent);
+  background: var(--hover);
 }
 .moreButton:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -1280,7 +1333,7 @@
   right: 5px;
   width: 11px;
   height: 11px;
-  border: 2px solid var(--bg-raised);
+  border: 2px solid var(--fill);
   border-radius: 50%;
   background: var(--accent);
 }
@@ -1351,7 +1404,7 @@
   flex: none;
   display: grid;
   grid-template-rows: 1fr;
-  background: var(--bg);
+  background: var(--practice-surface);
   transition: grid-template-rows var(--dur-slow) var(--ease-standard);
 }
 .repeatSlotClip {
@@ -1684,7 +1737,7 @@
     padding-inline: calc(var(--space-3) + var(--safe-l)) calc(var(--space-3) + var(--safe-r));
   }
   .overview {
-    padding-inline: calc(var(--space-3) + var(--safe-l)) calc(var(--space-3) + var(--safe-r));
+    padding-inline: calc(20px + var(--safe-l)) calc(20px + var(--safe-r));
   }
   .footer {
     padding-inline: calc(var(--space-3) + var(--safe-l)) calc(var(--space-3) + var(--safe-r));
@@ -1717,11 +1770,59 @@
   max-width: 200px;
   margin-inline: var(--space-1) var(--space-2);
 }
+/* A take's pill, clear of the hand beside it. */
+.screen[data-sideways='true'] .bar > [data-recording-control] {
+  margin-inline-start: 6px;
+}
 /* The overview between the bar's buttons (a phone on its side), instead of a row of its own. */
 .overviewInline {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
-  padding: 0 var(--space-1);
+  padding: 0 14px;
+}
+.screen[data-compact='true'] .lid {
+  --overview-height: 36px;
+}
+.screen[data-compact='true'] .overview {
+  padding-block: 6px 14px;
+}
+.screen[data-compact='true'][data-recede='true'] .lid {
+  --overview-height: 22px;
+}
+.screen[data-compact='true'][data-recede='true'] .overview {
+  padding-block: 11px 9px;
+}
+.screen[data-compact='true'] .overview::before {
+  top: 5px;
+  height: 33px;
+}
+/* On its side the overview stands in the bar, which hides in focus mode; while recording the bar
+   stays and the capsule is the overview's own. */
+.screen[data-sideways='true'] .lid,
+.screen[data-sideways='true'][data-recede='true'] .lid {
+  --overview-height: 32px;
+}
+.screen[data-sideways='true'] .lid::before {
+  border-radius: 0 0 24px 24px;
+}
+.screen[data-sideways='true'][data-recede='true'] .lid {
+  --overview-height: 26px;
+}
+.overviewInline::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 50% 0 auto;
+  height: 34px;
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--fg) 6.5%, var(--practice-surface));
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity var(--dur-slow) var(--ease-standard);
+}
+.screen[data-recede='true'][data-recording-header] .overviewInline::before {
+  opacity: 1;
 }
 .screen[data-compact='true'] .stage {
   min-height: 120px;
@@ -1736,6 +1837,18 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+/* A phone on its side keeps the score clear of the camera island and the rounded corners (U158):
+   the paper reaches the edges, the notation does not, and it fades out at the far end. The cursor
+   stays at one third of what is left (U28). */
+.screen[data-sideways='true'] .stage {
+  --cursor-line: calc(var(--safe-l) + (100% - var(--safe-l) - var(--safe-r)) / 3);
+}
+.screen[data-sideways='true'] .stripHost {
+  left: var(--safe-l);
+  right: var(--safe-r);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - min(36px, var(--safe-r))), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - min(36px, var(--safe-r))), transparent);
 }
 /* Why Start is unavailable: a pill over the bottom of the score, so the layout never shifts. */
 .stageNote {

@@ -41,6 +41,8 @@ export interface TempoControlProps {
    * scrolls when needed so it always stays fully on screen.
    */
   readonly placement?: 'down' | 'up'
+  /** On a filled capsule (the score screen's footer, U155). */
+  readonly filled?: boolean
 }
 
 const HOLD_DELAY_MS = 400
@@ -221,6 +223,7 @@ export function TempoControl({
   noTempo,
   onRequestTempo,
   placement = 'down',
+  filled = false,
 }: TempoControlProps) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -262,7 +265,7 @@ export function TempoControl({
 
   return (
     <div
-      class={styles.control}
+      class={filled ? `${styles.control} ${styles.filled}` : styles.control}
       ref={root}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && open) {

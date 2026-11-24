@@ -96,6 +96,48 @@
 .compact .segment {
   padding: 0 10px;
 }
+/* Tone on tone, for a colored ground. Thin to look at (the capsule and the chosen segment are drawn
+   inside their boxes): each segment is a 48 px target all the same. */
+.quiet {
+  position: relative;
+  isolation: isolate;
+  flex-wrap: nowrap;
+  gap: 0;
+  padding: 0 3px;
+  background: none;
+}
+.quiet::before,
+.quiet .segment::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 5px 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 3.5%, transparent);
+}
+.quiet .segment {
+  position: relative;
+  min-height: var(--touch);
+  /* Narrower where the header is (every language's four modes fit an upright tablet, U141). */
+  padding: 0 clamp(10px, 1.3vw, 15px);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 550;
+  color: color-mix(in srgb, var(--fg) 76%, var(--lid));
+}
+.quiet .segment::before {
+  inset: 8px 0;
+  background: transparent;
+  transition: background var(--dur-base) var(--ease-standard);
+}
+.quiet .segment[aria-checked='true'] {
+  background: none;
+  color: var(--fg);
+  box-shadow: none;
+}
+.quiet .segment[aria-checked='true']::before {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
 .segment:disabled {
   cursor: default;
   opacity: 0.45;

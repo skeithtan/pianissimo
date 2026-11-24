@@ -25,7 +25,7 @@ export function ModeChoice({ mode, onMode }: ModeProps) {
       value={mode}
       options={MODES.map((value) => ({ value, label: modeLabel(value), title: modeDescription(value) }))}
       onChange={onMode}
-      compact
+      quiet
     />
   )
 }

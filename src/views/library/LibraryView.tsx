@@ -9,17 +9,22 @@ import { useEffect, useMemo, useState } from 'preact/hooks'
 import { openPractice, settingsOpen } from '../../app/navigation'
 import { pushNotice } from '../../app/state'
 import { Notice } from '../../ui/controls'
+import { useMediaQuery } from '../shared/usePhone'
 import { ConnectPianoCard } from './ConnectPianoCard'
 import { LibraryDepsContext, defaultLibraryDeps, useLibraryDeps, type LibraryDeps } from './deps'
 import { FileButton, SCORE_ACCEPT } from './FileButton'
 import { ImportFlow } from './importFlow'
 import { ImportSheet } from './ImportSheet'
 import { LibraryModel } from './libraryModel'
+import { LibraryOpenings } from './openings'
 import { PieceCard } from './PieceCard'
 import { continuingPiece } from './continuation'
 import { matchesSearch, searchWords } from './search'
 import { SearchField } from './SearchField'
 import styles from './LibraryPage.module.css'
+
+/** Rows with room for a small drawing only (the same width as PieceCard.module.css). */
+const NARROW_QUERY = '(max-width: 640px)'
 
 /** The search field shows with more pieces than this (L13). */
 const SEARCH_ABOVE = 6
@@ -41,6 +46,8 @@ export function Library({ deps = defaultLibraryDeps }: { deps?: LibraryDeps }) {
 function LibraryPage() {
   const deps = useLibraryDeps()
   const model = useMemo(() => new LibraryModel(deps), [deps])
+  const openings = useMemo(() => new LibraryOpenings(deps), [deps])
+  const narrow = useMediaQuery(NARROW_QUERY)
   const [flow, setFlow] = useState<ImportFlow | null>(null)
   const [query, setQuery] = useState('')
 
@@ -56,6 +63,12 @@ function LibraryPage() {
 
   const state = model.state.value
   const pieces = state.status === 'ready' ? state.pieces : []
+  // The rows' drawings fill in behind the list.
+  useEffect(() => {
+    void openings.fill(pieces)
+    return () => openings.stop()
+  }, [openings, state])
+  const tiles = openings.tilesOf(pieces)
   const continuing = continuingPiece(pieces)
   const searchable = pieces.length > SEARCH_ABOVE
   const words = searchable ? searchWords(query) : []
@@ -130,6 +143,9 @@ function LibraryPage() {
               piece={piece}
               model={model}
               featured={continuing?.id === piece.id}
+              tile={tiles.get(piece.id)}
+              opening={openings.all.value.get(piece.scoreVersionId)}
+              narrow={narrow}
               searching={searching}
               hidden={found !== null && !found.has(piece)}
             />

@@ -36,6 +36,18 @@
   white-space: nowrap;
 }
 
+/* On the score screen's header: the dot and the words, no pill (U154). */
+.chip[data-plain]:not([data-dot]) {
+  padding-inline: var(--space-2);
+}
+.chip[data-plain] {
+  border-color: transparent;
+  background: transparent;
+}
+.chip[data-plain]:hover {
+  background: var(--hover);
+}
+
 /* Its dot alone, as wide as a touch target; assistive technology still reads the words. */
 .chip[data-dot] {
   gap: 0;

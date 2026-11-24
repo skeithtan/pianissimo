@@ -1,12 +1,13 @@
 import { msg } from '../i18n/messages'
 /**
- * Scrubbable overview of the whole unfolded piece: measure divisions, section markers, the
- * played portion, the current position and the practice loop. Bar widths are proportional to
- * the time spent in each bar (`OverviewMeasure.seconds`, U12). Position changes move transforms
- * only; ticks and section markers are built once per `measures` and never re-rendered while
- * playing. With `follow`, the overview tracks a live position without re-rendering at all: the
- * played fill and the marker are moved directly (only when they move by a visible step), and the
- * component re-renders only when the bar changes (spoken value and section).
+ * Scrubbable overview of the whole unfolded piece, drawn from its notes (U154): measure divisions,
+ * section markers, the played portion, the current position and the practice loop. Bar widths are
+ * proportional to the time spent in each bar (`OverviewMeasure.seconds`, U12). Position changes move
+ * transforms only: the played notes are a second copy of the drawing behind a window that slides
+ * over it. The drawing, ticks and section markers are built once per `measures` and width, and never
+ * re-rendered while playing. With `follow`, the overview tracks a live position without re-rendering
+ * at all: the window and the marker are moved directly (only when they move by a visible step), and
+ * the component re-renders only when the bar changes (spoken value and section).
  *
  * With `onLoopChange`, the shown loop gets two edge handles that drag (or arrow-key) its start and
  * end a whole bar at a time; note-level edges stay a stage affair (U21).
@@ -14,6 +15,7 @@ import { msg } from '../i18n/messages'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { toNumber } from '../core/music/rational'
 import { useFadePresence } from './fade'
+import { notePaths, shortestNote, type DrawnNote, type NotePaths } from './noteDrawing'
 import { stepLoop, type LoopEdge, type LoopRange } from './loopStep'
 import {
   dragLoopEdge,
@@ -44,6 +46,15 @@ export interface OverviewPositionSource {
 const FOLLOW_STEPS = 4096
 /** The loop's fade in and out (entering and leaving Repeat mode, U14). */
 export const LOOP_FADE_MS = 220
+/** The drawing's own size: CSS stretches its height to the room it has (shorter in focus mode). */
+const WIDE_DRAWING = { height: 40, thickness: 4 }
+const NARROW_DRAWING = { height: 28, thickness: 3.4 }
+/** A phone's width, or the room in its bar, is narrow (px). */
+const NARROW_PX = 560
+/** The drawing's width before it is measured. */
+const UNMEASURED_WIDTH = 1000
+/** Past this many bars the divisions would be a fence under the drawing. */
+const TICKED_BARS = 70
 
 export interface ScoreOverviewProps {
   /**
@@ -52,6 +63,8 @@ export interface ScoreOverviewProps {
    * cached per array.
    */
   readonly measures: readonly OverviewMeasure[]
+  /** The piece's notes on the same time scale (`overviewNotes`). Keep the array stable. */
+  readonly notes?: readonly DrawnNote[]
   /** Current position in whole notes (ignored when `follow` is given). */
   readonly position?: number
   /** Live position to follow (playback, practice); per-frame updates then cost no render. */
@@ -71,10 +84,38 @@ export interface ScoreOverviewProps {
   readonly disabled?: boolean
 }
 
+const NO_NOTES: readonly DrawnNote[] = []
+
+/** The drawing: one path per hand, stretched to its box. */
+function Drawing({ paths, width, height }: { paths: NotePaths; width: number; height: number }) {
+  return (
+    <svg class={styles.drawing} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+      <path class={styles.leftHand} d={paths.left} />
+      <path class={styles.rightHand} d={paths.right} />
+    </svg>
+  )
+}
+
+/** The element's width in whole px, 0 until it is measured. */
+function useWidth(ref: { readonly current: HTMLElement | null }): number {
+  const [width, setWidth] = useState(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const measure = () => setWidth(Math.round(el.clientWidth))
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    measure()
+    return () => observer.disconnect()
+  }, [ref])
+  return width
+}
+
 const defaultDescribe = (occ: number, count: number): string => msg('Bar {0} of {1}', occ + 1, count)
 
 export function ScoreOverview({
   measures,
+  notes = NO_NOTES,
   position = 0,
   follow,
   loop,
@@ -83,7 +124,14 @@ export function ScoreOverview({
   describe = defaultDescribe,
   disabled,
 }: ScoreOverviewProps) {
-  const ticks = useMemo(() => tickPath(measures), [measures])
+  const root = useRef<HTMLDivElement>(null)
+  const width = useWidth(root) || UNMEASURED_WIDTH
+  const size = width < NARROW_PX ? NARROW_DRAWING : WIDE_DRAWING
+  const paths = useMemo(
+    () => notePaths(notes, { ...size, width, shortest: shortestNote(measures, width) }),
+    [notes, measures, size, width],
+  )
+  const ticks = useMemo(() => (measures.length < TICKED_BARS ? tickPath(measures) : ''), [measures])
   const tickLayer = useMemo(
     () => (
       <svg class={styles.ticks} viewBox={`0 0 ${TICK_VIEWBOX_WIDTH} 1`} preserveAspectRatio="none" aria-hidden="true">
@@ -111,15 +159,19 @@ export function ScoreOverview({
       </div>
     )
   }, [measures])
-  const root = useRef<HTMLDivElement>(null)
   const played = useRef<HTMLDivElement>(null)
+  const playedNotes = useRef<HTMLDivElement>(null)
   const track = useRef<HTMLDivElement>(null)
   const placed = useRef(Number.NaN)
-  /** Played fill and marker at a fraction of the overview: two transforms, written only on change. */
+  /**
+   * The played notes and the marker at a fraction of the overview: the window slides right while the
+   * drawing inside it slides back by as much, so the notes stand still. Written only on change.
+   */
   const place = (fraction: number): void => {
     if (fraction === placed.current) return
     placed.current = fraction
-    if (played.current) played.current.style.transform = `scaleX(${fraction})`
+    if (played.current) played.current.style.transform = `translateX(${(fraction - 1) * 100}%)`
+    if (playedNotes.current) playedNotes.current.style.transform = `translateX(${(1 - fraction) * 100}%)`
     if (track.current) track.current.style.transform = `translateX(${fraction * 100}%)`
   }
   const followFraction = (p: number): number => Math.round(progressAt(measures, p) * FOLLOW_STEPS) / FOLLOW_STEPS
@@ -289,6 +341,7 @@ export function ScoreOverview({
     <div
       ref={root}
       class={styles.overview}
+      data-sections={sectionLayer ? '' : undefined}
       role="slider"
       tabIndex={inactive ? -1 : 0}
       aria-label={msg('Piece overview')}
@@ -308,7 +361,21 @@ export function ScoreOverview({
       onKeyDown={onKeyDown}
     >
       {tickLayer}
-      <div ref={played} class={styles.played} />
+      <div class={styles.notes} data-looped={extent ? '' : undefined}>
+        <Drawing paths={paths} width={width} height={size.height} />
+        <div ref={played} class={styles.played}>
+          <div ref={playedNotes} class={styles.playedNotes}>
+            <Drawing paths={paths} width={width} height={size.height} />
+          </div>
+        </div>
+        {extent && extent.width > 0 ? (
+          <div class={styles.loopNotes} style={{ left: `${extent.left * 100}%`, width: `${extent.width * 100}%` }}>
+            <div style={{ left: `${(-extent.left / extent.width) * 100}%`, width: `${(1 / extent.width) * 100}%` }}>
+              <Drawing paths={paths} width={width} height={size.height} />
+            </div>
+          </div>
+        ) : null}
+      </div>
       {sectionLayer}
       {loopPresence.mounted && shownExtent ? (
         <div

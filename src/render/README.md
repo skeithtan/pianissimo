@@ -225,8 +225,9 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   ctrl-wheel zooms the review only (no `onBrowse`, no `onZoomChange`), a gesture lands a running
   zoom, `respaceSnapshot` returns null. A strip told before its first frame, or with reduced
   motion, switches at once. Off without a loop: the playing frame.
-- **Loop UI**: gray band over the passage, white rounded chevron handle tabs (40×110, counter-
-  scaled to stay that size at any zoom), ✕ clear button (88 px; 56 px when the band is under
+- **Loop UI** (U156): rounded tinted band over the passage, slim solid grips (28×72, 24×62 on a phone,
+  counter-scaled to stay that size at any zoom, with the old tabs' touch target), solid ✕ in its middle
+  (52 px; 44 px when the band is under
   150 px on screen, never hidden while editable) centered; pointer capture, never inverts,
   `setLoopEditable(false)` hides controls. Handles snap to loop knots (`strip/snap.ts`:
   every barline plus every onset of the hands inside a bar; without `setSnapPositions` barlines

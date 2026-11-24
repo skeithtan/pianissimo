@@ -9,6 +9,12 @@
 
 .slot { display: inline-flex; }
 
+/* On the score screen a take's pill is a fill without an outline (U156). */
+:is(.slot, .phoneFooter) :is(.transport, .opening, .saved) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--tone) 13%, var(--practice-surface));
+}
+
 .transport {
   --tone: var(--danger);
   flex: none;
@@ -138,7 +144,6 @@
   justify-content: center;
   min-height: var(--touch);
   padding: 7px var(--space-3);
-  border-top: 1px solid var(--border);
   background: var(--practice-surface);
 }
 .phoneFooter:empty { display: none; }

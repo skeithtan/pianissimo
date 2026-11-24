@@ -1,12 +1,9 @@
-/* One rounded selector: ‹ 12 › – ‹ 14 ›. The chevrons are borderless 44 px targets on the
-   selector's sunken surface (no boxes inside the box, U22 revised). */
+/* One selector: ‹ 12 › – ‹ 14 ›. The chevrons are borderless 44 px targets on the Repeat panel's own
+   surface (no boxes inside the box, U22 revised, U156). */
 .steppers {
   display: inline-flex;
   align-items: center;
   min-width: 0;
-  padding: 2px;
-  border-radius: var(--radius-m);
-  background: var(--bg-sunken);
 }
 .group {
   display: flex;
@@ -22,7 +19,7 @@
   height: 44px;
   padding: 0;
   border: 0;
-  border-radius: calc(var(--radius-m) - 2px);
+  border-radius: 50%;
   background: transparent;
   color: var(--fg);
   cursor: pointer;

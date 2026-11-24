@@ -9,7 +9,7 @@ import { useEffect, useState } from 'preact/hooks'
 export const PHONE_LANDSCAPE_QUERY = '(orientation: landscape) and (max-height: 520px)'
 export const PHONE_QUERY = `(max-width: 520px), ${PHONE_LANDSCAPE_QUERY}`
 
-function useMediaQuery(query: string): boolean {
+export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => (typeof matchMedia === 'function' ? matchMedia(query).matches : false))
   useEffect(() => {
     if (typeof matchMedia !== 'function') return undefined

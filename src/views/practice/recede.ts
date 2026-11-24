@@ -1,7 +1,7 @@
 /**
  * While practice or Listen plays, the footer tools dim (or, in a narrow upright window, collapse),
  * while hand toggles and the Repeat panel recede (DECISIONS U13/U60). The header of a tablet or
- * desktop stays, its contents faded when upright (U147); a phone's whole top bar collapses (U93). The overview and playback button stay
+ * desktop stays, its contents faded (U147); a phone's whole top bar collapses (U93). The overview and playback button stay
  * visible, except in that phone bar. Recording keeps its transport and the adjacent connection
  * pill available in focus mode. Chrome returns when playing stops
  * (pause, interruption, end), and for a few seconds after a pointer moves over or touches it,

@@ -123,7 +123,8 @@ function nearCursor(event: PointerEvent, view: StripHandle | null): boolean {
   if (!(el instanceof Element)) return false
   const moving = view?.cursorClientX?.()
   if (moving !== undefined) return Math.abs(event.clientX - moving) <= CURSOR_REVEAL_PX
-  const rect = el.getBoundingClientRect()
+  // The strip may be narrower than the stage (a phone on its side, U158).
+  const rect = (el.querySelector('[data-testid="strip-host"]') ?? el).getBoundingClientRect()
   return Math.abs(event.clientX - (rect.left + rect.width / 3)) <= CURSOR_REVEAL_PX
 }
 
@@ -426,7 +427,7 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
   // In Listen the controls stay where they are (U72). Only the cursor's repeat button goes.
   const receded = recede.receded && ui.mode !== 'listen'
   // Focus mode hides the top bar of a phone only (U93): a tablet's or desktop's header has room to
-  // stay, faded when upright (U147). While recording, a phone on its side keeps Stop and the status
+  // stay, faded (U147). While recording, a phone on its side keeps Stop and the status
   // pills in its bar; an upright phone has them in its footer.
   const recordingInBar = phone && sideways && recorder.showing
   const barInert = receded && !recordingInBar
@@ -895,105 +896,109 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
       data-compact={phone ? 'true' : undefined}
       data-sideways={sideways ? 'true' : undefined}
     >
-      {phone ? (
-        // The phone's top bar (U80). In focus mode it slides up, fades and its row collapses (U93),
-        // the overview with it on its side; a tap on the score brings it back without seeking.
-        // The connection status is in the menu.
-        <div class={styles.headerSlot} data-testid="practice-bar-slot">
-          <div class={styles.headerClip}>
-            <div class={styles.bar} data-testid="practice-bar" inert={barInert} {...recede.zone}>
-              {back}
-              {sideways ? (
-                <>
-                  <h1 class={styles.srOnly}>{piece.title}</h1>
-                  <OverviewBar session={session} model={model} range={ui.range} view={stripRef} inline />
-                  <ModeButton {...modeButton} class={`${styles.barMode} ${styles.recedes}`} />
-                </>
-              ) : (
-                <>
-                  <h1 class={styles.srOnly}>{piece.title}</h1>
-                  <ModeTitle {...modeButton} title={piece.title} class={`${styles.barTitle} ${styles.recedes}`} />
-                </>
-              )}
-              {hands}
-              {recorder.controls(openRecorder, sideways)}
-              <button
-                type="button"
-                class={`${styles.iconButton} ${styles.recedes}`}
-                aria-label={msg('Menu')}
-                data-keeps-ahead
-                title={msg('Menu')}
-                aria-haspopup="dialog"
-                aria-expanded={menuOpen}
-                onClick={() => setMenuOpen(true)}
-              >
-                <Icon name="menu" size={22} />
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        // A tablet's or desktop's header keeps its place in focus mode: there is room. Upright, its
-        // contents fade (U147); a take in progress keeps its controls and the connection pill.
-        <header
-          ref={header}
-          class={styles.header}
-          data-testid="practice-header"
-          data-modes={fits.modes ? 'all' : 'one'}
-          data-fades={mode === 'page' || undefined}
-          data-recording={recorder.showing || undefined}
-          {...recede.zone}
-          // The touch that brings a faded header back must not also press what it uncovers; a take's
-          // own controls never fade, so they act at once. The mode control guards its own press.
-          onPointerDownCapture={(event) => {
-            const kept = (event.target as Element).closest('button') !== null
-            revealOnlyPress.current = receded
-            headerRevealTap.current = mode === 'page' && receded && !kept
-          }}
-          onClickCapture={(event) => {
-            if (headerRevealTap.current) event.stopPropagation()
-            headerRevealTap.current = false
-          }}
-        >
-          <div class={styles.titleBlock}>
-            {back}
-            {titleText}
-          </div>
-          {/* The mode dims with the footer's tools while playing, and a brush then changes nothing: the
-              press brings it back before a touch's click arrives (a key's click has no detail). */}
-          <div
-            class={`${styles.modes} ${styles.recedes}`}
-            data-testid="practice-modes"
-            inert={receded}
-            onClickCapture={(event) => {
-              if (revealOnlyPress.current && event.detail > 0) event.stopPropagation()
-              revealOnlyPress.current = false
-            }}
-          >
-            <div class={modeStyles.choice} data-mode-choice data-measure={fits.modes ? undefined : ''}>
-              <div>
-                <ModeChoice mode={ui.mode} onMode={onMode} />
+      {/* The header and the overview share one green ground (U154), which focus mode draws in to a quiet
+          capsule around the overview. */}
+      <div class={styles.lid} data-testid="practice-lid">
+        {phone ? (
+          // The phone's top bar (U80). In focus mode it slides up, fades and its row collapses (U93),
+          // the overview with it on its side; a tap on the score brings it back without seeking.
+          // The connection status is in the menu.
+          <div class={styles.headerSlot} data-testid="practice-bar-slot">
+            <div class={styles.headerClip}>
+              <div class={styles.bar} data-testid="practice-bar" inert={barInert} {...recede.zone}>
+                {back}
+                {sideways ? (
+                  <>
+                    <h1 class={styles.srOnly}>{piece.title}</h1>
+                    <OverviewBar session={session} model={model} range={ui.range} view={stripRef} inline />
+                    <ModeButton {...modeButton} class={`${styles.barMode} ${styles.recedes}`} />
+                  </>
+                ) : (
+                  <>
+                    <h1 class={styles.srOnly}>{piece.title}</h1>
+                    <ModeTitle {...modeButton} title={piece.title} class={`${styles.barTitle} ${styles.recedes}`} />
+                  </>
+                )}
+                {hands}
+                {recorder.controls(openRecorder, sideways)}
+                <button
+                  type="button"
+                  class={`${styles.iconButton} ${styles.recedes}`}
+                  aria-label={msg('Menu')}
+                  data-keeps-ahead
+                  title={msg('Menu')}
+                  aria-haspopup="dialog"
+                  aria-expanded={menuOpen}
+                  onClick={() => setMenuOpen(true)}
+                >
+                  <Icon name="menu" size={22} />
+                </button>
               </div>
             </div>
-            {fits.modes ? null : <ModeButton {...modeButton} />}
           </div>
-          <div class={styles.headerTools} data-header-tools>
-            {recorder.controls(openRecorder)}
-            <ConnectionChip dot={!fits.chip} />
-            <button
-              type="button"
-              class={`${styles.iconButton} ${styles.settingsButton}`}
-              aria-label={msg('Settings')}
-              title={msg('Settings')}
-              onClick={openSettings}
+        ) : (
+          // A tablet's or desktop's header keeps its place in focus mode: there is room. Its contents
+          // fade (U147); a take in progress keeps its controls.
+          <header
+            ref={header}
+            class={styles.header}
+            data-testid="practice-header"
+            data-modes={fits.modes ? 'all' : 'one'}
+            data-recording={recorder.showing || undefined}
+            {...recede.zone}
+            // The touch that brings a faded header back must not also press what it uncovers; a take's
+            // own controls never fade, so they act at once. The mode control guards its own press.
+            onPointerDownCapture={(event) => {
+              const kept = (event.target as Element).closest('button') !== null
+              revealOnlyPress.current = receded
+              headerRevealTap.current = receded && !kept
+            }}
+            onClickCapture={(event) => {
+              if (headerRevealTap.current) event.stopPropagation()
+              headerRevealTap.current = false
+            }}
+          >
+            <div class={styles.titleBlock}>
+              {back}
+              {titleText}
+            </div>
+            {/* The mode dims with the footer's tools while playing, and a brush then changes nothing: the
+                press brings it back before a touch's click arrives (a key's click has no detail). */}
+            <div
+              class={`${styles.modes} ${styles.recedes}`}
+              data-testid="practice-modes"
+              inert={receded}
+              onClickCapture={(event) => {
+                if (revealOnlyPress.current && event.detail > 0) event.stopPropagation()
+                revealOnlyPress.current = false
+              }}
             >
-              <Icon name="settings" size={22} />
-            </button>
-          </div>
-        </header>
-      )}
+              <div class={modeStyles.choice} data-mode-choice data-measure={fits.modes ? undefined : ''}>
+                <div>
+                  <ModeChoice mode={ui.mode} onMode={onMode} />
+                </div>
+              </div>
+              {fits.modes ? null : <ModeButton {...modeButton} />}
+            </div>
+            <div class={styles.headerTools} data-header-tools>
+              {recorder.controls(openRecorder)}
+              {/* A take has a piano: its status is not worth the room (U156). */}
+              {recorder.busy ? null : <ConnectionChip dot={!fits.chip} plain />}
+              <button
+                type="button"
+                class={`${styles.iconButton} ${styles.settingsButton}`}
+                aria-label={msg('Settings')}
+                title={msg('Settings')}
+                onClick={openSettings}
+              >
+                <Icon name="settings" size={22} />
+              </button>
+            </div>
+          </header>
+        )}
 
-      {sideways ? null : <OverviewBar session={session} model={model} range={ui.range} view={stripRef} />}
+        {sideways ? null : <OverviewBar session={session} model={model} range={ui.range} view={stripRef} />}
+      </div>
 
       {dockedRepeat && repeatPresence.mounted ? (
         <div

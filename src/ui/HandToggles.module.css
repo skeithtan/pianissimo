@@ -4,9 +4,10 @@
   gap: var(--space-4);
 }
 
-/* Hand toggle: neutral gray outline when off; filled tint, colored ring and colored icon when
-   the learner plays that hand. The L / R badge keeps color from being the only cue. */
+/* Hand toggle: a filled circle, neutral when off; tinted, with a colored icon, when the learner
+   plays that hand (U155: no outline). The L / R badge keeps color from being the only cue. */
 .hand {
+  --ground: var(--practice-surface);
   --hand: var(--color-right-hand);
   --hand-ink: var(--hand-control-right);
   position: relative;
@@ -16,14 +17,13 @@
   height: 58px;
   padding: 0;
   border-radius: 50%;
-  border: 2px solid var(--border);
-  background: transparent;
+  border: 0;
+  background: var(--fill);
   color: var(--fg-muted);
   cursor: pointer;
   touch-action: manipulation;
   transition:
     background var(--dur-base) var(--ease-standard),
-    border-color var(--dur-base) var(--ease-standard),
     color var(--dur-base) var(--ease-standard),
     transform var(--dur-fast) var(--ease-out);
 }
@@ -32,9 +32,8 @@
   --hand-ink: var(--hand-control-left);
 }
 .hand[aria-pressed='true'] {
-  border-color: var(--hand-ink);
-  background: color-mix(in srgb, var(--hand-ink) 14%, transparent);
-  color: var(--hand-ink);
+  background: color-mix(in srgb, var(--hand-ink) 20%, var(--practice-surface));
+  color: color-mix(in srgb, var(--hand-ink) 88%, var(--fg));
 }
 .hand:active:not(:disabled) {
   transform: scale(0.93);
@@ -55,9 +54,9 @@
   display: grid;
   place-items: center;
   border-radius: 10px;
-  border: 2px solid var(--bg);
+  border: 2px solid var(--ground);
   background: var(--fg-muted);
-  color: var(--bg);
+  color: var(--practice-surface);
   font-size: 0.6875rem;
   font-weight: 800;
   line-height: 1;
@@ -98,9 +97,9 @@
   gap: var(--space-2);
 }
 .compact .hand {
+  --ground: var(--lid);
   width: 40px;
   height: 40px;
-  border-width: 1.5px;
 }
 .compact .hand::after {
   content: '';

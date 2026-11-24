@@ -384,7 +384,9 @@ step carries a job token; cancel/close bump it and dispose the client, so a canc
 updates the UI. `review.ts` applies `applyHandAssignment` / `withUserTempo` and re-checks
 `summarizeImport(...).readiness`; only ready packages are stored (L1). The Continue card alone reads the
 piece's suggestions (`PieceSuggestionsModel`, one "Work on bars …" button → `openPractice` preset); no row
-reads attempts. Options → Progress… opens the piece's Progress (below).
+reads attempts. Options → Progress… opens the piece's Progress (below). `openings.ts` (U157) keeps each row's
+ground and the opening it draws in `localStorage` and reads missing openings from their packages one at a
+time, after the list shows.
 The Library shows compact ordinary rows, with a Continue practice feature only for a recent
 piece with a saved resume position or active Repeat. Stored ranges are normalized before
 labeling.
@@ -554,8 +556,10 @@ measure drops the connection chip to its dot. A phone has the button in its bar 
 title). `PracticeMenuItems` shows the mode's rows, and `StartReason` (`Footer.tsx`) the reason the main
 button is unavailable with Connect piano when only a piano is missing. The disconnect banner shows
 only where the mode is played on the piano. `views/shared/modes.ts` has the modes' words.
-Focus mode collapses a phone's top bar (U93) and, on windows of 640 px or less, the wrapped footer-tools row, using CSS grid tracks (U60); a tablet's or desktop's header stays, upright or on its side, and a tablet's footer is one row in both orientations whose tools dim in place (U88).
-Only the stage height changes, so the existing score view remeasures without re-engraving.
+The header and the overview stand on one ground, `.lid` (U154). Focus mode fades its `::before` away and the
+overview row's capsule in; the overview takes its height and colors from `--overview-*`.
+Focus mode collapses a phone's top bar (U93) and, on windows of 640 px or less, the wrapped footer-tools row, using CSS grid tracks (U60); a tablet's or desktop's header stays, its contents faded (U147), and a tablet's footer is one row in both orientations whose tools dim in place (U88).
+Only the stage height changes (by 32 px on a tablet), so the existing score view remeasures without re-engraving.
 `useRecede` restores chrome on pause, pointer/touch interaction, or keyboard navigation; it is
 held off while `SessionUi.reviewing` (the review after a completed pass, U102). In Listen nothing
 recedes (U72); only the cursor's repeat button goes while it plays.
@@ -625,7 +629,9 @@ plays), and any other key stops it before being handled as usual.
 
 ### Session 4 additions
 - `ScoreModel.sections?` (I12) from `core/import/sections.ts`; `overviewMeasures(model, multiplier?)`
-  (`ui/overviewMath.ts`) gives `ScoreOverview` `{start, duration, seconds?, section?}` per bar (U16).
+  (`ui/overviewMath.ts`) gives `ScoreOverview` `{start, duration, seconds?, section?}` per bar (U16), and
+  `overviewNotes` (`ui/noteDrawing.ts`, U154) the notes it draws, one SVG path per hand; the played ones are a
+  second copy behind a sliding window (two transforms).
 - `render/strip/cursorPath.ts` maps positions to x along onset knots (R12); the cursor and its
   action button live in a screen-space layer (R13). Label font is loaded before metrics (R14).
 - Practice: no PassageBar; `views/practice` footer holds Speed on the start side, the hand

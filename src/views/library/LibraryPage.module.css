@@ -16,9 +16,10 @@
 }
 
 .header h1 {
+  font-family: var(--font-title);
   font-size: 2.5rem;
-  font-weight: 500;
-  letter-spacing: -0.06em;
+  font-weight: 700;
+  letter-spacing: -0.015em;
 }
 
 .loading {
@@ -35,9 +36,9 @@
   width: 100%;
   min-height: var(--touch);
   padding: 0 calc(var(--touch) + var(--space-1)) 0 var(--space-4);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: calc(var(--touch) / 2);
-  background: var(--bg-elevated);
+  background: var(--fill);
   font: inherit;
   appearance: none;
 }
@@ -161,4 +162,5 @@
   }
 }
 
+.libraryActions label { border-color: transparent; background: var(--fill); }
 .libraryActions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; }

@@ -33,15 +33,26 @@
   transition: background var(--dur-fast) var(--ease-standard);
 }
 .button {
+  position: relative;
+  isolation: isolate;
   flex: 0 1 auto;
   align-items: center;
   gap: 6px;
   min-height: 44px;
   padding: 0 var(--space-3);
-  border-radius: var(--radius-m);
-  background: var(--bg-sunken);
+  border-radius: 999px;
   font-size: var(--text-s);
   font-weight: 600;
+}
+/* Drawn thinner than it is to the finger. */
+.button::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 4px 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .button > svg,
 .titleMode > svg {
@@ -63,10 +74,11 @@
 }
 .title {
   overflow: hidden;
-  font-size: 0.9375rem;
+  font-family: var(--font-title);
+  font-size: 1rem;
   line-height: var(--leading-tight);
-  font-weight: 500;
-  letter-spacing: -0.025em;
+  font-weight: 700;
+  letter-spacing: -0.015em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -79,14 +91,14 @@
   font-size: 0.75rem;
   line-height: var(--leading-tight);
   font-weight: 600;
-  color: var(--fg-muted);
+  color: color-mix(in srgb, var(--fg) 74%, var(--lid));
 }
 @media (hover: hover) {
   .titleButton:hover {
     background: var(--hover);
   }
-  .button:hover {
-    background: color-mix(in srgb, var(--fg) 6%, var(--bg-sunken));
+  .button:hover::before {
+    background: color-mix(in srgb, var(--fg) 9%, transparent);
   }
 }
 .button:focus-visible,

@@ -13,6 +13,7 @@ import { DOUBLE_FLAT, DOUBLE_SHARP, FLAT, NATURAL, SHARP } from '../../core/nami
 import { KeyboardGuide } from '../../render/keyboard'
 import { useFadePresence } from '../../ui/fade'
 import { usePhone, usePhoneLandscape } from '../shared/usePhone'
+import { overviewNotes } from '../../ui/noteDrawing'
 import { overviewMeasures } from '../../ui/overviewMath'
 import { ScoreOverview, type OverviewPositionSource } from '../../ui/ScoreOverview'
 import type { StripHandle } from './env'
@@ -20,7 +21,7 @@ import { useStore } from './useStore'
 import styles from './practice.module.css'
 
 /**
- * The whole-piece overview: its own full-width row with nothing else in it (U11); the loop shows
+ * The whole-piece overview, drawn from its notes (U154): its own full-width row with nothing else in it (U11); the loop shows
  * only in Repeat mode. It never recedes (U13): the learner keeps their place while playing.
  * A position chosen on it ends browsing in the score `view`, so the cursor line shows it (U14).
  */
@@ -39,6 +40,7 @@ export function OverviewBar({
   inline?: boolean
 }) {
   const measures = useMemo(() => overviewMeasures(model), [model, messageLanguage()])
+  const notes = useMemo(() => overviewNotes(model, measures), [model, measures])
   // The session publishes progress every frame while playing: the overview follows it without
   // re-rendering (transforms only; a render only when the bar changes).
   const follow = useMemo<OverviewPositionSource>(
@@ -52,6 +54,7 @@ export function OverviewBar({
     <div class={inline ? styles.overviewInline : styles.overview}>
       <ScoreOverview
         measures={measures}
+        notes={notes}
         follow={follow}
         loop={range}
         onScrub={(occ) => {

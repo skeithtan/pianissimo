@@ -204,11 +204,13 @@ test('records a scored take, downloads both real files and manages recording his
   await expect(setupSheet(page)).toContainText('This choice is kept for next time.')
   await page.getByRole('button', { name: 'Enable audio input' }).click()
   await expect(page.getByRole('combobox', { name: 'Audio input', exact: true })).toHaveValue('usb')
+  const connected = page.locator('header [data-state="connected"]')
+  const connectedBox = (await connected.boundingBox())!
   await page.getByRole('button', { name: 'Start recording' }).click()
   await checkTransport(page)
   const active = page.getByRole('group', { name: 'Recording', exact: true })
-  const connected = page.locator('header [data-state="connected"]')
-  const connectedBox = (await connected.boundingBox())!
+  // A take takes the connection's place in the header (U156).
+  await expect(connected).toHaveCount(0)
   const activeBox = (await active.boundingBox())!
   expect(activeBox.height).toBe(connectedBox.height)
   expect(activeBox.y).toBe(connectedBox.y)
@@ -217,9 +219,9 @@ test('records a scored take, downloads both real files and manages recording his
       const css = getComputedStyle(node)
       const probe = document.createElement('span')
       node.append(probe)
-      probe.style.color = `color-mix(in srgb, var(${tone}) 9%, transparent)`
+      probe.style.color = `color-mix(in srgb, var(${tone}) 13%, var(--practice-surface))`
       const fill = getComputedStyle(probe).color
-      probe.style.color = `color-mix(in srgb, var(${tone}) 35%, var(--border))`
+      probe.style.color = 'transparent'
       const border = getComputedStyle(probe).color
       probe.remove()
       return { fill: css.backgroundColor, border: css.borderTopColor, expectedFill: fill, expectedBorder: border }
@@ -677,14 +679,16 @@ async function expectTidyHeader(page: Page, name: string) {
       const { left, right, top, bottom } = el.getBoundingClientRect()
       return { left, right, top, bottom }
     }
-    const named = {
+    const chip = node.querySelector('[data-state]')
+    const named: Record<string, Element> = {
       back: node.querySelector('button')!,
       title: node.querySelector('h1')!,
       mode:
         node.querySelector('[data-testid="practice-modes"] > button') ??
         node.querySelector('[data-testid="practice-modes"] [role="radiogroup"]')!,
       take: control,
-      chip: node.querySelector('[data-state]')!,
+      // Not while a take runs (U156).
+      ...(chip ? { chip } : {}),
       settings: node.lastElementChild!.lastElementChild!,
     }
     return {
@@ -699,7 +703,9 @@ async function expectTidyHeader(page: Page, name: string) {
     }
   })
   const row = [...boxes.named].sort((a, b) => a.left - b.left)
-  expect(row.map((b) => b.key)).toEqual(['back', 'title', 'mode', 'take', 'chip', 'settings'])
+  const expected = ['back', 'title', 'mode', 'take', 'chip', 'settings']
+  const saved = boxes.named.some((b) => b.key === 'chip')
+  expect(row.map((b) => b.key)).toEqual(saved ? expected : expected.filter((key) => key !== 'chip'))
   const at = (key: string) => boxes.named.find((b) => b.key === key)!
   expect(at('title').right - at('title').left).toBeGreaterThan(64)
   // The one button names its mode in full, whatever the title and the take need.
@@ -819,7 +825,7 @@ for (const viewport of [
     await expect(header.getByRole('button', { name: 'Back to Library' })).toBeVisible({ visible: tablet })
     await checkTransport(page)
     if (tablet) {
-      await expect(header.getByRole('button', { name: /MIDI status: Connected/ })).toBeInViewport({ ratio: 1 })
+      await expect(header.getByRole('button', { name: /MIDI status/ })).toHaveCount(0)
       await expect(page.getByTestId('footer-tools-slot')).toHaveAttribute('inert', '')
     }
     const stop = header.getByRole('button', { name: 'Stop recording' })

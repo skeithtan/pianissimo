@@ -55,12 +55,15 @@ export function Segmented<T extends string>({
   options,
   onChange,
   compact,
+  quiet,
 }: {
   label: string
   value: T | null
   options: readonly SegmentOption<T>[]
   onChange: (v: T) => void
   compact?: boolean
+  /** A thin capsule in the tone of what it stands on (the score screen's modes, U154). */
+  quiet?: boolean
 }) {
   const selected = options.findIndex((o) => o.value === value)
   const move = (event: KeyboardEvent, from: number) => {
@@ -83,7 +86,11 @@ export function Segmented<T extends string>({
     buttons?.[options.indexOf(target)]?.focus()
   }
   return (
-    <div class={[styles.segmented, compact ? styles.compact : ''].join(' ')} role="radiogroup" aria-label={label}>
+    <div
+      class={[styles.segmented, compact ? styles.compact : '', quiet ? styles.quiet : ''].join(' ')}
+      role="radiogroup"
+      aria-label={label}
+    >
       {options.map((o, i) => (
         <button
           key={o.value}

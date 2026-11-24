@@ -41,8 +41,8 @@ async function focused(page: Page): Promise<void> {
 }
 
 /**
- * The header keeps its place: in full and taking input, or faded (upright focus mode, U147), when a
- * tap on it only brings it back.
+ * The header keeps its place: in full and taking input, or faded (focus mode, U147), when a tap on it
+ * only brings it back.
  */
 async function headerStays(
   page: Page,
@@ -69,6 +69,9 @@ async function reveal(page: Page): Promise<void> {
   await expect(screen(page)).not.toHaveAttribute('data-recede', 'true')
 }
 
+/** Focus mode draws the overview smaller on a tablet (U154): 72 px with its room become 40. */
+const OVERVIEW_RELEASES = 32
+
 for (const size of [
   // A window too narrow for one footer row: the tools wrap into their own row, which collapses.
   { name: 'portrait', width: 586, height: 846, wraps: true, colorScheme: 'light', reducedMotion: 'no-preference' },
@@ -86,8 +89,8 @@ for (const size of [
     const originalPage = await page.locator('.pn-page').elementHandle()
     const originalHeight = await height(stage(page))
     const headerBox = (await header(page).boundingBox())!
-    // Only the wrapped tool row gives the score its height: the header stays.
-    const releasedHeight = size.wraps ? await height(tools(page)) : 0
+    // The header stays. The wrapped tool row gives the score its height, and the overview some of its own.
+    const releasedHeight = OVERVIEW_RELEASES + (size.wraps ? await height(tools(page)) : 0)
     const playBefore = await page.getByRole('button', { name: 'Start', exact: true }).boundingBox()
     const speedBefore = await speedButton(page).boundingBox()
     const menuBefore = await menuButton(page).boundingBox()
@@ -264,9 +267,8 @@ test.describe('tablet Repeat options', () => {
 })
 
 /**
- * Focus mode on a tablet keeps the header, in full on its side, faded when upright (U132, U147):
- * there is room for it. The score's stage keeps its size (the header never leaves), and the footer tools dim as
- * before. A phone's top bar still recedes (below).
+ * Focus mode on a tablet keeps the header's place, its contents faded (U147): there is room for it. The score's stage gains only what the smaller overview gives up (U154), and the footer
+ * tools dim as before. A phone's top bar still recedes (below).
  */
 test.describe('a tablet keeps its header in focus mode', () => {
   test.use({ hasTouch: true })
@@ -274,9 +276,7 @@ test.describe('a tablet keeps its header in focus mode', () => {
     { name: 'upright', width: 834, height: 1194, mode: 'page' },
     { name: 'on its side', width: 1194, height: 834, mode: 'strip' },
   ] as const) {
-    test(`${size.name}: the header ${size.mode === 'page' ? 'fades in place' : 'stays in full and takes input'} while the footer tools recede`, async ({
-      page,
-    }) => {
+    test(`${size.name}: the header fades in place while the footer tools recede`, async ({ page }) => {
       await page.setViewportSize({ width: size.width, height: size.height })
       await open(page)
       await expect(stage(page)).toHaveAttribute('data-mode', size.mode)
@@ -287,19 +287,17 @@ test.describe('a tablet keeps its header in focus mode', () => {
       await page.getByRole('button', { name: 'Start', exact: true }).tap()
       await focused(page)
       await expect.poll(() => strength(menuButton(page))).toBe(0.12)
-      // Past the recede delay and its transitions: nothing moved, the header is all there.
+      // Past the recede delay and its transitions: the header is all there.
       await page.waitForTimeout(800)
-      await headerStays(page, headerBox, { faded: size.mode === 'page' })
-      expect(Math.abs((await height(stage(page))) - stageHeight)).toBeLessThan(1)
+      await headerStays(page, headerBox, { faded: true })
+      expect(Math.abs((await height(stage(page))) - stageHeight - OVERVIEW_RELEASES)).toBeLessThan(1)
       await expect(screen(page)).toHaveAttribute('data-recede', 'true')
-      // It takes a tap at once: Settings opens over Practice (and pauses it).
-      if (size.mode === 'page') {
-        // The first tap on the faded header, here where Settings is, only brings it back.
-        const gear = (await header(page).getByRole('button', { name: 'Settings' }).boundingBox())!
-        await page.touchscreen.tap(gear.x + gear.width / 2, gear.y + gear.height / 2)
-        await headerStays(page, headerBox)
-        await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
-      }
+      // The first tap on the faded header, here where Settings is, only brings it back.
+      const gear = (await header(page).getByRole('button', { name: 'Settings' }).boundingBox())!
+      await page.touchscreen.tap(gear.x + gear.width / 2, gear.y + gear.height / 2)
+      await headerStays(page, headerBox)
+      await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+      // The next one acts: Settings opens over Practice (and pauses it).
       await header(page).getByRole('button', { name: 'Settings' }).tap()
       await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
     })
@@ -451,7 +449,7 @@ for (const size of [
 
     await start.click()
     await focused(page)
-    await headerStays(page, headerBox)
+    await headerStays(page, headerBox, { faded: true })
     expect(await tools(page).evaluate((el) => el.hasAttribute('inert'))).toBe(true)
     // Inert tools are still visible, so use their existing DOM handles rather than role lookup.
     const focusedTools = await footer.evaluate((el) => {

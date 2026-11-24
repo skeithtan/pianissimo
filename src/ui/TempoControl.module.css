@@ -5,6 +5,14 @@
   gap: var(--space-1);
 }
 
+/* The footer's: a filled capsule as tall as the hands beside it (U155). */
+.filled {
+  min-height: 58px;
+  padding: 0 5px;
+  border-radius: 29px;
+  background: var(--fill);
+}
+
 .step {
   display: grid;
   place-items: center;

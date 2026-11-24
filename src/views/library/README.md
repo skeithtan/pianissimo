@@ -98,7 +98,8 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 | `ImportSheet.tsx` | Phase rendering; `StorageStatusLine`. |
 | `ConnectPianoCard.tsx` | `ConnectPianoCard` (nothing without Web MIDI) around `ConnectPiano({ service })`, the first-time piano card (U149). |
 | `ReviewSheet.tsx` | "Hands and tempo of “title”" for a stored piece (L5): loads the package, shows `ImportSummaryView` with every voice's hand editable and, when the user entered the tempo at import, that practice tempo; Save changes only when something changed and the L1 gate passes. |
-| `PieceCard.tsx` | Card (stretched Practice target, status line, icon-only Options) + delete and clear-history confirmation sheets. |
+| `openings.ts` | What the rows look like (U157): each piece's ground and the opening its row draws, kept in `localStorage`; missing openings are read from their packages after the list shows. |
+| `PieceCard.tsx` | Card (ground, opening drawing, stretched Practice target, status line, icon-only Options) + delete and clear-history confirmation sheets. |
 | `continuation.ts` | Pure: which piece is featured (`continuingPiece`), its context line (`continuationContext`), and an ordinary row's status (`neverOpened`, `openedStatus`). |
 | `RenameSheet.tsx` | "Rename piece": a form with Title and Composer fields, prefilled from the piece on every open, the title focused and selected; Enter or Save calls `model.rename`, a failure shows in the sheet. |
 | `FileButton.tsx` | `<label>` around a hidden file input (picker opens from the user's own tap, also inside sheets and on iPad). |

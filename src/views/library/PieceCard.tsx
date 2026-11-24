@@ -11,11 +11,13 @@ import type { Suggestion } from '../../core/history/selection'
 import type { PieceRecord } from '../../core/storage/records'
 import type { ScoreModel } from '../../core/model/score'
 import { Button, Notice, Sheet } from '../../ui/controls'
+import { notePaths, openingNotes, type Opening } from '../../ui/noteDrawing'
 import { ProgressSheet } from '../progress/ProgressSheet'
 import { PieceSuggestionsModel, practiceRequestFor } from '../shared/suggestions/pieceSuggestions'
 import { useLibraryDeps } from './deps'
 import type { LibraryModel } from './libraryModel'
 import { continuationContext, openedStatus } from './continuation'
+import type { Tile } from './openings'
 import { RenameSheet } from './RenameSheet'
 import { ReviewSheet } from './ReviewSheet'
 import styles from './library.module.css'
@@ -62,6 +64,32 @@ function swallowNextClick(): void {
   timer = window.setTimeout(end, PRESS_LIMIT_MS)
 }
 
+/** The sizes a row's drawing has (PieceCard.module.css; a narrower box cuts off its end), and how many
+    notes read well in each. */
+const DRAWINGS = {
+  row: { width: 380, height: 46, thickness: 5, shortest: 4.6, notes: 64 },
+  card: { width: 300, height: 46, thickness: 5, shortest: 4.6, notes: 64 },
+  narrowRow: { width: 84, height: 28, thickness: 3.6, shortest: 3.2, notes: 26 },
+  narrowCard: { width: 112, height: 28, thickness: 3.6, shortest: 3.2, notes: 26 },
+} as const
+
+/** The opening bars, drawn from their notes: a picture to know the piece by (U157). */
+function OpeningDrawing({ opening, size }: { opening: Opening; size: keyof typeof DRAWINGS }) {
+  const d = DRAWINGS[size]
+  const paths = useMemo(() => notePaths(openingNotes(opening, d.notes), d), [opening, d])
+  return (
+    <svg
+      class={cardStyles.drawing}
+      viewBox={`0 0 ${d.width} ${d.height}`}
+      preserveAspectRatio="xMinYMid slice"
+      aria-hidden="true"
+    >
+      <path class={cardStyles.leftHand} d={paths.left} />
+      <path class={cardStyles.rightHand} d={paths.right} />
+    </svg>
+  )
+}
+
 type PieceSheet = 'rename' | 'progress' | 'delete' | 'clear' | 'review'
 
 /** What to work on next, for the Continue card: the first suggestion's bars. */
@@ -79,12 +107,20 @@ export function PieceCard({
   piece,
   model,
   featured,
+  tile,
+  opening,
+  narrow = false,
   searching = false,
   hidden = false,
 }: {
   piece: PieceRecord
   model: LibraryModel
   featured: boolean
+  /** The row's quiet ground. */
+  tile?: Tile | undefined
+  /** What the row draws, once it is known. */
+  opening?: Opening | undefined
+  narrow?: boolean
   /** A search shows every piece as an ordinary row (L13). */
   searching?: boolean
   /** Not found: hidden rather than removed, so a search never loads a row's data again. */
@@ -172,7 +208,7 @@ export function PieceCard({
       ? suggested.selection.active[0]
       : undefined
   return (
-    <li class={cardStyles.card} data-featured={card ? '' : undefined} hidden={hidden}>
+    <li class={cardStyles.card} data-featured={card ? '' : undefined} data-tile={tile} hidden={hidden}>
       <article aria-labelledby={`piece-${piece.id}-title`}>
         <div class={cardStyles.main}>
           <div class={cardStyles.text}>
@@ -186,6 +222,12 @@ export function PieceCard({
               <p class={cardStyles.status}>{openedStatus(piece, deps.now())}</p>
             )}
           </div>
+          {opening && opening.notes.length > 0 ? (
+            <OpeningDrawing
+              opening={opening}
+              size={card ? (narrow ? 'narrowCard' : 'card') : narrow ? 'narrowRow' : 'row'}
+            />
+          ) : null}
           <div class={cardStyles.actions}>
             {card ? (
               <Button

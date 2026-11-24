@@ -3,22 +3,72 @@
    (`.options`, `.workOn`) sits above that layer, so its own dead space never opens
    Practice. Nothing interactive is nested. */
 .card {
+  --tile: var(--tile-moss);
+  --tile-note: var(--tile-moss-note);
+  --tile-left: var(--tile-moss-left);
+  /* The drawing's box in an ordinary row, and the room kept for the words beside it. */
+  --drawing-right: 150px;
+  --drawing-width: min(380px, 100% - 408px);
   position: relative;
   min-width: 0;
   padding: var(--space-5);
-  background: var(--bg-elevated);
-  border-radius: var(--radius-l);
+  background: var(--tile);
+  border-radius: 28px;
 }
 
-.card[data-featured] {
-  background: var(--bg-sunken);
+/* Each piece has a quiet ground of its own (U157). */
+.card[data-tile='sand'] {
+  --tile: var(--tile-sand);
+  --tile-note: var(--tile-sand-note);
+  --tile-left: var(--tile-sand-left);
+}
+.card[data-tile='clay'] {
+  --tile: var(--tile-clay);
+  --tile-note: var(--tile-clay-note);
+  --tile-left: var(--tile-clay-left);
+}
+.card[data-tile='fern'] {
+  --tile: var(--tile-fern);
+  --tile-note: var(--tile-fern-note);
+  --tile-left: var(--tile-fern-left);
+}
+.card[data-tile='wheat'] {
+  --tile: var(--tile-wheat);
+  --tile-note: var(--tile-wheat-note);
+  --tile-left: var(--tile-wheat-left);
+}
+
+/* The opening bars, beside the composer and the status: the title keeps the whole line above, and
+   the row its height. */
+.drawing {
+  position: absolute;
+  right: var(--drawing-right);
+  bottom: 20px;
+  width: var(--drawing-width);
+  height: 46px;
+  pointer-events: none;
+}
+.rightHand {
+  fill: var(--tile-note);
+}
+.leftHand {
+  fill: var(--tile-left);
+}
+/* The Continue card's actions are as wide as their words: its drawing takes a place in the line. */
+.card[data-featured] .drawing {
+  position: static;
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: 300px;
+  align-self: flex-end;
+  margin-inline-start: auto;
 }
 
 .stretched::after {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: var(--radius-l);
+  border-radius: 28px;
   cursor: pointer;
 }
 
@@ -80,9 +130,10 @@
 
 .title {
   margin: 0;
+  font-family: var(--font-title);
   font-size: var(--text-l);
-  font-weight: 500;
-  letter-spacing: -0.035em;
+  font-weight: 700;
+  letter-spacing: -0.015em;
   overflow-wrap: anywhere;
 }
 
@@ -93,9 +144,16 @@
 .composer,
 .status,
 .context {
-  color: var(--fg-muted);
+  color: color-mix(in srgb, var(--fg) 72%, var(--tile));
   margin: var(--space-1) 0 0;
   font-size: var(--text-s);
+}
+
+.card:not([data-featured]):has(.drawing) :is(.composer, .status) {
+  max-width: max(220px, 100% - 400px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status {
@@ -171,15 +229,50 @@
   .card[data-featured] .options {
     margin-left: auto;
   }
+
+  .card[data-featured] .drawing {
+    position: absolute;
+    inset: 22px var(--space-5) auto auto;
+    align-self: auto;
+    width: 112px;
+    height: 28px;
+    margin: 0;
+  }
+
+  .card[data-featured] .text {
+    width: 100%;
+  }
+
+  .card[data-featured]:has(.drawing) .title {
+    max-width: calc(100% - 124px);
+  }
 }
 
 @media (max-width: 640px) {
   .card {
+    --drawing-right: 60px;
+    --drawing-width: 84px;
     padding: var(--space-4);
+  }
+
+  .drawing {
+    bottom: 15px;
+    height: 28px;
+  }
+
+  .title {
+    font-size: 1.0625rem;
+    font-weight: 650;
+    letter-spacing: -0.025em;
+  }
+
+  .card:not([data-featured]):has(.drawing) :is(.composer, .status) {
+    max-width: calc(100% - 64px);
   }
 
   .card[data-featured] .title {
     font-size: var(--text-xl);
+    font-weight: 700;
   }
 
   .actions {

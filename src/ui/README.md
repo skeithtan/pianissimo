@@ -10,9 +10,10 @@ color (light, dark via `prefers-color-scheme` and `[data-theme]`; surfaces `--bg
 `--bg-elevated` and `--bg-sunken` < `--bg-raised`, stepping lighter with elevation in dark mode;
 accent as text `--accent` versus fill `--accent-fill` + `--accent-fg`; `--scrim`, A17).
 `--practice-surface` keeps footer/keyboard controls on the themed surface when the score is pinned
-light. `--hand-control-left/right` brighten enabled hand rings and glyphs in dark mode without
-changing the semantic note colors or darker L/R badge fills. `--color-loop-control` follows the
-score paper so the loop clear button stays visible. Pinned light paper scopes the existing light
+light. `--hand-control-left/right` brighten enabled hand fills and glyphs in dark mode without
+changing the semantic note colors or darker L/R badge fills. `--lid` and `--lid-note*` / `--lid-played*`
+are the score screen's header and the notes drawn on it (U154), `--fill` a filled control on the score's
+surface (U155), `--tile-*` the Library's rows (U157), `--font-title` the face of titles. Pinned light paper scopes the existing light
 semantic inks to `.pn-strip` (including portrait), leaving the surrounding UI theme unchanged.
 Other tokens include **type scale** (`--text-xs`
 … `--text-2xl`), **spacing** (`--space-1` … `--space-7`), **elevation** (`--shadow`,
@@ -34,7 +35,7 @@ link/editing menus are unchanged.
 
 ## Controls (`controls.tsx`)
 
-`Button`, `Segmented` (radio group with arrow keys and roving tab index; an option may be `disabled`: dimmed, skipped by the arrows, U92), `Toggle`, `Field`,
+`Button`, `Segmented` (radio group with arrow keys and roving tab index; an option may be `disabled`: dimmed, skipped by the arrows, U92; `quiet`: a thin tone-on-tone capsule, U154), `Toggle`, `Field`,
 `Slider`, `Sheet` (modal dialog that fades and restores focus), `Notice`. A sheet supports
 `wide`, `tall`, and `flush` variants. Its `className` can set a custom width cap using
 `--sheet-width`. No big shadows (U12): sheets, the tempo popover and the selected segment use
@@ -57,15 +58,15 @@ always the danger red, on every Record performance button).
 | --- | --- |
 | `WrongNoteFlash` | Full-viewport, pointer-inert red damage vignette with a transparent center. Drive with `trigger` + `until` or `onReady(handle)` → `hit(now?, untilMs?, { soft? })` / `clear()`. `soft` (a too-early press) peaks at `SOFT_FLASH_PEAK` (0.35) with an 80% decay and never lifts a full flash already showing (two layers, the larger shows). One rAF loop writes opacity only; there is no shake, scaling or view transform. The envelope rises in ~50 ms and decays over ~300 ms; repeat attacks extend it without strobing. No generic wrong-key chip (U30). |
 | `HandToggles` | `[left hand] [main button] [right hand]` with `hands: LearnerHands`, `onHandsChange`, `onOnlyHand` (a tap on the only lit hand, which stays on, U141), `onText` / `offText` (the mode's words in the tooltips), `playing`, `onPlayPause`, `playLabel`, `handsDisabled?`, `playDisabled?`, `handClass?` (extra class on the two hand toggles; Practice fades them while playing), `compact?` (a phone's bar). Both on = both, one = that hand. No caption (U12): `aria-pressed`, L/R badge, tooltip, hand color tokens. Pure helpers: `handIsOn`, `toggledHands`. |
-| `ScoreOverview` | Slim scrubbable bar for the whole unfolded piece: `measures` (`{start, duration}` in whole notes), `position`, `loop`, `onScrub(occ)` (rAF-throttled; tap seeks at once), `disabled`, `describe`. `role="slider"` with `aria-valuetext` "Bar 12 of 59", arrow / Home / End keys. No visible bar counter (U50). Playback only changes two transforms; the tick path is built once per `measures`. Loop is inclusive of both bars (a note-level loop's exact `start` / `end` are placed inside their bars, linear in time, `loopExtent(…, start?, end?)`), outlined in `--color-loop`. Optional `onLoopChange(loop)`: the shown loop gets two edge handles (`role="slider"`, "Overview loop start" / "Overview loop end", test ids `overview-loop-start` / `overview-loop-end`) that drag a whole bar at a time (rAF-throttled, once per bar change, final value on release; `dragLoopEdge`) or step with Left / Right; the dragged edge drops its note-level position, the other keeps it; never crossing, never leaving the piece. A handle press never seeks. |
+| `ScoreOverview` | The whole unfolded piece drawn from its `notes`, scrubbable (U154): `measures` (`{start, duration}` in whole notes), `position`, `loop`, `onScrub(occ)` (rAF-throttled; tap seeks at once), `disabled`, `describe`. `role="slider"` with `aria-valuetext` "Bar 12 of 59", arrow / Home / End keys. No visible bar counter (U50). Playback only changes three transforms (the window over the played notes, the drawing inside it, the marker); the drawing and the tick path are built once per `measures` and width. Height and colors come from `--overview-*` (focus mode's are in the Practice styles). Loop is inclusive of both bars (a note-level loop's exact `start` / `end` are placed inside their bars, linear in time, `loopExtent(…, start?, end?)`), a pale band with its notes dark. Optional `onLoopChange(loop)`: the shown loop gets two edge handles (`role="slider"`, "Overview loop start" / "Overview loop end", test ids `overview-loop-start` / `overview-loop-end`) that drag a whole bar at a time (rAF-throttled, once per bar change, final value on release; `dragLoopEdge`) or step with Left / Right; the dragged edge drops its note-level position, the other keeps it; never crossing, never leaving the piece. A handle press never seeks. |
 | `LoopSteppers` + `loopStep.ts` | "Loop start" / "Loop end" with whole-bar steps only (‹ ›, one chevron each): `[‹] value [›]`, all 44 px (U22 revised 2026-10-31). `currentOcc` is the bar under the cursor line in the current view (the browse position while inspecting). No loop: only start-earlier (creates `[cur-1, cur]`) and end-later (creates `[cur, cur+1]`) work. With a loop: a step moves an edge to the next barline (a note-level edge set with the strip's handles first snaps to its own bar's barline), never past the other edge (one-bar minimum) or out of `0..lastOcc`. `edgeLabel(loop, edge)` names note-level edges ("Bar 12, beat 3"). Pure `stepLoop`, `loopStepAvailability`. |
 | `TempoControl` + `speed.ts` | `[-] 100% / ♩ = 72 [+]`; hold to repeat after 400 ms; 5-point grid (off-grid values step to the next grid value), 5%–400%. Tap the value for presets 50–200 %, slider, custom entry as multiplier / percent / BPM of the shown beat unit (`parseSpeedInput`; rejects zero, negative, non-finite, unparseable, out of range), reset. `noTempo` shows "Set tempo…" and calls `onRequestTempo`. Pure `stepMultiplier`, `parseSpeedInput`, `formatSpeedPercent`, `formatBpm`. |
 
 The Practice view decides what a change means during a scored attempt (interrupt) for tempo,
 loop and hand changes: these controls only report them.
 
-When the Repeat outline reaches an end of the `ScoreOverview` track, that edge uses the
-track's radius. Its grip sits inside the curve, with the outline marking the boundary (U109).
+`noteDrawing.ts` (U154, U157): a piece drawn from its notes, one SVG path per hand. `overviewNotes` is the
+whole piece on the overview's time scale, `openingOf` / `openingNotes` the opening bars a Library row keeps.
 
 ## Tests
 

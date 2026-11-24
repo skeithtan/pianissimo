@@ -1518,6 +1518,8 @@ export class PageView {
       el.style.top = `${r2(sys.y0 - L.top)}px`
       el.style.height = `${r2(sys.y1 - sys.y0)}px`
       el.dataset['system'] = String(b.system)
+      const last = bands.length - 1
+      el.dataset['part'] = last === 0 ? 'only' : i === 0 ? 'first' : i === last ? 'last' : 'middle'
       if (entering && !this.reducedMotion) {
         el.classList.remove('pn-loop-enter')
         void el.offsetWidth

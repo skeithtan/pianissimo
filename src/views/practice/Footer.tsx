@@ -130,6 +130,7 @@ export function Footer({
                 noTempo={tempo === null}
                 onRequestTempo={onRequestTempo}
                 placement="up"
+                filled
               />
             </div>
             <div class={`${styles.footerSide} ${styles.footerEnd}`}>
