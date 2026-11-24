@@ -10,6 +10,7 @@ import { openPractice, settingsOpen } from '../../app/navigation'
 import { pushNotice } from '../../app/state'
 import { Notice } from '../../ui/controls'
 import { useMediaQuery } from '../shared/usePhone'
+import { BrowserNotices } from './BrowserNotices'
 import { ConnectPianoCard } from './ConnectPianoCard'
 import { LibraryDepsContext, defaultLibraryDeps, useLibraryDeps, type LibraryDeps } from './deps'
 import { FileButton, SCORE_ACCEPT } from './FileButton'
@@ -121,6 +122,7 @@ function LibraryPage() {
         </div>
       </header>
 
+      <BrowserNotices />
       <ConnectPianoCard />
 
       {state.status === 'loading' ? <p class={styles.loading}>{msg('Opening your library…')}</p> : null}

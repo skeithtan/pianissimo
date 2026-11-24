@@ -4,6 +4,7 @@
  */
 import { createContext } from 'preact'
 import { useContext } from 'preact/hooks'
+import { detectAppleMobile } from '../../app/pianoBrowsers'
 import { connectSettingsStorage, getStorage } from '../../app/services'
 import { flushSettings } from '../../app/state'
 import { createImportClient, type ImportClient } from '../../core/import/client'
@@ -43,15 +44,6 @@ function browserDownload(file: Blob, fileName: string): void {
   a.remove()
   // Safari needs the URL alive until the download has started.
   setTimeout(() => URL.revokeObjectURL(url), 60_000)
-}
-
-export function detectAppleMobile(
-  nav: { userAgent?: string; platform?: string; maxTouchPoints?: number } | undefined = globalThis.navigator,
-): boolean {
-  if (!nav) return false
-  if (/iPad|iPhone|iPod/.test(nav.userAgent ?? '')) return true
-  // iPadOS 13+ reports a Mac platform; touch points tell it apart from a real Mac.
-  return nav.platform === 'MacIntel' && (nav.maxTouchPoints ?? 0) > 1
 }
 
 export const defaultLibraryDeps: LibraryDeps = {

@@ -19,7 +19,7 @@ The shell the four main views plug into. Spec: "Main user journey", "Practice sc
 | `wakeLock.ts` | Screen wake lock controller. |
 | `theme.ts` | `data-theme` from `settings.view.theme`, cached in localStorage for a correct first paint. |
 | `boot.ts` | `startShell()` from `main.tsx`: theme sync, initial MIDI status from detection, settings flush on `pagehide`/hidden, preload first view. |
-| `AppBar`, `NoticeArea`, `CapabilityBanner` | Shell chrome. `ConnectionChip` lives in `views/shared` so Practice can reuse it. |
+| `AppBar`, `NoticeArea` | Shell chrome. `ConnectionChip` lives in `views/shared` so Practice can reuse it. |
 | `version.ts` | `APP_VERSION` from `package.json` (tree-shaken). |
 | `pwa.ts` | `startPwa()` from `main.tsx` (production only): registers the service worker (`workers/sw.ts`, DECISIONS U84), asks for updates at launch, on `online` and when shown again, and reloads a page left on an older build only off the Practice screen with no sheet open (`createReloader`). The installed app asks for persistent storage. |
 
@@ -100,7 +100,7 @@ dismissNotice(id)
 `getFeatures()` memoizes it for the page. Ids: `webMidi`, `webAudio`, `moduleWorkers`, `indexedDb`,
 `persistentStorage`, `wakeLock`. Each status has `supported`, `severity` (`required` /
 `important` / `optional`) and, when missing, a short `explanation` (Safari has no Web MIDI: score
-viewing and browser-sound reference playback only; use MIDIWeb on iPad or Chrome on a computer).
+viewing and browser-sound reference playback only; use MIDIWeb on iPad, Firefox or Chrome on a computer; `pianoBrowsers.ts` has the links).
 Module workers are detected by constructing a throwaway worker whose options getter records whether
 the engine reads `type` (WebIDL reads it before the constructor can fail). Every probe is wrapped,
 so a throwing getter counts as missing.
@@ -124,8 +124,8 @@ tolerates refusal (one retry per visibility event, never a loop) and missing sup
 4. **Connection status**: `ConnectionChip` (`views/shared`) for the Practice header; it opens Settings on Piano and sound.
 5. **Toasts**: `pushNotice(...)`. Do not use them for the wrong-note feedback (use `ui/WrongNoteFlash`).
 6. **Settings persistence** and **label hook**: see above.
-7. **Library banner**: the shell shows `CapabilityBanner` on the library view for missing
-   required/important features; views should not duplicate it. Detailed MIDI help belongs in
+7. **Missing features**: the Library shows `BrowserNotices` in its column for missing
+   required/important features (U159); other views should not duplicate it. Detailed MIDI help belongs in
    Connection, driven by `getFeatures().features.webMidi`.
 
 ## Tests

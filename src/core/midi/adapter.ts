@@ -33,7 +33,7 @@ export type MidiPermissionState = 'granted' | 'denied' | 'prompt' | 'unknown'
 
 export const MIDI_UNSUPPORTED_EXPLANATION =
   'This browser does not provide Web MIDI, so Pianissimo cannot hear or play your piano. ' +
-  'On a computer, use desktop Chrome. On iPad, Safari and Home Screen shortcuts lack Web MIDI: ' +
+  'On a computer, use Firefox or Chrome. On iPad, Safari and Home Screen shortcuts lack Web MIDI: ' +
   'open Pianissimo in MIDIWeb Browser. Score viewing and browser-sound playback still work here.'
 
 export const MIDI_DENIED_EXPLANATION =
@@ -68,7 +68,7 @@ export interface MidiAdapterEnv {
   readonly now?: () => number
 }
 
-/** True when `navigator.requestMIDIAccess` exists (Chrome, MIDIWeb; not Safari). */
+/** True when `navigator.requestMIDIAccess` exists (Chrome, desktop Firefox, MIDIWeb; not Safari). */
 export function isWebMidiSupported(nav: MidiNavigatorLike | undefined = globalNavigator()): boolean {
   return !!nav && typeof nav.requestMIDIAccess === 'function'
 }

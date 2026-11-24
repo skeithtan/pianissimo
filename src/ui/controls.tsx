@@ -37,6 +37,23 @@ export function Button({
   )
 }
 
+/** A link to another site, drawn as a button. */
+export function LinkButton({
+  children,
+  variant = 'secondary',
+  href,
+}: {
+  children: ComponentChildren
+  variant?: ButtonVariant
+  href: string
+}) {
+  return (
+    <a class={`${styles.button} ${styles[variant]} ${styles.linkButton}`} href={href} target="_blank" rel="noopener">
+      {children}
+    </a>
+  )
+}
+
 export interface SegmentOption<T extends string> {
   readonly value: T
   readonly label: string

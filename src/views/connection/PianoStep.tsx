@@ -2,7 +2,7 @@ import { msg } from '../../i18n/messages'
 /**
  * Step 1, the piano (spec "Delivery and device compatibility"; "MIDI input, output, and pedal
  * controls"): MIDI access through the browser's permission flow on an explicit button press
- * (unsupported browsers: MIDIWeb on iPad or Chrome on a computer; how to re-allow a blocked
+ * (unsupported browsers: MIDIWeb on iPad, Firefox or Chrome on a computer; how to re-allow a blocked
  * permission), then the piano input: list inputs separately, select one, live key and pedal
  * tests (the `LivePanel` beside or below this step), remember the route. Boot already asks for
  * access and picks a lone piano (DECISIONS C9), so this step is usually done on arrival; access
@@ -11,9 +11,11 @@ import { msg } from '../../i18n/messages'
  */
 import type { MidiService, MidiSnapshot } from '../../app/services'
 import type { FeatureReport } from '../../app/features'
+import { isSafari } from '../../app/pianoBrowsers'
 import { settings } from '../../app/state'
 import type { MidiRouteSettings } from '../../core/model/settings'
 import { Button } from '../../ui/controls'
+import { PianoBrowserLinks } from '../shared/PianoBrowserLinks'
 import { Callout, Help, PortList, Step } from './parts'
 import type { StepStatus } from './status'
 import styles from './connection.module.css'
@@ -64,19 +66,11 @@ function AccessBody({
   switch (snap.access) {
     case 'unsupported':
       return (
-        <Callout tone="warning" title={msg('This browser cannot connect a piano')}>
+        <Callout title={isSafari() ? msg('Safari cannot connect a piano') : msg('This browser cannot connect a piano')}>
           <p>{features.features.webMidi.explanation ?? msg(snap.message)}</p>
-          <ul class={styles.list}>
-            <li>
-              <strong>iPad:</strong>{' '}
-              {msg(
-                'open Pianissimo in the free MIDIWeb Browser app. Safari and Home Screen shortcuts have no Web MIDI.',
-              )}
-            </li>
-            <li>
-              <strong>{msg('Computer:')}</strong> {msg('use standard desktop Chrome. No special browser is needed.')}
-            </li>
-          </ul>
+          <div class={`${styles.actions} ${styles.browserLinks}`}>
+            <PianoBrowserLinks />
+          </div>
         </Callout>
       )
     case 'denied':

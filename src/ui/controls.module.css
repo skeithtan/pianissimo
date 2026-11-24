@@ -25,6 +25,9 @@
     transform var(--dur-fast) var(--ease-out),
     opacity var(--dur-base) var(--ease-standard);
 }
+.linkButton {
+  text-decoration: none;
+}
 .button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--bg-raised) 90%, var(--fg));
 }

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
 import { fixtureBytes } from '../../../tests/unit/import/fixtures'
 import { existingAudioContext, resetSharedAudioContext } from '../../core/playback/webaudio/context'
+import { detectFeatures, resetFeaturesForTests } from '../../app/features'
 import { currentView, practiceRequest, settingsOpen } from '../../app/navigation'
 import { notices, resetAppStateForTests } from '../../app/state'
 import { comparisonContext } from '../../core/history/testkit'
@@ -35,6 +36,10 @@ async function until(check: () => boolean, what = 'condition'): Promise<void> {
 
 beforeEach(async () => {
   resetAppStateForTests()
+  // No Web MIDI, so its card shows. happy-dom has no Web Audio, a name outside the catalogs.
+  resetFeaturesForTests(
+    detectFeatures({ AudioContext: class {}, Worker: globalThis.Worker, indexedDB: globalThis.indexedDB }),
+  )
   resetPersistenceRequestForTests()
   sessionDismissals.clear()
   practiceRequest.value = null
@@ -46,6 +51,7 @@ afterEach(() => {
   view?.unmount()
   view = null
   resetAppStateForTests()
+  resetFeaturesForTests()
   resetSharedAudioContext()
   vi.unstubAllGlobals()
 })

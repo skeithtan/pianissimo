@@ -6,8 +6,7 @@ import { $, $$, byLabel, byText, click, mount, type Mounted } from '../views/sha
 import { ALL_FEATURES } from '../views/settings/testkit'
 import { discardLabelDraft } from '../views/settings/labelDraft'
 import { App } from './App'
-import { resetCapabilityBannerForTests } from './CapabilityBanner'
-import { detectFeatures } from './features'
+import { detectFeatures, resetFeaturesForTests } from './features'
 import { resetViewCacheForTests } from './LazyView'
 import { connectionOpen, currentView, navigate, openConnection, settingsOpen, settingsTab } from './navigation'
 import { applyTheme, startThemeSync } from './theme'
@@ -21,6 +20,7 @@ import {
   updateSettings,
 } from './state'
 import { overlayScreens, views } from './views'
+import { resetBrowserNoticesForTests } from '../views/library/BrowserNotices'
 import { resetServicesForTests } from './services'
 import { openFresh } from '../core/storage/testkit'
 
@@ -35,7 +35,8 @@ beforeEach(() => {
   resetServicesForTests({ openStorage: () => openFresh() })
   resetAppStateForTests()
   resetViewCacheForTests()
-  resetCapabilityBannerForTests()
+  resetFeaturesForTests(ALL_FEATURES)
+  resetBrowserNoticesForTests()
   discardLabelDraft()
   settingsOpen.value = false
   settingsTab.value = 'reading'
@@ -185,8 +186,8 @@ describe('connection chip', () => {
   })
 })
 
-describe('capability banner', () => {
-  it('explains missing Web MIDI on the library with the workaround, and can be dismissed', async () => {
+describe('browser notices', () => {
+  it('points a browser without Web MIDI to ones that have it, until dismissed', async () => {
     vi.useFakeTimers()
     const noMidi = detectFeatures({
       navigator: { wakeLock: {}, storage: { persist: () => undefined } },
@@ -199,34 +200,36 @@ describe('capability banner', () => {
       },
       indexedDB: {},
     })
+    resetFeaturesForTests(noMidi)
     view = mount(<App features={noMidi} />)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(50)
     })
     const root = view.container
-    expect(root.textContent).toMatch(/Safari does not offer it/u)
-    expect(root.textContent).toMatch(/MIDIWeb/u)
+    const card = () => $(root, '[data-testid="browser-notice-webMidi"]')
+    expect([...card()!.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Get Firefox', 'Get Chrome'])
+    expect(card()!.textContent).toMatch(/use Firefox or Chrome/u)
     click(byLabel(root, 'Dismiss'))
     await act(async () => {
       await vi.advanceTimersByTimeAsync(400)
     })
-    expect(root.textContent).not.toMatch(/Safari does not offer it/u)
+    expect(card()).toBeNull()
   })
 
   it('stays quiet when everything needed is present, and for optional features', async () => {
-    const root = await open(
-      detectFeatures({
-        navigator: { requestMIDIAccess: () => undefined },
-        AudioContext: class {},
-        Worker: class {
-          constructor(_u: string, o?: { type?: string }) {
-            void o?.type
-          }
-          terminate(): void {}
-        },
-        indexedDB: {},
-      }),
-    )
+    const report = detectFeatures({
+      navigator: { requestMIDIAccess: () => undefined },
+      AudioContext: class {},
+      Worker: class {
+        constructor(_u: string, o?: { type?: string }) {
+          void o?.type
+        }
+        terminate(): void {}
+      },
+      indexedDB: {},
+    })
+    resetFeaturesForTests(report)
+    const root = await open(report)
     expect(root.textContent).not.toMatch(/Keep screen awake|Persistent storage/u)
     expect($$(root, '[role="status"]').some((n) => /unavailable|cannot/u.test(n.textContent ?? ''))).toBe(false)
   })

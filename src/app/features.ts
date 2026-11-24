@@ -1,4 +1,5 @@
 import { msg } from '../i18n/messages'
+import { isSafari, type NavigatorLike } from './pianoBrowsers'
 /**
  * Browser capability detection (spec "Technical design": feature-detect MIDI, audio, workers,
  * storage and optional wake prevention; "Delivery and device compatibility": Safari has no Web
@@ -33,7 +34,7 @@ export interface FeatureReport {
 
 /** The slice of `globalThis` the detector reads. Anything may be absent. */
 export interface FeatureEnvironment {
-  readonly navigator?: {
+  readonly navigator?: NavigatorLike & {
     readonly requestMIDIAccess?: unknown
     readonly wakeLock?: unknown
     readonly storage?: { readonly persist?: unknown } | undefined
@@ -49,9 +50,10 @@ const DEFINITIONS: Readonly<Record<FeatureId, { label: string; severity: Feature
     label: 'Web MIDI',
     severity: 'important',
     explanation:
-      'This browser has no Web MIDI (Safari does not offer it), so a piano cannot be connected for live practice. ' +
+      'This browser cannot connect to a piano (Safari has no Web MIDI). ' +
       'Listen still works, and Follow with the microphone. ' +
-      'Use the MIDIWeb browser on an iPad, or Chrome on a computer.',
+      'To connect one, open this same address in the free MIDIWeb Browser app on an iPad or iPhone, ' +
+      'or in Firefox or Chrome on a computer.',
   },
   webAudio: {
     label: 'Web Audio',
@@ -87,6 +89,13 @@ const DEFINITIONS: Readonly<Record<FeatureId, { label: string; severity: Feature
       'This browser cannot keep the screen awake, so it may dim or lock while you play. Raise the device auto-lock time while practicing.',
   },
 }
+
+/** The same for Safari, by name. */
+const SAFARI_NO_MIDI =
+  'Safari has no Web MIDI, so it cannot connect to a piano. ' +
+  'Listen still works, and Follow with the microphone. ' +
+  'To connect one, open this same address in the free MIDIWeb Browser app on an iPad or iPhone, ' +
+  'or in Firefox or Chrome on a computer.'
 
 const SEVERITY_ORDER: Readonly<Record<FeatureSeverity, number>> = { required: 0, important: 1, optional: 2 }
 
@@ -130,7 +139,7 @@ function probe(test: () => boolean): boolean {
   }
 }
 
-function build(id: FeatureId, supported: boolean): FeatureStatus {
+function build(id: FeatureId, supported: boolean, explanation = DEFINITIONS[id].explanation): FeatureStatus {
   const def = DEFINITIONS[id]
   return {
     id,
@@ -140,7 +149,7 @@ function build(id: FeatureId, supported: boolean): FeatureStatus {
     severity: def.severity,
     supported,
     get explanation() {
-      return supported ? null : msg(def.explanation)
+      return supported ? null : msg(explanation)
     },
   }
 }
@@ -151,6 +160,7 @@ export function detectFeatures(env: FeatureEnvironment = globalThis as FeatureEn
     webMidi: build(
       'webMidi',
       probe(() => isFunction(env.navigator?.requestMIDIAccess)),
+      probe(() => isSafari(env.navigator ?? {})) ? SAFARI_NO_MIDI : undefined,
     ),
     webAudio: build(
       'webAudio',
@@ -187,7 +197,7 @@ export function getFeatures(): FeatureReport {
   return cached
 }
 
-/** Forget the cached report. Tests only. */
-export function resetFeaturesForTests(): void {
-  cached = null
+/** Forget or replace the cached report. Tests only. */
+export function resetFeaturesForTests(report: FeatureReport | null = null): void {
+  cached = report
 }

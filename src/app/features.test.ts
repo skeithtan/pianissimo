@@ -36,13 +36,13 @@ describe('detectFeatures', () => {
     }
   })
 
-  it('explains missing Web MIDI as a Safari limitation with the workaround', () => {
+  it('explains missing Web MIDI with where to go instead', () => {
     const report = detectFeatures({ ...FULL, navigator: { ...FULL.navigator, requestMIDIAccess: undefined } })
     const midi = report.features.webMidi
     expect(midi.supported).toBe(false)
     expect(midi.explanation).toMatch(/Safari/u)
     expect(midi.explanation).toMatch(/MIDIWeb/u)
-    expect(midi.explanation).toMatch(/Chrome/u)
+    expect(midi.explanation).toMatch(/Firefox or Chrome/u)
     expect(midi.explanation).toMatch(/Listen still works/u)
     expect(midi.severity).toBe('important')
     expect(report.features.webAudio.supported).toBe(true)

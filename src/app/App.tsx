@@ -7,7 +7,6 @@ import { msg } from '../i18n/messages'
 import { useEffect, useRef } from 'preact/hooks'
 import { SettingsOverlay } from '../views/settings/SettingsOverlay'
 import { AppBar } from './AppBar'
-import { CapabilityBanner } from './CapabilityBanner'
 import { getFeatures, type FeatureReport } from './features'
 import { LazyView } from './LazyView'
 import { currentView } from './navigation'
@@ -49,7 +48,6 @@ export function App({ features = getFeatures() }: { features?: FeatureReport }) 
   return (
     <div class={styles.shell}>
       {entry.chrome === 'bar' ? <AppBar /> : null}
-      {view === 'library' ? <CapabilityBanner report={features} /> : null}
       <main ref={main} class={styles.main} data-chrome={entry.chrome} data-view={view} tabIndex={-1} aria-label={title}>
         <LazyView name={view} />
       </main>

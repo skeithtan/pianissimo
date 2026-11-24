@@ -40,7 +40,7 @@
   "1001": "Ce navigateur bloque le stockage local, comme c’est souvent le cas en navigation privée. Les partitions, les paramètres et l’historique de travail ne peuvent pas être enregistrés. ",
   "1002": "Ce navigateur bloque le stockage local, comme c’est souvent le cas en navigation privée. Les partitions, les paramètres et l’historique de travail ne peuvent pas être enregistrés. Ouvrez Pianissimo dans une fenêtre ordinaire.",
   "1010": "Ce navigateur ne peut pas utiliser le microphone ici.",
-  "1013": "Ce navigateur ne prend pas en charge Web MIDI (Safari non plus). Vous ne pouvez donc pas y connecter de piano pour jouer en direct. Le mode Écouter reste disponible, ainsi que Suivre avec le microphone. Utilisez MIDIWeb sur iPad ou Chrome sur ordinateur.",
+  "1013": "Ce navigateur ne peut pas se connecter à un piano (Safari ne prend pas en charge Web MIDI). Le mode Écouter reste disponible, ainsi que Suivre avec le microphone. Pour en connecter un, ouvrez cette même adresse dans l’application gratuite MIDIWeb Browser sur iPad ou iPhone, ou dans Firefox ou Chrome sur ordinateur.",
   "1057": "Désactivez MIDI Thru ou l’écho sur le piano ou l’interface, ou choisissez un autre canal de sortie, puis rejouez les notes d’essai.",
   "1121": "Quelle est la partie de piano?",
   "1125": "Sans piano connecté, le mode Suivre utilise toujours le microphone. Avec un piano connecté, il suit les touches, sauf si cette option est activée. Le choix est aussi accessible dans le menu de travail (Source du suivi).",
@@ -70,5 +70,6 @@
   "6009": "Où la main gauche doit-elle sonner?",
   "6010": "Où la main droite doit-elle sonner?",
   "6016": "Le piano a-t-il joué trois notes brèves?",
-  "6022": "Le son de l’application sort maintenant de cet appareil. Vous pouvez changer cela dans les Paramètres."
+  "6022": "Le son de l’application sort maintenant de cet appareil. Vous pouvez changer cela dans les Paramètres.",
+  "6038": "Safari ne prend pas en charge Web MIDI et ne peut pas se connecter à un piano. Le mode Écouter reste disponible, ainsi que Suivre avec le microphone. Pour en connecter un, ouvrez cette même adresse dans l’application gratuite MIDIWeb Browser sur iPad ou iPhone, ou dans Firefox ou Chrome sur ordinateur."
 }

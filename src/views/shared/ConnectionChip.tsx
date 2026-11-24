@@ -7,6 +7,7 @@ import { msg } from '../../i18n/messages'
 import { connectionStatus, type ConnectionState, type ConnectionStatus } from '../../app/state'
 import { getFeatures } from '../../app/features'
 import { openConnection } from '../../app/navigation'
+import { isSafari } from '../../app/pianoBrowsers'
 import pill from '../../ui/statusPill.module.css'
 import styles from './ConnectionChip.module.css'
 
@@ -24,7 +25,7 @@ const TONE: Readonly<Record<ConnectionState, Tone>> = {
 export function connectionLabel(status: ConnectionStatus): string {
   switch (status.state) {
     case 'unsupported':
-      return msg('No MIDI in this browser')
+      return isSafari() ? msg('No MIDI in Safari') : msg('No MIDI in this browser')
     case 'denied':
       return msg('MIDI access blocked')
     case 'disconnected':

@@ -120,7 +120,7 @@ describe('Piano step: MIDI access (spec "Delivery and device compatibility")', (
     const root = view.container
     expect(root.textContent).toContain('This browser cannot connect a piano')
     expect(root.textContent).toContain('MIDIWeb Browser')
-    expect(root.textContent).toContain('desktop Chrome')
+    expect(root.textContent).toContain('Firefox or Chrome')
     expect(byLabel(root, 'Allow MIDI access')).toBeNull()
     expect(connectionStatus.value.state).toBe('unsupported')
   })

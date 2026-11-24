@@ -18,7 +18,7 @@ const READY_MS = 2500
 /** What the card says; `blocked`: no access (refused, or the browser failed). */
 type Step = 'offer' | 'looking' | 'none' | 'several' | 'blocked' | 'check' | 'ready' | 'done'
 
-/** Nothing without Web MIDI: the capability banner says so. */
+/** Nothing without Web MIDI: BrowserNotices says where to go. */
 export function ConnectPianoCard() {
   return getFeatures().features.webMidi.supported ? <ConnectPiano service={getMidiService()} /> : null
 }

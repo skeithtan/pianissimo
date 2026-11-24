@@ -74,6 +74,9 @@ const paths: Record<string, () => JSX.Element> = {
       <rect x="8.15" y="11" width="11.7" height="9.5" rx="4.2" stroke="none" />
     </g>
   ),
+  copy: () => (
+    <path d="M11 8h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM5 16a2 2 0 0 1-1-2V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 1" />
+  ),
   check: () => <path d="M5 12.5l4.5 4.5L19 7.5" />,
   close: () => <path d="M6 6l12 12M18 6L6 18" />,
   plug: () => <path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5" />,

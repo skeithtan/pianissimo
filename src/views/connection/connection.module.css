@@ -248,6 +248,9 @@
   gap: var(--space-1);
   font-size: var(--text-s);
 }
+.browserLinks {
+  margin-top: var(--space-2);
+}
 .calloutBody p {
   margin: 0;
 }

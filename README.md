@@ -37,7 +37,8 @@ Live: <https://skeithtan.github.io/pianissimo/>
 
 ## Requirements
 
-A browser with Web MIDI: desktop Chrome, or the MIDIWeb Browser on iPad. Safari can listen, and
+A browser with Web MIDI: Firefox or Chrome on a computer, or the MIDIWeb Browser app on an
+iPad or iPhone. Safari can listen, and
 follow through the microphone, without a piano.
 
 ## Development

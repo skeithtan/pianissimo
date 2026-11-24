@@ -3,7 +3,7 @@ import { importFixture, inspectFixture } from '../../../tests/unit/import/fixtur
 import { summarizeImport } from '../../core/import/summary'
 import { handAssignmentId } from '../../core/model/practice'
 import { hasTempo, tempoMapId } from '../../core/music/tempo'
-import { detectAppleMobile } from './deps'
+import { detectAppleMobile, isSafari, pianoBrowsers } from '../../app/pianoBrowsers'
 import { formatBytes, formatLastSpeed, formatRelativeTime, plural } from './format'
 import type { SummaryVoice } from '../../core/import/summary'
 import { useCatalog } from '../shared/catalogTesting'
@@ -56,6 +56,16 @@ describe('format', () => {
       false,
     )
     expect(detectAppleMobile({ userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/140' })).toBe(false)
+  })
+  it('recommends browsers with Web MIDI for the device, Firefox first on a computer, and names Safari', () => {
+    const names = (nav: Parameters<typeof pianoBrowsers>[0]) => pianoBrowsers(nav).browsers.map((b) => b.name)
+    expect(names({ userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0)' })).toEqual(['MIDIWeb Browser'])
+    expect(names({ userAgent: 'Mozilla/5.0 (Macintosh)', platform: 'MacIntel' })).toEqual(['Firefox', 'Chrome'])
+    const vendor = 'Apple Computer, Inc.'
+    expect(isSafari({ vendor, userAgent: 'Version/26.0 Safari/605.1.15' })).toBe(true)
+    expect(isSafari({ vendor, userAgent: 'CriOS/150.0 Mobile/15E148 Safari/604.1' })).toBe(false)
+    expect(isSafari({ vendor: '', userAgent: 'Firefox/150.0' })).toBe(false)
+    expect(names({ userAgent: 'Mozilla/5.0 (Android 15; Mobile; rv:150.0) Firefox/150.0' })).toEqual(['Chrome'])
   })
 })
 

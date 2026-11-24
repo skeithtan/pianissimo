@@ -340,7 +340,7 @@ describe('About', () => {
   it('lists what this browser supports with the explanation for anything missing', () => {
     const panel = openTab(open(detectFeatures({})), 'Data')
     expect(panel.textContent).toMatch(/Web MIDI/u)
-    expect(panel.textContent).toMatch(/Safari does not offer it/u)
+    expect(panel.textContent).toMatch(/Safari has no Web MIDI/u)
     expect(panel.textContent).toMatch(/MIDIWeb/u)
     const supported = openTab(open(ALL_FEATURES), 'Data')
     expect($$(supported, '[data-supported="false"]')).toHaveLength(0)
