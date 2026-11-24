@@ -26,12 +26,15 @@ export function ImportSheet({
   pieces,
   onClose,
   onOpenExisting,
+  onFindScores,
 }: {
   flow: ImportFlow | null
   /** The library, to point out a score that is already in it. */
   pieces: readonly PieceRecord[]
   onClose: () => void
   onOpenExisting?: (pieceId: string) => void
+  /** Offered when a file could not be imported. Closes this sheet and opens the guide. */
+  onFindScores?: () => void
 }) {
   const phase = flow?.phase.value ?? { kind: 'idle' as const }
   const open = flow !== null && phase.kind !== 'idle'
@@ -53,6 +56,7 @@ export function ImportSheet({
             if (onOpenExisting) onOpenExisting(pieceId)
             else openPractice({ pieceId })
           }}
+          onFindScores={onFindScores}
         />
       ) : null}
     </Sheet>
@@ -65,12 +69,14 @@ function FlowBody({
   pieces,
   onClose,
   onOpenExisting,
+  onFindScores,
 }: {
   flow: ImportFlow
   phase: FlowPhase
   pieces: readonly PieceRecord[]
   onClose: () => void
   onOpenExisting: (pieceId: string) => void
+  onFindScores: (() => void) | undefined
 }) {
   switch (phase.kind) {
     case 'idle':
@@ -82,7 +88,7 @@ function FlowBody({
     case 'review':
       return <Review flow={flow} phase={phase} pieces={pieces} onOpenExisting={onOpenExisting} />
     case 'failed':
-      return <Failed flow={flow} phase={phase} onClose={onClose} />
+      return <Failed flow={flow} phase={phase} onClose={onClose} onFindScores={onFindScores} />
   }
 }
 
@@ -314,10 +320,12 @@ function Failed({
   flow,
   phase,
   onClose,
+  onFindScores,
 }: {
   flow: ImportFlow
   phase: Extract<FlowPhase, { kind: 'failed' }>
   onClose: () => void
+  onFindScores: (() => void) | undefined
 }) {
   const deps = useLibraryDeps()
   const details = phase.diagnostics.filter((d) => d.severity !== 'info')
@@ -341,6 +349,11 @@ function Failed({
       </p>
       <div class={styles.flowActions}>
         <Button onClick={onClose}>{msg('Close')}</Button>
+        {onFindScores ? (
+          <Button icon="music" onClick={onFindScores}>
+            {msg('Find scores')}
+          </Button>
+        ) : null}
         <FileButton
           variant="primary"
           icon="upload"

@@ -1,0 +1,516 @@
+/* The guide draws its own top: the sheet's close button floats over the hero. */
+.dialog {
+  --sheet-width: 1000px;
+}
+
+.dialog > header {
+  position: absolute;
+  inset: 0 0 auto auto;
+  z-index: 2;
+}
+
+.dialog > header button {
+  width: var(--touch);
+  padding: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-raised) 72%, transparent);
+}
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.scroll h2,
+.scroll h3 {
+  font-family: var(--font-title);
+  font-weight: 700;
+  line-height: var(--leading-tight);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.scroll h3 {
+  font-size: 1.75rem;
+}
+
+.scroll p {
+  margin: 0;
+}
+
+.rightHand {
+  fill: var(--note);
+}
+
+.leftHand {
+  fill: var(--note-left);
+}
+
+/* ---- hero */
+
+.hero {
+  --note: var(--lid-note);
+  --note-left: var(--lid-note-left);
+  padding: var(--space-7) var(--space-7) var(--space-6);
+  border-radius: 0 0 40px 40px;
+  background: var(--lid);
+}
+
+.hero h2 {
+  max-width: 14ch;
+  font-size: clamp(2.25rem, 6vw, 3.5rem);
+  line-height: 1.05;
+}
+
+.hero p {
+  max-width: 34ch;
+  margin-top: var(--space-3);
+  font-size: var(--text-l);
+}
+
+.heroMusic {
+  position: relative;
+  margin-top: var(--space-6);
+}
+
+.heroRoll,
+.heroPlayed {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+/* The piece plays through once, left to right, as the guide opens. */
+.heroPlayed {
+  --note: var(--lid-played);
+  --note-left: var(--lid-played-left);
+  position: absolute;
+  inset: 0;
+  animation: play 5s linear 500ms both;
+}
+
+@keyframes play {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* ---- sections */
+
+.section {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-7) var(--space-7) 0;
+}
+
+.tip {
+  color: var(--fg-muted);
+}
+
+/* ---- places to look */
+
+.sites {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sites li {
+  display: grid;
+}
+
+.site,
+.reason {
+  --tile: var(--tile-sand);
+  --note: var(--tile-sand-note);
+  --note-left: var(--tile-sand-left);
+  overflow: hidden;
+  border-radius: 28px;
+  background: var(--tile);
+}
+
+.site[data-tile='clay'],
+.reason[data-tile='clay'] {
+  --tile: var(--tile-clay);
+  --note: var(--tile-clay-note);
+  --note-left: var(--tile-clay-left);
+}
+
+.site[data-tile='fern'] {
+  --tile: var(--tile-fern);
+  --note: var(--tile-fern-note);
+  --note-left: var(--tile-fern-left);
+}
+
+.site[data-tile='wheat'] {
+  --tile: var(--tile-wheat);
+  --note: var(--tile-wheat-note);
+  --note-left: var(--tile-wheat-left);
+}
+
+.site {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 232px;
+  padding: var(--space-5);
+  color: inherit;
+  text-decoration: none;
+  touch-action: manipulation;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.siteTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.siteTop svg {
+  flex: none;
+}
+
+.siteTop strong {
+  margin-right: auto;
+  font-family: var(--font-title);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.tag {
+  flex: none;
+  padding: 2px var(--space-3);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--note) 34%, transparent);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.siteText {
+  max-width: 30ch;
+  color: var(--fg-muted);
+  text-wrap: pretty;
+}
+
+/* The music runs off the tile's right edge. */
+.siteMusic {
+  width: calc(100% + var(--space-5));
+  height: 84px;
+  margin-top: auto;
+  transition: transform 600ms var(--ease-out);
+}
+
+@media (hover: hover) {
+  .site:hover .siteMusic {
+    transform: translateX(-14px);
+  }
+}
+
+.site:active {
+  transform: scale(0.985);
+}
+
+/* ---- a PDF, through an assistant */
+
+.pdf {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: center;
+  gap: var(--space-6);
+  margin: var(--space-7) var(--space-5) 0;
+  padding: var(--space-6) var(--space-6);
+  border-radius: 40px;
+  background: var(--tile-moss);
+}
+
+.pdfText {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.pdfText p {
+  font-size: var(--text-l);
+}
+
+.models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.models li {
+  padding: var(--space-2) var(--space-4);
+  border-radius: 999px;
+  background: var(--bg-raised);
+}
+
+.models strong {
+  font-weight: 600;
+}
+
+.pdfText .caution {
+  display: flex;
+  gap: var(--space-2);
+  color: var(--fg-muted);
+  font-size: var(--text-s);
+}
+
+.caution svg {
+  flex: none;
+}
+
+.chat {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: end;
+}
+
+.attachment,
+.bubble,
+.reply {
+  border-radius: 24px;
+  background: var(--bg-raised);
+}
+
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
+  border-bottom-right-radius: 8px;
+  font-weight: 500;
+}
+
+.sheetOfPaper {
+  display: grid;
+  gap: 5px;
+  width: 52px;
+  padding: 8px 5px;
+  border-radius: 4px;
+  background: var(--score-paper);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.bubble {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-2) var(--space-5);
+  border-top-right-radius: 8px;
+}
+
+.bubble blockquote {
+  margin: 0;
+  font-size: var(--text-s);
+  user-select: text;
+}
+
+.bubble button {
+  justify-self: start;
+  margin-left: calc(-1 * var(--space-4));
+  color: var(--accent);
+}
+
+.reply {
+  --note: var(--tile-moss-note);
+  --note-left: var(--tile-moss-left);
+  display: flex;
+  align-items: center;
+  justify-self: start;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5) var(--space-3) var(--space-4);
+  border-bottom-left-radius: 8px;
+  font-weight: 500;
+}
+
+.replyRoll {
+  width: 132px;
+}
+
+/* ---- what it is */
+
+.known {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.known p {
+  max-width: 60ch;
+  font-size: var(--text-l);
+}
+
+.known strong {
+  font-weight: 600;
+}
+
+.paper {
+  --note: var(--color-right-hand);
+  --note-left: var(--color-left-hand);
+  padding: var(--space-5);
+  border-radius: 28px;
+  background: var(--score-paper);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.engraving {
+  display: block;
+  width: 100%;
+  overflow: visible;
+  fill: var(--score-ink);
+}
+
+.staffLines {
+  fill: none;
+  stroke: var(--score-ink);
+  stroke-opacity: var(--score-staff-opacity);
+}
+
+.stems {
+  fill: none;
+  stroke: var(--score-ink);
+  stroke-width: 1.5;
+}
+
+.engraving[data-hands] .engravedRight {
+  fill: var(--hand-control-right);
+}
+
+.engraving[data-hands] .stems {
+  fill: none;
+  stroke: var(--hand-control-right);
+}
+
+.engraving[data-hands] .engravedLeft {
+  fill: var(--hand-control-left);
+}
+
+.knownRoll {
+  --note: var(--hand-control-right);
+  --note-left: var(--hand-control-left);
+  display: block;
+  width: 100%;
+  margin-top: var(--space-4);
+  overflow: visible;
+  opacity: 0.55;
+}
+
+/* ---- why only that */
+
+.reasons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.reason {
+  padding: var(--space-5);
+}
+
+.reason h4 {
+  margin: var(--space-4) 0 0;
+  font-family: var(--font-title);
+  font-size: var(--text-xl);
+  font-weight: 700;
+}
+
+.reason p {
+  margin-top: var(--space-1);
+  color: var(--fg-muted);
+  text-wrap: pretty;
+}
+
+.photo,
+.midi {
+  display: grid;
+  align-items: center;
+  height: 168px;
+}
+
+/* A snapshot: a corner of the page, askew and out of focus. */
+.photo .engraving {
+  width: 100%;
+  padding: 26px var(--space-4);
+  border: 8px solid var(--bg-raised);
+  border-radius: 6px;
+  background: var(--score-paper);
+  filter: blur(0.5px);
+  transform: rotate(-4deg);
+}
+
+/* The notes run off the tile, as on the sites' tiles. */
+.midiRoll {
+  width: calc(100% + var(--space-5));
+}
+
+/* ---- end */
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-7);
+  padding: var(--space-5) var(--space-7);
+  background: var(--lid);
+}
+
+.footer p {
+  font-family: var(--font-title);
+  font-size: var(--text-xl);
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .hero,
+  .section,
+  .footer {
+    padding-left: var(--space-5);
+    padding-right: var(--space-5);
+  }
+
+  .hero {
+    padding-top: calc(var(--space-7) + env(safe-area-inset-top, 0px));
+    border-radius: 0 0 28px 28px;
+  }
+
+  .scroll h3 {
+    font-size: 1.5rem;
+  }
+
+  .sites,
+  .reasons,
+  .pdf {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .site {
+    min-height: 196px;
+  }
+
+  /* Two bars, large enough to read; the rest runs off the paper. */
+  .paper {
+    overflow: hidden;
+  }
+
+  .paper svg {
+    width: 172%;
+  }
+
+  .pdf {
+    margin-inline: 0;
+    padding: var(--space-6) var(--space-5);
+    border-radius: 28px;
+  }
+}

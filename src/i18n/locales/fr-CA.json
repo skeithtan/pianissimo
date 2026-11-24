@@ -71,5 +71,9 @@
   "6010": "Où la main droite doit-elle sonner?",
   "6016": "Le piano a-t-il joué trois notes brèves?",
   "6022": "Le son de l’application sort maintenant de cet appareil. Vous pouvez changer cela dans les Paramètres.",
-  "6038": "Safari ne prend pas en charge Web MIDI et ne peut pas se connecter à un piano. Le mode Écouter reste disponible, ainsi que Suivre avec le microphone. Pour en connecter un, ouvrez cette même adresse dans l’application gratuite MIDIWeb Browser sur iPad ou iPhone, ou dans Firefox ou Chrome sur ordinateur."
+  "6038": "Safari ne prend pas en charge Web MIDI et ne peut pas se connecter à un piano. Le mode Écouter reste disponible, ainsi que Suivre avec le microphone. Pour en connecter un, ouvrez cette même adresse dans l’application gratuite MIDIWeb Browser sur iPad ou iPhone, ou dans Firefox ou Chrome sur ordinateur.",
+  "6051": "Vous n’avez qu’un PDF?",
+  "6058": "Qu’est-ce que MusicXML?",
+  "6061": "Pourquoi seulement MusicXML?",
+  "6066": "Vous avez votre fichier?"
 }

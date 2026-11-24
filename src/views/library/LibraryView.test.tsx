@@ -104,6 +104,8 @@ describe('Library list', () => {
     expect(button(root, 'Export backup')).toBeUndefined()
     expect(fileButton(root, 'Restore from backup…')).toBeNull()
     expect(root.textContent).toContain('Settings → Data')
+    click(button(root, 'Find scores'))
+    expect(dialog(root)!.getAttribute('aria-label')).toBe('Find scores')
   })
 
   it('refreshes the list when Settings close (a restore there may have added pieces)', async () => {
@@ -639,7 +641,10 @@ describe('Import flow (UI)', () => {
     await until(() => /could not be imported/.test(dialog(root)?.textContent ?? ''), 'failure')
     const d = dialog(root)!
     expect(fileButton(d, 'Choose another file')).not.toBeNull()
-    pick(fileButton(d, 'Choose another file'), fixture('two-hands.musicxml'))
+    // The guide takes the failed sheet's place, and a score found there is added from it.
+    click(button(d, 'Find scores'))
+    await until(() => dialog(root)?.getAttribute('aria-label') === 'Find scores', 'guide')
+    pick(fileButton(dialog(root)!, 'Add score'), fixture('two-hands.musicxml'))
     await until(() => currentView.value === 'practice', 'practice')
   })
 })
@@ -792,6 +797,20 @@ describe('interface languages', () => {
     try {
       let root = await open()
       expect(untranslatedText(root)).toEqual([])
+      click(button(root, '⟦Find scores⟧'))
+      expect(dialog(root)?.getAttribute('aria-label')).toBe('⟦Find scores⟧')
+      expect(
+        untranslatedText(root, [
+          'Noctave',
+          'MuseTrainer',
+          'MuseScore.com',
+          'musicxml.com',
+          'PDF',
+          '.musicxml',
+          'Claude',
+          'ChatGPT',
+        ]),
+      ).toEqual([])
       view!.unmount()
 
       await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })

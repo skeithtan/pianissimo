@@ -11,9 +11,13 @@ import `core/import/{client,hands,rolls,summary,limits,errors}` directly, never 
 
 ## Layout
 
-- **Header**: Library, with a secondary Add score action when pieces exist (no piece count,
-  no caption). The empty state gives Add score the primary emphasis and points to Settings →
-  Backup.
+- **Header**: Library, with secondary Find scores and Add score actions when pieces exist (no
+  piece count, no caption). The empty state gives Add score the primary emphasis, with Find
+  scores beside it, and points to Settings → Data.
+- **Find scores** (`FindScoresSheet`, L14): where to get MusicXML, how to ask an AI assistant to make
+  it from a PDF (a request to copy), what it is and why it is the only format, and Add score at the
+  end. A failed import offers it too. Before listing a site, check that it offers MusicXML. Pictures
+  carry it (L15): `guideDrawings.ts` holds four bars of the built-in Ode to Joy as the app engraves them.
 - **Ordinary rows**: title, composer and a status line on the left; an icon-only Options button (`more`; name "Options for …", `aria-expanded` /
   `aria-controls`) and a chevron on the right, on one line at every width (the chevron glyph
   is hidden at ≤480px; its button stays, 4 px wide, never zero: Voice Control, screen-reader

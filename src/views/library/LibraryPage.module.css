@@ -121,21 +121,11 @@
   color: var(--fg-muted);
 }
 
-.help {
-  color: var(--fg-muted);
-  font-size: var(--text-s);
-  max-width: 52ch;
-}
-
-.help summary {
-  min-height: var(--touch);
-  padding: var(--space-3);
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.help p + p {
-  margin-top: var(--space-3);
+.emptyActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
 }
 
 @media (max-width: 640px) {
@@ -162,5 +152,5 @@
   }
 }
 
-.libraryActions label { border-color: transparent; background: var(--fill); }
+.libraryActions label, .libraryActions button { border-color: transparent; background: var(--fill); }
 .libraryActions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; }

@@ -8,12 +8,13 @@ import { msg } from '../../i18n/messages'
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import { openPractice, settingsOpen } from '../../app/navigation'
 import { pushNotice } from '../../app/state'
-import { Notice } from '../../ui/controls'
+import { Button, Notice } from '../../ui/controls'
 import { useMediaQuery } from '../shared/usePhone'
 import { BrowserNotices } from './BrowserNotices'
 import { ConnectPianoCard } from './ConnectPianoCard'
 import { LibraryDepsContext, defaultLibraryDeps, useLibraryDeps, type LibraryDeps } from './deps'
 import { FileButton, SCORE_ACCEPT } from './FileButton'
+import { FindScoresSheet } from './FindScoresSheet'
 import { ImportFlow } from './importFlow'
 import { ImportSheet } from './ImportSheet'
 import { LibraryModel } from './libraryModel'
@@ -51,6 +52,7 @@ function LibraryPage() {
   const narrow = useMediaQuery(NARROW_QUERY)
   const [flow, setFlow] = useState<ImportFlow | null>(null)
   const [query, setQuery] = useState('')
+  const [finding, setFinding] = useState(false)
 
   // A restore in Settings (Backup) can add pieces: the list refreshes whenever Settings close.
   const settingsShown = settingsOpen.value
@@ -109,15 +111,20 @@ function LibraryPage() {
         {searchable ? <SearchField query={query} onQuery={setQuery} /> : null}
         <div class={styles.libraryActions}>
           {pieces.length > 0 ? (
-            <FileButton
-              variant="secondary"
-              icon="plus"
-              accept={accept}
-              disabled={unavailable}
-              onFile={(f) => startImport(f)}
-            >
-              {msg('Add score')}
-            </FileButton>
+            <>
+              <Button icon="music" onClick={() => setFinding(true)}>
+                {msg('Find scores')}
+              </Button>
+              <FileButton
+                variant="secondary"
+                icon="plus"
+                accept={accept}
+                disabled={unavailable}
+                onFile={(f) => startImport(f)}
+              >
+                {msg('Add score')}
+              </FileButton>
+            </>
           ) : null}
         </div>
       </header>
@@ -129,7 +136,12 @@ function LibraryPage() {
       {state.status === 'unavailable' ? <Notice tone="warning">{msg(state.message)}</Notice> : null}
 
       {state.status !== 'loading' && pieces.length === 0 ? (
-        <EmptyState accept={accept} disabled={unavailable} onFile={(f) => startImport(f)} />
+        <EmptyState
+          accept={accept}
+          disabled={unavailable}
+          onFile={(f) => startImport(f)}
+          onFind={() => setFinding(true)}
+        />
       ) : null}
 
       <p class="visually-hidden" role="status" data-testid="search-status">
@@ -162,6 +174,20 @@ function LibraryPage() {
         onOpenExisting={(pieceId) => {
           void model.open(pieceId)
         }}
+        onFindScores={() => {
+          closeFlow()
+          setFinding(true)
+        }}
+      />
+      <FindScoresSheet
+        open={finding}
+        accept={accept}
+        disabled={unavailable}
+        onClose={() => setFinding(false)}
+        onFile={(f) => {
+          setFinding(false)
+          startImport(f)
+        }}
       />
     </div>
   )
@@ -171,25 +197,26 @@ function EmptyState({
   accept,
   disabled,
   onFile,
+  onFind,
 }: {
   accept: string | undefined
   disabled: boolean
   onFile: (file: File) => void
+  onFind: () => void
 }) {
   return (
     <section class={styles.empty} aria-labelledby="library-empty">
       <h2 id="library-empty">{msg('Your library is empty')}</h2>
-      <div>
+      <div class={styles.emptyActions}>
         <FileButton variant="primary" icon="plus" accept={accept} disabled={disabled} onFile={onFile}>
           {msg('Add score')}
         </FileButton>
+        <Button icon="music" onClick={onFind}>
+          {msg('Find scores')}
+        </Button>
       </div>
       <p>{msg('Choose a MusicXML file: .musicxml, .mxl, or .xml.')}</p>
-      <details class={styles.help}>
-        <summary>{msg('Help adding a score')}</summary>
-        <p>{msg('Most notation programs export MusicXML from File → Export. A PDF or photo cannot be imported.')}</p>
-        <p>{msg('Moving from another device? Restore a backup from Settings → Data.')}</p>
-      </details>
+      <p>{msg('Moving from another device? Restore a backup from Settings → Data.')}</p>
     </section>
   )
 }
