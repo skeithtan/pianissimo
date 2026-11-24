@@ -244,18 +244,20 @@ describe.skipIf(!present)('the reference piece recording (private)', () => {
     // Never stuck: every listed onset is reached, none more than 16 s late (DECISIONS P21: the
     // worst, 14.7 s, is at 0:41, bar 7.9, where the player hesitated over soft notes).
     expect(worstLag).toBeLessThanOrEqual(16)
-    // Never far ahead (measured 8.1 s at 5:07, bar 52.3, in a long hesitation; README "Limits").
-    expect(mostAhead).toBeLessThanOrEqual(9)
-    // Measured 53.5 %, 67.7 % and 4.2 %.
-    expect(onTime).toBeGreaterThanOrEqual(0.51)
-    expect(soon).toBeGreaterThanOrEqual(0.65)
+    // Never far ahead (measured 9.2 s at 5:03, bar 52.4, in a long hesitation, an eighth of a bar
+    // from the player; README "Limits"). 8.1 s before P36, which takes one more stray attack there.
+    expect(mostAhead).toBeLessThanOrEqual(10)
+    // Measured 61.5 %, 75.1 % and 4.3 % (53.5 %, 67.7 % and 4.2 % before P36's patience).
+    expect(onTime).toBeGreaterThanOrEqual(0.59)
+    expect(soon).toBeGreaterThanOrEqual(0.73)
     expect(ahead).toBeLessThanOrEqual(0.05)
-    // In bars, as the learner sees it. Measured: within a quarter bar 83.7 % of the time, within a
-    // bar 99.2 %, at most 1.38 bars behind (2:13) and 1.25 ahead (1:27), 2.9 s more than a bar off.
-    expect(near(0.25)).toBeGreaterThanOrEqual(0.81)
+    // In bars, as the learner sees it. Measured: within a quarter bar 86.0 % of the time, within a
+    // bar 99.2 %, at most 1.10 bars behind and 1.06 ahead, 2.9 s more than a bar off (before P36:
+    // 83.7 %, 99.2 %, 1.38 and 1.25, 2.9 s).
+    expect(near(0.25)).toBeGreaterThanOrEqual(0.84)
     expect(near(1)).toBeGreaterThanOrEqual(0.98)
-    expect(behind).toBeLessThanOrEqual(1.6)
-    expect(before).toBeLessThanOrEqual(1.4)
+    expect(behind).toBeLessThanOrEqual(1.3)
+    expect(before).toBeLessThanOrEqual(1.25)
     expect(offSeconds).toBeLessThanOrEqual(5)
   }, 300_000)
 })

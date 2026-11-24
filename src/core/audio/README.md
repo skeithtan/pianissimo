@@ -73,6 +73,12 @@ samples ─► SemitoneAnalyzer ─► OnsetMatcher ─► group heard last ─�
      latest notes the group heard last is open: an event that raises new semitones and makes
      everything struck since the group began fit it clearly better is more of it, at no price.
      An event nothing explains is kept for a moment and read together with the next one.
+  5. *Patience* (P36). An event that nothing explains when it ends is listened to for 80 ms more
+     (`patience`): in each frame the next five groups are tried again against the sound before
+     the event, what each gains over `neutral` is summed (never under zero), and the first whose
+     sum passes 0.05 explains it. The thump fades in that time and the note does not. A new
+     attack ends the wait. Only within 0.6 s of the last explained attack (`patienceWithin`):
+     in a hesitation the stray attacks of a player looking for the notes stay unexplained.
 - **Follower** (`index.ts`): `createAudioFollower(model, options?)` →
   `push(samples, sampleRate, time)` returning `{ group, position, confidence, time, frames,
   moved }` (the group heard last, its position in float whole notes, the cosine of the attack
@@ -108,21 +114,38 @@ over the both-hands timeline. Lag = when the cursor released an onset's group mi
 first attack. Distance = every 100 ms, the bar of the group the cursor released last minus the
 bar of the onset the player first played last (what a learner watching the cursor sees).
 
-| On the recording, through the session | P16 follower | P21 first pass | Now |
-| --- | --- | --- | --- |
-| Cursor reaches the last group | never (stops at bar 3.6, 3:10) | 0.16 s after its attack | 0.17 s after |
-| On time (−150…+150 ms) | 0.2 % | 53.4 % | 53.5 % |
-| Within −150…+500 ms | 0.2 % | 65.8 % | 67.7 % |
-| Ahead of the player (earlier than −150 ms) | 0 % | 4.8 % | 4.2 % |
-| Worst lag / most ahead | never reached | 13.2 s / 8.1 s | 14.7 s / 8.1 s |
-| Time within a quarter bar of the player | — | 81.5 % | 83.7 % |
-| Time within one bar | — | 98.1 % | 99.2 % |
-| Most behind / most ahead (bars) | — | 1.38 / 1.13 | 1.38 / 1.25 |
-| Time more than a bar off | — | 6.8 s | 2.9 s |
+| On the recording, through the session | P16 follower | P21 first pass | P21 second pass | Now (P36) |
+| --- | --- | --- | --- | --- |
+| Cursor reaches the last group | never (stops at bar 3.6, 3:10) | 0.16 s after its attack | 0.17 s after | 0.17 s after |
+| On time (−150…+150 ms) | 0.2 % | 53.4 % | 53.5 % | 61.5 % |
+| Within −150…+500 ms | 0.2 % | 65.8 % | 67.7 % | 75.1 % |
+| More than a second late | — | — | 18.5 % | 13.3 % |
+| Ahead of the player (earlier than −150 ms) | 0 % | 4.8 % | 4.2 % | 4.3 % |
+| Worst lag / most ahead | never reached | 13.2 s / 8.1 s | 14.7 s / 8.1 s | 14.7 s / 9.2 s |
+| Time within a quarter bar of the player | — | 81.5 % | 83.7 % | 86.0 % |
+| Time within one bar | — | 98.1 % | 99.2 % | 99.2 % |
+| Most behind / most ahead (bars) | — | 1.38 / 1.13 | 1.38 / 1.25 | 1.10 / 1.06 |
+| Time more than a bar off | — | 6.8 s | 2.9 s | 2.9 s |
 
 (The first-pass column is measured against the same, second-pass truth.) Averaged over the
 recording as is, shifted by 237 samples, halved in level and with noise added: a quarter bar
 81.9 % → 84.0 % of the time, more than a bar off 10.6 s → 2.1 s, ahead 5.2 % → 3.3 %.
+
+P36 (patience): of the 626 listed onsets, 150 opened an event that nothing explained when it
+ended (its group's cosine had a median of 0.42) and only 39 opened none; listening on recovers
+about a third of the former (402 attacks taken for their own group, 358 before). Averaged over
+the recording as is, shifted by 237 samples, halved in level and with white noise at −59 dBFS
+added: on time 53.8 % → 61.9 %, a quarter bar 84.1 % → 86.4 % of the time, more than a bar off
+2.0 s → 1.7 s, ahead 3.6 % → 4.1 %. Without the flow limit the patience gave the same share on
+time but took stray attacks in hesitations for the next groups (ahead 6.9 %, more than a bar off
+4.4 s). Tried and left out: a lower threshold for opening events, fixed or falling with the time
+since the last attack (up to 6 points more on time, but ahead 7–9 % and up to 15 s early), and
+deciding every event later (worse throughout: the next attack arrives meanwhile). Settings next
+to the chosen ones (60 to 120 ms of patience, a flow limit of 0.5 to 0.75 s) measure alike.
+The gain is the recording's: over the unit benches below (`follower.test.ts` and
+`sampled.test.ts`, 59 performances, 5,815 onsets) the share on time is 93.4 % → 93.5 %, ahead
+0.10 % → 0.28 %, late by more than 0.4 s 2.6 % both ways. The two tables below were measured
+before P36 and not rerun.
 
 Why the P16 follower failed: every key and hammer adds a thump of 60–400 Hz, louder than soft
 notes, that made events look broadband (the right group's cosine had a median of 0.36, the flat
@@ -218,10 +241,10 @@ in about 12 ms; there is no tempo-dependent reference to rebuild.
 ## Limits
 
 - Measured on one real recording only (one piano, one phone, AAC on the way; the live path has
-  no codec), and there only half the onsets are reached on time (the cursor is within a quarter
-  bar of the player 84 % of the time): soft notes under the thump of
+  no codec), and there six onsets in ten are reached on time (the cursor is within a quarter
+  bar of the player 86 % of the time): soft notes under the thump of
   the keys, notes of the left hand below G3 and repeated notes still ringing are often heard late,
-  and a hesitation with stray attacks can carry the cursor a few groups ahead (up to 8 s before
+  and a hesitation with stray attacks can carry the cursor a few groups ahead (up to 9 s before
   the player there). `recording.test.ts` locks in what was reached and skips without the
   private files; `MatcherOptions.trace` shows why each attack was or was not taken.
 - Below G3 (`lowest`) nothing counts but partials: a lone low note may pass for its octave.

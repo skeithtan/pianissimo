@@ -34,6 +34,13 @@
  * already raised is the same notes again: the next group if the score repeats them. The next
  * group, or a wrong note, does not make the whole fit better.) An event nothing explains is
  * likewise kept for a moment and read together with the next one.
+ *
+ * An event that nothing explains when it ends is not given up at once (`patience`, DECISIONS
+ * P36): for 80 ms more the groups just ahead are tried again in every frame, against the sound
+ * before the event, and what each gains over `neutral` is summed. The thump of the key fades in
+ * that time and the note does not, so a note that was masked when the event ended explains it a
+ * few frames later. Only while the player is in flow (`patienceWithin`): in a hesitation the
+ * stray attacks of someone looking for the notes would be taken for the next groups.
  */
 import { PIANO_LOW, SEMITONES } from './features'
 import type { AttackTemplate } from './templates'
@@ -49,6 +56,21 @@ export interface MatcherOptions {
   readonly riseOn?: number
   /** Observed-rise norm below which an event says nothing (default 1.6). */
   readonly riseMin?: number
+  /**
+   * Frames an event that nothing explained when it ended is listened to further (default 8:
+   * 80 ms; 0: not at all). In each of them the groups just ahead are tried again against the
+   * sound before the event (the thump of the key fades, the note does not), and what each gains
+   * over `neutral` is summed, never under zero; the first whose sum passes `patienceEvidence`
+   * (default 0.05) explains the event. A new attack ends the wait.
+   */
+  readonly patience?: number
+  readonly patienceEvidence?: number
+  /**
+   * Only while the player is in flow: no event is listened to further when the last explained
+   * attack is more than this many frames back (default 60: 0.6 s). In a hesitation the stray
+   * attacks of a player looking for the notes stay unexplained.
+   */
+  readonly patienceWithin?: number
   /** Cosine at which an event neither supports nor contradicts a group (default 0.5). */
   readonly neutral?: number
   /** Score per unit of cosine above `neutral` (default 10). */
@@ -118,6 +140,8 @@ export interface MatcherEvent {
   readonly explained: boolean
   /** Decided before the event ended. */
   readonly early: boolean
+  /** Decided while it was listened to further after its end (`patience`). */
+  readonly late: boolean
   /** Cosine per group for the groups tried (index = group). */
   readonly tried: ReadonlyMap<number, number>
 }
@@ -154,12 +178,18 @@ const LEVEL_RATE = 0.2
 const FLOOR_DRIFT = 1.00012
 /** Nothing quieter than this counts as a noise floor (total energy; a full-scale sine is 1). */
 const FLOOR_MIN = 3e-8
+/** A rise norm this many times the lowest since an event ended is a new attack, not its tail. */
+const FRESH_RISE = 1.3
 
 interface OpenEvent {
   /** Frames since it opened. */
   age: number
   /** Largest rise norm so far. */
   peak: number
+  /** Age at which it ended unexplained and from which it is listened to further (−1: not so). */
+  wait: number
+  /** Lowest rise norm since then. */
+  low: number
 }
 
 export class OnsetMatcher {
@@ -170,6 +200,9 @@ export class OnsetMatcher {
   readonly #fall: number
   readonly #riseOn: number
   readonly #riseMin: number
+  readonly #patience: number
+  readonly #patienceEvidence: number
+  readonly #patienceWithin: number
   readonly #neutral: number
   readonly #weight: number
   readonly #skip: number
@@ -208,6 +241,10 @@ export class OnsetMatcher {
   readonly #score: Float64Array
   readonly #next: Float64Array
   readonly #cosine: Float64Array
+  /** Evidence summed per state while an event is listened to further. */
+  readonly #sum: Float64Array
+  /** Baselines before the latest frame (the sound before an attack that opens on it). */
+  readonly #prior = new Float64Array(SEMITONES)
   readonly #sorted = new Float64Array(SEMITONES - FLOOR_FROM)
 
   #state = 0
@@ -232,6 +269,8 @@ export class OnsetMatcher {
   #openCosine = 0
   /** Events decided since the position last moved on an explained attack. */
   #unmoved = 0
+  /** Frame of the last explained attack. */
+  #explainedAt = -Infinity
 
   /**
    * `templates[i]` is the attack of group i; `fillFrames` is how many frames the analyzer needs
@@ -245,6 +284,9 @@ export class OnsetMatcher {
     this.#fall = options.baselineFall ?? 0.87
     this.#riseOn = options.riseOn ?? 1.2
     this.#riseMin = options.riseMin ?? 1.6
+    this.#patience = options.patience ?? 8
+    this.#patienceEvidence = options.patienceEvidence ?? 0.05
+    this.#patienceWithin = options.patienceWithin ?? 60
     this.#neutral = options.neutral ?? 0.5
     this.#weight = options.weight ?? 10
     this.#skip = options.skip ?? 1
@@ -269,6 +311,7 @@ export class OnsetMatcher {
     this.#score = new Float64Array(templates.length + 1)
     this.#next = new Float64Array(templates.length + 1)
     this.#cosine = new Float64Array(templates.length + 1)
+    this.#sum = new Float64Array(templates.length + 1)
     this.seek(0)
     this.listen()
   }
@@ -313,6 +356,12 @@ export class OnsetMatcher {
     this.#settle = 0
     this.#carryAt = -Infinity
     this.#open = -1
+    this.#explainedAt = -Infinity
+  }
+
+  #openEvent(norm: number): void {
+    this.#event = { age: 0, peak: norm, wait: -1, low: norm }
+    this.#eventOpened = this.#frame
   }
 
   /** One frame of semitone energies and their sum. True when `group` changed. */
@@ -347,6 +396,7 @@ export class OnsetMatcher {
       } else absorbAll = true
     }
     if (!this.#event) this.#before.set(base)
+    else if (this.#event.wait >= 0) this.#prior.set(base)
     let sum = 0
     for (let p = 0; p < SEMITONES; p++) {
       const v = energy[p]!
@@ -371,18 +421,42 @@ export class OnsetMatcher {
 
     const event = this.#event
     if (!event) {
-      if (norm >= this.#riseOn) {
-        this.#event = { age: 0, peak: norm }
-        this.#eventOpened = this.#frame
-      }
+      if (norm >= this.#riseOn) this.#openEvent(norm)
       return false
     }
     event.age++
     this.#now.set(energy)
+    if (event.wait >= 0) {
+      // Ended unexplained and listened to further: until a group explains it, a new attack
+      // begins or the patience runs out.
+      const fresh = norm >= this.#riseOn && norm >= FRESH_RISE * event.low
+      if (norm < event.low) event.low = norm
+      if (fresh || event.age >= event.wait + this.#patience) {
+        this.#trace?.({
+          frame: this.#frame,
+          opened: this.#eventOpened,
+          from: this.#state - 1,
+          to: this.#state - 1,
+          cosine: 0,
+          flat: 0,
+          explained: false,
+          early: false,
+          late: true,
+          tried: new Map(),
+        })
+        this.#unexplained(energy, !fresh)
+        if (fresh) {
+          this.#before.set(this.#prior)
+          this.#openEvent(norm)
+        }
+        return false
+      }
+      return this.#decide(energy, g, false, true, norm)
+    }
     if (norm > event.peak) event.peak = norm
     if (event.age < this.#minAge) return false
     const ending = norm < this.#closeDrop * event.peak || event.age >= this.#maxAge
-    return event.age >= 2 || ending ? this.#decide(energy, g, ending) : false
+    return event.age >= 2 || ending ? this.#decide(energy, g, ending, false, norm) : false
   }
 
   /** Total energy the frame would have if every semitone were as quiet as its quietest tenth. */
@@ -468,7 +542,8 @@ export class OnsetMatcher {
    * early only when one of them is clearly it; when it ends every reachable group is tried.
    * True when the position changed.
    */
-  #decide(energy: Float64Array, g: number, ending: boolean): boolean {
+  #decide(energy: Float64Array, g: number, ending: boolean, late: boolean, rise: number): boolean {
+    const event = this.#event!
     const score = this.#score
     const next = this.#next
     const cosine = this.#cosine
@@ -511,6 +586,8 @@ export class OnsetMatcher {
     }
 
     const neutral = Math.max(this.#neutral, flat)
+    const sum = this.#sum
+    if (late) for (let s = lo; s <= hi; s++) sum[s] = Math.max(0, sum[s]! + (heard ? cosine[s]! - neutral : 0))
     let best = -Infinity
     let second = -Infinity
     let bestState = from
@@ -523,7 +600,8 @@ export class OnsetMatcher {
           const x = score[s - d]! - this.#skip * (d - 1)
           if (x > reached) reached = x
         }
-        const explained = reached + this.#weight * (cosine[s]! - neutral)
+        const evidence = late ? sum[s]! - this.#patienceEvidence : cosine[s]! - neutral
+        const explained = reached + this.#weight * evidence
         if (explained > v) v = explained
       }
       next[s] = v
@@ -535,10 +613,23 @@ export class OnsetMatcher {
     }
 
     const moved = bestState !== from
-    const clear = moved && cosine[bestState]! >= this.#earlyCosine && best - second >= this.#earlyMargin
-    if (!ending && !clear) return false
-
     const explained = heard && best > score[from]!
+    if (late) {
+      if (!explained) return false
+    } else {
+      const clear = moved && cosine[bestState]! >= this.#earlyCosine && best - second >= this.#earlyMargin
+      if (!ending && !clear) return false
+      if (ending && !explained && this.#patience > 0 && this.#frame - this.#explainedAt <= this.#patienceWithin) {
+        // Nothing explains it yet: what it says about places elsewhere is kept, and the groups
+        // just ahead are listened for a little longer.
+        for (let s = first; s <= last; s++) score[s] = next[s]!
+        this.#spread()
+        event.wait = event.age
+        event.low = rise
+        sum.fill(0)
+        return false
+      }
+    }
     if (this.#trace) {
       const tried = new Map<number, number>()
       if (heard) for (let s = lo; s <= hi; s++) tried.set(s - 1, cosine[s]!)
@@ -550,13 +641,13 @@ export class OnsetMatcher {
         cosine: bestState > 0 && heard ? (cosine[bestState] ?? 0) : 0,
         flat,
         explained,
-        early: !ending,
+        early: !ending && !late,
+        late,
         tried,
       })
     }
     this.#event = null
     // Each event that does not move the position widens the reach ahead (`aheadGrow`).
-    this.#unmoved = explained && moved ? 0 : this.#unmoved + 1
     for (let s = first; s <= last; s++) score[s] = next[s]!
     this.#state = bestState
     this.#spread()
@@ -564,6 +655,9 @@ export class OnsetMatcher {
 
     const base = this.#base
     if (explained && bestState > 0) {
+      // An attack explained only by listening on is weak: the reach ahead keeps widening.
+      this.#unmoved = moved && !late ? 0 : this.#unmoved + 1
+      this.#explainedAt = this.#frame
       // A group that began with this event began on the sound before it (before the unexplained
       // events just before it, when those count as its first notes).
       if (bestState === open) this.#openCosine = whole
@@ -583,19 +677,28 @@ export class OnsetMatcher {
         const p = mask.index[i]!
         if (energy[p]! > base[p]!) base[p] = energy[p]!
       }
-    } else {
-      // Unexplained: it is part of the sound now, and the next event is also read against the
-      // sound before this one (a rolled chord arrives note by note).
-      if (!carried || this.#frame - this.#carryFrom > CARRY_RUN_FRAMES) {
-        this.#carry.set(this.#before)
-        this.#carryFrom = this.#frame
-      }
-      this.#carryAt = this.#frame
-      this.#settleMask = null
-      this.#settle = SETTLE_FRAMES
-      for (let p = 0; p < SEMITONES; p++) if (energy[p]! > base[p]!) base[p] = energy[p]!
-    }
+    } else this.#unexplained(energy, true)
     return moved
+  }
+
+  /**
+   * Closes the open event as unexplained: it is part of the sound now (`absorb`; not when a new
+   * attack has just begun in the frame), and the next event is also read against the sound
+   * before this one (a rolled chord arrives note by note).
+   */
+  #unexplained(energy: Float64Array, absorb: boolean): void {
+    const base = this.#base
+    this.#event = null
+    this.#unmoved++
+    if (this.#frame - this.#carryAt >= CARRY_FRAMES || this.#frame - this.#carryFrom > CARRY_RUN_FRAMES) {
+      this.#carry.set(this.#before)
+      this.#carryFrom = this.#frame
+    }
+    this.#carryAt = this.#frame
+    if (!absorb) return
+    this.#settleMask = null
+    this.#settle = SETTLE_FRAMES
+    for (let p = 0; p < SEMITONES; p++) if (energy[p]! > base[p]!) base[p] = energy[p]!
   }
 
   /**

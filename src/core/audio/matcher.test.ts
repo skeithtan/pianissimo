@@ -135,6 +135,39 @@ describe('OnsetMatcher', () => {
     expect(stage.heard).toEqual([0, 1])
   })
 
+  it('hears a note under the thump of its key once the thump has faded (patience)', () => {
+    // The burst outlasts the 40 ms after which the event is decided: nothing explains it then.
+    const masked = (options: MatcherOptions) =>
+      new Stage(TUNE, options).run(40).strike([60]).run(30).strike([62]).thump(6, 0.3).run(40)
+    const before = masked({ patience: 0 })
+    expect(before.heard).toEqual([0])
+    expect(before.events.at(-1)!.explained).toBe(false)
+    // Listened to for 80 ms more, the note is still there when the burst is not.
+    const stage = masked({})
+    expect(stage.heard).toEqual([0, 1])
+    const late = stage.events.at(-1)!
+    expect(late).toMatchObject({ from: 0, to: 1, explained: true, late: true, early: false })
+    expect(late.frame - late.opened).toBeLessThanOrEqual(12)
+    expect(stage.matcher.confidence).toBeGreaterThan(0.8)
+    stage.strike([64]).run(30)
+    expect(stage.heard).toEqual([0, 1, 2])
+  })
+
+  it('is patient only while the player is in flow, and a new attack ends the wait', () => {
+    // More than 0.6 s after the last explained attack (a hesitation) the same attack stays unexplained.
+    const stage = new Stage(TUNE).run(40).strike([60]).run(100).strike([62]).thump(6, 0.3).run(40)
+    expect(stage.heard).toEqual([0])
+    expect(stage.events.at(-1)).toMatchObject({ explained: false, late: false })
+    // A wrong note is waited on; the right note struck 60 ms later is heard as its own attack.
+    const wrong = new Stage(TUNE).run(40).strike([60]).run(30).strike([61]).run(6).strike([62]).run(30)
+    expect(wrong.heard).toEqual([0, 1])
+    expect(wrong.events.map((e) => e.explained)).toEqual([true, false, true])
+    // Nothing but the wrong note: the wait runs out and it stays unexplained.
+    const only = new Stage(TUNE).run(40).strike([60]).run(30).strike([61]).run(40)
+    expect(only.heard).toEqual([0])
+    expect(only.events.at(-1)).toMatchObject({ explained: false, late: true })
+  })
+
   it('moves over skipped notes at once', () => {
     const stage = new Stage(TUNE).run(40).strike([60]).run(30).strike([65]).run(30)
     expect(stage.heard).toEqual([0, 3])
