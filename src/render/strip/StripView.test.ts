@@ -712,10 +712,11 @@ describe('StripView passage selection', () => {
     touch('touchstart', 1)
     pointer('pointerup')
     touch('touchend', 0)
-    scrollTo(0)
+    for (let k = 0; k < 12; k++) scrollTo(0)
     vi.advanceTimersByTime(SWIPE_SETTLE_MS)
     v.flushNow()
-    expect(events).toEqual(['browse', 'release'])
+    // Back at the cursor: nothing is browsed.
+    expect(events).toEqual(['browse', 'release', 'back'])
     expect(writes).toBe(0)
     expect(transformX(content)).toBeCloseTo(start)
     // Returning while it coasts ends it there; the release still comes, for what it holds.
@@ -724,9 +725,59 @@ describe('StripView passage selection', () => {
     touch('touchend', 0)
     v.returnToCurrent()
     vi.advanceTimersByTime(SWIPE_SETTLE_MS)
-    expect(events).toEqual(['browse', 'release', 'back', 'release'])
+    expect(events).toEqual(['browse', 'release', 'back', 'browse', 'back', 'release'])
     scrollTo(300)
     expect(v.isBrowsing()).toBe(false)
+  })
+
+  it('leaves a trackpad to desktop Safari, which reports its bounce, and waits out its momentum (U153)', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const vendor = vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.')
+    const events: string[] = []
+    const { v } = view(40, {
+      onBrowse: (b) => events.push(b ? 'browse' : 'back'),
+      onBrowseRelease: () => events.push('release'),
+    })
+    v.setBrowseEnabled(true)
+    const content = host.querySelector('.pn-content')!
+    const scroller = host.querySelector<HTMLElement>('.pn-scroll')!
+    const start = transformX(content)
+    const wheel = (deltaX: number): void => {
+      const e = new WheelEvent('wheel', { deltaX, bubbles: true, cancelable: true })
+      scroller.firstElementChild!.dispatchEvent(e)
+      expect(e.defaultPrevented).toBe(false)
+    }
+    const scrollTo = (x: number): void => {
+      scroller.scrollLeft = x
+      scroller.dispatchEvent(new Event('scroll'))
+      for (let k = 0; k < 8; k++) v.flushNow()
+    }
+    // Past the start: drawn where Safari's bounce is. `scrollend` comes as the fingers lift.
+    wheel(-40)
+    scrollTo(-30)
+    expect(transformX(content)).toBeCloseTo(start + 30)
+    vi.advanceTimersByTime(SWIPE_SETTLE_MS * 3)
+    expect(events).toEqual(['browse'])
+    scroller.dispatchEvent(new Event('scrollend'))
+    scrollTo(-10)
+    scrollTo(0)
+    vi.advanceTimersByTime(SWIPE_SETTLE_MS)
+    v.flushNow()
+    expect(transformX(content)).toBeCloseTo(start)
+    // It came back to the cursor: nothing is browsed.
+    expect(events).toEqual(['browse', 'release', 'back'])
+    // Momentum that outlives a return does not browse again.
+    events.length = 0
+    wheel(40)
+    scrollTo(200)
+    v.returnToCurrent()
+    for (let x = 220; x < 400; x += 20) {
+      wheel(20)
+      scrollTo(x)
+      vi.advanceTimersByTime(16)
+    }
+    expect(events).toEqual(['browse', 'back', 'release'])
+    vendor.mockRestore()
   })
 
   it('drags a touch that the platform does not pan (U150)', () => {

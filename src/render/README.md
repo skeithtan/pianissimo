@@ -171,6 +171,9 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   device, once the music has been still), then drives `browseTx` (or the review's frame) unclamped until
   it settles (`scrollend`, or `SWIPE_SETTLE_MS` without a scroll event); that is the browse release.
   Nothing writes the scroller meanwhile, and playback never does. Two fingers are canceled for it.
+  Desktop Safari's trackpad drives it too (U153, `SwipeScroller.trackpad`): the root's wheel listener is passive
+  there, the scroller keeps up with the music (`KEEP_UP_MS`), any scroll it did not write is a swipe, and
+  momentum that outlives a return is ignored until the trackpad is quiet.
   A released pinch (U152, `strip/stretch.ts`) coasts or bounces as a display factor (`stretch`) on the
   unchanged zoom: no `--pn-zoom` on the root per frame, only on the cursor and loop controls; `settleZoom`
   sets the zoom where it lands and `flush` reports it once.

@@ -1248,7 +1248,14 @@ export class StripView {
     if (!this.browsing) return
     this.browseTx = this.clampTx(tx)
     this.schedule()
+    this.browseReleased()
+  }
+
+  private browseReleased(): void {
+    if (this.destroyed) return
     this.opts.onBrowseRelease?.()
+    // Back where the cursor rests (a bounce at the start): nothing is browsed.
+    if (this.browsing && Math.abs(this.clampTx(this.browseTx) - this.cursorTranslate()) < 1) this.returnToCurrent()
   }
 
   /** Translate placing `cursorX` under the fixed cursor (U28). */
@@ -2090,7 +2097,7 @@ export class StripView {
     this.on(this.root, 'pointermove', (e) => this.pointerMove(e))
     this.on(this.root, 'pointerup', (e) => this.pointerUp(e))
     this.on(this.root, 'pointercancel', (e) => this.pointerUp(e, true))
-    this.on(this.root, 'wheel', (e) => this.wheel(e), { passive: false })
+    this.on(this.root, 'wheel', (e) => this.wheel(e), { passive: this.swipe.trackpad })
     for (const [el, which] of [
       [this.startHandle, 'start'],
       [this.endHandle, 'end'],
@@ -2417,7 +2424,7 @@ export class StripView {
   private wheel(e: WheelEvent): void {
     this.settleReview()
     if (e.ctrlKey || e.metaKey) {
-      e.preventDefault()
+      if (!this.swipe.trackpad) e.preventDefault()
       this.settleZoom()
       const factor = Math.exp(-e.deltaY * 0.004)
       if (this.reviewOn) this.zoomReview(this.shown * factor, e.clientX - this.root.getBoundingClientRect().left)
@@ -2427,7 +2434,12 @@ export class StripView {
     if (!this.browseEnabled || this.dragTx !== null) return
     const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.shiftKey ? e.deltaY : 0
     if (!d) return
-    e.preventDefault()
+    // Desktop Safari's trackpad scrolls by itself, except over the playhead and the loop controls.
+    if (this.swipe.trackpad && this.swipe.el.contains(e.target as Node)) {
+      this.swipe.wheel()
+      return
+    }
+    if (!this.swipe.trackpad) e.preventDefault()
     if (this.reviewOn) {
       this.panReview(this.tx - d)
       return
@@ -2445,7 +2457,7 @@ export class StripView {
     if (this.wheelRelease) clearTimeout(this.wheelRelease)
     this.wheelRelease = setTimeout(() => {
       this.wheelRelease = 0
-      if (!this.destroyed) this.opts.onBrowseRelease?.()
+      this.browseReleased()
     }, WHEEL_RELEASE_MS)
   }
 

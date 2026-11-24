@@ -4,6 +4,9 @@
  * catch on touch and the bounce at the ends. The strip draws the music where the scroller is: the
  * notation, the pinned signatures and their masks keep sharing one translate.
  *
+ * Desktop Safari's trackpad scrolls it natively too (`trackpad`, U153), bounce included. Other
+ * browsers keep their bounce to themselves (`scrollLeft` stops at the ends): the strip draws their wheel.
+ *
  * The scroller is only ever written while nobody scrolls it (a write stops iOS momentum and
  * bounce), and never on a playback frame: it is lined up with the music when a finger lands, or
  * after the music has been still for a while.
@@ -13,8 +16,12 @@
 export const SWIPE_SETTLE_MS = 150
 /** A quick flick's first scroll event may come this long after its touch ended, ms. */
 const ARM_MS = 300
+/** A `scrollend` that never comes is not waited for longer than this after the last scroll event, ms. */
+const LOST_END_MS = 2000
 /** The music is still (and the scroller lined up, on a touch device) this long after its last move, ms. */
 const REST_MS = 300
+/** A trackpad gives no warning of a gesture: there the scroller keeps up, at most this often, ms. */
+const KEEP_UP_MS = 100
 /**
  * Share of the way to the scroller drawn per frame while it coasts: WebKit reports whole px, and
  * the slow end of a glide would step. The music is compared with nothing, so the lag is not seen.
@@ -58,8 +65,20 @@ export class SwipeScroller {
   private armTimer: ReturnType<typeof setTimeout> | null = null
   private restTimer: ReturnType<typeof setTimeout> | null = null
   private unlockTimer: ReturnType<typeof setTimeout> | null = null
+  /** When the music last moved by itself (a trackpad's: when the scroller last kept up). */
   private movedAt = 0
   private readonly touchDevice = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0
+  /**
+   * Desktop Safari: its scroller reports the places past the ends while it bounces. It bounces only
+   * where no wheel listener may cancel the scroll, so the owner's is passive there, and any scroll
+   * `align` did not write is the learner's.
+   */
+  readonly trackpad =
+    typeof navigator !== 'undefined' && /^Apple/.test(navigator.vendor ?? '') && !(navigator.maxTouchPoints > 0)
+  /** A trackpad's fingers (or its momentum) are still on: `scrollend` comes after each, momentum too. */
+  private wheeling = false
+  /** Momentum that outlives a `stop` is ignored until the trackpad is quiet. */
+  private quietTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(doc: Document, host: SwipeHost) {
     this.host = host
@@ -78,7 +97,11 @@ export class SwipeScroller {
     this.el.addEventListener('touchcancel', (e) => this.touchEnd(e, true))
     this.el.addEventListener('scroll', () => this.scrolled(), { passive: true })
     this.el.addEventListener('scrollend', () => {
-      if (this.swiping && this.touches === 0) this.settle()
+      this.wheeling = false
+      if (!this.swiping || this.touches > 0) return
+      // A trackpad's ends when the fingers lift, before its momentum or its spring back.
+      if (this.trackpad) this.waitForRest()
+      else this.settle()
     })
   }
 
@@ -103,18 +126,33 @@ export class SwipeScroller {
     this.at = this.el.scrollLeft
   }
 
+  /** A trackpad or wheel event over the scroller, which scrolls it natively (`trackpad` only). */
+  wheel(): void {
+    this.wheeling = true
+    if (this.quietTimer) this.waitForQuiet()
+  }
+
   /** The music moved by other means (following, a seek): line up once it has been still. */
   moved(): void {
-    if (!this.touchDevice || this.swiping) return
-    this.movedAt = performance.now()
+    if (!(this.touchDevice || this.trackpad) || this.swiping) return
+    const now = performance.now()
+    if (this.trackpad) {
+      this.restTimer ??= setTimeout(this.rest, Math.max(0, this.movedAt + KEEP_UP_MS - now))
+      return
+    }
+    this.movedAt = now
     this.restTimer ??= setTimeout(this.rest, REST_MS)
   }
 
   private readonly rest = (): void => {
     this.restTimer = null
-    if (this.swiping || this.armed) return
-    if (performance.now() - this.movedAt < REST_MS - 50) this.restTimer = setTimeout(this.rest, REST_MS)
-    else this.align()
+    if (this.swiping || this.armed || this.quietTimer) return
+    const now = performance.now()
+    if (!this.trackpad && now - this.movedAt < REST_MS - 50) this.restTimer = setTimeout(this.rest, REST_MS)
+    else {
+      this.movedAt = now
+      this.align()
+    }
   }
 
   /** One drawn frame of a swipe: the translate, and whether the scroller's place is reached. */
@@ -139,6 +177,7 @@ export class SwipeScroller {
     this.swiping = false
     if (this.settleTimer) clearTimeout(this.settleTimer)
     this.settleTimer = null
+    if (this.trackpad) this.waitForQuiet()
     // A scroller that cannot scroll has no momentum.
     this.el.style.overflowX = 'hidden'
     this.unlockTimer ??= setTimeout(() => {
@@ -149,7 +188,16 @@ export class SwipeScroller {
 
   destroy(): void {
     this.armed = this.swiping = false
-    for (const t of [this.settleTimer, this.armTimer, this.restTimer, this.unlockTimer]) if (t) clearTimeout(t)
+    for (const t of [this.settleTimer, this.armTimer, this.restTimer, this.unlockTimer, this.quietTimer])
+      if (t) clearTimeout(t)
+  }
+
+  private waitForQuiet(): void {
+    if (this.quietTimer) clearTimeout(this.quietTimer)
+    this.quietTimer = setTimeout(() => {
+      this.quietTimer = null
+      this.align()
+    }, SWIPE_SETTLE_MS)
   }
 
   private touchStart(e: TouchEvent): void {
@@ -183,19 +231,22 @@ export class SwipeScroller {
     if (this.touches > 0) return
     this.taken = canceled && 'onscrollend' in this.el
     if (this.swiping) this.waitForRest()
-    else {
-      if (this.armTimer) clearTimeout(this.armTimer)
-      this.armTimer = setTimeout(() => {
-        this.armTimer = null
-        if (!this.swiping) this.armed = false
-      }, ARM_MS)
-    }
+    else this.disarmLater()
+  }
+
+  private disarmLater(): void {
+    if (this.armTimer) clearTimeout(this.armTimer)
+    this.armTimer = setTimeout(() => {
+      this.armTimer = null
+      if (!this.swiping) this.armed = false
+    }, ARM_MS)
   }
 
   private scrolled(): void {
     const at = this.el.scrollLeft
     if (!this.swiping) {
-      if (!this.armed || at === this.at) {
+      if (this.quietTimer) this.waitForQuiet()
+      if (!(this.armed || this.trackpad) || this.quietTimer || at === this.at) {
         this.at = at
         return
       }
@@ -215,7 +266,8 @@ export class SwipeScroller {
 
   private waitForRest(): void {
     if (this.settleTimer) clearTimeout(this.settleTimer)
-    this.settleTimer = this.taken ? null : setTimeout(() => this.settle(), SWIPE_SETTLE_MS)
+    const held = this.taken || (this.trackpad && this.wheeling)
+    this.settleTimer = setTimeout(() => this.settle(), held ? LOST_END_MS : SWIPE_SETTLE_MS)
   }
 
   private settle(): void {
