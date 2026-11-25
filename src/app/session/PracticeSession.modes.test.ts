@@ -1023,9 +1023,12 @@ describe('what the modes do not touch', () => {
     expect(ui(h)).toMatchObject({ repeat: mode !== 'follow', range: mode === 'follow' ? null : BAR_2 })
   })
 
-  it.each(PRACTICE_MODES)('the microphone preference in %s: only Follow uses it', (mode) => {
-    const h = harness(mode, {}, { settings: testSettings({ mic: { follow: true } }) })
-    expect(ui(h)).toMatchObject({ follow: 'mic', metronomeMuted: mode === 'follow', startEnabled: true })
+  it.each(PRACTICE_MODES)('the microphone without a piano in %s: only Follow uses it', (mode) => {
+    const h = harness(mode)
+    h.session.setInputAvailable(false)
+    h.frames.flush()
+    const startEnabled = mode === 'listen' || mode === 'follow'
+    expect(ui(h)).toMatchObject({ follow: 'mic', metronomeMuted: mode === 'follow', startEnabled })
     // The cue row stays in Wait and Keep time (U131).
     expect(h.strip.timingEnabled).toBe(mode === 'wait' || mode === 'time')
   })

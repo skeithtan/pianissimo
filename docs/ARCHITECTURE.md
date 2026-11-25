@@ -155,7 +155,7 @@ or a failing worker reaches `#onMicLost`. `SessionDeps.createMicFollower` inject
 a fake), with the selected hand (P22: one hand follows that hand's groups);
 `microphoneSupported()` (`SessionDeps.micSupported`) says whether the browser can open one at
 all. The session owns its lifetime: opened on Start in a Follow that uses the
-microphone (always without a piano input, with one when `settings.mic.follow`), closed when
+microphone (only without a piano input, P37), closed when
 Follow is left (also while it still opens), the hands change or the source changes.
 
 ### core/naming
@@ -458,8 +458,9 @@ Ordinary Practice and gated Repeat use the same comparison on the first accepted
 each group (U129). A correct pitch rejected as early shows Rushing immediately. The session
 clears the cue on a phase change or new traversal and schedules its expiry even while the
 transport waits at a gate.
-What it follows (P22): without a piano input the microphone; with one, the keys
-unless `settings.mic.follow` (`ui.follow`, U92). While the microphone
+What it follows (P22, P37): without a piano input the microphone; with one, always the keys
+(`ui.follow`). Releases that move musical time at once (an early or skipping press, several groups
+heard) keep their distance in `CursorCatchUp`, and only the drawn cursor glides across it (U162). While the microphone
 follows, the transport is silent for any hand (no accompaniment, no click) and MIDI notes never
 reach the follower; a change of source pauses a started Follow (`#syncFollowSource`) and
 the next Start rebuilds it.

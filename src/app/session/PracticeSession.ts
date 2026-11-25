@@ -124,6 +124,7 @@ import {
   type SnippetKind,
 } from './snippets'
 import { countInPlan } from './countIn'
+import { CursorCatchUp } from './cursorCatchUp'
 import { metronomeOn, metronomeScope } from './metronome'
 import { isPractice } from './openingMode'
 import { PerformanceTiming, TimingDrift } from './timingDrift'
@@ -263,6 +264,8 @@ interface Following {
   readonly outputKey: string
   /** Built to follow the microphone (DECISIONS P22): silent, and the piano's keys do not move it. */
   readonly mic: boolean
+  /** Glides the drawn cursor across the transport's jumps (U162). */
+  readonly catchUp: CursorCatchUp
 }
 
 /** What the keyboard guide reads from the engine or from Follow's follower. */
@@ -773,6 +776,7 @@ export class PracticeSession {
     if (!strip?.isBrowsing()) return
     const position = strip.browsedPosition?.()
     if (position) this.seekPosition(position)
+    this.#play?.catchUp.reset()
     // A seek schedules the session frame. Update the view's cached position before returning
     // so it cannot briefly pan to the previous transport position.
     strip.setCursor(this.#cursorPosition(), { smooth: false })
@@ -961,6 +965,7 @@ export class PracticeSession {
   #followCursorAgain(): void {
     const strip = this.#strip
     if (!strip?.isBrowsing()) return
+    this.#play?.catchUp.reset()
     strip.setCursor(this.#cursorPosition(), { smooth: false })
     strip.returnToCurrent?.()
   }
@@ -1639,6 +1644,7 @@ export class PracticeSession {
       playing: false,
       outputKey: silent ? '' : this.#outputKey,
       mic,
+      catchUp: new CursorCatchUp(),
     }
     this.#playResumable = false
     this.#playVersion = -1
@@ -1650,6 +1656,7 @@ export class PracticeSession {
     if (!p) return
     p.timing?.reset()
     if (p.follower.state.finished) {
+      p.catchUp.reset()
       p.follower.seek(0, now)
       p.transport.stop()
     }
@@ -1683,6 +1690,7 @@ export class PracticeSession {
     const g = timeline.groups[group]
     if (!g) return false
     p.timing?.reset()
+    p.catchUp.reset()
     // The follower first: a playing transport reports the gate at the new position at once.
     p.follower.seek(group, now)
     p.transport.seek(g.position)
@@ -1737,7 +1745,8 @@ export class PracticeSession {
   /**
    * Drain the follower: gate releases go to the transport synchronously (a release before the
    * transport arrives fast-forwards and re-enters through `onGateReached`), wrong presses get the
-   * gentle feedback in the next frame. O(events).
+   * gentle feedback in the next frame. How far the releases moved musical time at once is kept for
+   * the drawn cursor to glide across (U162). O(events).
    */
   #processPlay(): void {
     const p = this.#play
@@ -1747,6 +1756,7 @@ export class PracticeSession {
       return
     }
     this.#playProcessing = true
+    const from = p.playing ? p.transport.positionNow() : null
     try {
       for (let guard = 0; guard < 50; guard++) {
         this.#playAgain = false
@@ -1766,6 +1776,10 @@ export class PracticeSession {
       this.#playProcessing = false
     }
     if (this.#disposed) return
+    if (from !== null && p.playing) {
+      const jump = p.transport.positionNow() - from
+      if (jump > 0 && !this.#deps.reducedMotion?.()) p.catchUp.jump(jump, this.#deps.clock())
+    }
     this.#scheduleFrame()
     this.#scheduleTick()
   }
@@ -1775,6 +1789,7 @@ export class PracticeSession {
     const p = this.#play
     if (!p) return
     const now = this.#deps.clock()
+    p.catchUp.reset()
     p.transport.stop()
     p.playing = false
     this.#mic?.pause()
@@ -2491,9 +2506,9 @@ export class PracticeSession {
   }
 
   /**
-   * What Follow follows changed (a piano came or went, the Follow choice): once started it pauses
-   * where it is and is rebuilt for the new source on the next Start (the microphone opens or
-   * closes then; one hand gets or loses its accompaniment).
+   * What Follow follows changed (a piano came or went): once started it pauses where it is and is
+   * rebuilt for the new source on the next Start (the microphone opens or closes then; one hand gets
+   * or loses its accompaniment).
    */
   #syncFollowSource(): void {
     const p = this.#play
@@ -2986,12 +3001,6 @@ export class PracticeSession {
       this.#disposeAccompaniment()
       // A paused one-hand Follow is rebuilt with the new automatic part on Start.
       if (this.#play && this.#play.outputKey !== '') this.#disposePlay(true)
-    }
-    if ((prev.mic?.follow ?? false) !== (next.mic?.follow ?? false)) {
-      // The Follow choice (P22): once started, it pauses and is rebuilt for the new source.
-      this.#syncFollowSource()
-      this.#play?.transport.setMetronomeEnabled(this.#playMetronome())
-      this.#publishUi()
     }
     // Volumes apply live to sound already loaded (Settings over Practice).
     if (prev.sound.browserVolume !== next.sound.browserVolume) this.#browser?.setVolume(next.sound.browserVolume)
@@ -4364,7 +4373,7 @@ export class PracticeSession {
 
   /**
    * Follow's frame (DECISIONS P12): the follower's targets, accepted marks and keys, the timing cue
-   * and the cursor at the transport position.
+   * and the cursor at the transport position, gliding across its jumps (U162).
    */
   #framePlay(now: number, force: boolean, p: Following): void {
     const strip = this.#strip
@@ -4389,7 +4398,8 @@ export class PracticeSession {
     }
     this.feedback.set({ visible: false, reason: 'early', pulse: this.#pulse, cue: null })
     const labelsChanging = this.#frameLabels(now, strip, s)
-    strip?.setCursor(p.transport.positionNow(), { smooth: false })
+    const behind = p.catchUp.behind(now)
+    strip?.setCursor(p.transport.positionNow() - behind, { smooth: false })
     this.#applyDueNotes(now)
     if (s.keyboardVisible && (changed || this.#soundingDirty)) this.#updateGuide(false, f)
     this.#soundingDirty = false
@@ -4401,6 +4411,7 @@ export class PracticeSession {
       labelsChanging ||
       this.#labels.fading ||
       this.#emitQueue.length > 0 ||
+      behind > 0 ||
       (p.playing && p.transport.holdingGate === null)
     if (more) this.#scheduleFrame()
   }
@@ -4494,11 +4505,11 @@ export class PracticeSession {
   }
 
   /**
-   * Follow's source is the microphone (DECISIONS P22): always without a piano, and with one when
-   * `settings.mic.follow` (the menu's choice) says so.
+   * Follow's source is the microphone only without a piano: a connected piano's keys always win
+   * (DECISIONS P22, P37).
    */
   #followsMic(): boolean {
-    return this.#micPossible() && (!this.#inputAvailable || this.#settings.mic?.follow === true)
+    return this.#micPossible() && !this.#inputAvailable
   }
 
   /**

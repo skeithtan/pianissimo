@@ -494,8 +494,8 @@ recorded and the saved position does not move. Tests: `PracticeSession.play.test
 
 ### Through the microphone (DECISIONS P15, P16, P22)
 
-What Follow follows (`#followsMic`, `ui.follow`): the microphone when no piano input is connected,
-and with one when `settings.mic.follow` is on, provided
+What Follow follows (`#followsMic`, `ui.follow`): the microphone only when no piano input is connected
+(P37), provided
 `deps.createMicFollower` exists and `deps.micSupported?.()` is not false (`#micPossible`).
 `#micActive` (Follow, through the microphone) makes it **silent for any hand**:
 `#playSilent` builds the transport with no events and no output, so one hand needs no verified
@@ -515,15 +515,21 @@ follower (`Following.mic`; the hint pedal still names notes). A microphone that 
 itself (`onLost`: unplugged, a failing worker) pauses Follow with the reason in
 `ui.micStatus` (`#onMicLost`); the next Start opens it again.
 
+**The drawn cursor (U162).** `#processPlay` measures how far its releases moved the transport at once
+and hands it to `Following.catchUp` (`CursorCatchUp`, a critically damped spring in whole notes);
+`#framePlay` draws the cursor that far behind `positionNow()` and keeps frames coming until it has
+arrived, also paused or held at a gate. A seek, a rewind, the end and a return from browsing reset it;
+with `deps.reducedMotion` nothing is kept and the cursor jumps.
+
 **Live MIDI timing (U111).** `PerformanceTiming` compares the time between the first
 `accepted` MIDI attacks of consecutive groups with their written gap at the selected speed.
 The frame draws the cue, and the session's tick can clear it while playback waits at a gate.
 Starting, seeking, and changing speed reset the comparison.
 
-A change of source (a piano connecting or leaving, the choice in the menu) pauses a started Follow
+A change of source (a piano connecting or leaving) pauses a started Follow
 and drops it (`#syncFollowSource` → `#disposePlay(true)`), so the next Start rebuilds it for the new
 source; a piano unplugged while the microphone already follows changes nothing. `ui.follow`,
-`ui.pianoConnected` and `ui.micSupported` drive the source choice. Tests: `PracticeSession.mic.test.ts`.
+`ui.pianoConnected` and `ui.micSupported` say which and why. Tests: `PracticeSession.mic.test.ts`.
 
 ## Tests
 

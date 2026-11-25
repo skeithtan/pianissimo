@@ -21,7 +21,7 @@ rules in view and focused.
 | Piano and sound, Sound | Destination: Auto (default) / Connected piano (MIDI) / Browser sound; browser volume; accompaniment level (only here); optional input monitoring | immediately |
 | Piano and sound, Metronome | "Metronome click" (`metronome.enabled`, off: Listen, Wait, Follow), "Click in Keep time" (`metronome.keepTime`, on: the Keep time attempt after its count-in, P20) and one volume (disabled only when both are off; the Practice menu edits the switch that applies, U87), a remembered audio output where supported, and Test click (U114) | immediately |
 | Piano and sound, Performance recording | The remembered audio input and *Choose again*, which forgets it (D20) | immediately |
-| Piano and sound, Microphone | "Follow the microphone with a piano connected" (P15, P16, P22; `mic.follow`, off; the same preference as the Practice menu's Follow input, U92; without a piano Follow always uses the microphone, and while it does the app plays nothing: no other hand, no metronome) | immediately |
+| Piano and sound, Microphone | No control: says that Follow uses the microphone only without a connected piano (P37) and what it then does (no other hand, no metronome) | |
 | App | Language; theme System / Light / Dark; score paper; suggestions toggle | immediately |
 | Data, Backup and restore | Export backup (download), Restore from backup (confirm, then the merge report or why the file is not a backup, in place), storage status line. Uses its own `LibraryModel` and `LibraryDeps` from `views/library` (DECISIONS L7) | on Restore |
 | Data, Recordings | *All recordings* opens the recordings list (lazy) over Settings | — |

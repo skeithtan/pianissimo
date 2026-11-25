@@ -179,7 +179,9 @@ describe('the hands', () => {
     expect(titles()).toEqual(['Left hand: the piano plays it', 'Right hand: you play it'])
     await setMode(r, 'Follow')
     expect(titles()).toEqual(['Left hand: the piano plays it', 'Right hand: you play it'])
-    act(() => updateSettings({ mic: { follow: true } }))
+    act(() => {
+      connectionStatus.value = { state: 'disconnected' }
+    })
     await settle(r, 1)
     expect(titles()).toEqual(['Left hand: silent', 'Right hand: you play it'])
     await setMode(r, 'Listen')
@@ -413,9 +415,7 @@ describe('the footer menu', () => {
   const rows = () =>
     [...menu()!.children].map(
       (row) =>
-        row.textContent
-          ?.trim()
-          .match(/^(Note names|Playback|Follow input|Metronome|Show keys|Progress|Record performance)/)?.[0],
+        row.textContent?.trim().match(/^(Note names|Playback|Metronome|Show keys|Progress|Record performance)/)?.[0],
     )
 
   it('holds the mode’s rows in order, and no badge', async () => {
@@ -424,7 +424,7 @@ describe('the footer menu', () => {
       Listen: ['Note names', 'Metronome', 'Show keys', 'Progress', 'Record performance'],
       Wait: ['Note names', 'Metronome', 'Show keys', 'Progress', 'Record performance'],
       'Keep time': ['Note names', 'Playback', 'Metronome', 'Show keys', 'Progress', 'Record performance'],
-      Follow: ['Note names', 'Follow input', 'Metronome', 'Show keys', 'Progress', 'Record performance'],
+      Follow: ['Note names', 'Metronome', 'Show keys', 'Progress', 'Record performance'],
     }
     for (const [name, list] of Object.entries(expected)) {
       await setMode(r, name)

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PracticeSession, SessionUi } from '../../app/session'
-import { resetAppStateForTests, settings } from '../../app/state'
+import { resetAppStateForTests } from '../../app/state'
 import type { PersistentLabelMode } from '../../core/model/settings'
 import { $$, byText, click, mount, type Mounted } from '../shared/testing'
 import { PracticeMenuItems, type MetronomeRow } from './FooterMenu'
@@ -76,10 +76,7 @@ describe('PracticeMenuItems Metronome row (U87, P20)', () => {
 describe('PracticeMenuItems rows (U141)', () => {
   const rows = () =>
     [...view!.container.children].map(
-      (row) =>
-        row.textContent?.match(
-          /Note names|Playback|Follow input|Metronome|Show keys|Record performance|Keep time/,
-        )?.[0],
+      (row) => row.textContent?.match(/Note names|Playback|Metronome|Show keys|Record performance|Keep time/)?.[0],
     )
   const show = (ui: Partial<SessionUi>) => {
     view?.unmount()
@@ -87,14 +84,13 @@ describe('PracticeMenuItems rows (U141)', () => {
     return rows()
   }
 
-  it('offers Playback in Keep time and Follow input in Follow, and no Keep time switch', () => {
+  it('offers Playback in Keep time only, and no choice of input in Follow (P37)', () => {
     expect(show({ mode: 'listen' })).toEqual(['Note names', 'Metronome', 'Show keys'])
     expect(show({ mode: 'wait' })).toEqual(['Note names', 'Metronome', 'Show keys'])
     expect(show({ mode: 'time' })).toEqual(['Note names', 'Playback', 'Metronome', 'Show keys'])
-    expect(show({ mode: 'follow' })).toEqual(['Note names', 'Follow input', 'Metronome', 'Show keys'])
-    // Keep time cannot run without a piano, and a browser without a microphone has no choice of input.
+    expect(show({ mode: 'follow' })).toEqual(['Note names', 'Metronome', 'Show keys'])
+    // Keep time cannot run without a piano.
     expect(show({ mode: 'time', pianoConnected: false })).toEqual(['Note names', 'Metronome', 'Show keys'])
-    expect(show({ mode: 'follow', micSupported: false })).toEqual(['Note names', 'Metronome', 'Show keys'])
   })
 
   it('offers the Note names rules in Conditional only (U143)', () => {
@@ -107,19 +103,5 @@ describe('PracticeMenuItems rows (U141)', () => {
     expect(link().closest('[inert]')).toBeNull()
     click(link())
     expect(onNoteRules).toHaveBeenCalledOnce()
-  })
-
-  it('chooses what Follow follows; without a piano only the microphone', () => {
-    show({ mode: 'follow' })
-    const input = $$(view!.container, '[aria-label="Follow input"]')[0]!
-    const option = (name: string) =>
-      $$(input, '[role="radio"]').find((el) => el.textContent === name) as HTMLButtonElement
-    expect(option('Piano').getAttribute('aria-checked')).toBe('true')
-    click(option('Microphone'))
-    expect(settings.value.mic.follow).toBe(true)
-    show({ mode: 'follow', follow: 'mic', pianoConnected: false })
-    const only = $$(view!.container, '[aria-label="Follow input"]')[0]!
-    const piano = $$(only, '[role="radio"]').find((el) => el.textContent === 'Piano') as HTMLButtonElement
-    expect([piano.disabled, piano.title]).toEqual([true, 'Piano not connected'])
   })
 })

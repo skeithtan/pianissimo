@@ -239,10 +239,10 @@ describe('Start canceled while sounds load', () => {
       {},
       {
         options: { mode: 'follow' },
-        settings: testSettings({ mic: { follow: true } }),
         deps: { createMicFollower: () => mic },
       },
     )
+    h.session.setInputAvailable(false)
     const start = h.session.start()
     await settle()
     expect(mic.start).toHaveBeenCalledTimes(1)

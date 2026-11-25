@@ -150,18 +150,6 @@ export const MIN_RHYTHM_TOLERANCE_MS = 40
 export const MAX_RHYTHM_TOLERANCE_MS = 500
 
 /**
- * The microphone follower (DECISIONS P15, P22). Without a piano input, Follow always uses
- * this device’s microphone (an acoustic piano); no setting is needed for that.
- */
-export interface MicSettings {
-  /**
-   * Follow the microphone even when a piano is connected (default off: the piano's keys). The
-   * Practice menu’s Follow input (Piano / Microphone) and Settings → Sound edit this one value.
-   */
-  readonly follow: boolean
-}
-
-/**
  * The audio input performance recordings use (DECISIONS D20): set when a take starts from the
  * setup sheet, null until then. It belongs to this device, like the MIDI route.
  */
@@ -202,7 +190,6 @@ export interface AppSettings {
   /** Keep time (rhythm mode). Absent in older stored settings: normalized to the default. */
   readonly rhythm: RhythmSettings
   /** Microphone following. Absent in older stored settings: off. */
-  readonly mic: MicSettings
   /** The remembered recording input. Absent in older stored settings: none. */
   readonly recording: RecordingSettings
   readonly view: ViewSettings
@@ -255,7 +242,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sound: { destination: 'auto', browserVolume: 0.8, monitorInput: false },
   metronome: { enabled: false, keepTime: true, volume: 0.6, outputId: null },
   rhythm: { toleranceMs: 150, scorePlayback: false, scorePlaybackVolume: 1 },
-  mic: { follow: false },
   recording: { inputId: null, inputLabel: null },
   view: { language: 'system', zoom: 1, pageZoom: 1, theme: 'system', scorePaper: 'theme' },
   suggestions: { enabled: true },

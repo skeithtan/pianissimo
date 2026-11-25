@@ -28,6 +28,64 @@ async function follow(h: Harness): Promise<void> {
   h.frames.flush()
 }
 
+/** The cursor of every drawn frame (about 16 ms each) over `ms`. */
+function drawn(h: Harness, ms: number): number[] {
+  const out: number[] = []
+  for (let t = 0; t < ms; t += 16) {
+    h.step(16)
+    out.push(h.strip.cursor)
+  }
+  return out
+}
+
+describe('the drawn cursor (U162)', () => {
+  it('glides to a note played ahead of the music, to the last frame', async () => {
+    const h = harness(melody)
+    await follow(h)
+    h.tap(60)
+    h.step(200)
+    const before = h.strip.cursor
+    // 800 ms early: the target moves at once, the cursor sets off from where it was.
+    h.tap(62)
+    h.frames.flush()
+    expect(h.strip.targets).toEqual([2])
+    expect(h.strip.cursor - before).toBeLessThan(0.02)
+    const path = drawn(h, 2000)
+    const steps = path.map((x, i) => x - (i ? path[i - 1]! : before))
+    expect(Math.min(...steps)).toBeGreaterThanOrEqual(0)
+    expect(Math.max(...steps)).toBeLessThan(0.03)
+    expect(path.at(-1)).toBe(0.5)
+  })
+
+  it('arrives after a pause in the middle of the glide', async () => {
+    const h = harness(melody)
+    await follow(h)
+    h.tap(60)
+    h.tap(62)
+    h.tap(64)
+    h.session.pause()
+    h.frames.flush()
+    expect(h.strip.cursor).toBeLessThan(0.1)
+    expect(drawn(h, 1000).at(-1)).toBe(0.5)
+  })
+
+  it('a seek lands at once, and so does every note under reduced motion', async () => {
+    const h = harness(melody)
+    await follow(h)
+    h.tap(60)
+    h.tap(62)
+    h.session.seek(1)
+    h.frames.flush()
+    expect(h.strip.cursor).toBe(1)
+    const still = harness(melody, {}, { deps: { reducedMotion: () => true } })
+    await follow(still)
+    still.tap(60)
+    still.tap(62)
+    still.frames.flush()
+    expect(still.strip.cursor).toBeCloseTo(0.25)
+  })
+})
+
 describe('Follow', () => {
   it('covers the whole piece with Repeat put away, and leaving brings Repeat back as it was', async () => {
     const h = harness(melody, { range: { fromOcc: 1, toOcc: 1 } })
@@ -209,9 +267,9 @@ describe('Follow', () => {
     // 64 is the third group: the first two are skipped.
     h.tap(64)
     expect(h.strip.targets).toEqual([3])
-    expect(h.strip.cursor).toBeCloseTo(0.5)
-    h.step(500)
-    expect(h.strip.cursor).toBeCloseTo(0.625)
+    expect(h.session.progress.get().position).toBeCloseTo(0.5)
+    h.step(800)
+    expect(h.strip.cursor).toBeCloseTo(0.7)
   })
 
   it('pause keeps the position and the patience clock stops; Resume continues', async () => {

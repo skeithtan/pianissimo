@@ -151,17 +151,13 @@ export function RecordingSection() {
 }
 
 export function MicrophoneSection() {
-  const { mic } = settings.value
   return (
     <Group>
-      <Toggle
-        label={msg('Follow the microphone with a piano connected')}
-        description={msg(
-          "Without a piano, Follow always uses the microphone. With one, it follows the piano's keys unless this is on. Same as Follow input in the Practice menu.",
+      <Help>
+        {msg(
+          "Follow uses the microphone only when no piano is connected. With one, it always follows the piano's keys.",
         )}
-        checked={mic.follow}
-        onChange={(follow) => updateSettings({ mic: { follow } })}
-      />
+      </Help>
       <Help>
         {msg(
           'Position only: wrong notes are not judged, and the microphone is closed outside Follow. The browser asks for it on the first Start. The cursor waits as long as you do and moves when it hears the next notes, at any speed. Keep the device near the piano. While the microphone follows, Pianissimo plays nothing: no other hand, no metronome.',

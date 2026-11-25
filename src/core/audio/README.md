@@ -266,8 +266,7 @@ in about 12 ms; there is no tempo-dependent reference to rebuild.
 
 ## Wiring (DECISIONS P15, P16, P22)
 
-Play-through follows the microphone whenever no piano input is connected (no setting), and with
-one when the Practice menu's Follow choice (`settings.mic.follow`) says Microphone; any hand
+Play-through follows the microphone only when no piano input is connected (P37; no setting); any hand
 (P22). With one hand the follower is built with `hands` ('right' / 'left': `attackGroups(model,
 hands)` keeps that hand's notes by the practice timeline's `n.hand` rule, so its groups are the
 one-hand timeline's and `groupReached` stays exact; `AudioFollowerOptions.hands`,

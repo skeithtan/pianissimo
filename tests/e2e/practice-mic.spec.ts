@@ -132,8 +132,6 @@ test('the cursor follows an acoustic piano through the microphone and waits whil
   await openSeededPractice(page)
   await chooseMode(page, 'Follow')
   const menu = await openFooterMenu(page)
-  await expect(menu.getByRole('radio', { name: 'Microphone' })).toHaveAttribute('aria-checked', 'true')
-  await expect(menu.getByRole('radio', { name: 'Piano' })).toBeDisabled()
   await expect(menu.getByText('Silent while the microphone follows.')).toBeVisible()
   await page.keyboard.press('Escape')
   const start = page.getByRole('button', { name: 'Start', exact: true })

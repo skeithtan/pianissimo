@@ -8,12 +8,11 @@ import { msg, percentage } from '../../i18n/messages'
  * moves into the panel on open and back to the button on close.
  *
  * `PracticeMenuItems` are the rows, in the popover and in a phone's menu sheet: Note names; Playback
- * (Keep time); Follow input (Follow); Metronome; Show keys; Progress; Record performance.
+ * (Keep time); Metronome; Show keys; Progress; Record performance.
  */
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { PracticeSession, SessionUi } from '../../app/session'
-import { updateSettings } from '../../app/state'
 import type { PersistentLabelMode } from '../../core/model/settings'
 import { Button, Segmented, Slider, Toggle } from '../../ui/controls'
 import { useFadePresence } from '../../ui/fade'
@@ -156,28 +155,6 @@ export function PracticeMenuItems({
               />
             </div>
           </MenuReveal>
-        </div>
-      ) : null}
-      {ui.mode === 'follow' && ui.micSupported ? (
-        <div class={rowClass}>
-          <span class={labelClass} aria-hidden="true">
-            {msg('Follow input')}
-          </span>
-          <Segmented
-            label={msg('Follow input')}
-            value={ui.follow}
-            options={[
-              {
-                value: 'piano',
-                label: msg('Piano'),
-                title: ui.pianoConnected ? msg('Follow the connected piano') : msg('Piano not connected'),
-                disabled: !ui.pianoConnected,
-              },
-              { value: 'mic', label: msg('Microphone'), title: msg('Follow what this device’s microphone hears') },
-            ]}
-            onChange={(follow) => updateSettings({ mic: { follow: follow === 'mic' } })}
-            compact
-          />
         </div>
       ) : null}
       <Toggle

@@ -171,6 +171,8 @@ export interface SessionDeps {
    * `createMicFollower` is supplied)? Without it, Follow needs a piano.
    */
   readonly micSupported?: () => boolean
+  /** The device asks for less motion: Follow's drawn cursor then jumps as before (U162). Default: no. */
+  readonly reducedMotion?: () => boolean
 }
 
 /** A position estimate from the microphone follower (float whole notes, confidence 0..1). */
@@ -394,11 +396,11 @@ export interface SessionUi {
    */
   readonly micStatus: string | null
   /**
-   * What Follow follows (DECISIONS P22): `'mic'` without a piano input, or with one when
-   * `settings.mic.follow` is on (and the browser can use a microphone); else `'piano'`.
+   * What Follow follows (DECISIONS P22, P37): `'mic'` without a piano input (where the browser can
+   * use a microphone); else `'piano'`.
    */
   readonly follow: 'piano' | 'mic'
-  /** A piano input is connected (Wait and Keep time can start; Follow's choice offers Piano). */
+  /** A piano input is connected (Wait and Keep time can start; Follow follows its keys). */
   readonly pianoConnected: boolean
   /** This browser can open a microphone (Follow's choice offers Microphone). */
   readonly micSupported: boolean
@@ -455,6 +457,4 @@ export type SessionSettings = Pick<
 > & {
   /** Keep time tolerance; absent = the engine default. */
   readonly rhythm?: AppSettings['rhythm']
-  /** Microphone following (DECISIONS P15); absent = off. */
-  readonly mic?: AppSettings['mic']
 }

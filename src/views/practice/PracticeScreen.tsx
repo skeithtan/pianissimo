@@ -68,6 +68,7 @@ import { Button, Sheet } from '../../ui/controls'
 import { useFadePresence } from '../../ui/fade'
 import { HandToggles } from '../../ui/HandToggles'
 import { Icon } from '../../ui/icons'
+import { prefersReducedMotion } from '../../ui/motion'
 import { TempoControl } from '../../ui/TempoControl'
 import { WrongNoteFlash } from '../../ui/WrongNoteFlash'
 import { ConnectionChip } from '../shared/ConnectionChip'
@@ -256,7 +257,6 @@ function pickSettings(): SessionSettings {
     sound: s.sound,
     metronome: s.metronome,
     rhythm: s.rhythm,
-    mic: s.mic,
   }
 }
 
@@ -314,6 +314,7 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
         timeOrigin: env.timeOrigin,
         createMicFollower: env.createMicFollower ?? createMicFollowerDep,
         micSupported: env.micSupported ?? microphoneSupported,
+        reducedMotion: prefersReducedMotion,
         ...(env.loadBrowserAudio ? { loadBrowserAudio: env.loadBrowserAudio } : {}),
         ...(env.hasWebAudio ? { hasWebAudio: env.hasWebAudio } : {}),
         ...(env.loadMetronome ? { loadMetronome: env.loadMetronome } : {}),

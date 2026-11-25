@@ -59,7 +59,6 @@ const custom: AppSettings = {
   sound: { destination: 'browser', browserVolume: 0.25, monitorInput: true },
   metronome: { enabled: true, keepTime: false, volume: 0.1, outputId: 'usb-output' },
   rhythm: { toleranceMs: 250, scorePlayback: true, scorePlaybackVolume: 0.45 },
-  mic: { follow: true },
   recording: { inputId: 'usb-input', inputLabel: 'USB Audio' },
   view: { language: 'es-ES', zoom: 1.75, pageZoom: 1.25, theme: 'dark', scorePaper: 'light' },
   suggestions: { enabled: false },
@@ -83,11 +82,10 @@ describe('normalizeSettings', () => {
   })
 
   it('fills fields missing from an older version with defaults', () => {
-    const { metronome: _m, view: _v, suggestions: _s, rhythm: _r, mic: _mic, recording: _rec, ...older } = custom
+    const { metronome: _m, view: _v, suggestions: _s, rhythm: _r, recording: _rec, ...older } = custom
     const loaded = normalizeSettings(older)
     expect(loaded.metronome).toEqual(DEFAULT_SETTINGS.metronome)
     expect(loaded.rhythm).toEqual(DEFAULT_SETTINGS.rhythm)
-    expect(loaded.mic).toEqual({ follow: false })
     expect(loaded.recording).toEqual({ inputId: null, inputLabel: null })
     expect(loaded.view).toEqual(DEFAULT_SETTINGS.view)
     expect(loaded.suggestions).toEqual(DEFAULT_SETTINGS.suggestions)
