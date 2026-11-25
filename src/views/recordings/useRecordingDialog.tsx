@@ -26,6 +26,8 @@ type PanelProps = {
   onPhase: (phase: TakePhase) => void
   controlsHost: HTMLElement | null
   covered: boolean
+  /** Set while the recorder is up: stops and saves the running take. */
+  stopTake: { current: (() => void) | null }
 }
 
 /** The remembered input, when Record performance can use it at once: a piano must be connected. */
@@ -48,6 +50,7 @@ export function useRecordingDialog(playing = false, covered = false) {
   const [phase, setPhase] = useState<TakePhase | null>(null)
   const now = useRef<TakePhase | null>(null)
   const generation = useRef(0)
+  const stopTake = useRef<(() => void) | null>(null)
   // A layout effect: its cleanup runs as the screen goes, an effect's only after the next paint.
   useLayoutEffect(
     () => () => {
@@ -118,11 +121,17 @@ export function useRecordingDialog(playing = false, covered = false) {
   const busy = phase !== null && BUSY.has(phase)
   return {
     open,
+    /** Stop and save the running take, as the header's Stop does. Nothing without one. */
+    stop: () => stopTake.current?.(),
     controls,
     phoneFooter: Panel ? <footer class={styles.phoneFooter} ref={setControlsHost} /> : null,
-    dialog: Panel ? <Panel onClose={close} onPhase={enter} controlsHost={controlsHost} covered={covered} /> : null,
+    dialog: Panel ? (
+      <Panel onClose={close} onPhase={enter} controlsHost={controlsHost} covered={covered} stopTake={stopTake} />
+    ) : null,
     /** A take is opening, recording or saving: no other can start. */
     busy,
+    /** A take is recording: the menus offer Stop recording. */
+    recording: phase === 'recording',
     /** A take or the last one's pill holds the place `controls` (or `phoneFooter`) gives it. */
     showing: busy || phase === 'saved',
     /** The recorder has the learner's attention (the menu that opened it closes): all but the pill. */

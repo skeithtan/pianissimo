@@ -73,6 +73,7 @@ export interface FooterProps {
   readonly onRecord?: (() => void) | undefined
   readonly recordingOpen?: boolean | undefined
   readonly recordDisabled?: boolean | undefined
+  readonly onStopRecording?: (() => void) | undefined
   readonly ui: SessionUi
   readonly session: PracticeSession
   readonly zone: RecedeZone
@@ -99,6 +100,7 @@ export function Footer({
   onRecord,
   recordingOpen,
   recordDisabled,
+  onStopRecording,
   ui,
   session,
   zone,
@@ -139,6 +141,7 @@ export function Footer({
                 onRecord={onRecord}
                 recordingOpen={recordingOpen}
                 recordDisabled={recordDisabled}
+                onStopRecording={onStopRecording}
                 ui={ui}
                 session={session}
                 receded={receded}

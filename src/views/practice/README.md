@@ -101,7 +101,7 @@ Restart loop sits at the bottom start edge of the stage (in the result dock in l
 moves up above the result pill wherever the pill leaves it no room beside it (`data-stack` on the
 dock, measured, P11; always in a window 720 px wide or less), and in a window 640 px wide or less
 above Return to current position while that shows.
-The footer menu's last actions (Progress, Record performance) have the rows' spacing above and below them
+The footer menu's last actions (Progress, Record performance or a take's Stop recording) have the rows' spacing above and below them
 and a hairline above them, full width with their icon and label at the start
 (`FooterMenu.module.css`).
 

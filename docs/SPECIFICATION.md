@@ -354,7 +354,7 @@ forget it. A restored backup keeps this device's own.
 
 The header shows recording controls only during a take. During a take, a red light and elapsed time sit beside Stop, clear of the score timeline. These controls
 use the header on wider screens and a footer on portrait phones. Focus mode keeps Stop and the
-recording timer visible and tappable. The adjacent piano connection pill stays visible too. Stop saves
+recording timer visible and tappable. The adjacent piano connection pill stays visible too. During a take the menu's Record performance is Stop recording, which does the same and closes the menu. Stop saves
 the MIDI and the audio together on this device and leaves the score in view: where the controls were, a
 pill says that the take is saved, or that it was interrupted, with its note accuracy percentage and
 buttons to listen to the take, to open Recordings at it, and to close the pill. The pill stays until it

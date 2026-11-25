@@ -8,7 +8,8 @@ import { msg, percentage } from '../../i18n/messages'
  * moves into the panel on open and back to the button on close.
  *
  * `PracticeMenuItems` are the rows, in the popover and in a phone's menu sheet: Note names; Playback
- * (Keep time); Metronome; Show keys; Progress; Record performance.
+ * (Keep time); Metronome; Show keys; Progress; Record performance
+ * (Stop recording during a take).
  */
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
@@ -43,6 +44,8 @@ export interface FooterMenuProps {
   readonly recordingOpen?: boolean | undefined
   /** A take is opening, recording or saving. */
   readonly recordDisabled?: boolean | undefined
+  /** Set while a take records: Stop recording takes Record performance's place. */
+  readonly onStopRecording?: (() => void) | undefined
   readonly ui: SessionUi
   readonly session: PracticeSession
   readonly receded: boolean
@@ -85,6 +88,7 @@ export function PracticeMenuItems({
   onProgress,
   onRecord,
   recordDisabled,
+  onStopRecording,
   ui,
   session,
   labels,
@@ -105,6 +109,8 @@ export function PracticeMenuItems({
   readonly onProgress?: (() => void) | undefined
   readonly onRecord?: (() => void) | undefined
   readonly recordDisabled?: boolean | undefined
+  /** Set while a take records: Stop recording takes Record performance's place. */
+  readonly onStopRecording?: (() => void) | undefined
   readonly showKeys?: boolean
   readonly rowClass: string | undefined
   readonly labelClass: string | undefined
@@ -178,16 +184,28 @@ export function PracticeMenuItems({
           {msg('Progress')}
         </Button>
       )}
-      {onRecord && (
+      {onStopRecording ? (
+        <Button icon="stop" onClick={onStopRecording}>
+          {msg('Stop recording')}
+        </Button>
+      ) : onRecord ? (
         <Button icon="record" disabled={recordDisabled} onClick={onRecord}>
           {msg('Record performance')}
         </Button>
-      )}
+      ) : null}
     </>
   )
 }
 
-export function FooterMenu({ ui, receded, recordingOpen, onNoteRules, onProgress, ...items }: FooterMenuProps) {
+export function FooterMenu({
+  ui,
+  receded,
+  recordingOpen,
+  onNoteRules,
+  onProgress,
+  onStopRecording,
+  ...items
+}: FooterMenuProps) {
   // Closes when playback starts (Listen's does not recede and stays), the chrome recedes or the
   // recorder opens. It can be opened again while that lasts, as Playback changes live.
   const closed = (ui.playing && ui.mode !== 'listen') || receded || !!recordingOpen
@@ -269,6 +287,14 @@ export function FooterMenu({ ui, receded, recordingOpen, onNoteRules, onProgress
                 setOpen(false)
                 button.current?.focus()
                 onProgress()
+              })
+            }
+            onStopRecording={
+              onStopRecording &&
+              (() => {
+                setOpen(false)
+                button.current?.focus()
+                onStopRecording()
               })
             }
             ui={ui}

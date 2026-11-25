@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type { ComponentProps } from 'preact'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PracticeSession, SessionUi } from '../../app/session'
 import { resetAppStateForTests } from '../../app/state'
@@ -30,6 +31,7 @@ function render(
   session: Partial<PracticeSession> = {},
   labels: PersistentLabelMode = 'off',
   onNoteRules: () => void = () => undefined,
+  recording: Partial<ComponentProps<typeof PracticeMenuItems>> = {},
 ) {
   view = mount(
     <PracticeMenuItems
@@ -45,6 +47,7 @@ function render(
       rowClass={undefined}
       labelClass={undefined}
       toggleClass={undefined}
+      {...recording}
     />,
   )
   const row = $$(view.container, 'label').find((el) => el.textContent?.trim().startsWith('Metronome'))!
@@ -91,6 +94,18 @@ describe('PracticeMenuItems rows (U141)', () => {
     expect(show({ mode: 'follow' })).toEqual(['Note names', 'Metronome', 'Show keys'])
     // Keep time cannot run without a piano.
     expect(show({ mode: 'time', pianoConnected: false })).toEqual(['Note names', 'Metronome', 'Show keys'])
+  })
+
+  it('offers Stop recording in place of Record performance during a take (U163)', () => {
+    const stop = vi.fn()
+    render({ on: false, disabled: false }, () => undefined, {}, {}, 'off', undefined, {
+      onRecord: () => undefined,
+      recordDisabled: true,
+      onStopRecording: stop,
+    })
+    expect(byText(view!.container, 'Record performance')).toBeNull()
+    click(byText(view!.container, 'Stop recording'))
+    expect(stop).toHaveBeenCalledOnce()
   })
 
   it('offers the Note names rules in Conditional only (U143)', () => {

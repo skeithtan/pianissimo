@@ -33,6 +33,7 @@ export function Recorder({
   onPhase,
   controlsHost,
   covered = false,
+  stopTake,
 }: {
   target: TakeTarget
   oneTap: OneTap | null
@@ -41,6 +42,8 @@ export function Recorder({
   controlsHost: HTMLElement | null
   /** Progress is open over the score. */
   covered?: boolean
+  /** Filled with this take's Stop, for the menus. */
+  stopTake?: { current: (() => void) | null }
 }) {
   const [phase, setPhase] = useState<Phase>(oneTap ? 'opening' : 'setup')
   const [saved, setSaved] = useState<SavedTake | null>(null)
@@ -119,6 +122,7 @@ export function Recorder({
   // A layout effect: its cleanup runs as the recorder goes, before a late input could start a take.
   useLayoutEffect(() => {
     mounted.current = true
+    if (stopTake) stopTake.current = () => void finish(false)
     const hidden = () => {
       if (document.hidden) lost()
     }
@@ -129,6 +133,7 @@ export function Recorder({
     window.addEventListener('pagehide', leaving)
     return () => {
       mounted.current = false
+      if (stopTake) stopTake.current = null
       document.removeEventListener('visibilitychange', hidden)
       window.removeEventListener('pagehide', leaving)
       if (recording.current) void finish(true)

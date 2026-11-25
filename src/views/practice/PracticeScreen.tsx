@@ -724,6 +724,12 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
       range: ui.repeat ? ui.range : null,
     })
   }
+  const stopRecording = recorder.recording
+    ? () => {
+        setMenuOpen(false)
+        recorder.stop()
+      }
+    : undefined
   const openProgress = () => {
     setMenuOpen(false)
     progressOpen.value = true
@@ -1103,6 +1109,7 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
           onRecord={openRecorder}
           recordingOpen={recorder.isOpen}
           recordDisabled={recorder.busy}
+          onStopRecording={stopRecording}
           ui={ui}
           session={session}
           zone={recede.zone}
@@ -1176,8 +1183,12 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
           </div>
           <PracticeMenuItems
             onProgress={openProgress}
-            onRecord={openRecorder}
+            onRecord={() => {
+              // A second tap on Stop recording, as the sheet fades, starts no take.
+              if (menuOpen) openRecorder()
+            }}
             recordDisabled={recorder.busy}
+            onStopRecording={stopRecording}
             ui={ui}
             session={session}
             labels={appSettings.labels.mode}

@@ -199,7 +199,7 @@ score of the take's version; takes saved before that, or whose score is gone, sh
 stored. A take warns once at 20 minutes and stops by itself at 60 (saved as if Stop was pressed),
 timed by the recorder's elapsed-time poll, never in the MIDI path; the 4 GB WAV guard stays. The
 header, or a footer on portrait phones, hosts the live timer and Stop control only while a take
-is in progress (a take starts from the menus' Record performance) while the recorder keeps
+is in progress (a take starts from the menus' Record performance, and their Stop recording stops it too) while the recorder keeps
 ownership of both input streams. `useRecordingDialog` owns that place and the recorder's phase
 (`busy`: opening, recording or saving; `showing`: a take or the saved pill is in the place; `isOpen`:
 everything but the pill, which closes the menu). With `settings.recording` set and a piano connected

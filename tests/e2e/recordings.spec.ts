@@ -183,6 +183,14 @@ async function expectSaved(page: Page) {
 
 const stopRecording = (page: Page) => page.getByRole('button', { name: 'Stop recording', exact: true }).click()
 
+/** Stop from the Practice menu (U163), which closes. */
+async function stopFromMenu(page: Page) {
+  const menu = await openFooterMenu(page)
+  await expect(menu.getByRole('button', { name: 'Record performance' })).toHaveCount(0)
+  await menu.getByRole('button', { name: 'Stop recording' }).click()
+  await expect(page.getByRole('dialog', { name: /^(Practice menu|Menu)$/ })).toHaveCount(0)
+}
+
 /** Open Practice with the piano's audio input remembered, as after an earlier take. */
 async function openWithRememberedInput(page: Page, patch: Partial<AppSettings> = {}) {
   await installFakeMidi(page)
@@ -345,7 +353,7 @@ test('one tap shows that the input is opening, and Cancel leaves nothing behind'
   await openGate(page)
   await checkTransport(page)
   expect(await page.evaluate(() => window.__audio.live())).toEqual(['Fake Piano'])
-  await stopRecording(page)
+  await stopFromMenu(page)
   await expectSaved(page)
 })
 
@@ -603,7 +611,7 @@ test('a phone keeps the pill in its footer upright and in its bar on its side, a
   await play(page, 60)
   // Long enough to be still playing after the turns below.
   await expect(page.getByRole('timer')).toHaveText('0:05', { timeout: 15_000 })
-  await stopRecording(page)
+  await stopFromMenu(page)
   await expectSaved(page)
   await expect(page.locator('footer').filter({ has: pill(page) })).toHaveCount(1)
   await page.screenshot({ path: info.outputPath('recording-saved-phone.png') })
