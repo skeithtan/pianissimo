@@ -15,15 +15,20 @@ export function passageFields(
   return { passage: describePassage(model, range, hands), passageRange: range }
 }
 
-/** The score version a take was recorded from: the second field of its comparison context. */
-export function takeScoreVersion(info: Pick<RecordingInfo, 'context'>): string | undefined {
+function contextField(info: Pick<RecordingInfo, 'context'>, index: number): string | undefined {
   try {
     const context: unknown = JSON.parse(info.context)
-    return Array.isArray(context) && typeof context[1] === 'string' ? context[1] : undefined
+    return Array.isArray(context) && typeof context[index] === 'string' ? context[index] : undefined
   } catch {
     return undefined
   }
 }
+
+/** The score version a take was recorded from: the second field of its comparison context. */
+export const takeScoreVersion = (info: Pick<RecordingInfo, 'context'>) => contextField(info, 1)
+
+/** The `passageKey` of a take's bars: the last field of its comparison context. */
+export const takePassageKey = (info: Pick<RecordingInfo, 'context'>) => contextField(info, 4)
 
 /**
  * A take's passage label in the current interface language, rebuilt from its stored range with

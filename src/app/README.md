@@ -72,7 +72,7 @@ connectionStatus: Signal<ConnectionStatus>          // { state, inputName?, outp
 setConnectionStatus(status)
 
 notices: Signal<AppNotice[]>
-pushNotice({ kind: 'info'|'success'|'warning'|'error', text, timeoutMs? }): number
+pushNotice({ kind: 'info'|'success'|'warning'|'error', text, timeoutMs?, icon?, action?: { label, run } }): number
 dismissNotice(id)
 ```
 
@@ -122,7 +122,7 @@ tolerates refusal (one retry per visibility event, never a loop) and missing sup
 2. **Navigation**: `navigate('practice')`, and `preloadView('practice')` when a score is chosen.
 3. **Settings and the piano setup from anywhere**: `openSettings()` / `openConnection()` (an overlay; the view stays mounted underneath).
 4. **Connection status**: `ConnectionChip` (`views/shared`) for the Practice header; it opens Settings on Piano and sound.
-5. **Toasts**: `pushNotice(...)`. Do not use them for the wrong-note feedback (use `ui/WrongNoteFlash`).
+5. **Toasts**: `pushNotice(...)`. While a sheet is open its topmost one draws them (`ui/sheetOverlay`). Do not use them for the wrong-note feedback (use `ui/WrongNoteFlash`).
 6. **Settings persistence** and **label hook**: see above.
 7. **Missing features**: the Library shows `BrowserNotices` in its column for missing
    required/important features (U159); other views should not duplicate it. Detailed MIDI help belongs in

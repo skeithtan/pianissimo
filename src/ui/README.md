@@ -37,7 +37,8 @@ link/editing menus are unchanged.
 
 `Button`, `Segmented` (radio group with arrow keys and roving tab index; an option may be `disabled`: dimmed, skipped by the arrows, U92; `quiet`: a thin tone-on-tone capsule, U154), `Toggle`, `Field`,
 `Slider`, `Sheet` (modal dialog that fades and restores focus), `Notice`. A sheet supports
-`wide`, `tall`, and `flush` variants. Its `className` can set a custom width cap using
+`wide`, `tall`, `side` (the end side, its subject beside it), and `flush` variants. `sheetOverlay.ts` knows the topmost
+open sheet, which draws the app's toasts: outside it they would be inert and under its backdrop. Its `className` can set a custom width cap using
 `--sheet-width`. No big shadows (U12): sheets, the tempo popover and the selected segment use
 a 1 px `--border` edge.
 `icons.tsx` adds `hand`, `handLeft`, `plus`, `minus`, `forward`, and `record` (a filled circle that is

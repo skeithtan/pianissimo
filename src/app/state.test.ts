@@ -362,6 +362,14 @@ describe('notices', () => {
     expect(notices.value).toHaveLength(0)
   })
 
+  it('never merges a toast with an action into another: each action is its own', () => {
+    const action = { label: 'Undo', run: () => undefined }
+    const a = pushNotice({ kind: 'info', text: 'Same', action, timeoutMs: null })
+    expect(pushNotice({ kind: 'info', text: 'Same', action, timeoutMs: null })).not.toBe(a)
+    expect(pushNotice({ kind: 'info', text: 'Same', timeoutMs: null })).not.toBe(a)
+    expect(notices.value).toHaveLength(3)
+  })
+
   it('shows at most MAX_NOTICES, dropping the oldest', () => {
     for (let i = 0; i < MAX_NOTICES + 2; i++) pushNotice({ kind: 'info', text: `n${i}`, timeoutMs: null })
     expect(notices.value).toHaveLength(MAX_NOTICES)

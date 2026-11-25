@@ -24,6 +24,10 @@ export interface RecordingInfo {
   readonly input: string
   readonly score: NoteScore
   readonly interrupted: boolean
+  /** Played from the opening of the passage to its ending. Absent on takes saved before it was stored. */
+  readonly playedThrough?: boolean
+  /** Discarded then, and still to be removed: no list, summary or backup holds it. Undo clears it. */
+  readonly discardedAt?: number
 }
 
 export interface RecordingFiles {

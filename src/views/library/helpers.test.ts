@@ -1,3 +1,4 @@
+import { dateText } from '../../i18n/dates'
 import { describe, expect, it } from 'vitest'
 import { importFixture, inspectFixture } from '../../../tests/unit/import/fixtures'
 import { summarizeImport } from '../../core/import/summary'
@@ -31,10 +32,10 @@ describe('format', () => {
     expect(formatRelativeTime(now - 3 * 3_600_000, now)).toBe('3 hours ago')
     expect(formatRelativeTime(new Date(2026, 9, 28, 20).getTime(), now)).toBe('yesterday')
     expect(formatRelativeTime(new Date(2026, 9, 25, 9).getTime(), now)).toBe('4 days ago')
-    // Older dates use the device locale (DECISIONS D9).
+    // Older dates are written out (DECISIONS U165).
     const older = new Date(2026, 8, 2, 9)
     expect(formatRelativeTime(older.getTime(), now)).toBe(
-      older.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
+      dateText(older, { day: 'numeric', month: 'short', year: 'numeric' }),
     )
   })
   it('formats speed, sizes and counts', () => {

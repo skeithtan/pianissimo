@@ -54,10 +54,9 @@ describe('<ProgressPanel>', () => {
   it('says plainly when there is nothing in each section', async () => {
     const { piece } = await importPiece(storage, 'v1')
     const root = await open(piece.id)
-    expect($$(root, 'h3').map((h) => h.textContent)).toEqual(['Work on next', 'Past passes', 'Recordings'])
+    expect($$(root, 'h3').map((h) => h.textContent)).toEqual(['Work on next', 'Past passes'])
     expect(byText(root, 'Nothing to work on right now.')).not.toBeNull()
     expect(byText(root, 'No passes yet.')).not.toBeNull()
-    expect(byText(root, 'No recordings yet.')).not.toBeNull()
   })
 
   it('Work on next: hands a suggestion over, dismisses one, and is turned off and on for the piece', async () => {

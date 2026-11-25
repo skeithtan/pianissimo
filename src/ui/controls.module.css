@@ -252,6 +252,14 @@
 .tall {
   height: calc(100dvh - 32px);
 }
+/* The end side of a tablet or desktop, the score beside it. A phone's rule (full screen, U82) is more
+   specific and wins there. */
+.side {
+  --sheet-width: 560px;
+  height: calc(100dvh - 32px);
+  margin-block: 16px;
+  margin-inline: auto 16px;
+}
 .sheet::backdrop {
   background: var(--scrim);
   transition: opacity var(--dur-base) var(--ease-standard);

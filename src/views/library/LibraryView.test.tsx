@@ -401,7 +401,14 @@ describe('Rename a piece', () => {
     const root = await open()
     click(byLabel(root, 'Options for Etude'))
     const items = $$(byLabel(root, 'Manage Etude')!, 'button').map((b) => b.textContent?.trim())
-    expect(items).toEqual(['Rename…', 'Progress…', 'Review hands and tempo…', 'Clear practice history…', 'Delete…'])
+    expect(items).toEqual([
+      'Rename…',
+      'Progress…',
+      'Recordings…',
+      'Review hands and tempo…',
+      'Clear practice history…',
+      'Delete…',
+    ])
     click(byLabel(root, 'Options for Etude'))
 
     let d = await openRename(root, 'Etude')

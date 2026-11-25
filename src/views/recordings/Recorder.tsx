@@ -10,13 +10,14 @@ import { connectionStatus, pushNotice, updateSettings } from '../../app/state'
 import { openPerformanceInput, type PerformanceInput } from '../../app/audio/performanceInput'
 import { describePassage } from '../../core/model/passage'
 import { rememberInput } from '../../core/recording/input'
+import { discarded, discardHeld } from './discard'
 import { RecordingHistory, handName } from './History'
 import { SavedTakePill, savedTakeText } from './SavedTakePill'
 import { recorderErrorText } from './errors'
 import { beginTake, type TakeTarget } from './take'
 import { TAKE_LIMIT_MS, TAKE_WARNING_MS, startTakeClock } from './takeClock'
-import { deletedTake, type SavedTake } from './unsaved'
-import type { OneTap, TakePhase } from './useRecordingDialog'
+import type { SavedTake } from './unsaved'
+import type { OneTap, TakeActions, TakePhase } from './useRecordingDialog'
 import styles from './recordings.module.css'
 
 /** `enabling` and `ready` are the setup sheet's; `opening` is a one-tap take's, without a sheet. */
@@ -33,17 +34,17 @@ export function Recorder({
   onPhase,
   controlsHost,
   covered = false,
-  stopTake,
+  takeActions,
 }: {
   target: TakeTarget
   oneTap: OneTap | null
   onClose: () => void
   onPhase: (phase: TakePhase) => void
   controlsHost: HTMLElement | null
-  /** Progress is open over the score. */
+  /** Progress or Recordings is open over the score. */
   covered?: boolean
-  /** Filled with this take's Stop, for the menus. */
-  stopTake?: { current: (() => void) | null }
+  /** Filled with this take's Stop and Discard, for the menus. */
+  takeActions?: { current: TakeActions | null }
 }) {
   const [phase, setPhase] = useState<Phase>(oneTap ? 'opening' : 'setup')
   const [saved, setSaved] = useState<SavedTake | null>(null)
@@ -62,15 +63,14 @@ export function Recorder({
   const host = useRef(controlsHost)
   host.current = controlsHost
   const stopHadFocus = useRef(false)
-  const savedDeleted = useRef(false)
   const connection = connectionStatus.value
   const reported: TakePhase = phase === 'enabling' || phase === 'ready' ? 'setup' : listOpen ? 'list' : phase
   useLayoutEffect(() => onPhase(reported), [reported])
-  const deletedId = deletedTake.value
-  useEffect(() => {
-    // Deleted in Progress (the list here closes the pill itself).
-    if (saved && !listOpen && deletedId === saved.info.id) onClose()
-  }, [deletedId])
+  const savedGone = saved !== null && discarded.value.has(saved.info.id)
+  useLayoutEffect(() => {
+    // Deleted in a list of takes: the pill goes, once the list opened from it has.
+    if (savedGone && !listOpen) onClose()
+  }, [savedGone, listOpen])
   async function finish(interrupted: boolean) {
     const take = recording.current
     if (!take) return
@@ -100,6 +100,16 @@ export function Recorder({
       saving.current = false
     }
   }
+  /** Stop, and drop the take unless Undo asks for it. */
+  function discard() {
+    const take = recording.current
+    if (!take) return
+    recording.current = null
+    request.current = null
+    owned.current = null
+    discardHeld(target.env.storage, take.discard())
+    onClose()
+  }
   function release() {
     request.current?.abort()
     request.current = null
@@ -122,7 +132,7 @@ export function Recorder({
   // A layout effect: its cleanup runs as the recorder goes, before a late input could start a take.
   useLayoutEffect(() => {
     mounted.current = true
-    if (stopTake) stopTake.current = () => void finish(false)
+    if (takeActions) takeActions.current = { stop: () => void finish(false), discard }
     const hidden = () => {
       if (document.hidden) lost()
     }
@@ -133,7 +143,7 @@ export function Recorder({
     window.addEventListener('pagehide', leaving)
     return () => {
       mounted.current = false
-      if (stopTake) stopTake.current = null
+      if (takeActions) takeActions.current = null
       document.removeEventListener('visibilitychange', hidden)
       window.removeEventListener('pagehide', leaving)
       if (recording.current) void finish(true)
@@ -255,11 +265,8 @@ export function Recorder({
       storage={target.env.storage}
       pieceId={target.pieceId}
       model={target.model}
-      onDeleted={(id) => {
-        if (id === saved?.info.id) savedDeleted.current = true
-      }}
       onClose={() => {
-        if (listOpen && !savedDeleted.current) setListOpen(false)
+        if (listOpen) setListOpen(false)
         else onClose()
       }}
     />
@@ -288,7 +295,7 @@ export function Recorder({
         {listOpen ? list : null}
       </>
     )
-  /** The take's place while its input opens, then its timer and Stop. */
+  /** The take's place while its input opens, then its timer, Stop and Discard. */
   function transport() {
     if (phase === 'opening')
       return (
@@ -339,6 +346,16 @@ export function Recorder({
         >
           <Icon name="stop" size={17} />
           <span class={control.label}>{savingTake ? msg('Saving…') : msg('Stop')}</span>
+        </button>
+        <button
+          type="button"
+          class={`${pill.action} ${control.icon}`}
+          disabled={savingTake}
+          aria-label={msg('Discard recording')}
+          title={msg('Discard recording')}
+          onClick={discard}
+        >
+          <Icon name="trash" size={18} />
         </button>
       </span>
     )

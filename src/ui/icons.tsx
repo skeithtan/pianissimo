@@ -41,6 +41,13 @@ const paths: Record<string, () => JSX.Element> = {
   back: () => <path d="M15 18l-6-6 6-6" />,
   menu: () => <path d="M4 7h16M4 12h16M4 17h16" />,
   list: () => <path d="M9 6.5h11M9 12h11M9 17.5h11M4.5 6.5v.01M4.5 12v.01M4.5 17.5v.01" />,
+  /** Recordings: a list to play from. */
+  recordings: () => (
+    <g>
+      <path d="M4 6.5h16M4 12h7.5M4 17.5h7.5" />
+      <path d="M15.5 11.5v8l6-4z" fill="currentColor" stroke-width="1.4" />
+    </g>
+  ),
   more: () => (
     <g fill="currentColor" stroke="none">
       <circle cx="5" cy="12" r="2" />

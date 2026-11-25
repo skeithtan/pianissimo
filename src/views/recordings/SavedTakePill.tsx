@@ -180,7 +180,7 @@ export function SavedTakePill({
         title={msg('Recordings')}
         onClick={onRecordings}
       >
-        <Icon name="list" size={18} />
+        <Icon name="recordings" size={18} />
       </button>
       <button
         type="button"

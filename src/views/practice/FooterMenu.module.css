@@ -50,15 +50,25 @@
 .popover > :is(.row, .group) + :is(.row, .group) {
   border-block-start: 1px solid var(--border);
 }
-/* The actions after the rows (Progress, Record performance): the rows'
+/* The actions after the rows (Progress, Record performance and Recordings): the rows'
    spacing above and below them and a hairline above them, the full width with its label at the start,
    as the phone menu's actions. */
-.popover > button {
+.popover > :is(button, .pair) {
   margin-block: var(--space-3);
   justify-content: flex-start;
 }
-.popover > button + button {
+.popover > button + .pair {
   margin-block-start: 0;
+}
+/* Recording: two actions side by side, one under the other where they do not fit. */
+.pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-2);
+}
+.pair > button {
+  flex: 1 1 auto;
+  justify-content: flex-start;
 }
 .popover > :is(.row, .group):has(+ button) {
   border-block-end: 1px solid var(--border);

@@ -1,3 +1,4 @@
+import { dateText } from '../../i18n/dates'
 import { msg, messageLanguage } from '../../i18n/messages'
 /**
  * Small display helpers for the Library (pure, tested in `format.test.ts`).
@@ -31,7 +32,7 @@ export function formatRelativeTime(at: number, now: number): string {
   }
   if (days === 1) return msg('yesterday')
   if (days < 7) return relative(days, 'day')
-  return new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+  return dateText(at, { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 /** "75% speed" (the Practice view shows speed as a percentage, DECISIONS U7). */

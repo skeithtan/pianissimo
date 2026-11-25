@@ -44,7 +44,7 @@ Settings → App → Language lets the player choose any supported language or r
 
 8. Repeat a passage and compare completed attempts.
 
-The first version needs two main views, Library and Import, and Practice, with Settings (piano connection and pedal setup under Piano and sound) and Progress over either. Progress holds a piece's suggested practice, past passes and recordings. Both open without losing the selected score or passage.
+The first version needs two main views, Library and Import, and Practice, with Settings (piano connection and pedal setup under Piano and sound), Progress and Recordings over either. Progress holds a piece's suggested practice and past passes, Recordings its recordings. All open without losing the selected score or passage.
 
 ## Practice screen
 
@@ -52,7 +52,7 @@ Use landscape as the primary layout, with a usable portrait layout. Both staves 
 
 A strong vertical cursor identifies the next onset across the grand staff. Keep it approximately one-third of the way across the viewport and scroll the music beneath it, leaving substantial space to read ahead. At the beginning and end, preserve context without requiring empty score padding.
 
-One score screen per piece holds four named modes, **Listen, Wait, Keep time, Follow**. The mode is the learner's explicit choice, saved per piece; it never changes by itself. The header contains the piece name, the mode, the connection status and Settings. A compact footer contains the tempo control showing the speed multiplier and effective BPM with its beat unit, the hand selector around the main button (Play or Pause in Listen; Start, Pause or Resume otherwise), and a menu with the mode's settings: note names (Off, All notes, Conditional), Playback in Keep time, the input in Follow, the metronome, Show keys, Progress and Record performance. Where the header has no room for the four modes, and on a phone, one control names the mode and opens a sheet with each mode and its description. The main area contains the notation, measure numbers, current-note highlights, and loop selection. Touch controls must be comfortable to use from a piano bench.
+One score screen per piece holds four named modes, **Listen, Wait, Keep time, Follow**. The mode is the learner's explicit choice, saved per piece; it never changes by itself. The header contains the piece name, the mode, the connection status and Settings. A compact footer contains the tempo control showing the speed multiplier and effective BPM with its beat unit, the hand selector around the main button (Play or Pause in Listen; Start, Pause or Resume otherwise), and a menu with the mode's settings: note names (Off, All notes, Conditional), Playback in Keep time, the input in Follow, the metronome, Show keys, Progress, and Record performance with Recordings beside it. Where the header has no room for the four modes, and on a phone, one control names the mode and opens a sheet with each mode and its description. The main area contains the notation, measure numbers, current-note highlights, and loop selection. Touch controls must be comfortable to use from a piano bench.
 
 Keep clef, key signature, and current meter available at the viewport edge when their original symbols scroll away. Pinch zoom changes notation size; it does not change musical timing. Keep the current event visible when zooming.
 
@@ -352,9 +352,10 @@ remembered input is missing, permission is refused, or anything fails, and whene
 connected, open the setup sheet with the reason. Settings → Piano and sound names the remembered input and can
 forget it. A restored backup keeps this device's own.
 
-The header shows recording controls only during a take. During a take, a red light and elapsed time sit beside Stop, clear of the score timeline. These controls
-use the header on wider screens and a footer on portrait phones. Focus mode keeps Stop and the
-recording timer visible and tappable. The adjacent piano connection pill stays visible too. During a take the menu's Record performance is Stop recording, which does the same and closes the menu. Stop saves
+The header shows recording controls only during a take. During a take, a red light and elapsed time sit beside Stop and Discard, clear of the score timeline. These controls
+use the header on wider screens and a footer on portrait phones. Focus mode keeps them and the
+recording timer visible and tappable. The adjacent piano connection pill stays visible too. During a take the menu's Record performance and Recordings are Stop recording and Discard recording, which do the same and close the menu. Discard
+stops the take, closes its input and saves nothing. Stop saves
 the MIDI and the audio together on this device and leaves the score in view: where the controls were, a
 pill says that the take is saved, or that it was interrupted, with its note accuracy percentage and
 buttons to listen to the take, to open Recordings at it, and to close the pill. The pill stays until it
@@ -363,13 +364,15 @@ sound stops with it. Another take can start from the menu while it shows. A take
 saved opens Recordings instead, where it can be saved again or downloaded. No audio input stays open
 after Stop.
 
-Download offers one ZIP with a Standard MIDI File and a PCM WAV. The ZIP
-filename includes the date, time, and UTC offset when capture started.
+Download offers one ZIP with a Standard MIDI File and a PCM WAV. The
+filename starts with the date, time, and UTC offset when capture started, in ISO 8601 (hyphens for colons), so that files sort by time, and then names the piece.
 
-Progress keeps a piece's takes available for listening, comparison, download, and confirmed deletion;
+Recordings, opened from the score's menu and from a piece's options in the Library, keeps the piece's takes available for listening, comparison, download, and deletion;
 Settings → Data opens the list of every take, of deleted pieces included. Each take shows a note accuracy percentage and counts of matched, missing,
 and extra attacks for its selected hands and passage. Mark the highest score among comparable
-takes, including ties. Interrupted takes retain both files and their score. A take shows a notice
+takes that were played through, including ties, and mark the incomplete ones: those not played from the start of their passage to the end. Wrong and missed notes do not make a take incomplete. Interrupted takes retain both files and their score. One button deletes the incomplete takes of the list, another clears the list. Before the incomplete ones go, they are listed with their time and length, all chosen, and the learner can tap any to keep.
+
+Nothing else that is deleted or discarded asks first, and everything can be undone: a toast says what was discarded and offers Undo, over whatever is open. Undo brings stored takes back as they were, and saves a take that was discarded while it recorded. What is deleted leaves every list, total and backup at once and stays deleted when the app closes; its files are removed when Undo is gone. A take shows a notice
 at 20 minutes and stops, saved, at 60. Include recordings in the full backup and restore by default,
 with a switch that shows their size and leaves them out.
 

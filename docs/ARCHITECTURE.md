@@ -185,21 +185,26 @@ Chrome's 127 MiB limit. Save reads the captured Blob one block at a time and wri
 transaction under a `pendingRecordings[id]` marker; the last transaction checks every block is
 there, writes the files record and the metadata, and removes the marker, so a take is listed only
 when complete. A failed save removes its blocks at once; one cut short by a closed page is removed
-on a later open (marker older than an hour). Delete removes metadata, files record and blocks (key
-range) together. Takes saved by schema 3 kept every block inline (`recordingFiles[id] = { midi,
+on a later open (marker older than an hour). Deleting marks the metadata `discardedAt`
+(`discardRecordings`, one small transaction), which takes the takes out of lists, sums and backups;
+`restoreRecordings` clears it, and `removeDiscardedRecordings` removes metadata, files record and
+blocks (key range) of those still marked. A later open removes what was marked over ten minutes ago.
+`views/recordings/discard.ts` (U164) owns the time to undo: one batch, its own timer and one toast
+with Undo for all that was discarded meanwhile, a take discarded while recording held in memory
+included. Takes saved by schema 3 kept every block inline (`recordingFiles[id] = { midi,
 audio: ArrayBuffer[] }`): the version 4 upgrade moves them to blocks in the upgrade transaction,
 and a take it cannot convert keeps that shape, which every reader still accepts. History reads
 metadata for ranking; opening a take reads its blocks by key range into one Blob (one copy) for
 the player. Download builds the ZIP only when pressed, as a Blob that refers to the take's own
 Blobs between stored-entry headers (no second copy), and releases its URL after the download has
-started. Its filename uses the capture start (`createdAt`) and the stored local offset
-(`startUtcOffsetMinutes`). Older takes use UTC. A take stores its passage range (`passageRange`,
+started. Its filename starts with the capture start (`createdAt`) in ISO 8601 with the stored local offset
+(`startUtcOffsetMinutes`), then the piece (U165). Dates and times shown are written by `i18n/dates`. Older takes use UTC. A take stores its passage range (`passageRange`,
 null = whole piece) and its label is formatted when shown, in the current language, with the
 score of the take's version; takes saved before that, or whose score is gone, show the label they
 stored. A take warns once at 20 minutes and stops by itself at 60 (saved as if Stop was pressed),
 timed by the recorder's elapsed-time poll, never in the MIDI path; the 4 GB WAV guard stays. The
-header, or a footer on portrait phones, hosts the live timer and Stop control only while a take
-is in progress (a take starts from the menus' Record performance, and their Stop recording stops it too) while the recorder keeps
+header, or a footer on portrait phones, hosts the live timer, Stop and Discard only while a take
+is in progress (a take starts from the menus' Record performance, and their Stop and Discard recording end it too) while the recorder keeps
 ownership of both input streams. `useRecordingDialog` owns that place and the recorder's phase
 (`busy`: opening, recording or saving; `showing`: a take or the saved pill is in the place; `isOpen`:
 everything but the pill, which closes the menu). With `settings.recording` set and a piano connected
@@ -211,7 +216,10 @@ the same place; its player holds a blob URL of the take's audio from the first L
 goes (closed, another take, the score starting, the screen left). Full backups include takes unless the player turns off "Include
 recordings" (see core/storage) and merge immutable recordings by ID. Deleting a score leaves its
 recorded performances available in the list of all takes (`RecordingHistory` without a piece). `RecordingList`
-is that list without its sheet; Progress shows it for one piece.
+is that list without its sheet; `RecordingsSheet` (in the Library's and Practice's bundles) loads it for one
+piece. `playedThrough` (`core/recording/performance`) tells whether the playing reached both ends of its
+passage; the scoring worker computes it and the take stores it. For takes saved before, `completeness.ts`
+works it out from their MIDI file and their score's version, only where the take's own score comes out again.
 
 ### core/midi and core/playback
 core/midi: `MidiAdapter` (main thread) runs `onmidimessage` → `MidiDecoder` (monotonic `seq`,
@@ -570,9 +578,9 @@ portrait page is capped at the stage's width and fitted to it (`pageMaxWidth`, `
 on a phone a pinch magnifies the page as engraved (`imageZoom`, 1× to 4×, never saved, U83) and the
 app itself never zooms (`gesture*` events canceled in `app/boot.ts`, `touch-action` on the root).
 `views/progress` (U148): `ProgressSheet` (in the Library's and Practice's bundles) is the sheet, at the end
-side on tablets, and imports `ProgressPanel` on its first opening: Work on next (`PieceSuggestionsModel` +
-`SuggestionList`), Past passes (`loadResultsData` → `passGroups`, a row unfolding to `HistoryPanel` and from
-there `ScorecardPanel`) and Recordings (`RecordingList`). It knows no session: `onPractice(suggestion)` is
+side on tablets (`views/shared/LazySheet`, as `RecordingsSheet`), and imports `ProgressPanel` on its first opening: Work on next (`PieceSuggestionsModel` +
+`SuggestionList`) and Past passes (`loadResultsData` → `passGroups`, a row unfolding to `HistoryPanel` and from
+there `ScorecardPanel`). It knows no session: `onPractice(suggestion)` is
 its caller's. Over the score that is `PracticeSession.practiceBars` (pause, mode, Repeat over the bars, their
 hands and speed; nothing starts); from the Library `openPractice` with a preset. Practice holds input while
 it is open (`holdInput`), as for Settings.

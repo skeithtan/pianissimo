@@ -296,6 +296,7 @@ export function recordingProblem(v: unknown): string | null {
     ['createdAt', isNum(v['createdAt']) && !Number.isNaN(new Date(v['createdAt']).getTime())],
     ['startUtcOffsetMinutes', offset === undefined || (isInt(offset) && Math.abs(offset) <= 14 * 60)],
     ['interrupted', isBool(v['interrupted'])],
+    ['playedThrough', v['playedThrough'] === undefined || isBool(v['playedThrough'])],
     [
       'score',
       isObj(score) &&

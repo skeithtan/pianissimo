@@ -7,15 +7,19 @@ export interface NoteScore {
   readonly matched: number
 }
 
-/** Ordered pitch matches. Notes within each written chord may be played in any order.
+/** The notes of a passage, in score order. */
+type Groups = readonly (readonly number[])[]
+
+const noteCount = (groups: Groups): number => groups.reduce((n, pitches) => n + pitches.length, 0)
+
+/** Ordered pitch matches of all `groups` with the first j attacks, for every j. Notes within each
+ * written chord may be played in any order.
  * previous[j] is the best match through the first j attacks before this score group.
  * For a chord ending at j, try its most recent distinct pitches, newest first. */
-export function scorePerformance(groups: readonly (readonly number[])[], played: readonly number[]): NoteScore {
+function bestMatches(groups: Groups, played: readonly number[]): Uint32Array {
   let previous = new Uint32Array(played.length + 1)
   let current = new Uint32Array(previous.length)
-  let expected = 0
   for (const pitches of groups) {
-    expected += pitches.length
     const last = new Map<number, number>()
     for (let j = 0; j < played.length; j++) {
       let best = Math.max(previous[j + 1]!, current[j]!)
@@ -32,7 +36,51 @@ export function scorePerformance(groups: readonly (readonly number[])[], played:
     previous = current
     current = swap
   }
-  return { expected, played: played.length, matched: previous[played.length]! }
+  return previous
+}
+
+export function scorePerformance(groups: Groups, played: readonly number[]): NoteScore {
+  const matched = bestMatches(groups, played)[played.length]!
+  return { expected: noteCount(groups), played: played.length, matched }
+}
+
+/** The opening and the ending of a passage are this share of its onsets, and at least `MIN_EDGE`. */
+const EDGE_SHARE = 0.05
+const MIN_EDGE = 2
+/** An end is reached when this share of its notes was matched. */
+const EDGE_NOTES = 1 / 3
+
+/**
+ * Was the last `edge` of `groups` reached? Surely, when its notes add to the match. Where they can
+ * be matched earlier just as well (an even accompaniment), only `benefit` of the doubt says so.
+ */
+function reachesEnd(groups: Groups, played: readonly number[], edge: number, benefit: boolean): boolean {
+  const ending = groups.slice(groups.length - edge)
+  const before = bestMatches(groups.slice(0, groups.length - edge), played)
+  const after = bestMatches([...ending].reverse(), [...played].reverse())
+  const n = played.length
+  const need = Math.ceil(noteCount(ending) * EDGE_NOTES)
+  let total = 0
+  for (let j = 0; j <= n; j++) total = Math.max(total, before[j]! + after[n - j]!)
+  if (total - before[n]! >= need) return true
+  if (!benefit) return false
+  for (let j = 0; j <= n; j++) if (after[n - j]! >= need && before[j]! + after[n - j]! === total) return true
+  return false
+}
+
+/**
+ * Was the passage played from its opening to its ending? Wrong and missed notes do not matter, only
+ * how far the playing reached. Bulk deletion relies on it, so doubt counts as played through, unless
+ * a quarter or more of the notes were not even attempted.
+ */
+export function playedThrough(groups: Groups, played: readonly number[]): boolean {
+  const expected = noteCount(groups)
+  if (played.length === 0 || played.length < expected / 2) return false
+  const edge = Math.min(groups.length, Math.max(MIN_EDGE, Math.ceil(groups.length * EDGE_SHARE)))
+  const benefit = played.length >= expected * 0.75
+  return (
+    reachesEnd(groups, played, edge, benefit) && reachesEnd([...groups].reverse(), [...played].reverse(), edge, benefit)
+  )
 }
 
 export function noteAccuracy(s: NoteScore): number {
@@ -114,6 +162,37 @@ export function midiFile(events: readonly MidiInputEvent[], start: number, end: 
     ],
     { type: 'audio/midi' },
   )
+}
+
+/** The attacks of a Standard MIDI File of one track, in order: what `midiFile` writes, read back. */
+export function midiNotes(file: ArrayBuffer): number[] {
+  const bytes = new Uint8Array(file)
+  const notes: number[] = []
+  let at = 22
+  let status = 0
+  const length = () => {
+    let value = 0
+    for (let byte = 128; byte & 128 && at < bytes.length;) {
+      byte = bytes[at++]!
+      value = value * 128 + (byte & 127)
+    }
+    return value
+  }
+  while (at < bytes.length) {
+    length()
+    if (at >= bytes.length) break
+    if (bytes[at]! & 128) status = bytes[at++]!
+    if (status === 0xff) at++
+    if (status >= 0xf0) {
+      const skipped = length()
+      at += skipped
+    } else {
+      const kind = status & 0xf0
+      if (kind === 0x90 && (bytes[at + 1] ?? 0) > 0) notes.push(bytes[at]!)
+      at += kind === 0xc0 || kind === 0xd0 ? 1 : 2
+    }
+  }
+  return notes
 }
 
 export function waveFile(pcm: readonly BlobPart[], bytes: number, channels: number, rate: number): Blob {

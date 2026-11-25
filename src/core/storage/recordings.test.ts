@@ -8,7 +8,7 @@ import { BACKUP_FORMAT, BACKUP_FORMAT_VERSION } from './backupFormat'
 import type { BackupManifest } from './backupFormat'
 import { exportBackup, restoreBackup } from './backup'
 import { BackupError } from './errors'
-import { ABANDONED_WRITE_MS, RECORDING_BLOCK_BYTES, blockRange, writeTake } from './recordings'
+import { ABANDONED_WRITE_MS, DISCARDED_KEEP_MS, RECORDING_BLOCK_BYTES, blockRange, writeTake } from './recordings'
 import type { RecordingFilesMeta } from './recordings'
 import { openPianissimoDb } from './schema'
 import type { Db } from './schema'
@@ -119,13 +119,63 @@ it('keeps recording metadata and both files together through backup, restore, de
     const restored = await b.getRecordingFiles(info.id)
     expect(await restored!.audio.arrayBuffer()).toEqual(await files.audio.arrayBuffer())
     expect(await restored!.midi.arrayBuffer()).toEqual(await files.midi.arrayBuffer())
-    await b.deleteRecording(info.id)
+    await b.discardRecordings([info.id])
+    await b.removeDiscardedRecordings([info.id])
     expect(await b.listRecordings()).toEqual([])
     expect(await b.getRecordingFiles(info.id)).toBeUndefined()
   } finally {
     a.close()
     b.close()
   }
+})
+
+describe('discarded takes', () => {
+  it('leave every list, summary and backup at once, and come back whole', async () => {
+    const s = await storage()
+    await s.saveRecording(take('a'), files(5000, 1))
+    await s.saveRecording(take('b'), files(6000, 2))
+    const before = await s.recordingsSummary()
+    await s.discardRecordings(['a', 'gone'])
+    expect(await s.listRecordings()).toEqual([take('b')])
+    expect((await s.recordingsSummary()).count).toBe(1)
+    const entries = unzipSync(await bytesOf(await s.exportAll()))
+    expect(JSON.parse(strFromU8(entries['recordings.json']!))).toEqual([take('b')])
+
+    await s.restoreRecordings(['a', 'gone'])
+    expect(await s.listRecordings()).toEqual([take('a'), take('b')])
+    expect(await s.recordingsSummary()).toEqual(before)
+    expectSameBytes(await bytesOf((await s.getRecordingFiles('a'))!.audio), await bytesOf(files(5000, 1).audio))
+    // Brought back: the removal that was due leaves it alone.
+    await s.removeDiscardedRecordings(['a'])
+    expect((await s.listRecordings()).length).toBe(2)
+  })
+
+  it('that a page did not live to remove go on a later open', async () => {
+    const name = freshName()
+    let now = 1000
+    const s = await storage(name, { now: () => now })
+    await s.saveRecording(take('a'), files(5000, 1))
+    await s.discardRecordings(['a'])
+    await storage(name, { now: () => now + DISCARDED_KEEP_MS })
+    const db = await raw(name)
+    expect(await db.count('recordings')).toBe(1)
+    now += DISCARDED_KEEP_MS + 1
+    await storage(name, { now: () => now })
+    expect([await db.count('recordings'), await db.count('recordingFiles'), await db.count('recordingBlocks')]).toEqual(
+      [0, 0, 0],
+    )
+  })
+
+  it('give way to the same take from a backup', async () => {
+    const s = await storage()
+    await s.saveRecording(take('a'), files(5000, 1))
+    const backup = await s.exportAll()
+    await s.discardRecordings(['a'])
+    expect((await s.restore(backup)).recordings).toEqual({ added: 1, skipped: 0, failed: 0 })
+    await s.removeDiscardedRecordings(['a'])
+    expect(await s.listRecordings()).toEqual([take('a')])
+    expectSameBytes(await bytesOf((await s.getRecordingFiles('a'))!.audio), await bytesOf(files(5000, 1).audio))
+  })
 })
 
 describe('takes stored in blocks', () => {
@@ -153,7 +203,8 @@ describe('takes stored in blocks', () => {
     expectSameBytes(await bytesOf(read!.midi), await bytesOf(input.midi))
     expect(await s.recordingsSummary()).toEqual({ count: 1, bytes: size + 103 })
 
-    await s.deleteRecording('long')
+    await s.discardRecordings(['long'])
+    await s.removeDiscardedRecordings(['long'])
     expect(await s.listRecordings()).toEqual([])
     expect(await db.count('recordingBlocks')).toBe(0)
     expect(await db.get('recordingFiles', 'long')).toBeUndefined()

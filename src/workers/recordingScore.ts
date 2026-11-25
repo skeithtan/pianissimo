@@ -1,5 +1,8 @@
-import { scorePerformance } from '../core/recording/performance'
+import { playedThrough, scorePerformance } from '../core/recording/performance'
 
-self.onmessage = (event: MessageEvent<{ groups: number[][]; played: number[] }>) => {
-  self.postMessage(scorePerformance(event.data.groups, event.data.played))
+self.onmessage = ({ data }: MessageEvent<{ groups: number[][]; played: number[] }>) => {
+  self.postMessage({
+    score: scorePerformance(data.groups, data.played),
+    playedThrough: playedThrough(data.groups, data.played),
+  })
 }

@@ -8,8 +8,8 @@ import { msg, percentage } from '../../i18n/messages'
  * moves into the panel on open and back to the button on close.
  *
  * `PracticeMenuItems` are the rows, in the popover and in a phone's menu sheet: Note names; Playback
- * (Keep time); Metronome; Show keys; Progress; Record performance
- * (Stop recording during a take).
+ * (Keep time); Metronome; Show keys; Progress; then Record performance beside Recordings (Stop recording
+ * beside Discard recording during a take).
  */
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
@@ -40,12 +40,14 @@ export interface MetronomeRow {
 export interface FooterMenuProps {
   readonly onProgress?: (() => void) | undefined
   readonly onRecord?: (() => void) | undefined
+  readonly onRecordings?: (() => void) | undefined
   /** The recorder has the learner's attention: the menu closes. */
   readonly recordingOpen?: boolean | undefined
   /** A take is opening, recording or saving. */
   readonly recordDisabled?: boolean | undefined
-  /** Set while a take records: Stop recording takes Record performance's place. */
+  /** Set while a take records: Stop and Discard recording take the place of Record performance and Recordings. */
   readonly onStopRecording?: (() => void) | undefined
+  readonly onDiscardRecording?: (() => void) | undefined
   readonly ui: SessionUi
   readonly session: PracticeSession
   readonly receded: boolean
@@ -87,8 +89,10 @@ function MenuReveal({ open, children }: { readonly open: boolean; readonly child
 export function PracticeMenuItems({
   onProgress,
   onRecord,
+  onRecordings,
   recordDisabled,
   onStopRecording,
+  onDiscardRecording,
   ui,
   session,
   labels,
@@ -102,15 +106,7 @@ export function PracticeMenuItems({
   rowClass,
   labelClass,
   toggleClass,
-}: Pick<
-  FooterMenuProps,
-  'ui' | 'session' | 'labels' | 'onLabels' | 'onNoteRules' | 'hasTempo' | 'scorePlayback' | 'metronome' | 'onMetronome'
-> & {
-  readonly onProgress?: (() => void) | undefined
-  readonly onRecord?: (() => void) | undefined
-  readonly recordDisabled?: boolean | undefined
-  /** Set while a take records: Stop recording takes Record performance's place. */
-  readonly onStopRecording?: (() => void) | undefined
+}: Omit<FooterMenuProps, 'receded' | 'recordingOpen'> & {
   readonly showKeys?: boolean
   readonly rowClass: string | undefined
   readonly labelClass: string | undefined
@@ -185,13 +181,23 @@ export function PracticeMenuItems({
         </Button>
       )}
       {onStopRecording ? (
-        <Button icon="stop" onClick={onStopRecording}>
-          {msg('Stop recording')}
-        </Button>
+        <div class={menuStyles.pair}>
+          <Button icon="stop" onClick={onStopRecording}>
+            {msg('Stop recording')}
+          </Button>
+          <Button icon="trash" onClick={onDiscardRecording}>
+            {msg('Discard recording')}
+          </Button>
+        </div>
       ) : onRecord ? (
-        <Button icon="record" disabled={recordDisabled} onClick={onRecord}>
-          {msg('Record performance')}
-        </Button>
+        <div class={menuStyles.pair}>
+          <Button icon="record" disabled={recordDisabled} onClick={onRecord}>
+            {msg('Record performance')}
+          </Button>
+          <Button icon="recordings" disabled={recordDisabled} onClick={onRecordings}>
+            {msg('Recordings')}
+          </Button>
+        </div>
       ) : null}
     </>
   )
@@ -203,7 +209,9 @@ export function FooterMenu({
   recordingOpen,
   onNoteRules,
   onProgress,
+  onRecordings,
   onStopRecording,
+  onDiscardRecording,
   ...items
 }: FooterMenuProps) {
   // Closes when playback starts (Listen's does not recede and stays), the chrome recedes or the
@@ -238,6 +246,15 @@ export function FooterMenu({
     }
     if (panel.current?.contains(document.activeElement)) button.current?.focus()
   }, [open, popover.phase])
+
+  /** Closes the menu first. A sheet returns the focus to what had it: the button, not a menu that is going. */
+  const leaving = (go: (() => void) | undefined) =>
+    go &&
+    (() => {
+      setOpen(false)
+      button.current?.focus()
+      go()
+    })
 
   return (
     <div
@@ -280,30 +297,12 @@ export function FooterMenu({
         >
           <PracticeMenuItems
             {...items}
-            onProgress={
-              onProgress &&
-              (() => {
-                // Focus returns to this button when the sheet closes.
-                setOpen(false)
-                button.current?.focus()
-                onProgress()
-              })
-            }
-            onStopRecording={
-              onStopRecording &&
-              (() => {
-                setOpen(false)
-                button.current?.focus()
-                onStopRecording()
-              })
-            }
+            onProgress={leaving(onProgress)}
+            onRecordings={leaving(onRecordings)}
+            onStopRecording={leaving(onStopRecording)}
+            onDiscardRecording={leaving(onDiscardRecording)}
             ui={ui}
-            onNoteRules={() => {
-              // Settings returns the focus to what had it: the button, not a menu that is going.
-              setOpen(false)
-              button.current?.focus()
-              onNoteRules()
-            }}
+            onNoteRules={() => leaving(onNoteRules)?.()}
             rowClass={menuStyles.row}
             labelClass={menuStyles.label}
             toggleClass={menuStyles.toggle}

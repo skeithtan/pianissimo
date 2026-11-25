@@ -3,10 +3,11 @@ import { msg } from '../i18n/messages'
  * Small purpose-built controls (spec: no large component suite). Every control meets a 48 px
  * touch target so it is comfortable from a piano bench.
  */
-import type { ButtonHTMLAttributes, ComponentChildren } from 'preact'
+import type { ButtonHTMLAttributes, ComponentChildren, RefObject } from 'preact'
 import { useEffect, useId, useRef } from 'preact/hooks'
 import { useFadePresence } from './fade'
 import { Icon, type IconName } from './icons'
+import { enterSheet, sheetOverlay, topSheet } from './sheetOverlay'
 import styles from './controls.module.css'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
@@ -247,6 +248,7 @@ export function Sheet({
   children,
   wide,
   tall,
+  side,
   flush,
   untitled,
   floating,
@@ -259,6 +261,8 @@ export function Sheet({
   wide?: boolean
   /** Fill the viewport height (Settings), instead of sizing to content. */
   tall?: boolean
+  /** Stand at the end side with what it is about beside it (Progress, Recordings). */
+  side?: boolean
   /** No body padding or scrolling: the content lays itself out (tabs with a scrolling pane). */
   flush?: boolean
   /** No visible title and no divider, only the close button (the phone menus): the title is
@@ -286,12 +290,25 @@ export function Sheet({
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus()
     }
   }, [presence.mounted])
+  // After the dialog is shown, until it starts to leave. A phone's menu, where a toast would cover
+  // Close, leaves them under its backdrop: nothing it does calls for one while it is open.
+  useEffect(() => {
+    if (open && presence.mounted && !floating && ref.current) return enterSheet(ref.current)
+  }, [open, presence.mounted, floating])
   return (
     <dialog
       ref={ref}
-      class={[styles.sheet, wide && styles.wide, tall && styles.tall, floating && styles.floating, className]
+      class={[
+        styles.sheet,
+        wide && styles.wide,
+        tall && styles.tall,
+        side && styles.side,
+        floating && styles.floating,
+        className,
+      ]
         .filter(Boolean)
         .join(' ')}
+      data-side={side ? '' : undefined}
       data-leaving={presence.phase === 'leaving' ? '' : undefined}
       onClose={onClose}
       onCancel={(e) => {
@@ -305,8 +322,17 @@ export function Sheet({
         <Button icon="close" variant="ghost" aria-label={msg('Close')} onClick={onClose} />
       </header>
       <div class={[styles.sheetBody, flush ? styles.flush : ''].join(' ')}>{presence.mounted ? children : null}</div>
+      {presence.mounted ? <SheetOverlay dialog={ref} /> : null}
     </dialog>
   )
+}
+
+/** The app's toasts, in the topmost sheet only. */
+function SheetOverlay({ dialog }: { dialog: RefObject<HTMLDialogElement | null> }) {
+  const Overlay = sheetOverlay.value
+  // Read before the ref, which is empty in the first render: a sheet that mounts open must hear of it.
+  const top = topSheet.value
+  return Overlay && top !== null && top === dialog.current ? <Overlay /> : null
 }
 
 export function Notice({

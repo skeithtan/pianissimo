@@ -1,17 +1,16 @@
 import { messageLanguage, msg } from '../../i18n/messages'
 /**
- * The contents of Progress (U148; `ProgressSheet` loads them on the first opening), in three sections:
- * Work on next (the piece's suggestions, and their per-piece switch), Past passes (the stored attempts
- * of its current score version by comparison context, RV1; help is not told apart, U144) and
- * Recordings. It starts nothing and opens no screen: what a suggestion's button does is its caller's.
+ * The contents of Progress (U148; `ProgressSheet` loads them on the first opening), in two sections:
+ * Work on next (the piece's suggestions, and their per-piece switch) and Past passes (the stored attempts
+ * of its current score version by comparison context, RV1; help is not told apart, U144). Recordings
+ * have their own sheet (U164). It starts nothing and opens no screen: what a suggestion's button does is
+ * its caller's.
  */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { Suggestion } from '../../core/history'
-import type { PassageWords } from '../../core/model/passage'
 import type { PianissimoStorage } from '../../core/storage'
 import { Button } from '../../ui/controls'
 import { Icon } from '../../ui/icons'
-import { RecordingList } from '../recordings/History'
 import { HistoryPanel } from '../results/HistoryPanel'
 import { ScorecardPanel } from '../results/ScorecardPanel'
 import { loadResultsData, type ResultsData } from '../results/data'
@@ -26,27 +25,21 @@ const INITIAL_GROUPS = 5
 export interface ProgressPanelProps {
   readonly pieceId: string
   readonly storage: () => Promise<PianissimoStorage>
-  /** The score already open (Practice): its takes need not load it again. */
-  readonly model?: (PassageWords & { readonly scoreVersionId: string }) | undefined
   /** Practice these bars. */
   readonly onPractice: (suggestion: Suggestion) => void
   readonly onOpenSettings: () => void
 }
 
-export function ProgressPanel({ pieceId, storage, model, onPractice, onOpenSettings }: ProgressPanelProps) {
+export function ProgressPanel({ pieceId, storage, onPractice, onOpenSettings }: ProgressPanelProps) {
   return (
     <div class={styles.panel}>
       <WorkOnNext pieceId={pieceId} storage={storage} onPractice={onPractice} onOpenSettings={onOpenSettings} />
       <PastPasses pieceId={pieceId} storage={storage} />
-      <section class={styles.section} aria-labelledby="progress-recordings">
-        <h3 id="progress-recordings">{msg('Recordings')}</h3>
-        <RecordingList storage={storage} pieceId={pieceId} model={model} />
-      </section>
     </div>
   )
 }
 
-function WorkOnNext({ pieceId, storage, onPractice, onOpenSettings }: Omit<ProgressPanelProps, 'model'>) {
+function WorkOnNext({ pieceId, storage, onPractice, onOpenSettings }: ProgressPanelProps) {
   const suggestions = useMemo(
     () => new PieceSuggestionsModel({ getStorage: storage }, pieceId),
     [pieceId, storage, messageLanguage()],

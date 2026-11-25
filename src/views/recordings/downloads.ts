@@ -1,5 +1,9 @@
 import type { RecordingFiles, RecordingInfo } from '../../core/recording/records'
 
+/**
+ * When a take began, in ISO 8601, then its piece: files sort by time. Local time with its UTC offset (Z
+ * for a take that stored none). Colons, which file systems refuse, are hyphens.
+ */
 export function recordingName(info: Pick<RecordingInfo, 'createdAt' | 'title' | 'startUtcOffsetMinutes'>): string {
   const title =
     info.title
@@ -7,15 +11,11 @@ export function recordingName(info: Pick<RecordingInfo, 'createdAt' | 'title' | 
       .trim()
       .slice(0, 80) || 'Pianissimo'
   const offset = info.startUtcOffsetMinutes ?? 0
-  const local = new Date(info.createdAt + offset * 60_000)
-    .toISOString()
-    .slice(0, -1)
-    .replace('T', ' ')
-    .replaceAll(':', '-')
+  const local = new Date(info.createdAt + offset * 60_000).toISOString().slice(0, 19).replaceAll(':', '-')
   const twoDigits = (value: number) => String(value).padStart(2, '0')
   const absolute = Math.abs(offset)
-  const zone = 'UTC' + (offset < 0 ? '-' : '+') + twoDigits(Math.floor(absolute / 60)) + twoDigits(absolute % 60)
-  return title + ' - ' + local + ' ' + zone
+  const zone = (offset < 0 ? '-' : '+') + twoDigits(Math.floor(absolute / 60)) + twoDigits(absolute % 60)
+  return local + (offset === 0 ? 'Z' : zone) + ' ' + title
 }
 
 const CRC_TABLE = (() => {

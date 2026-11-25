@@ -1,7 +1,7 @@
 /**
  * Recorded takes in IndexedDB (schema 4). A take is stored as:
  *
- *   recordings[id]               RecordingInfo: the only store that lists read
+ *   recordings[id]               RecordingInfo: the only store that lists read (`discardedAt`: see markTakes)
  *   recordingFiles[id]           { midi, type, blocks, bytes }: the MIDI file and what to expect below
  *   recordingBlocks[[id, i]]     the WAV file's bytes, block i, at most RECORDING_BLOCK_BYTES
  *   pendingRecordings[id]        { startedAt } while the blocks of a take are being written
@@ -29,6 +29,8 @@ export const RECORDING_BLOCK_BYTES = 4 * 1024 * 1024
 export const RECORDING_AUDIO_TYPE = 'audio/wav'
 /** A take whose blocks were still being written this long ago was abandoned (a closed page). */
 export const ABANDONED_WRITE_MS = 60 * 60_000
+/** A discarded take can be brought back this long at least. A later open removes it. */
+export const DISCARDED_KEEP_MS = 10 * 60_000
 /** Blocks read per key-range request when a take is read back. */
 const BLOCKS_PER_READ = 2
 
@@ -103,13 +105,16 @@ export interface TakeWrite {
  * Store a take. A `pendingRecordings` marker names it while its blocks are written; a write that
  * fails removes what it wrote, and one cut short by a closed page is removed by
  * `discardAbandonedWrites` on a later open. Resolves false, writing nothing, when a take with
- * this id is already stored.
+ * this id is already stored. A discarded one gives way to it.
  */
 export async function writeTake(db: Db, take: TakeWrite, now: () => number): Promise<boolean> {
   const id = take.info.id
-  const begin = db.transaction(['recordings', 'recordingBlocks', 'pendingRecordings'], 'readwrite')
+  const begin = db.transaction(['recordings', 'recordingFiles', 'recordingBlocks', 'pendingRecordings'], 'readwrite')
   const exists = await runTx(begin, async () => {
-    if ((await begin.objectStore('recordings').getKey(id)) !== undefined) return true
+    const stored = await begin.objectStore('recordings').get(id)
+    if (stored && stored.discardedAt === undefined) return true
+    await begin.objectStore('recordings').delete(id)
+    await begin.objectStore('recordingFiles').delete(id)
     await begin.objectStore('recordingBlocks').delete(blockRange(id))
     await begin.objectStore('pendingRecordings').put({ startedAt: now() }, id)
     return false
@@ -218,10 +223,40 @@ export async function readTakeFiles(db: Db, id: string): Promise<RecordingFiles 
   return { midi, audio: new Blob(parts, { type: record.type }) }
 }
 
-/** Delete a take: its info, files record, every block and any unfinished-write marker. */
-export async function deleteTake(db: Db, id: string): Promise<void> {
+/** The takes of this device, without the discarded ones. */
+export async function listTakes(db: Db): Promise<RecordingInfo[]> {
+  return (await db.getAll('recordings')).filter((info) => info.discardedAt === undefined)
+}
+
+/** The MIDI file of a take, without reading its audio. */
+export async function readTakeMidi(db: Db, id: string): Promise<ArrayBuffer | undefined> {
+  return (await db.get('recordingFiles', id))?.midi
+}
+
+/**
+ * Discard takes, or bring discarded ones back (`discardedAt` null): one transaction over their
+ * infos, however large their files, so that it is done at once and survives a closed page.
+ */
+export async function markTakes(db: Db, ids: readonly string[], discardedAt: number | null): Promise<void> {
+  const tx = db.transaction('recordings', 'readwrite')
+  await runTx(tx, async () => {
+    for (const id of ids) {
+      const stored = await tx.store.get(id)
+      if (!stored) continue
+      const { discardedAt: _, ...info } = stored
+      await tx.store.put(discardedAt === null ? info : { ...info, discardedAt })
+    }
+  })
+}
+
+/**
+ * Remove a discarded take for good: its info, files record, every block and any unfinished-write
+ * marker. One that was brought back, or restored from a backup, meanwhile is left alone.
+ */
+export async function removeDiscarded(db: Db, id: string): Promise<void> {
   const tx = db.transaction(['recordings', 'recordingFiles', 'recordingBlocks', 'pendingRecordings'], 'readwrite')
   await runTx(tx, async () => {
+    if ((await tx.objectStore('recordings').get(id))?.discardedAt === undefined) return
     await tx.objectStore('recordings').delete(id)
     await tx.objectStore('recordingFiles').delete(id)
     await tx.objectStore('recordingBlocks').delete(blockRange(id))
@@ -229,11 +264,18 @@ export async function deleteTake(db: Db, id: string): Promise<void> {
   })
 }
 
+/** Remove the takes a page discarded and did not live to remove. Another tab's Undo is younger than that. */
+export async function removeLongDiscarded(db: Db, now: number): Promise<void> {
+  for (const { id, discardedAt } of await db.getAll('recordings'))
+    if (discardedAt !== undefined && Math.abs(now - discardedAt) > DISCARDED_KEEP_MS) await removeDiscarded(db, id)
+}
+
 /** The number of listed takes and their file sizes. Reads only small records for converted takes. */
 export async function summarizeTakes(db: Db): Promise<RecordingsSummary> {
   const tx = db.transaction(['recordings', 'recordingFiles'], 'readonly')
   return runTx(tx, async () => {
-    const listed = new Set(await tx.objectStore('recordings').getAllKeys())
+    const infos = await tx.objectStore('recordings').getAll()
+    const listed = new Set(infos.filter((info) => info.discardedAt === undefined).map((info) => info.id))
     let count = 0
     let bytes = 0
     let cursor = await tx.objectStore('recordingFiles').openCursor()

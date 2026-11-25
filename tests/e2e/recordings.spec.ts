@@ -128,7 +128,7 @@ async function recordFromPracticeMenu(page: Page) {
 
 const setupSheet = (page: Page) => page.getByRole('dialog', { name: 'Record performance' })
 const pill = (page: Page) => page.getByRole('group', { name: 'Take saved', exact: true })
-const recordings = (page: Page) => page.getByRole('dialog', { name: 'Recordings' })
+const recordings = (page: Page) => page.getByRole('dialog', { name: 'Recordings', exact: true })
 
 /** A take's controls (or its pill) are in view, in the header or footer, and cover neither the timeline nor the score. */
 async function checkPlace(page: Page, controls: Locator) {
@@ -148,7 +148,8 @@ async function checkPlace(page: Page, controls: Locator) {
 async function checkTransport(page: Page) {
   const controls = page.getByRole('group', { name: 'Recording', exact: true })
   await expect(controls.getByRole('timer')).toHaveText(/^[0-9]+:[0-5][0-9]$/)
-  await expect(controls.getByRole('button', { name: 'Stop recording', exact: true })).toBeInViewport({ ratio: 1 })
+  for (const name of ['Stop recording', 'Discard recording'])
+    await expect(controls.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 })
   await checkPlace(page, controls)
 }
 
@@ -238,7 +239,8 @@ test('records a scored take, downloads both real files and manages recording his
   expect(colors.fill).toBe(colors.expectedFill)
   expect(colors.border).toBe(colors.expectedBorder)
   await page.clock.setFixedTime(new Date('2026-11-22T01:00:00Z'))
-  await play(page, 60, 48)
+  // The whole piece.
+  for (const keys of [[60, 48], [62], [64], [65], [43, 67, 71, 74], [48]]) await play(page, ...keys)
   await expect(page.getByRole('timer')).not.toHaveText('0:00')
   await page.screenshot({ path: info.outputPath('recording-active.png') })
   await stopRecording(page)
@@ -256,7 +258,7 @@ test('records a scored take, downloads both real files and manages recording his
   const score = (await pill(page).textContent())!.match(/[0-9.]+%/)![0]
   await pill(page).getByRole('button', { name: 'Recordings' }).click()
   let history = recordings(page)
-  await expect(history.getByRole('button', { name: /Two Hands/, expanded: true })).toContainText(score)
+  await expect(history.getByRole('button', { name: /Whole piece/, expanded: true })).toContainText(score)
   await expect(history.getByText('Best take', { exact: true })).toBeVisible()
   const link = history.getByRole('button', { name: 'Download MIDI and WAV (.zip)' })
   await expect(link).toBeVisible()
@@ -264,7 +266,7 @@ test('records a scored take, downloads both real files and manages recording his
   const pendingDownload = page.waitForEvent('download')
   await link.click()
   const download = await pendingDownload
-  const stem = 'Two Hands - 2026-11-22 00-04-56.789 UTC+0100'
+  const stem = '2026-11-22T00-04-56+0100 Two Hands'
   expect(download.suggestedFilename()).toBe(stem + '.zip')
   const files = unzipSync(await readFile((await download.path())!))
   expect(Object.keys(files).sort()).toEqual([stem + '.mid', stem + '.wav'])
@@ -291,7 +293,7 @@ test('records a scored take, downloads both real files and manages recording his
   await expectSaved(page)
   await pill(page).getByRole('button', { name: 'Recordings' }).click()
   history = recordings(page)
-  await expect(history.getByRole('button', { name: /Two Hands/ })).toHaveCount(2)
+  await expect(history.getByRole('button', { name: /Whole piece/ })).toHaveCount(2)
   await expect(history.getByText('Best take', { exact: true })).toHaveCount(1)
 
   // The choice outlives a reload.
@@ -304,20 +306,68 @@ test('records a scored take, downloads both real files and manages recording his
   await stopRecording(page)
   await expectSaved(page)
   await page.getByRole('button', { name: 'Back to Library', exact: true }).first().click()
-  // The piece's Progress holds the same takes (U148).
+  // The piece's options hold the same takes (U164). What is discarded can be undone from the sheet.
   await page.getByRole('button', { name: 'Options for Two Hands', exact: true }).click()
-  await page.getByRole('button', { name: 'Progress…', exact: true }).click()
-  history = page.getByRole('dialog', { name: 'Progress' })
-  await expect(history.getByRole('button', { name: /Two Hands/ })).toHaveCount(3)
-  await history
-    .getByRole('button', { name: /Two Hands/ })
-    .first()
+  await page.getByRole('button', { name: 'Recordings…', exact: true }).click()
+  history = recordings(page)
+  const takes = history.getByRole('listitem')
+  // Not the one of a toast that is fading.
+  const undo = history.getByRole('button', { name: 'Undo', exact: true, disabled: false })
+  await expect(takes).toHaveCount(3)
+  // Asked first, with the takes to keep.
+  await history.getByRole('button', { name: 'Delete incomplete (2)' }).click()
+  const ask = page.getByRole('dialog', { name: 'Delete incomplete recordings?' })
+  await expect(ask.getByRole('button', { pressed: true })).toHaveCount(2)
+  await ask.getByRole('button', { pressed: true }).first().click()
+  await expect(ask.getByRole('button', { name: 'Delete 1 recording' })).toBeInViewport({ ratio: 1 })
+  await ask.locator('[aria-pressed="false"]').click()
+  await ask.getByRole('button', { name: 'Delete 2 recordings' }).click()
+  await expect(ask).toHaveCount(0)
+  await expect(takes).toHaveCount(1)
+  await expect(takes).toContainText('Best take')
+  await expect(history.getByText('2 recordings discarded')).toBeVisible()
+  await undo.click()
+  await expect(takes).toHaveCount(3)
+  await takes.first().getByRole('button').click()
+  await history.getByRole('button', { name: 'Delete recording' }).click()
+  await expect(takes).toHaveCount(2)
+  await expect(history.getByText('Recording discarded', { exact: true })).toBeVisible()
+  // Deleted at once: closing the app does not bring it back.
+  await page.reload()
+  await page.getByRole('button', { name: 'Options for Two Hands', exact: true }).click()
+  await page.getByRole('button', { name: 'Recordings…', exact: true }).click()
+  await expect(takes).toHaveCount(2)
+  await history.getByRole('button', { name: 'Clear all' }).click()
+  await expect(history.getByText('No recordings yet.')).toBeVisible()
+})
+
+test('Discard, in the header and in the menu, drops the take and closes its input; Undo saves it', async ({ page }) => {
+  await openWithRememberedInput(page)
+  const undo = page.getByRole('button', { name: 'Undo', exact: true, disabled: false })
+  const start = async () => {
+    await tapRecord(page)
+    await play(page, 60)
+    await expect(page.getByRole('timer')).not.toHaveText('0:00')
+  }
+  await start()
+  await page
+    .getByRole('group', { name: 'Recording', exact: true })
+    .getByRole('button', { name: 'Discard recording' })
     .click()
-  await history.getByRole('button', { name: 'Delete recording' }).click()
-  await history.getByRole('button', { name: 'Cancel' }).click()
-  await history.getByRole('button', { name: 'Delete recording' }).click()
-  await history.getByRole('button', { name: 'Delete recording' }).click()
-  await expect(history.getByRole('button', { name: /Two Hands/ })).toHaveCount(2)
+  await expectNoRecordControl(page)
+  await expect.poll(() => page.evaluate(() => window.__audio.live())).toEqual([])
+  await expect(page.getByText('Recording discarded')).toBeVisible()
+
+  await start()
+  const menu = await openFooterMenu(page)
+  await menu.getByRole('button', { name: 'Discard recording' }).click()
+  await expect(page.getByRole('dialog', { name: /^(Practice menu|Menu)$/ })).toHaveCount(0)
+  await expectNoRecordControl(page)
+  await undo.click()
+  await expect(page.getByText('2 recordings restored')).toBeVisible()
+  // Recordings opens from the menu, beside Record performance and apart from Progress.
+  await (await openFooterMenu(page)).getByRole('button', { name: 'Recordings' }).click()
+  await expect(recordings(page).getByRole('listitem')).toHaveCount(2)
 })
 
 /** After a reload Practice is on screen already (U98). */
@@ -446,7 +496,7 @@ test('the pill plays the take, closes, and goes when the score starts playing', 
   // Recordings has its own player: the pill's pauses, and it is still there when the list closes.
   await pill(page).getByRole('button', { name: 'Listen to recording' }).click()
   await pill(page).getByRole('button', { name: 'Recordings' }).click()
-  await expect(recordings(page).getByRole('button', { name: /Two Hands/, expanded: true })).toBeVisible()
+  await expect(recordings(page).getByRole('button', { name: /Whole piece/, expanded: true })).toBeVisible()
   expect((await player(page))[0]!.paused).toBe(true)
   await recordings(page).getByRole('button', { name: 'Close' }).click()
   await checkPill(page)
@@ -489,8 +539,9 @@ test('a take deleted in Recordings takes its pill with it', async ({ page }) => 
   await expectSaved(page)
   await pill(page).getByRole('button', { name: 'Recordings' }).click()
   await recordings(page).getByRole('button', { name: 'Delete recording' }).click()
-  await recordings(page).getByRole('button', { name: 'Delete recording' }).click()
   await expect(recordings(page).getByText('No recordings yet.')).toBeVisible()
+  // Its sheet mounts open: the toast is there too.
+  await expect(recordings(page).getByRole('button', { name: 'Undo', exact: true })).toBeVisible()
   await recordings(page).getByRole('button', { name: 'Close' }).click()
   await expectNoRecordControl(page)
 })
@@ -517,7 +568,7 @@ test('a take that cannot be saved opens Recordings, which keeps it in memory', a
   expect(await page.evaluate(() => window.__audio.live())).toEqual([])
   await page.evaluate(() => (window as unknown as { restorePut: () => void }).restorePut())
   await recordings(page).getByRole('button', { name: 'Retry saving' }).click()
-  await expect(recordings(page).getByRole('button', { name: /Two Hands/ })).toHaveCount(1)
+  await expect(recordings(page).getByRole('button', { name: /Whole piece/ })).toHaveCount(1)
   await recordings(page).getByRole('button', { name: 'Close' }).click()
   await expectNoRecordControl(page)
 })
@@ -594,7 +645,8 @@ test('Practice keeps Stop within reach on a narrow phone and through rotation wh
   await stopRecording(page)
   await checkPill(page)
   await pill(page).getByRole('button', { name: 'Recordings' }).click()
-  await expect(recordings(page).getByText('Best take', { exact: true })).toBeVisible()
+  // Only its first notes were played.
+  await expect(recordings(page).getByText('Incomplete', { exact: true })).toBeVisible()
 })
 
 test('a phone keeps the pill in its footer upright and in its bar on its side, and the sound through the turn', async ({
@@ -774,7 +826,7 @@ for (const language of ['en-US', 'fr-FR', 'fil-PH'])
         const shown = [await expectTidyHeader(page, say('Opening audio input…'))]
         await openGate(page)
         shown.push(await expectTidyHeader(page, say('Recording')))
-        await page.getByRole('button', { name: say('Stop recording'), exact: true }).click()
+        await header.getByRole('button', { name: say('Stop recording'), exact: true }).click()
         shown.push(await expectTidyHeader(page, say('Take saved')))
         expect(shown.join()).not.toContain('one,all')
         if (viewport.width < 1000) expect(shown[0]).toBe('one')

@@ -12,7 +12,7 @@ import type { OneTap, TakePhase } from './useRecordingDialog'
 const mocks = vi.hoisted(() => ({
   open: vi.fn(),
   begin: vi.fn(),
-  list: { initialId: undefined as string | undefined, onDeleted: undefined as ((id: string) => void) | undefined },
+  list: { initialId: undefined as string | undefined },
 }))
 vi.mock('../../app/audio/performanceInput', async (original) => ({
   ...(await original<typeof import('../../app/audio/performanceInput')>()),
@@ -21,17 +21,8 @@ vi.mock('../../app/audio/performanceInput', async (original) => ({
 vi.mock('./take', () => ({ beginTake: mocks.begin }))
 vi.mock('./History', () => ({
   handName: () => 'Both hands',
-  RecordingHistory: ({
-    initialId,
-    onDeleted,
-    onClose,
-  }: {
-    initialId?: string
-    onDeleted?: (id: string) => void
-    onClose: () => void
-  }) => {
+  RecordingHistory: ({ initialId, onClose }: { initialId?: string; onClose: () => void }) => {
     mocks.list.initialId = initialId
-    mocks.list.onDeleted = onDeleted
     return (
       <div data-testid="list">
         <button aria-label="Close the list" onClick={onClose} />
@@ -41,6 +32,7 @@ vi.mock('./History', () => ({
 }))
 
 const { Recorder } = await import('./Recorder')
+const { discarded, resetDiscardForTests } = await import('./discard')
 
 type Opening = {
   id: string
@@ -77,7 +69,13 @@ class FakeAudio {
 }
 
 let openings: Opening[] = []
-let takes: { stop: ReturnType<typeof vi.fn>; target: TakeTarget; onLost: () => void }[] = []
+let takes: {
+  stop: ReturnType<typeof vi.fn>
+  discard: ReturnType<typeof vi.fn>
+  target: TakeTarget
+  onLost: () => void
+}[] = []
+const keep = vi.fn()
 let stopped: Promise<SavedTake>
 let urls: string[] = []
 let failPlay = ''
@@ -147,7 +145,7 @@ beforeEach(() => {
       new Promise((resolve, reject) => openings.push({ id, onLost, signal, options, resolve, reject })),
   )
   mocks.begin.mockImplementation((target: TakeTarget, _input: PerformanceInput, onLost: () => void) => {
-    const take = { stop: vi.fn(() => stopped), target, onLost }
+    const take = { stop: vi.fn(() => stopped), discard: vi.fn(() => keep), target, onLost }
     takes.push(take)
     return take
   })
@@ -168,6 +166,7 @@ afterEach(() => {
   host.remove()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+  resetDiscardForTests()
   resetAppStateForTests()
 })
 
@@ -202,6 +201,26 @@ const stop = async () => {
 const sheet = () => $(document.body, 'dialog[aria-label="Record performance"]')
 const group = (name: string) => $$(host, '[role="group"]').find((g) => g.getAttribute('aria-label') === name) ?? null
 const alert = () => $(document.body, '[role="alert"]')?.textContent ?? null
+
+describe('Discard (U164)', () => {
+  it('stops the take without saving it, and Undo saves it as Stop would have', async () => {
+    start()
+    await open()
+    keep.mockReset().mockResolvedValue(undefined)
+    click(byLabel(host, 'Discard recording'))
+    expect(takes[0]!.discard).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledOnce()
+    // The screen may go: the take is neither stopped again nor lost.
+    view?.unmount()
+    view = null
+    expect(takes[0]!.stop).not.toHaveBeenCalled()
+    expect(keep).not.toHaveBeenCalled()
+    notices.value.find((n) => n.text === 'Recording discarded')!.action!.run()
+    await settle()
+    expect(keep).toHaveBeenCalledOnce()
+    expect(notices.value.map((n) => n.text)).toEqual(['Recording restored'])
+  })
+})
 
 describe('a one-tap take (D20)', () => {
   it('opens the remembered input, shows that it is opening, and records as soon as it is open', async () => {
@@ -433,10 +452,25 @@ describe('the pill after Stop', () => {
   it('goes with the list when its take was deleted there', async () => {
     await record()
     click(byLabel(host, 'Recordings'))
-    mocks.list.onDeleted?.('another')
-    mocks.list.onDeleted?.('take-1')
+    await act(async () => {
+      discarded.value = new Set(['another', 'take-1'])
+    })
+    expect(onClose).not.toHaveBeenCalled()
     click(byLabel(document.body, 'Close the list'))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('stays when Undo brought its take back before the list closed', async () => {
+    await record()
+    click(byLabel(host, 'Recordings'))
+    await act(async () => {
+      discarded.value = new Set(['take-1'])
+    })
+    await act(async () => {
+      discarded.value = new Set()
+    })
+    click(byLabel(document.body, 'Close the list'))
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('moves the keyboard’s focus from Stop to Listen, and takes no focus otherwise', async () => {

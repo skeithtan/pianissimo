@@ -10,6 +10,14 @@
   gap: var(--space-2);
   pointer-events: none;
 }
+/* A sheet at the side holds its toasts at its foot, clear of its title and the score beside it. */
+dialog[data-side] > .area {
+  position: absolute;
+  top: auto;
+  bottom: calc(var(--space-4) + var(--safe-b, 0px));
+  left: 50%;
+  width: min(520px, calc(100% - 24px));
+}
 .toast {
   --tone: var(--fg-muted);
   pointer-events: auto;
@@ -43,6 +51,23 @@
   flex: 1;
   min-width: 0;
   font-size: var(--text-s);
+}
+.action {
+  flex: none;
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-s);
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.action:hover:not(:disabled) {
+  background: var(--hover);
 }
 .dismiss {
   flex: none;

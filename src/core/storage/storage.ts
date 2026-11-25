@@ -31,9 +31,13 @@ import type { LayoutCacheLimits, PiecePatch, PieceRecord } from './records'
 import {
   RECORDING_AUDIO_TYPE,
   blobBlocks,
-  deleteTake,
   discardAbandonedWrites,
+  listTakes,
+  markTakes,
   readTakeFiles,
+  readTakeMidi,
+  removeDiscarded,
+  removeLongDiscarded,
   summarizeTakes,
   writeTake,
 } from './recordings'
@@ -93,7 +97,14 @@ export interface PianissimoStorage {
   getRecordingFiles(id: string): Promise<RecordingFiles | undefined>
   /** Store a take, reading its WAV Blob one block at a time. Listed only once complete. */
   saveRecording(info: RecordingInfo, files: RecordingFiles): Promise<void>
-  deleteRecording(id: string): Promise<void>
+  /** A take's MIDI file alone (the audio is not read). */
+  getRecordingMidi(id: string): Promise<ArrayBuffer | undefined>
+  /** Take these out of every list, at once and durably. Their files stay until they are removed. */
+  discardRecordings(ids: readonly string[]): Promise<void>
+  /** Bring discarded takes back. */
+  restoreRecordings(ids: readonly string[]): Promise<void>
+  /** Remove discarded takes and their files for good. One that was brought back is left alone. */
+  removeDiscardedRecordings(ids: readonly string[]): Promise<void>
   /** How many takes there are and how many bytes their files hold (for the backup choice). */
   recordingsSummary(): Promise<RecordingsSummary>
 
@@ -137,6 +148,7 @@ export async function openStorage(
   const now = options.now ?? Date.now
   // Takes whose blocks a closed page left half written are never listed; free their space.
   await discardAbandonedWrites(db, now()).catch(() => undefined)
+  await removeLongDiscarded(db, now()).catch(() => undefined)
   const history = new HistoryWriter(db, options.history)
   const layouts = new LayoutCache(db, options.layoutCache, options.now)
   const settleHistory = (): Promise<unknown> => history.flush().catch(() => undefined)
@@ -215,7 +227,7 @@ export async function openStorage(
     setSuggestionsDisabled: (pieceId, disabled) => history.setSuggestionsDisabled(pieceId, disabled),
     clearPracticeHistory: (pieceId, clearOptions) => history.clearHistory(pieceId, clearOptions),
 
-    listRecordings: () => db.getAll('recordings'),
+    listRecordings: () => listTakes(db),
     getRecordingFiles: (id) => readTakeFiles(db, id),
     async saveRecording(info, files) {
       // WebKit can capture and play a Blob in a session that rejects storing Blobs in IndexedDB,
@@ -232,7 +244,12 @@ export async function openStorage(
         now,
       )
     },
-    deleteRecording: (id) => deleteTake(db, id),
+    getRecordingMidi: (id) => readTakeMidi(db, id),
+    discardRecordings: (ids) => markTakes(db, ids, now()),
+    restoreRecordings: (ids) => markTakes(db, ids, null),
+    async removeDiscardedRecordings(ids) {
+      for (const id of ids) await removeDiscarded(db, id)
+    },
     recordingsSummary: () => summarizeTakes(db),
     getLayout: (key) => layouts.get(key),
     putLayout: (key, scoreVersionId, value, approxBytes) => layouts.put(key, scoreVersionId, value, approxBytes),

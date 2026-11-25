@@ -13,6 +13,7 @@ import type { ScoreModel } from '../../core/model/score'
 import { Button, Notice, Sheet } from '../../ui/controls'
 import { notePaths, openingNotes, type Opening } from '../../ui/noteDrawing'
 import { ProgressSheet } from '../progress/ProgressSheet'
+import { RecordingsSheet } from '../recordings/RecordingsSheet'
 import { PieceSuggestionsModel, practiceRequestFor } from '../shared/suggestions/pieceSuggestions'
 import { useLibraryDeps } from './deps'
 import type { LibraryModel } from './libraryModel'
@@ -90,7 +91,7 @@ function OpeningDrawing({ opening, size }: { opening: Opening; size: keyof typeo
   )
 }
 
-type PieceSheet = 'rename' | 'progress' | 'delete' | 'clear' | 'review'
+type PieceSheet = 'rename' | 'progress' | 'recordings' | 'delete' | 'clear' | 'review'
 
 /** What to work on next, for the Continue card: the first suggestion's bars. */
 function WorkOn({ suggestion: s, onPractice }: { suggestion: Suggestion; onPractice: () => void }) {
@@ -268,6 +269,9 @@ export function PieceCard({
                   <Button variant="ghost" icon="chart" onClick={() => show('progress')}>
                     {msg('Progress…')}
                   </Button>
+                  <Button variant="ghost" icon="recordings" onClick={() => show('recordings')}>
+                    {msg('Recordings…')}
+                  </Button>
                   <Button variant="ghost" icon="hand" onClick={() => show('review')}>
                     {msg('Review hands and tempo…')}
                   </Button>
@@ -307,6 +311,12 @@ export function PieceCard({
           setConfirm(null)
           openSettings()
         }}
+      />
+      <RecordingsSheet
+        open={confirm === 'recordings'}
+        onClose={() => setConfirm(null)}
+        pieceId={piece.id}
+        storage={deps.getStorage}
       />
       <ReviewSheet piece={piece} model={model} open={confirm === 'review'} onClose={() => setConfirm(null)} />
       <DeleteSheet piece={piece} model={model} open={confirm === 'delete'} onClose={() => setConfirm(null)} />

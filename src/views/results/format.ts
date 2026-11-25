@@ -1,3 +1,4 @@
+import { dateText, timeOfDay } from '../../i18n/dates'
 import { msg, decimal, plural } from '../../i18n/messages'
 /** Display text for the scorecard, the history and Progress. Pure; locale-dependent only in `whenText`. */
 import { formatSeconds, timeDifferenceSec, timingAccuracy } from '../../core/history'
@@ -6,9 +7,9 @@ import type { AttemptRecord, ComparisonContext, InterruptReason } from '../../co
 export function whenText(ms: number, now: number = Date.now()): string {
   const date = new Date(ms)
   const sameDay = new Date(now).toDateString() === date.toDateString()
-  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  const time = timeOfDay(date)
   if (sameDay) return msg('Today, {0}', time)
-  const day = date.toLocaleDateString(undefined, {
+  const day = dateText(date, {
     month: 'short',
     day: 'numeric',
     ...(date.getFullYear() === new Date(now).getFullYear() ? {} : { year: 'numeric' }),

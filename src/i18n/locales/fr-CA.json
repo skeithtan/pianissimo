@@ -48,7 +48,6 @@
   "1320": "le piano doit prendre en charge Bluetooth MIDI (Bluetooth LE MIDI). Jumelez-le dans les paramètres Bluetooth MIDI du système ou de MIDIWeb. Le site ne réalise pas ce jumelage. L’audio Bluetooth ne transmet que le son, pas les notes.",
   "1382": "{0} avec ces paramètres",
   "1494": "Pour entendre le métronome dans les haut-parleurs du piano, branchez le piano par USB et choisissez sa sortie audio ici ou dans les paramètres audio du système.",
-  "1514": "Supprimer cette prise et ses deux fichiers de cet appareil?",
   "1545": "Meilleure série avec ces paramètres : {0}",
   "1571": "Ce navigateur n’affiche ses sorties audio qu’après l’autorisation du microphone. Pianissimo coupe aussitôt le microphone et n’enregistre rien.",
   "1752": "Pianissimo n’est pas autorisé à utiliser l’entrée audio. Autorisez l’accès au microphone pour ce site dans les paramètres du navigateur, puis réessayez.",
@@ -73,5 +72,8 @@
   "6051": "Vous n’avez qu’un PDF?",
   "6058": "Qu’est-ce que MusicXML?",
   "6061": "Pourquoi seulement MusicXML?",
-  "6066": "Vous avez votre fichier?"
+  "6066": "Vous avez votre fichier?",
+  "6085": "Supprimer les enregistrements incomplets?",
+  "6086": "Voulez-vous vraiment supprimer cet enregistrement?",
+  "6087": "Voulez-vous vraiment supprimer ces enregistrements? Touchez ceux que vous voulez garder."
 }

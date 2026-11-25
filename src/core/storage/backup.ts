@@ -49,6 +49,7 @@ import {
   RECORDING_BLOCK_BYTES,
   filesBytes,
   isLegacyFiles,
+  listTakes,
   readBlocks,
   writeTake,
 } from './recordings'
@@ -232,7 +233,7 @@ async function writeBackup(
  * ignored by restore.
  */
 async function addRecordings(db: Db, zip: ZipWriter, onTakes: (hasTakes: boolean) => void): Promise<RecordingInfo[]> {
-  const infos = await db.getAll('recordings')
+  const infos = await listTakes(db)
   const sizes = new Map<string, { bytes: number; parts: number }>()
   const tx = db.transaction('recordingFiles', 'readonly')
   await runTx(tx, async () => {
@@ -783,7 +784,8 @@ async function restoreTakes(
     const path = RECORDINGS_DIR + entryName(info.id)
     const parts = zip.names(path + '.wav.').map((_, i) => `${path}.wav.${i}`)
     try {
-      if ((await db.getKey('recordings', info.id)) !== undefined) {
+      const stored = await db.get('recordings', info.id)
+      if (stored && stored.discardedAt === undefined) {
         counts.skipped += 1
         continue
       }

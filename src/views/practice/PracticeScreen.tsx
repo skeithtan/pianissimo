@@ -1,3 +1,4 @@
+import { RecordingsSheet } from '../recordings/RecordingsSheet'
 import { useRecordingDialog } from '../recordings/useRecordingDialog'
 import { msg, messageLanguage } from '../../i18n/messages'
 /**
@@ -338,7 +339,8 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
   })
   const ui = useStore(session.ui)
   const [progressOpen] = useState(() => signal(false))
-  const recorder = useRecordingDialog(ui.playing, progressOpen.value)
+  const [recordingsOpen] = useState(() => signal(false))
+  const recorder = useRecordingDialog(ui.playing, progressOpen.value || recordingsOpen.value)
   const appSettings = settings.value
   const [prep, setPrep] = useState<Prep>({ state: 'preparing', fraction: 0 })
   const [tempoOpen, setTempoOpen] = useState(false)
@@ -478,10 +480,10 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
       void saver.flush()
     }
     window.addEventListener('pagehide', onPageHide)
-    // Settings (with the piano setup), the other-hand question and Progress open over Practice: keys
-    // belong to them while they are open (the test notes may come back as keys).
+    // Settings (with the piano setup), the other-hand question, Progress and Recordings open over
+    // Practice: keys belong to them while they are open (the test notes may come back as keys).
     const offOverlay = effect(() =>
-      session.holdInput(settingsOpen.value || askedStart.value !== null || progressOpen.value),
+      session.holdInput(settingsOpen.value || askedStart.value !== null || progressOpen.value || recordingsOpen.value),
     )
     // Without a connected piano, Wait and Keep time cannot start, and Follow uses the microphone.
     const offInput = effect(() => session.setInputAvailable(connectionStatus.value.state === 'connected'))
@@ -724,12 +726,23 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
       range: ui.repeat ? ui.range : null,
     })
   }
-  const stopRecording = recorder.recording
-    ? () => {
-        setMenuOpen(false)
-        recorder.stop()
-      }
-    : undefined
+  /** For the menus, while a take records. */
+  const onTake = (act: () => void) =>
+    recorder.recording
+      ? () => {
+          setMenuOpen(false)
+          act()
+        }
+      : undefined
+  const stopRecording = onTake(recorder.stop)
+  const discardRecording = onTake(recorder.discard)
+  const openRecordings = () => {
+    setMenuOpen(false)
+    recordingsOpen.value = true
+  }
+  const whileOpen = (go: () => void) => () => {
+    if (menuOpen) go()
+  }
   const openProgress = () => {
     setMenuOpen(false)
     progressOpen.value = true
@@ -1107,9 +1120,11 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
         <Footer
           onProgress={openProgress}
           onRecord={openRecorder}
+          onRecordings={openRecordings}
           recordingOpen={recorder.isOpen}
           recordDisabled={recorder.busy}
           onStopRecording={stopRecording}
+          onDiscardRecording={discardRecording}
           ui={ui}
           session={session}
           zone={recede.zone}
@@ -1183,12 +1198,12 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
           </div>
           <PracticeMenuItems
             onProgress={openProgress}
-            onRecord={() => {
-              // A second tap on Stop recording, as the sheet fades, starts no take.
-              if (menuOpen) openRecorder()
-            }}
+            // A second tap, as the sheet fades, does not reach what has taken the button's place.
+            onRecord={whileOpen(openRecorder)}
+            onRecordings={whileOpen(openRecordings)}
             recordDisabled={recorder.busy}
-            onStopRecording={stopRecording}
+            onStopRecording={stopRecording && whileOpen(stopRecording)}
+            onDiscardRecording={discardRecording && whileOpen(discardRecording)}
             ui={ui}
             session={session}
             labels={appSettings.labels.mode}
@@ -1234,12 +1249,21 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
         onClose={closeProgress}
         pieceId={piece.id}
         storage={env.storage}
-        model={model}
         onPractice={practiceSuggestion}
         onOpenSettings={() => {
           closeProgress()
           openSettings()
         }}
+      />
+
+      <RecordingsSheet
+        open={recordingsOpen.value}
+        onClose={() => {
+          recordingsOpen.value = false
+        }}
+        pieceId={piece.id}
+        storage={env.storage}
+        model={model}
       />
 
       <WrongNoteFlash onReady={(handle) => session.attachFlash(handle)} />

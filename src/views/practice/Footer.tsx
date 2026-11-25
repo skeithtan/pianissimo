@@ -71,9 +71,11 @@ const QUARTER = rat(1, 4)
 export interface FooterProps {
   readonly onProgress?: (() => void) | undefined
   readonly onRecord?: (() => void) | undefined
+  readonly onRecordings?: (() => void) | undefined
   readonly recordingOpen?: boolean | undefined
   readonly recordDisabled?: boolean | undefined
   readonly onStopRecording?: (() => void) | undefined
+  readonly onDiscardRecording?: (() => void) | undefined
   readonly ui: SessionUi
   readonly session: PracticeSession
   readonly zone: RecedeZone
@@ -98,9 +100,11 @@ export interface FooterProps {
 export function Footer({
   onProgress,
   onRecord,
+  onRecordings,
   recordingOpen,
   recordDisabled,
   onStopRecording,
+  onDiscardRecording,
   ui,
   session,
   zone,
@@ -139,9 +143,11 @@ export function Footer({
               <FooterMenu
                 onProgress={onProgress}
                 onRecord={onRecord}
+                onRecordings={onRecordings}
                 recordingOpen={recordingOpen}
                 recordDisabled={recordDisabled}
                 onStopRecording={onStopRecording}
+                onDiscardRecording={onDiscardRecording}
                 ui={ui}
                 session={session}
                 receded={receded}

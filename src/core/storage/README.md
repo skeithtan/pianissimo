@@ -31,7 +31,7 @@ Opening also removes the blocks of takes whose save a closed page left unfinishe
 | Results | `addAttempts(records)`, `listAttempts({ pieceId } \| { contextKey } \| both, scoreVersionId? })`, `getAttempt(id)`, `loadResults(pieceId)` → `ContextResults[]` for the piece's current version |
 | Suggested practice | `history` (a `HistoryWriter`, below), `loadSuggestions(pieceId, dismissed?)` → up to three plus Improved, `loadPieceHistory(pieceId)`, `setSuggestionsDisabled(pieceId, bool)`, `clearPracticeHistory(pieceId, { attempts? })` |
 | Layout cache | `getLayout(key)`, `putLayout(key, scoreVersionId, value, approxBytes)` → boolean, `clearLayouts(scoreVersionId?)`, `layoutCacheStats()` |
-| Recordings | `listRecordings()`, `saveRecording(info, { midi, audio })` (reads the WAV Blob a block at a time; listed only once complete), `getRecordingFiles(id)` → `{ midi, audio }` Blobs (audio assembled from the blocks), `deleteRecording(id)`, `recordingsSummary()` → `{ count, bytes }` |
+| Recordings | `listRecordings()`, `saveRecording(info, { midi, audio })` (reads the WAV Blob a block at a time; listed only once complete), `getRecordingFiles(id)` → `{ midi, audio }` Blobs (audio assembled from the blocks), `getRecordingMidi(id)`, `discardRecordings(ids)` / `restoreRecordings(ids)` (out of every list at once, and back), `removeDiscardedRecordings(ids)` (for good; one that was brought back is left alone), `recordingsSummary()` → `{ count, bytes }` |
 | Backup | `exportAll({ includeRecordings? })` → `Blob` built from parts (save as `backupFileName()`), `restore(fileOrBytes, { settings?, route? })` → `RestoreReport` (throws `BackupError`) |
 | Environment | `requestPersistentStorage()`, `isStoragePersistent()`, `estimateStorage()`, `isIndexedDbAvailable()`, `isQuotaError(e)`; `newPieceRecord(pkg)` builds a library entry with defaults |
 
@@ -108,7 +108,10 @@ checks that every block is present, writes the files record and the metadata and
 marker, so a half-written take is never listed. A failed save removes its blocks at once; a save
 cut short by a closed page is removed when the database is next opened, once its marker is more
 than an hour old (a save running in another tab is younger; were it removed anyway, its last
-transaction would find blocks missing and fail rather than list a broken take). The version 4
+transaction would find blocks missing and fail rather than list a broken take). A discarded take keeps
+its files and its metadata with `discardedAt`, which lists, sums and backups leave out, until it is removed;
+what a closed page left is removed on an open more than ten minutes later, and the same take saved or
+restored from a backup takes its place. The version 4
 upgrade converts schema 3 takes inside the upgrade transaction, one take at a time and skipping
 converted ones; a take whose blocks cannot be written keeps its schema 3 record (its partial
 blocks are removed) and the upgrade continues. If the upgrade transaction fails as a whole (a

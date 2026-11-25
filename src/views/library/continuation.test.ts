@@ -1,3 +1,4 @@
+import { dateText } from '../../i18n/dates'
 import { describe, expect, it } from 'vitest'
 import { makePackage, makePiece } from '../../core/storage/testkit'
 import type { PieceRecord } from '../../core/storage/records'
@@ -154,7 +155,7 @@ describe('Library status line', () => {
     expect(openedStatus({ createdAt, lastOpenedAt: new Date(2026, 9, 26, 9).getTime() }, now)).toBe('Opened 3 days ago')
     const older = new Date(2026, 9, 12, 9)
     expect(openedStatus({ createdAt, lastOpenedAt: older.getTime() }, now)).toBe(
-      `Opened ${older.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`,
+      `Opened ${dateText(older, { day: 'numeric', month: 'short', year: 'numeric' })}`,
     )
   })
 })

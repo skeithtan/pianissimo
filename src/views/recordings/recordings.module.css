@@ -1,16 +1,60 @@
-.detail { display: grid; gap: .75rem; min-width: 0; }
-.detail p { margin: 0; }
-.detail audio, .detail meter, .detail select { width: 100%; max-width: 100%; }
-.detail label { display: grid; gap: .35rem; }
-.detail select { min-height: 44px; font: inherit; color: var(--fg); background: var(--bg-raised); }
-.actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
-.actions a { display: inline-flex; align-items: center; min-height: 44px; padding-inline: .5rem; color: var(--fg); text-decoration: underline; }
-.list { list-style: none; padding: 0; margin: 0; }
-.take { padding: .6rem 0; border-top: 1px solid var(--border); }
-.summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; padding: .5rem 0; min-height: 48px; text-align: start; color: var(--fg); background: transparent; border: 0; font: inherit; cursor: pointer; }
-.summary span { display:grid; min-width:0; overflow-wrap:anywhere; }
-.summary span:last-child { text-align: end; flex-shrink: 0; }
-.summary small { color: var(--fg-muted); }
+/* The recorder's sheet. */
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+
+/* The list of takes: each day's on one quiet ground, the open take lifted from it. */
+.recordings { display: grid; gap: var(--space-5); min-width: 0; outline: none; }
+.recordings p { margin: 0; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); color: var(--fg-muted); font-size: var(--text-s); }
+.clear { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.day { display: grid; gap: var(--space-2); min-width: 0; }
+.day h3 { margin: 0; padding-inline: var(--space-4); color: var(--fg-muted); font-size: var(--text-s); font-weight: 600; }
+.list { list-style: none; margin: 0; padding: 0; overflow: hidden; border-radius: var(--radius-l); background: var(--bg); }
+.take + .take { border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.take[data-open] { background: var(--fill); }
+.summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); width: 100%; min-height: 64px; padding: var(--space-3) var(--space-4); border: 0; background: transparent; color: var(--fg); font: inherit; text-align: start; cursor: pointer; touch-action: manipulation; }
+.take:not([data-open]) > .summary:hover { background: var(--hover); }
+.summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; border-radius: var(--radius-l); }
+.words { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.words small { color: var(--fg-muted); }
+.length { margin-inline-start: var(--space-2); color: var(--fg-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.result { display: grid; gap: 2px; flex: none; justify-items: end; text-align: end; font-variant-numeric: tabular-nums; }
+.standing { color: var(--fg-muted); }
+.standing[data-standing='best'] { color: var(--success); font-weight: 600; }
+.standing:is([data-standing='incomplete'], [data-standing='interrupted']) { color: var(--warning); font-weight: 600; }
+
+.open { display: grid; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); }
+/* Each browser's own player, as tall as it draws it; room for one while the files are read. */
+.player { display: grid; align-items: center; min-height: 31px; }
+.player audio { display: block; width: 100%; }
+.open .actions { justify-content: space-between; }
+.facts, .about { color: var(--fg-muted); font-size: var(--text-xs); line-height: var(--leading-body); }
+.about { padding-inline: var(--space-4); }
+
+/* Filled, without an outline (U155). What deletes is tinted. */
+.recordings .tool { padding-inline: var(--space-4); border-color: transparent; border-radius: 999px; background: var(--fill); font-size: var(--text-s); }
+.recordings .delete { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.recordings .tool:hover:not(:disabled) { background: color-mix(in srgb, var(--fill) 88%, var(--fg)); }
+.recordings .delete:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 18%, transparent); }
+.recordings .open .tool { background: var(--bg-elevated); }
+.recordings .open .tool:hover:not(:disabled) { background: color-mix(in srgb, var(--bg-elevated) 90%, var(--fg)); }
+
+/* Before the incomplete takes go: the chosen ones are tinted and checked. */
+dialog.confirm { --sheet-width: 520px; }
+.question { padding: var(--space-4) var(--space-5) var(--space-3); }
+.choices { display: grid; gap: var(--space-2); min-height: 0; margin: 0; padding: 0 var(--space-5); overflow: auto; list-style: none; }
+.choice { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 64px; padding: var(--space-3) var(--space-4); border: 0; border-radius: var(--radius-l); background: var(--bg); color: var(--fg); font: inherit; text-align: start; cursor: pointer; touch-action: manipulation; transition: background var(--dur-fast) var(--ease-standard); }
+.choice[aria-pressed='true'] { background: color-mix(in srgb, var(--danger) 8%, var(--bg-elevated)); }
+.choice:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.choice .words { flex: 1; }
+.mark { display: grid; flex: none; place-items: center; width: 26px; height: 26px; border: 2px solid var(--border); border-radius: 50%; }
+.choice[aria-pressed='true'] .mark { border-color: var(--wrong-solid); background: var(--wrong-solid); color: var(--wrong-solid-fg); }
+.keep { color: var(--success); font-weight: 600; }
+.answer { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); padding: var(--space-4) var(--space-5); }
+.recordings .sure { background: var(--wrong-solid); color: var(--wrong-solid-fg); }
+.recordings .sure:hover:not(:disabled) { background: color-mix(in srgb, var(--wrong-solid) 88%, black); }
+
+.unsaved { display: grid; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-l); background: var(--warning-bg); }
+.empty { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-7) var(--space-4); color: var(--fg-muted); }
 
 .setup { display: grid; gap: var(--space-4); }
 .setup p { margin: 0; line-height: 1.45; }

@@ -96,16 +96,32 @@ describe('PracticeMenuItems rows (U141)', () => {
     expect(show({ mode: 'time', pianoConnected: false })).toEqual(['Note names', 'Metronome', 'Show keys'])
   })
 
-  it('offers Stop recording in place of Record performance during a take (U163)', () => {
+  it('offers Recordings beside Record performance, and Stop and Discard in their place during a take', () => {
+    const recordings = vi.fn()
+    render({ on: false, disabled: false }, () => undefined, {}, {}, 'off', undefined, {
+      onRecord: () => undefined,
+      onRecordings: recordings,
+    })
+    click(byText(view!.container, 'Recordings'))
+    expect(recordings).toHaveBeenCalledOnce()
+    expect(byText(view!.container, 'Discard recording')).toBeNull()
+    view?.unmount()
+
     const stop = vi.fn()
+    const discard = vi.fn()
     render({ on: false, disabled: false }, () => undefined, {}, {}, 'off', undefined, {
       onRecord: () => undefined,
       recordDisabled: true,
       onStopRecording: stop,
+      onDiscardRecording: discard,
     })
     expect(byText(view!.container, 'Record performance')).toBeNull()
+    expect(byText(view!.container, 'Recordings')).toBeNull()
     click(byText(view!.container, 'Stop recording'))
     expect(stop).toHaveBeenCalledOnce()
+    expect(discard).not.toHaveBeenCalled()
+    click(byText(view!.container, 'Discard recording'))
+    expect(discard).toHaveBeenCalledOnce()
   })
 
   it('offers the Note names rules in Conditional only (U143)', () => {

@@ -14,6 +14,12 @@ import type { RecordingStorage } from './History'
  */
 export type TakePhase = 'setup' | 'opening' | 'recording' | 'saving' | 'saved' | 'list'
 
+/** What the menus can do with the running take. */
+export interface TakeActions {
+  readonly stop: () => void
+  readonly discard: () => void
+}
+
 /** Start a take at once from the remembered input (DECISIONS D20). */
 export interface OneTap {
   readonly input: RecordingSettings
@@ -26,8 +32,8 @@ type PanelProps = {
   onPhase: (phase: TakePhase) => void
   controlsHost: HTMLElement | null
   covered: boolean
-  /** Set while the recorder is up: stops and saves the running take. */
-  stopTake: { current: (() => void) | null }
+  /** Set while the recorder is up: stops and saves, or discards, the running take. */
+  takeActions: { current: TakeActions | null }
 }
 
 /** The remembered input, when Record performance can use it at once: a piano must be connected. */
@@ -41,8 +47,8 @@ function oneTapTake(): OneTap | null {
 }
 
 /**
- * `playing`: the score plays. A saved take's pill goes when it starts. `covered`: Progress is open
- * over the score, and the pill plays nothing meanwhile.
+ * `playing`: the score plays. A saved take's pill goes when it starts. `covered`: Progress or
+ * Recordings is open over the score, and the pill plays nothing meanwhile.
  */
 export function useRecordingDialog(playing = false, covered = false) {
   const [controlsHost, setControlsHost] = useState<HTMLElement | null>(null)
@@ -50,7 +56,7 @@ export function useRecordingDialog(playing = false, covered = false) {
   const [phase, setPhase] = useState<TakePhase | null>(null)
   const now = useRef<TakePhase | null>(null)
   const generation = useRef(0)
-  const stopTake = useRef<(() => void) | null>(null)
+  const takeActions = useRef<TakeActions | null>(null)
   // A layout effect: its cleanup runs as the screen goes, an effect's only after the next paint.
   useLayoutEffect(
     () => () => {
@@ -102,7 +108,7 @@ export function useRecordingDialog(playing = false, covered = false) {
   }
   /**
    * The header's place for a take: its busy state while the input opens, its status light, timer
-   * and Stop, then the saved take's pill. Otherwise it renders nothing (no space, nothing to
+   * Stop and Discard, then the saved take's pill. Otherwise it renders nothing (no space, nothing to
    * focus); a take is started from the menus' Record performance button. On a portrait phone
    * (`inHeader` false) the take shows in `phoneFooter` instead.
    */
@@ -122,15 +128,17 @@ export function useRecordingDialog(playing = false, covered = false) {
   return {
     open,
     /** Stop and save the running take, as the header's Stop does. Nothing without one. */
-    stop: () => stopTake.current?.(),
+    stop: () => takeActions.current?.stop(),
+    /** Stop the running take and drop it, with Undo. Nothing without one. */
+    discard: () => takeActions.current?.discard(),
     controls,
     phoneFooter: Panel ? <footer class={styles.phoneFooter} ref={setControlsHost} /> : null,
     dialog: Panel ? (
-      <Panel onClose={close} onPhase={enter} controlsHost={controlsHost} covered={covered} stopTake={stopTake} />
+      <Panel onClose={close} onPhase={enter} controlsHost={controlsHost} covered={covered} takeActions={takeActions} />
     ) : null,
     /** A take is opening, recording or saving: no other can start. */
     busy,
-    /** A take is recording: the menus offer Stop recording. */
+    /** A take is recording: the menus offer Stop recording and Discard recording. */
     recording: phase === 'recording',
     /** A take or the last one's pill holds the place `controls` (or `phoneFooter`) gives it. */
     showing: busy || phase === 'saved',

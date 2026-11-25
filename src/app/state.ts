@@ -6,6 +6,7 @@ import { msg } from '../i18n/messages'
  */
 import { batch, signal } from '@preact/signals'
 import { DEFAULT_SETTINGS, type AppSettings, type PersistentLabelSettings } from '../core/model/settings'
+import type { IconName } from '../ui/icons'
 import { deepEqual, mergeSettings, normalizeSettings, settingsFromStored, type SettingsPatch } from './settingsMerge'
 
 export type { SettingsPatch } from './settingsMerge'
@@ -208,12 +209,23 @@ export interface NoticeInput {
   readonly text: string
   /** Auto-dismiss delay. `null` or 0 keeps it until dismissed. Defaults: 5 s, warning 8 s, error sticky. */
   readonly timeoutMs?: number | null
+  /** In place of the kind's icon. */
+  readonly icon?: IconName
+  /** A button on the toast (Undo). Whoever pushes it dismisses the toast. */
+  readonly action?: NoticeAction
+}
+
+export interface NoticeAction {
+  readonly label: string
+  readonly run: () => void
 }
 
 export interface AppNotice {
   readonly id: number
   readonly kind: NoticeKind
   readonly text: string
+  readonly icon?: IconName
+  readonly action?: NoticeAction
 }
 
 export const MAX_NOTICES = 4
@@ -231,13 +243,15 @@ const noticeTimers = new Map<number, ReturnType<typeof setTimeout>>()
 
 /**
  * Show a toast and return its id. An identical message already on screen is refreshed instead of
- * stacked; at most `MAX_NOTICES` show at once (oldest dropped).
+ * stacked, unless it has an action, which is its own; at most `MAX_NOTICES` show at once (oldest
+ * dropped).
  */
 export function pushNotice(input: NoticeInput): number {
-  const existing = notices.peek().find((n) => n.kind === input.kind && n.text === input.text)
+  const { kind, text, icon, action } = input
+  const existing = action ? undefined : notices.peek().find((n) => n.kind === kind && n.text === text && !n.action)
   const id = existing?.id ?? nextNoticeId++
   if (!existing) {
-    const list = [...notices.peek(), { id, kind: input.kind, text: input.text }]
+    const list = [...notices.peek(), { id, kind, text, ...(icon ? { icon } : {}), ...(action ? { action } : {}) }]
     const dropped = list.splice(0, Math.max(0, list.length - MAX_NOTICES))
     for (const old of dropped) clearNoticeTimer(old.id)
     notices.value = list
