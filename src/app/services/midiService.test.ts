@@ -218,7 +218,9 @@ describe('MidiService: route memory', () => {
     expect(h.service.snapshot.input).toBeNull()
     h.access.addInput(new FakeInput('in-9', 'Stage Piano'))
     expect(h.service.snapshot.input).toMatchObject({ id: 'in-9', connected: true })
-    expect(h.notices).toEqual([{ kind: 'success', text: 'Piano connected: Stage Piano.' }])
+    expect(h.notices).toEqual([
+      { kind: 'success', brief: true, icon: 'plug', text: 'Piano connected', detail: 'Stage Piano' },
+    ])
   })
 })
 
@@ -251,8 +253,13 @@ describe('MidiService: disconnect and reconnect (spec: stop scheduling, interrup
     expect(events.slice(2)).toEqual(['input-reconnected', 'output-reconnected'])
     expect(h.statuses.at(-1)).toMatchObject({ state: 'connected' })
     vi.advanceTimersByTime(ROUTE_NOTICE_COALESCE_MS)
-    expect(h.notices[1]).toMatchObject({ kind: 'success' })
-    expect(h.notices[1]!.text).toMatch(/Release all keys and pedals/)
+    // Back: the brief capsule on the connection status, gone by itself (U166).
+    expect(h.notices[1]).toMatchObject({
+      kind: 'success',
+      brief: true,
+      text: 'Piano connected',
+      detail: 'Digital Piano',
+    })
   })
 
   it('dismisses the disconnect notice once the piano is fully back', async () => {

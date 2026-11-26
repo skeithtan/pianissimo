@@ -566,11 +566,8 @@
   "648": "Pianissimo, ir a la biblioteca",
   "649": "Piano",
   "651": "Piano conectado",
-  "652": "El piano se ha conectado: {0}.",
   "653": "Piano desconectado",
   "654": "Se ha desconectado el piano ({0}). Vuelve a conectarlo para continuar.",
-  "655": "Se ha desconectado el piano. Vuelve a conectarlo para continuar.",
-  "659": "Se ha vuelto a conectar el piano ({0}). Suelta todas las teclas y los pedales antes de empezar de nuevo.",
   "660": "El piano suena por el {0}",
   "661": "Elige una partitura en la biblioteca para practicar aquí.",
   "662": "La versión de la pieza no coincide con la del paquete de partitura",
@@ -622,7 +619,6 @@
   "715": "Leyendo el MusicXML",
   "716": "Leyendo el archivo",
   "717": "Lista para abrir",
-  "718": "Todo listo. El tiempo empieza a contar con la primera nota.",
   "719": "Canal de recepción",
   "720": "Abiertas recientemente",
   "721": "Vuelve a conectar el piano. Se seleccionará automáticamente. Suelta las teclas y los pedales antes de practicar.",
@@ -1586,5 +1582,8 @@
   "6088": "Eliminar 1 grabación",
   "6089": "Eliminar {0} grabaciones",
   "6090": "Conservar",
-  "6092": "{0} min {1} s"
+  "6092": "{0} min {1} s",
+  "6093": "Todo listo",
+  "6094": "El tiempo empieza a contar con la primera nota.",
+  "6095": "Vuelve a conectarlo para continuar."
 }

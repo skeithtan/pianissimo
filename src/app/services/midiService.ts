@@ -413,7 +413,7 @@ export class MidiService {
     const selected = this.applyRemembered()
     const after = this.adapterValue?.selectedInput
     if (selected && this.announce && !before && after) {
-      this.deps.notify({ kind: 'success', text: msg('Piano connected: {0}.', after.name) })
+      this.deps.notify({ kind: 'success', brief: true, icon: 'plug', text: msg('Piano connected'), detail: after.name })
     }
   }
 
@@ -480,7 +480,10 @@ export class MidiService {
     if (p.back.size > 0) {
       this.deps.notify({
         kind: 'success',
-        text: msg('Piano reconnected ({0}). Release all keys and pedals before starting again.', list(p.back)),
+        brief: true,
+        icon: 'plug',
+        text: msg('Piano connected'),
+        detail: list(p.back),
       })
     }
   }

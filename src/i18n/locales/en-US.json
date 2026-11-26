@@ -566,11 +566,8 @@
   "648": "Pianissimo, go to the library",
   "649": "Piano",
   "651": "Piano connected",
-  "652": "Piano connected: {0}.",
   "653": "Piano disconnected",
   "654": "Piano disconnected ({0}). Reconnect it to continue.",
-  "655": "Piano disconnected. Reconnect it to continue.",
-  "659": "Piano reconnected ({0}). Release all keys and pedals before starting again.",
   "660": "Piano sounds on {0}",
   "661": "Pick a score in the Library, then practice it here.",
   "662": "Piece and package disagree about the score version",
@@ -622,7 +619,6 @@
   "715": "Reading the MusicXML",
   "716": "Reading the file",
   "717": "Ready to open",
-  "718": "Ready. The clock starts with your first note.",
   "719": "Receive channel",
   "720": "Recently opened",
   "721": "Reconnect the piano. It is picked up again automatically. Release all keys and pedals before practicing.",
@@ -1586,5 +1582,8 @@
   "6088": "Delete 1 recording",
   "6089": "Delete {0} recordings",
   "6090": "Keep",
-  "6092": "{0} min {1} s"
+  "6092": "{0} min {1} s",
+  "6093": "Ready",
+  "6094": "The clock starts with your first note.",
+  "6095": "Reconnect it to continue."
 }

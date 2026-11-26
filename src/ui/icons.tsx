@@ -86,6 +86,7 @@ const paths: Record<string, () => JSX.Element> = {
   ),
   check: () => <path d="M5 12.5l4.5 4.5L19 7.5" />,
   close: () => <path d="M6 6l12 12M18 6L6 18" />,
+  undo: () => <path d="M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />,
   plug: () => <path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5" />,
   upload: () => <path d="M12 16V4M7 9l5-5 5 5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />,
   download: () => <path d="M12 4v12M7 11l5 5 5-5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />,

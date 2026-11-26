@@ -923,7 +923,7 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
           // The phone's top bar (U80). In focus mode it slides up, fades and its row collapses (U93),
           // the overview with it on its side; a tap on the score brings it back without seeking.
           // The connection status is in the menu.
-          <div class={styles.headerSlot} data-testid="practice-bar-slot">
+          <div class={styles.headerSlot} data-testid="practice-bar-slot" data-app-header>
             <div class={styles.headerClip}>
               <div class={styles.bar} data-testid="practice-bar" inert={barInert} {...recede.zone}>
                 {back}
@@ -962,6 +962,7 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
           <header
             ref={header}
             class={styles.header}
+            data-app-header
             data-testid="practice-header"
             data-modes={fits.modes ? 'all' : 'one'}
             data-recording={recorder.showing || undefined}

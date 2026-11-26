@@ -213,10 +213,20 @@ export interface NoticeInput {
   readonly icon?: IconName
   /** A button on the toast (Undo). Whoever pushes it dismisses the toast. */
   readonly action?: NoticeAction
+  /**
+   * A glance, not a message: a small capsule at the top center that drops in and leaves by itself
+   * after `BRIEF_MS`, with no close button (the piano connecting). `text` is its two or three words.
+   */
+  readonly brief?: boolean
+  /** The brief capsule's second line (the device name). */
+  readonly detail?: string
 }
 
 export interface NoticeAction {
+  /** The button's accessible name; shown as text only when there is no icon. */
   readonly label: string
+  /** Drawn alone in a round button (Undo's arrow). */
+  readonly icon?: IconName
   readonly run: () => void
 }
 
@@ -226,9 +236,13 @@ export interface AppNotice {
   readonly text: string
   readonly icon?: IconName
   readonly action?: NoticeAction
+  readonly brief?: boolean
+  readonly detail?: string
 }
 
 export const MAX_NOTICES = 4
+/** How long a brief capsule stays: long enough to read two words, gone before it is noticed twice. */
+export const BRIEF_MS = 1600
 const DEFAULT_TIMEOUT: Readonly<Record<NoticeKind, number | null>> = {
   info: 5000,
   success: 4000,
@@ -247,17 +261,28 @@ const noticeTimers = new Map<number, ReturnType<typeof setTimeout>>()
  * dropped).
  */
 export function pushNotice(input: NoticeInput): number {
-  const { kind, text, icon, action } = input
+  const { kind, text, icon, action, brief, detail } = input
   const existing = action ? undefined : notices.peek().find((n) => n.kind === kind && n.text === text && !n.action)
   const id = existing?.id ?? nextNoticeId++
   if (!existing) {
-    const list = [...notices.peek(), { id, kind, text, ...(icon ? { icon } : {}), ...(action ? { action } : {}) }]
+    const list = [
+      ...notices.peek(),
+      {
+        id,
+        kind,
+        text,
+        ...(icon ? { icon } : {}),
+        ...(action ? { action } : {}),
+        ...(brief ? { brief } : {}),
+        ...(detail ? { detail } : {}),
+      },
+    ]
     const dropped = list.splice(0, Math.max(0, list.length - MAX_NOTICES))
     for (const old of dropped) clearNoticeTimer(old.id)
     notices.value = list
   }
   clearNoticeTimer(id)
-  const timeout = input.timeoutMs === undefined ? DEFAULT_TIMEOUT[input.kind] : input.timeoutMs
+  const timeout = input.timeoutMs !== undefined ? input.timeoutMs : input.brief ? BRIEF_MS : DEFAULT_TIMEOUT[input.kind]
   if (timeout)
     noticeTimers.set(
       id,

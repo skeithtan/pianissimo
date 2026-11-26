@@ -22,7 +22,7 @@ import type { ScoreModel } from '../../core/model/score'
 import type { NamingSettings } from '../../core/model/settings'
 import { Button } from '../../ui/controls'
 import { useFadePresence, type FadePhase } from '../../ui/fade'
-import { Icon } from '../../ui/icons'
+import { Icon, type IconName } from '../../ui/icons'
 import { prefersReducedMotion } from '../../ui/motion'
 import { formatSpeedPercent } from '../../ui/speed'
 import { PeekFacts } from './ResultPeek'
@@ -58,58 +58,114 @@ export function Banners(p: BannersProps) {
   const playing = ui.activity === 'playing'
   const r = playing ? null : ui.lastResult
   const interruption = !playing && ui.interruption && ui.interruption.reason !== 'disconnect' ? ui.interruption : null
+  // Each status keeps its last words while it lifts away.
+  const sound = useLast(ui.soundStatus && !ui.inputDisconnected ? ui.soundStatus : null)
+  const mic = useLast(ui.micStatus || null)
+  const stopped = useLast(interruption)
+  const waiting = useLast(ui.waiting || null)
   return (
     <>
-      {ui.inputDisconnected ? (
-        <div class={`${styles.banner} ${styles.bannerWarn}`} role="alert" data-testid="input-disconnected">
-          <Icon name="plug" size={20} />
-          <span>{msg('Piano disconnected. Reconnect it to continue.')}</span>
-          <Button onClick={p.onConnection}>{msg('Connect piano')}</Button>
-        </div>
-      ) : null}
-      {ui.soundStatus && !ui.inputDisconnected ? (
-        <div class={styles.banner} role="status">
-          <Icon name="sound" size={20} />
-          <span>{msg(ui.soundStatus)}</span>
-        </div>
-      ) : null}
-      {ui.micStatus ? (
-        <div class={styles.banner} role="status" data-testid="mic-status">
-          <Icon name="mic" size={20} />
-          <span>{msg(ui.micStatus)}</span>
-        </div>
-      ) : null}
-      {interruption ? (
-        <div class={`${styles.banner} ${styles.bannerWarn}`} role="status" data-testid="interruption">
-          <Icon name="alert" size={20} />
-          <span>{msg(interruption.text)}</span>
-          {interruption.canResume ? (
+      <Banner
+        show={ui.inputDisconnected}
+        tone="warn"
+        icon="plug"
+        role="alert"
+        testId="input-disconnected"
+        title={msg('Piano disconnected')}
+        detail={msg('Reconnect it to continue.')}
+      >
+        <Button variant="primary" class={styles.bannerAction} onClick={p.onConnection}>
+          {msg('Connect piano')}
+        </Button>
+      </Banner>
+      <Banner show={sound.on} icon="sound" title={sound.value ? msg(sound.value) : ''} />
+      <Banner show={mic.on} icon="mic" testId="mic-status" title={mic.value ? msg(mic.value) : ''} />
+      <Banner
+        show={stopped.on}
+        tone="warn"
+        icon="alert"
+        testId="interruption"
+        title={stopped.value ? msg(stopped.value.text) : ''}
+      >
+        <span class={styles.bannerActions}>
+          {stopped.value?.canResume ? (
             <>
-              <Button variant="primary" onClick={p.onResume}>
+              <Button variant="primary" class={styles.bannerAction} onClick={p.onResume}>
                 {msg('Resume from here')}
               </Button>
-              <Button onClick={p.onRestart}>{msg('Restart')}</Button>
+              <Button class={`${styles.bannerAction} ${styles.bannerQuiet}`} onClick={p.onRestart}>
+                {msg('Restart')}
+              </Button>
             </>
           ) : (
-            <Button variant="primary" icon="restart" onClick={p.onRestart}>
+            <Button variant="primary" icon="restart" class={styles.bannerAction} onClick={p.onRestart}>
               {msg('Restart passage')}
             </Button>
           )}
-        </div>
-      ) : null}
-      {ui.waiting ? (
-        <div class={styles.banner} role="status">
-          <span>{ui.waiting}</span>
-        </div>
-      ) : null}
+        </span>
+      </Banner>
+      <Banner show={waiting.on} title={waiting.value ?? ''} />
       {/* Keep time counts in instead (`CountIn` over the stage): its clock never waits for a note. */}
-      {ui.phase === 'ready' && ui.activity === 'scored' && !r && ui.mode !== 'time' ? (
-        <div class={`${styles.banner} ${styles.bannerReady}`} role="status" data-testid="ready">
-          <Icon name="target" size={20} />
-          <span>{msg('Ready. The clock starts with your first note.')}</span>
-        </div>
-      ) : null}
+      <Banner
+        show={ui.phase === 'ready' && ui.activity === 'scored' && !r && ui.mode !== 'time'}
+        tone="ready"
+        icon="target"
+        testId="ready"
+        title={msg('Ready')}
+        detail={msg('The clock starts with your first note.')}
+      />
     </>
+  )
+}
+
+/** The value while there is one, else the last one, so a leaving status keeps its words. */
+function useLast<T>(value: T | null): { readonly on: boolean; readonly value: T | null } {
+  const last = useRef<T | null>(value)
+  if (value !== null) last.current = value
+  return { on: value !== null, value: value ?? last.current }
+}
+
+/** How long a status takes to lift away (CSS `.banner[data-phase='leaving']` mirrors it). */
+const BANNER_FADE_MS = 250
+
+/**
+ * One status over the score, in the brief capsule's form (the piano connecting): a small paper
+ * capsule with the icon in a tinted round chip, a short title and a muted second line. It is as
+ * wide as its words, never a full-width bar; an action is a small pill at its end. It drops in
+ * from the top and lifts back out (translate and opacity), staying mounted while it leaves.
+ */
+function Banner(p: {
+  readonly show: boolean
+  readonly tone?: 'warn' | 'ready'
+  readonly icon?: IconName
+  readonly role?: 'alert' | 'status'
+  readonly testId?: string
+  readonly title: string
+  readonly detail?: string
+  readonly children?: ComponentChildren
+}) {
+  const presence = useFadePresence(p.show, BANNER_FADE_MS)
+  if (!presence.mounted) return null
+  return (
+    <div
+      class={styles.banner}
+      data-tone={p.tone}
+      data-phase={presence.phase}
+      role={p.role ?? 'status'}
+      data-testid={presence.phase === 'leaving' ? undefined : p.testId}
+      inert={presence.phase === 'leaving' || undefined}
+    >
+      {p.icon ? (
+        <span class={styles.bannerChip}>
+          <Icon name={p.icon} size={18} />
+        </span>
+      ) : null}
+      <span class={styles.bannerText}>
+        <span class={styles.bannerTitle}>{p.title}</span>
+        {p.detail ? <span class={styles.bannerDetail}>{p.detail}</span> : null}
+      </span>
+      {p.children}
+    </div>
   )
 }
 

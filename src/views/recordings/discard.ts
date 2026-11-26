@@ -68,7 +68,7 @@ function offerUndo({ storage, ids, held }: Batch): void {
       kind: 'info',
       icon: 'trash',
       text: count === 1 ? msg('Recording discarded') : msg('{0} recordings discarded', count),
-      action: { label: msg('Undo'), run: () => void undo() },
+      action: { label: msg('Undo'), icon: 'undo', run: () => void undo() },
       timeoutMs: ms,
     }),
     timer: setTimeout(() => void commit(), ms),

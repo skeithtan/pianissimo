@@ -351,7 +351,9 @@ views), toasts, Settings overlay. `views.ts` is the only place mapping a `ViewNa
 import(...)` (lazy), and `chrome: 'bar' | 'none'` ('none' gives Practice the whole viewport). Navigation is `app/navigation.ts`;
 Settings is an overlay over the mounted view, so the score and passage are never lost.
 `app/state.ts` holds coarse signals only: `settings` (`updateSettings(patch)`, immutable deep
-merge, per-clef rules merged per key), `connectionStatus`, `notices` (`pushNotice`). Storage
+merge, per-clef rules merged per key), `connectionStatus`, `notices` (`pushNotice`; a `brief` notice is the
+small capsule that `NoticeArea` lays over the connection chip, `[data-connection-chip]`, or under the header,
+`[data-app-header]`, and removes after `BRIEF_MS`; toasts have no close button and are swiped away, U166). Storage
 plugs in via `await setSettingsPersistence({load, save})` (debounced saves, flushed on
 pagehide). Label changes go through `applyLabelSettings(next)`, which runs
 `onBeforeApplyLabels` hooks first (the practice session registers one that interrupts a scored
@@ -564,7 +566,8 @@ width (kept in the DOM unseen while the button shows) and a take's controls or p
 measure drops the connection chip to its dot. A phone has the button in its bar (upright it is the
 title). `PracticeMenuItems` shows the mode's rows, and `StartReason` (`Footer.tsx`) the reason the main
 button is unavailable with Connect piano when only a piano is missing. The disconnect banner shows
-only where the mode is played on the piano. `views/shared/modes.ts` has the modes' words.
+only where the mode is played on the piano. `Banners` draws each status as the toasts' small capsule; each keeps its
+last words while `useFadePresence` keeps it mounted to slide out (U166). `views/shared/modes.ts` has the modes' words.
 The header and the overview stand on one ground, `.lid` (U154). Focus mode fades its `::before` away and the
 overview row's capsule in; the overview takes its height and colors from `--overview-*`.
 Focus mode collapses a phone's top bar (U93) and, on windows of 640 px or less, the wrapped footer-tools row, using CSS grid tracks (U60); a tablet's or desktop's header stays, its contents faded (U147), and a tablet's footer is one row in both orientations whose tools dim in place (U88).

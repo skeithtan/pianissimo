@@ -7,87 +7,213 @@
   width: min(520px, calc(100vw - 24px));
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: var(--space-2);
   pointer-events: none;
 }
 /* A sheet at the side holds its toasts at its foot, clear of its title and the score beside it. */
+/* A capsule slides in from beyond the nearest edge of the screen: from above for the top areas. */
+.area,
+.briefArea {
+  --slide-from: -150px;
+}
 dialog[data-side] > .area {
+  --slide-from: 150px;
   position: absolute;
   top: auto;
   bottom: calc(var(--space-4) + var(--safe-b, 0px));
   left: 50%;
   width: min(520px, calc(100% - 24px));
 }
+/* A toast is the brief capsule too (small, paper, hairline edge, the tone in the icon's chip),
+   with no close button: it is swiped away sideways. */
 .toast {
   --tone: var(--fg-muted);
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
-  min-height: var(--touch);
-  border-radius: var(--radius-m);
-  border: 1px solid color-mix(in srgb, var(--tone) 40%, var(--border));
-  border-left-width: 4px;
-  border-left-color: var(--tone);
-  background: var(--bg-elevated);
+  gap: 10px;
+  max-width: 100%;
+  padding: 5px 20px 5px 5px;
+  border-radius: 24px;
+  background: var(--practice-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 9%, transparent);
   color: var(--fg);
-  animation: toast-in var(--dur-base) var(--ease-out) backwards;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  animation: capsule-in var(--slide-in) var(--spring) backwards;
+  transition:
+    opacity var(--fade, 250ms) var(--ease-standard),
+    translate 180ms var(--ease-out);
 }
-.toast[data-kind='success'] {
+.toast:has(.action) {
+  padding-inline-end: 5px;
+}
+/* Leaving, it slides back out past the edge it came from, solid (a swiped one keeps its sideways
+   place and fade, set inline). */
+.toast[data-leaving] {
+  translate: 0 var(--slide-from);
+  transition:
+    opacity var(--fade, 250ms) var(--ease-in),
+    translate var(--fade, 250ms) var(--slide-ease-out);
+}
+.toast:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.toast[data-kind='success'],
+.brief[data-kind='success'] {
   --tone: var(--success);
 }
-.toast[data-kind='warning'] {
+.toast[data-kind='warning'],
+.brief[data-kind='warning'] {
   --tone: var(--warning);
 }
-.toast[data-kind='error'] {
+.toast[data-kind='error'],
+.brief[data-kind='error'] {
   --tone: var(--danger);
 }
-.toast > svg {
+.chip {
   flex: none;
-  color: var(--tone);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tone) 18%, var(--practice-surface));
+  color: color-mix(in srgb, var(--tone) 88%, var(--fg));
 }
 .text {
   flex: 1;
   min-width: 0;
   font-size: var(--text-s);
+  font-weight: 650;
+  line-height: 1.15;
 }
+/* The action: a small olive pill, or a round button around its icon (Undo). 48 px to touch. */
 .action {
+  position: relative;
   flex: none;
-  min-height: var(--touch);
-  padding: 0 var(--space-3);
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 var(--space-4);
   border: 0;
-  border-radius: var(--radius-m);
-  background: transparent;
-  color: var(--accent);
+  border-radius: 18px;
+  background: var(--accent-fill);
+  color: var(--accent-fg);
   font: inherit;
   font-size: var(--text-s);
-  font-weight: 700;
+  font-weight: 650;
   cursor: pointer;
   touch-action: manipulation;
 }
-.action:hover:not(:disabled) {
-  background: var(--hover);
-}
-.dismiss {
-  flex: none;
+.action[data-icon] {
   display: grid;
   place-items: center;
-  width: var(--touch);
-  height: var(--touch);
-  border: 0;
-  border-radius: var(--radius-m);
-  background: transparent;
+  width: 36px;
+  padding: 0;
+  border-radius: 50%;
+}
+.action::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+.action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-fill) 88%, var(--fg));
+}
+
+/* The brief capsule: small, at the top center over the header, like the system's own glance when
+   a switch is flipped. It drops in with a little overshoot, holds, and shrinks away by itself; it
+   never takes a press (what is under it stays usable). */
+.briefArea {
+  position: fixed;
+  z-index: var(--z-toast);
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  right: calc(var(--safe-r) + 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+.briefArea[data-anchor='chip'] {
+  translate: 0 -50%;
+}
+.briefArea[data-anchor='chip'] .brief {
+  min-width: var(--anchor-w);
+}
+.briefArea[data-anchor='header'] {
+  right: auto;
+  left: 50%;
+  translate: -50% 0;
+  align-items: center;
+}
+
+.brief {
+  --tone: var(--fg-muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 20px 5px 5px;
+  border-radius: 999px;
+  background: var(--practice-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+  white-space: nowrap;
+  animation: capsule-in var(--slide-in) var(--spring) backwards;
+  transition: translate 250ms var(--slide-ease-out);
+}
+.brief[data-leaving] {
+  translate: 0 var(--slide-from);
+}
+.brief .chip {
+  width: 36px;
+  height: 36px;
+}
+.briefText {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.briefTitle {
+  font-size: var(--text-s);
+  font-weight: 650;
+}
+.briefDetail {
+  font-size: var(--text-xs);
   color: var(--fg-muted);
-  cursor: pointer;
-  touch-action: manipulation;
 }
-.dismiss:hover {
-  background: var(--hover);
+/* In like the system's own glance (iOS's silent-mode pill): from beyond the edge, solid, settling
+   with a spring overshoot; out the same way, accelerating. Only translate moves, so the compositor
+   does the work. Out takes 250 ms, the time a leaving notice stays mounted (FADE_MS). */
+.area,
+.briefArea {
+  --slide-in: 560ms;
+  --spring: cubic-bezier(0.32, 1.45, 0.55, 1);
+  --slide-ease-out: cubic-bezier(0.5, 0, 0.75, 0);
 }
-@keyframes toast-in {
+@keyframes capsule-in {
+  from {
+    translate: 0 var(--slide-from);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brief,
+  .toast {
+    animation-name: fade-in;
+  }
+  .brief[data-leaving],
+  .toast[data-leaving] {
+    opacity: 0;
+    translate: none;
+    transition: opacity 250ms var(--ease-in);
+  }
+}
+@keyframes fade-in {
   from {
     opacity: 0;
-    transform: translateY(-8px);
   }
 }

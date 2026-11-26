@@ -54,6 +54,7 @@ export function ConnectionChip({ onOpen = openConnection, dot = false, plain = f
       class={`${pill.pill} ${pill.action} ${styles.chip}`}
       data-tone={TONE[status.state]}
       data-state={status.state}
+      data-connection-chip
       data-dot={dot || undefined}
       data-plain={plain || undefined}
       title={

@@ -137,10 +137,12 @@ describe('Banners', () => {
     expect(view.container.querySelector('[data-testid="mic-status"]')).toBeNull()
   })
 
-  it('shows one disconnect notice, and none once the piano is back', () => {
+  it('shows one disconnect notice, and none once the piano is back', async () => {
+    vi.useFakeTimers()
     view = mount(banners({ inputDisconnected: true, interruption: DISCONNECT }))
     const notice = $(view.container, '[data-testid="input-disconnected"]')
-    expect(notice?.textContent).toContain('Piano disconnected. Reconnect it to continue.')
+    expect(notice?.textContent).toContain('Piano disconnected')
+    expect(notice?.textContent).toContain('Reconnect it to continue.')
     expect(byText(notice!, 'Connect piano')).not.toBeNull()
     expect($(view.container, '[data-testid="interruption"]')).toBeNull()
 
@@ -148,6 +150,11 @@ describe('Banners', () => {
     view.rerender(banners({ inputDisconnected: false, interruption: DISCONNECT }))
     expect($(view.container, '[data-testid="input-disconnected"]')).toBeNull()
     expect($(view.container, '[data-testid="interruption"]')).toBeNull()
+    // It slides back out (U166): inert while it leaves, then gone.
+    expect(byText(view.container, 'Piano disconnected')!.closest('[inert]')).not.toBeNull()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
     expect(view.container.textContent).not.toContain('disconnected')
   })
 

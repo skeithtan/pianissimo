@@ -8,7 +8,7 @@ import styles from './AppBar.module.css'
 
 export function AppBar() {
   return (
-    <header class={styles.bar}>
+    <header class={styles.bar} data-app-header>
       <button
         type="button"
         class={styles.brand}

@@ -304,29 +304,102 @@
 .stage:has(> .stripHost :global(.pn-score-viewport)[data-timing-enabled]) > .banners {
   top: calc(var(--space-2) + var(--pn-timing-lane-height));
 }
+/* A status is the brief capsule's form (the piano connecting, `NoticeArea`): small, paper, a
+   hairline edge, the tone in the icon's round chip, a title over a muted second line. */
 .banner {
+  --tone: var(--fg-muted);
   pointer-events: auto;
-  max-width: min(720px, 100%);
-  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-m);
-  animation: rise var(--dur-base) var(--ease-out) both;
-}
-.banner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-2) 10px;
+  max-width: min(560px, 100%);
+  padding: 5px;
+  border-radius: 24px;
+  background: var(--practice-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 9%, transparent);
+  color: var(--fg);
+  transition:
+    opacity 180ms var(--ease-out),
+    translate 560ms cubic-bezier(0.32, 1.45, 0.55, 1);
+}
+/* In from above with the brief capsule's spring, and back up the same way (translate and opacity).
+   A shorter drop than the capsule's slide from the screen edge: these sit over the score, and a
+   long one would cross the header. `entering` is the first frame, above and clear. */
+.banner[data-phase='entering'],
+.banner[data-phase='leaving'] {
+  opacity: 0;
+  translate: 0 -28px;
+}
+.banner[data-phase='leaving'] {
+  pointer-events: none;
+  transition:
+    opacity 250ms var(--ease-in),
+    translate 250ms cubic-bezier(0.5, 0, 0.75, 0);
+}
+.banner:not(:has(.bannerChip)) {
+  padding-inline-start: var(--space-4);
+}
+.banner:not(:has(button)) {
+  padding-inline-end: 20px;
+}
+.banner[data-tone='warn'] {
+  --tone: var(--warning);
+}
+.banner[data-tone='ready'] {
+  --tone: var(--accent);
+}
+.bannerChip {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tone) 18%, var(--practice-surface));
+  color: color-mix(in srgb, var(--tone) 90%, var(--fg));
+}
+.bannerText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.bannerTitle {
+  font-size: var(--text-s);
+  font-weight: 650;
+}
+.bannerDetail {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+.bannerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-inline-start: auto;
+}
+/* Wrapped under the words on a narrow screen, the actions keep to the end. */
+.banner > .bannerAction {
+  margin-inline-start: auto;
+}
+/* A small pill, 36 px drawn, with a 48 px touch target. */
+.banner .bannerAction {
+  position: relative;
+  min-height: 36px;
+  border: 0;
+  border-radius: 18px;
+  padding: 0 var(--space-4);
   font-size: var(--text-s);
 }
-.bannerWarn {
-  border-color: color-mix(in srgb, var(--warning) 50%, var(--border));
-  background: color-mix(in srgb, var(--warning-bg) 92%, transparent);
+.banner .bannerAction::after {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
 }
-.bannerReady {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+.banner .bannerQuiet {
+  background: var(--fill);
 }
 @keyframes rise {
   from {
@@ -1963,9 +2036,11 @@
   .goalPopover {
     animation: none;
   }
-  .banner,
   .repeatPanel {
     animation: none;
+  }
+  .banner[data-phase] {
+    translate: none;
   }
   .resultCard,
   .resultCard[data-phase] {

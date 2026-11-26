@@ -122,7 +122,7 @@ tolerates refusal (one retry per visibility event, never a loop) and missing sup
 2. **Navigation**: `navigate('practice')`, and `preloadView('practice')` when a score is chosen.
 3. **Settings and the piano setup from anywhere**: `openSettings()` / `openConnection()` (an overlay; the view stays mounted underneath).
 4. **Connection status**: `ConnectionChip` (`views/shared`) for the Practice header; it opens Settings on Piano and sound.
-5. **Toasts**: `pushNotice(...)`. While a sheet is open its topmost one draws them (`ui/sheetOverlay`). Do not use them for the wrong-note feedback (use `ui/WrongNoteFlash`).
+5. **Toasts**: `pushNotice(...)`. While a sheet is open its topmost one draws them (`ui/sheetOverlay`). Do not use them for the wrong-note feedback (use `ui/WrongNoteFlash`). They have no close button (swipe, or Escape when focused); an action with an `icon` is a round button named by its label. `brief: true` (with `detail`) is a glance laid over the connection chip that leaves after `BRIEF_MS` (U166).
 6. **Settings persistence** and **label hook**: see above.
 7. **Missing features**: the Library shows `BrowserNotices` in its column for missing
    required/important features (U159); other views should not duplicate it. Detailed MIDI help belongs in

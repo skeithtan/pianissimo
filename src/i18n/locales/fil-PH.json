@@ -566,11 +566,8 @@
   "648": "Pianissimo, buksan ang aklatan",
   "649": "Piano",
   "651": "Nakakabit ang piano",
-  "652": "Nakakabit na ang piano: {0}.",
   "653": "Na-disconnect ang piano",
   "654": "Na-disconnect ang piano ({0}). Ikabit itong muli upang magpatuloy.",
-  "655": "Na-disconnect ang piano. Ikabit itong muli upang magpatuloy.",
-  "659": "Nakakabit muli ang piano ({0}). Bitawan ang lahat ng tecla at pedal bago magsimulang muli.",
   "660": "Tumutunog ang piano sa {0}",
   "661": "Pumili ng partitura sa aklatan, saka magsanay dito.",
   "662": "Hindi tugma ang version ng pieza at ng package ng partitura",
@@ -622,7 +619,6 @@
   "715": "Binabasa ang MusicXML",
   "716": "Binabasa ang file",
   "717": "Handa nang buksan",
-  "718": "Handa na. Magsisimula ang oras sa unang nota mo.",
   "719": "Channel ng pagtanggap",
   "720": "Mga huling binuksan",
   "721": "Ikabit muli ang piano. Kusang pipiliin ito. Bitawan ang lahat ng tecla at pedal bago magsanay.",
@@ -1586,5 +1582,8 @@
   "6088": "Burahin ang 1 recording",
   "6089": "Burahin ang {0} recording",
   "6090": "Panatilihin",
-  "6092": "{0} min {1} s"
+  "6092": "{0} min {1} s",
+  "6093": "Handa na",
+  "6094": "Magsisimula ang oras sa unang nota mo.",
+  "6095": "Ikabit itong muli upang magpatuloy."
 }

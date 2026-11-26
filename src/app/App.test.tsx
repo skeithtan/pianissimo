@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'preact/test-utils'
-import { $, $$, byLabel, byText, click, mount, type Mounted } from '../views/shared/testing'
+import { $, $$, byLabel, byText, click, mount, press, type Mounted } from '../views/shared/testing'
 import { ALL_FEATURES } from '../views/settings/testkit'
 import { discardLabelDraft } from '../views/settings/labelDraft'
 import { App } from './App'
@@ -11,6 +11,7 @@ import { resetViewCacheForTests } from './LazyView'
 import { connectionOpen, currentView, navigate, openConnection, settingsOpen, settingsTab } from './navigation'
 import { applyTheme, startThemeSync } from './theme'
 import {
+  BRIEF_MS,
   connectionStatus,
   notices,
   pushNotice,
@@ -250,15 +251,85 @@ describe('notices', () => {
     const toast = byText(root, 'Score imported')!.closest<HTMLElement>('[data-kind]')!
     expect(toast.getAttribute('data-kind')).toBe('success')
 
-    click(byLabel(toast, 'Dismiss'))
+    // No close button: Escape (or Delete) dismisses a focused toast, as a swipe does.
+    expect(toast.querySelector('button')).toBeNull()
+    press(toast, 'Escape')
     expect(notices.value).toEqual([])
-    // Still mounted, fading out.
-    const fading = byText(root, 'Score imported')!.closest<HTMLElement>('[data-kind]')!
-    expect(fading.style.opacity).toBe('0')
+    // Still mounted, sliding out.
+    const leaving = byText(root, 'Score imported')!.closest<HTMLElement>('[data-kind]')!
+    expect(leaving.hasAttribute('data-leaving')).toBe(true)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300)
     })
     expect(byText(root, 'Score imported')).toBeNull()
+  })
+
+  it('dismisses a toast swiped sideways far enough, and keeps one swiped a little', async () => {
+    vi.useFakeTimers()
+    view = mount(<App features={ALL_FEATURES} />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50)
+    })
+    const root = view.container
+    act(() => {
+      pushNotice({ kind: 'info', text: 'Recording discarded', timeoutMs: 0 })
+    })
+    const toast = byText(root, 'Recording discarded')!.closest<HTMLElement>('[data-kind]')!
+    const swipe = (dx: number) =>
+      act(() => {
+        const at = (type: string, x: number) =>
+          toast.dispatchEvent(new PointerEvent(type, { pointerId: 1, clientX: x, bubbles: true }))
+        at('pointerdown', 100)
+        at('pointermove', 100 + dx)
+        at('pointerup', 100 + dx)
+      })
+    swipe(30)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+    expect(notices.value).toHaveLength(1)
+    swipe(-80)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+    expect(notices.value).toEqual([])
+  })
+
+  it('draws an action with an icon as a round button named by its label', async () => {
+    const root = await open()
+    const run = vi.fn()
+    act(() => {
+      pushNotice({ kind: 'info', text: 'Recording discarded', action: { label: 'Undo', icon: 'undo', run } })
+    })
+    const toast = byText(root, 'Recording discarded')!.closest<HTMLElement>('[data-kind]')!
+    const undo = byLabel(toast, 'Undo')!
+    expect(undo.textContent).toBe('')
+    click(undo)
+    expect(run).toHaveBeenCalledOnce()
+  })
+
+  it('shows a brief notice as a capsule with no buttons that leaves by itself', async () => {
+    vi.useFakeTimers()
+    view = mount(<App features={ALL_FEATURES} />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50)
+    })
+    const root = view.container
+    act(() => {
+      pushNotice({ kind: 'success', brief: true, icon: 'plug', text: 'Piano connected', detail: 'Stage Piano' })
+    })
+    const capsule = byText(root, 'Piano connected')!.closest<HTMLElement>('[data-kind]')!
+    expect(capsule.closest('[data-testid="notice-brief"]')).not.toBeNull()
+    expect(capsule.textContent).toContain('Stage Piano')
+    expect(capsule.querySelector('button')).toBeNull()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(BRIEF_MS)
+    })
+    expect(notices.value).toEqual([])
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+    expect(byText(root, 'Piano connected')).toBeNull()
   })
 
   it('announces errors assertively', async () => {
