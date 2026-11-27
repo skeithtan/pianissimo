@@ -262,7 +262,7 @@ returns `spots` and `fixed` (places clean now and wrong last visit) besides the 
 `canDrill` / `drillSpot` / `endDrill` (U168, `drill.ts`) start and leave a drill of one place
 (target 3 clean, ladder suspended, never saved as the loop, `ui.drill`); a hand, loop or Repeat change
 of the learner's ends it the same way, and a target or ladder chosen meanwhile is kept.
-`#syncReminders()` (U167) pushes up to 24 pencil carets (`StripSink.setReminders`, `firm` first then
+`#syncReminders()` (U167) pushes up to 24 highlighter reminders (`StripSink.setReminders`, `firm` first then
 score order) from `SpotMemory.hotSpots` only when `hints.reminders` is on, the engine is scored outside
 Follow and Listen, and no review is showing. `pauses.ts` (`pauseThresholdMs`: half a beat clamped
 250–600 ms, `pausedGroups`) drives gated "Too late" marks, the ladder's fluent-only streak

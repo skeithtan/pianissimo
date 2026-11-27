@@ -210,7 +210,7 @@ function correctionRings(layout: PreparedLayout, mark: CorrectionMark): Correcti
 }
 
 /** The staves of `system` (page) or of the strip. */
-export function stavesOf(layout: PreparedLayout, system: number): readonly StaffGeometry[] {
+function stavesOf(layout: PreparedLayout, system: number): readonly StaffGeometry[] {
   return layout.systems?.[system]?.staves ?? layout.staves
 }
 
@@ -288,14 +288,13 @@ function placeLabels(
 }
 
 /**
- * Where a margin-band mark (correction label or reminder tick) starts beside the staves (layout
- * px; the box edge nearest the staff): beyond the top (bottom) staff line, an optional extra edge
- * such as a correction's own ring, measure numbers, ottava brackets and note names over `[lx0,
- * lx1]`, and the nearby noteheads by `CORRECTION_STEM_CLEAR` (their stems and beams). Only marks
- * of `system` count (page mode: by `system`, ottavas by their y extent). Nothing finer is known of
- * the engraving.
+ * Where a correction label's band starts beside the staves (layout px; the box edge nearest the
+ * staff): beyond the top (bottom) staff line, an optional extra edge such as the mark's own ring,
+ * measure numbers, ottava brackets and note names over `[lx0, lx1]`, and the nearby noteheads by
+ * `CORRECTION_STEM_CLEAR` (their stems and beams). Only marks of `system` count (page mode: by
+ * `system`, ottavas by their y extent). Nothing finer is known of the engraving.
  */
-export function bandEdge(
+function bandEdge(
   L: PreparedLayout,
   staves: readonly StaffGeometry[],
   side: 'above' | 'below',

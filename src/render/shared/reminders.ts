@@ -1,15 +1,14 @@
 /**
- * Quiet pencil reminders (`setReminders`) for both views: geometry and drawing. A small symmetric
- * pencil caret in the margin band beyond the staves of its system, pointing at the staff ("v"
- * above, mirrored below), horizontally centered on the union of the mark's noteheads, clear of
- * the staves, stems, note names, measure numbers and ottavas (reusing `bandEdge` from
- * `corrections.ts`). Never touches the notation; never interactive. Built once per `setReminders`,
- * nothing per frame.
+ * Quiet reminders (`setReminders`) for both views: geometry and drawing. A highlighter swipe behind
+ * the noteheads of a place that went wrong recently, one per staff of the place, slanted like a
+ * chisel-tip marker; a `firm` place gets a second, stronger pass. The layer sits under the
+ * engraving, so every glyph stays on top. Opaque highlighter hues, never the score's ink and never
+ * a glyph, so it cannot be read as an engraved marking (U167). Never interactive. Built once per
+ * `setReminders`, nothing per frame.
  */
 import type { NoteGeometry, PreparedLayout } from '../types'
-import { bandEdge, stavesOf } from './corrections'
 
-/** A quiet reminder at a place that went wrong recently: a pencil caret beyond the staves. */
+/** A quiet reminder at a place that went wrong recently: a highlighter swipe behind its notes. */
 export interface ReminderMark {
   /** Performed-note indices of the place (the view's note ids). */
   readonly notes: readonly number[]
@@ -17,35 +16,42 @@ export interface ReminderMark {
   readonly level: 'faint' | 'firm'
 }
 
-/** Caret height in layout px. */
-export const REMINDER_TICK_H = 6.5
-/** Single caret horizontal half-width in layout px (total width 6 px). */
-const TICK_HALF_W = 3
-/** Horizontal spacing between the two carets of a `firm` double mark (layout px). */
-const DOUBLE_TICK_GAP = 8
-/** SVG viewBox padding around the strokes so round caps never clip (layout px). */
-const TICK_PAD = 2
-/** Fading reminders leave on `animationend`, or by this fallback (strip.css: 180 ms). */
-export const REMINDER_LEAVE_MS = 220
-
-const SVG_NS = 'http://www.w3.org/2000/svg'
-
-export interface ReminderShape {
-  readonly mark: ReminderMark
-  readonly system: number
-  readonly side: 'above' | 'below'
-  /** Horizontal center of the mark's noteheads (layout px). */
-  readonly cx: number
-  /** Vertical extent of the tick itself (layout px; `tickY1 - tickY0 === REMINDER_TICK_H`). */
-  readonly tickY0: number
-  readonly tickY1: number
-  /** SVG bounding box in layout px (includes stroke cap padding). */
+/** One highlighter pass in layout px, before its slant and tilt. */
+export interface ReminderPass {
   readonly x0: number
   readonly y0: number
   readonly x1: number
   readonly y1: number
-  /** One `<path>` `d` string for `faint`, two side-by-side strokes for `firm`. */
-  readonly strokes: readonly string[]
+}
+
+/** Padding of a pass around the noteheads of one staff (layout px). */
+const PAD_X = 5
+const PAD_Y = 3
+/** The firm second pass sits a little lower and to the right of the first (layout px from the heads). */
+const SECOND = { left: 2, top: 1.5, right: 7, bottom: 4 }
+/** The chisel tip: the top edge shifts right and the bottom edge left by this much (layout px). */
+export const REMINDER_SLANT = 2.5
+/** Each staff's passes are drawn rotated by this many degrees about the noteheads' center. */
+export const REMINDER_TILT = -4
+/** Room in the element's box for the slant and the tilt (layout px). */
+const MARGIN = 4
+/** Fading reminders leave on `animationend`, or by this fallback (strip.css: 180 ms). */
+export const REMINDER_LEAVE_MS = 220
+
+export interface ReminderShape {
+  readonly mark: ReminderMark
+  readonly system: number
+  /** Horizontal center of the mark's noteheads (layout px). */
+  readonly cx: number
+  /** One pass per staff of the place, top to bottom. */
+  readonly passes: readonly ReminderPass[]
+  /** `firm` only: the second pass over each of `passes`, same order. */
+  readonly second: readonly ReminderPass[]
+  /** The element's box in layout px, holding every pass with its slant and tilt. */
+  readonly x0: number
+  readonly y0: number
+  readonly x1: number
+  readonly y1: number
 }
 
 /** Stable identity of a set of reminder marks (the same set again is a no-op). */
@@ -55,8 +61,8 @@ export function remindersKey(marks: readonly ReminderMark[]): string {
 
 /**
  * The shapes of `marks` in drawing order (by system, then left to right). Unknown notes are
- * skipped; a mark with no mapped notes produces nothing. Two close ticks on the same side of the
- * same system are both kept without stacking rows.
+ * skipped; a mark with no mapped notes produces nothing. A mark split across systems (page mode)
+ * is drawn on its first one.
  */
 export function layoutReminders(layout: PreparedLayout, marks: readonly ReminderMark[]): ReminderShape[] {
   const shapes: ReminderShape[] = []
@@ -74,74 +80,50 @@ function reminderShape(layout: PreparedLayout, mark: ReminderMark): ReminderShap
     if (g) found.push(g)
   }
   if (found.length === 0) return null
-  found.sort((a, b) => (a.system ?? 0) - (b.system ?? 0) || a.head.y - b.head.y)
-  const system = found[0]!.system ?? 0
-  const own = found.filter((g) => (g.system ?? 0) === system)
+  const system = Math.min(...found.map((g) => g.system ?? 0))
 
-  let hx0 = Infinity
-  let hx1 = -Infinity
-  for (const g of own) {
-    hx0 = Math.min(hx0, g.head.x)
-    hx1 = Math.max(hx1, g.head.x + g.head.w)
+  const byStaff = new Map<number, { x0: number; y0: number; x1: number; y1: number }>()
+  for (const g of found) {
+    if ((g.system ?? 0) !== system) continue
+    const { x, y, w, h } = g.head
+    const b = byStaff.get(g.staff)
+    if (!b) byStaff.set(g.staff, { x0: x, y0: y, x1: x + w, y1: y + h })
+    else {
+      b.x0 = Math.min(b.x0, x)
+      b.y0 = Math.min(b.y0, y)
+      b.x1 = Math.max(b.x1, x + w)
+      b.y1 = Math.max(b.y1, y + h)
+    }
   }
-  const cx = (hx0 + hx1) / 2
-
-  const staves = stavesOf(layout, system)
-  // Above the top staff when any note is on the upper half (including a two-staff chord);
-  // below the bottom staff only when all notes are on the bottom half.
-  let minPos = Infinity
-  for (const g of own) {
-    const pos = staves.findIndex((s) => s.index === g.staff)
-    if (pos >= 0 && pos < minPos) minPos = pos
-  }
-  const side: 'above' | 'below' = minPos < staves.length / 2 || minPos === Infinity ? 'above' : 'below'
-
-  const centers = mark.level === 'firm' ? [cx - DOUBLE_TICK_GAP / 2, cx + DOUBLE_TICK_GAP / 2] : [cx]
-  const tx0 = centers[0]! - TICK_HALF_W
-  const tx1 = centers[centers.length - 1]! + TICK_HALF_W
-
-  const edge = bandEdge(layout, staves, side, system, tx0, tx1)
-  const tickY0 = side === 'above' ? edge - REMINDER_TICK_H : edge
-  const tickY1 = tickY0 + REMINDER_TICK_H
-  const strokes = centers.map((sx) => pencilCaret(sx, tickY0, side))
-
+  const heads = [...byStaff.values()].sort((a, b) => a.y0 - b.y0)
+  const passes = heads.map((h) => ({ x0: h.x0 - PAD_X, y0: h.y0 - PAD_Y, x1: h.x1 + PAD_X, y1: h.y1 + PAD_Y }))
+  const second =
+    mark.level === 'firm'
+      ? heads.map((h) => ({
+          x0: h.x0 - SECOND.left,
+          y0: h.y0 - SECOND.top,
+          x1: h.x1 + SECOND.right,
+          y1: h.y1 + SECOND.bottom,
+        }))
+      : []
+  const all = [...passes, ...second]
+  const pad = MARGIN + REMINDER_SLANT
   return {
     mark,
     system,
-    side,
-    cx,
-    tickY0,
-    tickY1,
-    x0: tx0 - TICK_PAD,
-    y0: tickY0 - TICK_PAD,
-    x1: tx1 + TICK_PAD,
-    y1: tickY1 + TICK_PAD,
-    strokes,
+    cx: (Math.min(...heads.map((h) => h.x0)) + Math.max(...heads.map((h) => h.x1))) / 2,
+    passes,
+    second,
+    x0: Math.min(...all.map((p) => p.x0)) - pad,
+    y0: Math.min(...all.map((p) => p.y0)) - pad,
+    x1: Math.max(...all.map((p) => p.x1)) + pad,
+    y1: Math.max(...all.map((p) => p.y1)) + pad,
   }
 }
 
-/**
- * One small symmetric pencil caret (`2 * TICK_HALF_W` = 6 px wide, `REMINDER_TICK_H` = 6.5 px
- * tall) pointing at the staff: a "v" with its apex at the bottom when above the staff, mirrored
- * with its apex at the top when below. Slight quadratic softening gives a light penciled feel.
- */
-function pencilCaret(sx: number, y0: number, side: 'above' | 'below'): string {
-  const xL = r2(sx - TICK_HALF_W)
-  const xR = r2(sx + TICK_HALF_W)
-  const xA = r2(sx)
-  const c1x = r2(sx - 1.3)
-  const c2x = r2(sx + 1.4)
-  if (side === 'above') {
-    const yTop = r2(y0)
-    const yBot = r2(y0 + REMINDER_TICK_H)
-    return `M${xL} ${yTop}Q${c1x} ${r2(y0 + 3.4)} ${xA} ${yBot}Q${c2x} ${r2(y0 + 3.3)} ${xR} ${yTop}`
-  }
-  const yTop = r2(y0)
-  const yBot = r2(y0 + REMINDER_TICK_H)
-  return `M${xL} ${yBot}Q${c1x} ${r2(y0 + 3.1)} ${xA} ${yTop}Q${c2x} ${r2(y0 + 3.2)} ${xR} ${yBot}`
-}
+const SVG_NS = 'http://www.w3.org/2000/svg'
 
-/** The mark's own small SVG in layout px (content y = layout y − `top`). */
+/** The mark's own small SVG in layout px (content y = layout y − `top`); strip.css fills the passes. */
 export function buildReminder(doc: Document, shape: ReminderShape, top: number): SVGSVGElement {
   const w = r2(shape.x1 - shape.x0)
   const h = r2(shape.y1 - shape.y0)
@@ -152,13 +134,30 @@ export function buildReminder(doc: Document, shape: ReminderShape, top: number):
   svg.setAttribute('height', String(h))
   svg.style.left = `${r2(shape.x0)}px`
   svg.style.top = `${r2(shape.y0 - top)}px`
-  for (const d of shape.strokes) {
-    const path = doc.createElementNS(SVG_NS, 'path')
-    path.setAttribute('class', 'pn-reminder-stroke')
-    path.setAttribute('d', d)
-    svg.append(path)
-  }
+  shape.passes.forEach((pass, i) => {
+    const g = doc.createElementNS(SVG_NS, 'g')
+    g.setAttribute(
+      'transform',
+      `rotate(${REMINDER_TILT} ${r2((pass.x0 + pass.x1) / 2)} ${r2((pass.y0 + pass.y1) / 2)})`,
+    )
+    g.append(chisel(doc, pass, 'pn-reminder-pass'))
+    const second = shape.second[i]
+    if (second) g.append(chisel(doc, second, 'pn-reminder-second'))
+    svg.append(g)
+  })
   return svg
+}
+
+/** A pass as a chisel tip draws it: a box whose top edge leans right of its bottom edge. */
+function chisel(doc: Document, p: ReminderPass, cls: string): SVGPolygonElement {
+  const s = REMINDER_SLANT
+  const el = doc.createElementNS(SVG_NS, 'polygon')
+  el.setAttribute('class', cls)
+  el.setAttribute(
+    'points',
+    `${r2(p.x0 + s)},${r2(p.y0)} ${r2(p.x1 + s)},${r2(p.y0)} ${r2(p.x1 - s)},${r2(p.y1)} ${r2(p.x0 - s)},${r2(p.y1)}`,
+  )
+  return el
 }
 
 function r2(v: number): number {

@@ -186,18 +186,16 @@ describe('Hints', () => {
     expect(settings.value.hints.damageFlash).toBe(true)
   })
 
-  it('turns pencil marks at past mistakes on and off (off by default)', () => {
+  it('turns highlights at past mistakes on and off (off by default)', () => {
     const panel = openSection(open(), 'Reading help', 'Hints')
-    const marks = toggle(panel, 'Pencil marks at past mistakes')
+    const marks = toggle(panel, 'Highlight past mistakes')
     expect(marks.checked).toBe(false)
-    expect(panel.textContent).toContain(
-      'Small marks above the staff where you went wrong recently. They never name a note.',
-    )
+    expect(panel.textContent).toContain('Highlight the notes where you went wrong recently, without naming them.')
     click(marks)
     expect(settings.value.hints.reminders).toBe(true)
-    expect(toggle(panel, 'Pencil marks at past mistakes').checked).toBe(true)
+    expect(toggle(panel, 'Highlight past mistakes').checked).toBe(true)
     expect(settings.value.hints.damageFlash).toBe(true) // nothing else changes
-    click(toggle(panel, 'Pencil marks at past mistakes'))
+    click(toggle(panel, 'Highlight past mistakes'))
     expect(settings.value.hints.reminders).toBe(false)
   })
 })

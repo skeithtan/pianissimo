@@ -65,8 +65,8 @@ export interface HintSettings {
   /** Show live rushing and dragging cues and their matching cursor tint. */
   readonly showTimingCues: boolean
   /**
-   * Quiet pencil carets in the margin band at recent mistake spots during the next pass (default
-   * off until owner review). Never name a note; never count as assistance.
+   * A quiet highlighter swipe behind the notes of recent mistake spots during the next pass
+   * (default off until owner review). Never names a note; never counts as assistance.
    */
   readonly reminders: boolean
 }

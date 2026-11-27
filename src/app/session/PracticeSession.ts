@@ -179,7 +179,7 @@ import type {
   StripSink,
 } from './types'
 
-/** Maximum number of quiet pencil reminder carets shown on one passage (`firm` first). */
+/** Maximum number of quiet highlighter reminders shown on one passage (`firm` first). */
 const MAX_REMINDERS = 24
 /** Stored records folded into the mistake memory per timer turn (a whole-piece record is long). */
 const SEED_FOLDS_PER_TURN = 8
@@ -5217,7 +5217,7 @@ export class PracticeSession {
   }
 
   /**
-   * Quiet pencil reminders at recent mistake spots (U167, off by default): nothing unless the
+   * Quiet highlighter reminders at recent mistake spots (U167, off by default): nothing unless the
    * setting is on, the engine is scored on its own timeline (not Follow, not Listen) and the
    * review is not showing. Recomputed only on fold, timeline, review, setting or mode changes;
    * never per key.
@@ -5251,7 +5251,7 @@ export class PracticeSession {
     strip.setReminders(this.#reminderMarks(tl))
   }
 
-  /** At most 24 reminder carets from `SpotMemory.hotSpots`, `firm` first then score order. */
+  /** At most 24 reminders from `SpotMemory.hotSpots`, `firm` first then score order. */
   #reminderMarks(tl: Timeline): ReminderMark[] {
     const mem = this.#spots.get(tl.hands)
     if (!mem) return []

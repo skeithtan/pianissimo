@@ -379,7 +379,7 @@ export class PageView {
     this.reminderLayer.setAttribute('aria-hidden', 'true')
     this.corrLayer = div('pn-corrs')
     this.corrLayer.setAttribute('aria-hidden', 'true')
-    this.content.append(this.loopLayer, this.segLayer, this.reminderLayer, this.corrLayer)
+    this.content.append(this.loopLayer, this.reminderLayer, this.segLayer, this.corrLayer)
 
     // Screen-px overlay riding with the page: cursor, loop handles and ✕ keep their size at any zoom.
     this.overlay = div('pn-page-over')

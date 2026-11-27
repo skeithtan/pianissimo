@@ -1,18 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PreparedLayout } from '../types'
-import { layoutReminders, REMINDER_TICK_H, remindersKey, type ReminderMark } from './reminders'
-
-/** Parses the start, apex and end `[x, y]` points of a caret path (`M x0 y0 Q ... ax ay Q ... x1 y1`). */
-function caretPoints(d: string): { start: [number, number]; apex: [number, number]; end: [number, number] } {
-  const nums = d.match(/-?\d+(?:\.\d+)?/g)!.map(Number)
-  // M x0 y0 Q c1x c1y ax ay Q c2x c2y x1 y1 => 10 numbers
-  expect(nums).toHaveLength(10)
-  return {
-    start: [nums[0]!, nums[1]!],
-    apex: [nums[4]!, nums[5]!],
-    end: [nums[8]!, nums[9]!],
-  }
-}
+import { layoutReminders, remindersKey, type ReminderMark } from './reminders'
 
 function miniLayout(): PreparedLayout {
   return {
@@ -24,13 +12,13 @@ function miniLayout(): PreparedLayout {
       { index: 1, top: 180, bottom: 220 },
     ],
     notes: [
-      // 0: top staff, x=100..112, y=95..105 (stem clearance above: 95 - 36 = 59)
+      // 0: top staff, x=100..112, y=95..105
       { index: 0, staff: 0, occ: 0, head: { x: 100, y: 95, w: 12, h: 10 } },
-      // 1: bottom staff, x=100..112, y=195..205 (stem clearance below: 205 + 36 = 241)
+      // 1: bottom staff, x=100..112, y=195..205
       { index: 1, staff: 1, occ: 0, head: { x: 100, y: 195, w: 12, h: 10 } },
-      // 2: top staff high note nearby, x=108..120, y=68..78 (stem clearance above: 68 - 36 = 32)
+      // 2: top staff, a chord's upper note: x=108..120, y=68..78
       { index: 2, staff: 0, occ: 0, head: { x: 108, y: 68, w: 12, h: 10 } },
-      // 3: top staff isolated note, x=220..232, y=95..105 (stem clearance above: 59)
+      // 3: top staff, x=220..232, y=95..105
       { index: 3, staff: 0, occ: 1, head: { x: 220, y: 95, w: 12, h: 10 } },
       // 4: bottom staff shifted right, x=230..242, y=195..205
       { index: 4, staff: 1, occ: 1, head: { x: 230, y: 195, w: 12, h: 10 } },
@@ -60,68 +48,51 @@ describe('remindersKey', () => {
 })
 
 describe('layoutReminders', () => {
-  it('places a top-staff tick above the top staff and clear of a nearby notehead stem clearance', () => {
+  const inside = (
+    p: { x0: number; y0: number; x1: number; y1: number },
+    h: { x: number; y: number; w: number; h: number },
+  ) => p.x0 < h.x && p.y0 < h.y && p.x1 > h.x + h.w && p.y1 > h.y + h.h
+
+  it('draws one pass behind the notehead, centered on it, inside the element box', () => {
     const layout = miniLayout()
     const [shape] = layoutReminders(layout, [{ notes: [0], level: 'faint' }])
-    expect(shape).toBeDefined()
-    expect(shape!.side).toBe('above')
     expect(shape!.cx).toBeCloseTo(106)
-    // Top staff top is 80; nearby note 2 has head.y = 68, so stem clearance is 68 - 36 = 32.
-    expect(shape!.tickY1).toBeLessThanOrEqual(32)
-    expect(shape!.tickY1).toBeLessThan(layout.staves[0]!.top)
-    expect(REMINDER_TICK_H).toBeGreaterThanOrEqual(6)
-    expect(REMINDER_TICK_H).toBeLessThanOrEqual(7)
-    expect(shape!.tickY1 - shape!.tickY0).toBeCloseTo(REMINDER_TICK_H)
-    expect(shape!.strokes).toHaveLength(1)
-    // Symmetric "v" caret above the staff: both arms start at tickY0, apex at tickY1 (nearest the staff).
-    const { start, apex, end } = caretPoints(shape!.strokes[0]!)
-    expect(start[1]).toBeCloseTo(shape!.tickY0)
-    expect(end[1]).toBeCloseTo(shape!.tickY0)
-    expect(apex[1]).toBeCloseTo(shape!.tickY1)
-    expect(apex[0]).toBeCloseTo(shape!.cx)
-    expect(apex[0] - start[0]).toBeCloseTo(end[0] - apex[0])
-    expect(end[0] - start[0]).toBeCloseTo(6)
+    expect(shape!.passes).toHaveLength(1)
+    expect(shape!.second).toHaveLength(0)
+    const pass = shape!.passes[0]!
+    expect(inside(pass, layout.notes[0]!.head)).toBe(true)
+    expect((pass.x0 + pass.x1) / 2).toBeCloseTo(106)
+    expect(shape!.x0).toBeLessThan(pass.x0)
+    expect(shape!.y1).toBeGreaterThan(pass.y1)
   })
 
-  it('places a bottom-staff-only mark below the bottom staff as a mirrored caret pointing up', () => {
+  it('draws a two-staff chord as one mark with a pass on each staff, top first', () => {
     const layout = miniLayout()
-    const [shape] = layoutReminders(layout, [{ notes: [1], level: 'faint' }])
-    expect(shape).toBeDefined()
-    expect(shape!.side).toBe('below')
-    expect(shape!.cx).toBeCloseTo(106)
-    // Bottom staff bottom is 220; note 1 head bottom is 205, stem clearance is 205 + 36 = 241.
-    expect(shape!.tickY0).toBeGreaterThanOrEqual(241)
-    expect(shape!.tickY0).toBeGreaterThan(layout.staves[1]!.bottom)
-    expect(shape!.tickY1 - shape!.tickY0).toBeCloseTo(REMINDER_TICK_H)
-    // Mirrored caret below the staff: apex at tickY0 (nearest the staff), both arms end at tickY1.
-    const { start, apex, end } = caretPoints(shape!.strokes[0]!)
-    expect(apex[1]).toBeCloseTo(shape!.tickY0)
-    expect(start[1]).toBeCloseTo(shape!.tickY1)
-    expect(end[1]).toBeCloseTo(shape!.tickY1)
-    expect(apex[0]).toBeCloseTo(shape!.cx)
-    expect(apex[0] - start[0]).toBeCloseTo(end[0] - apex[0])
-    expect(end[0] - start[0]).toBeCloseTo(6)
-  })
-
-  it('places a two-staff chord as one tick above the top staff centered on the union of noteheads', () => {
-    const layout = miniLayout()
-    const shapes = layoutReminders(layout, [{ notes: [3, 4], level: 'faint' }])
+    const shapes = layoutReminders(layout, [{ notes: [4, 3], level: 'faint' }])
     expect(shapes).toHaveLength(1)
-    expect(shapes[0]!.side).toBe('above')
     // Union of x=220..232 and x=230..242 is 220..242 -> center 231.
     expect(shapes[0]!.cx).toBeCloseTo(231)
-    expect(shapes[0]!.tickY1).toBeLessThan(layout.staves[0]!.top)
+    const [top, bottom] = shapes[0]!.passes
+    expect(inside(top!, layout.notes[3]!.head)).toBe(true)
+    expect(inside(bottom!, layout.notes[4]!.head)).toBe(true)
   })
 
-  it('draws firm marks with two strokes at the same tick height', () => {
+  it('covers every notehead of a chord on one staff with a single pass', () => {
     const layout = miniLayout()
-    const [faint, firm] = layoutReminders(layout, [
-      { notes: [3], level: 'faint' },
-      { notes: [4], level: 'firm' },
-    ])
-    expect(faint!.strokes).toHaveLength(1)
-    expect(firm!.strokes).toHaveLength(2)
-    expect(firm!.tickY1 - firm!.tickY0).toBeCloseTo(faint!.tickY1 - faint!.tickY0)
+    const [shape] = layoutReminders(layout, [{ notes: [0, 2], level: 'faint' }])
+    expect(shape!.passes).toHaveLength(1)
+    expect(inside(shape!.passes[0]!, layout.notes[0]!.head)).toBe(true)
+    expect(inside(shape!.passes[0]!, layout.notes[2]!.head)).toBe(true)
+  })
+
+  it('gives a firm mark a second pass over each staff that still covers the notes', () => {
+    const layout = miniLayout()
+    const [shape] = layoutReminders(layout, [{ notes: [3, 4], level: 'firm' }])
+    expect(shape!.second).toHaveLength(2)
+    shape!.second.forEach((p, i) => {
+      expect(inside(p, layout.notes[3 + i]!.head)).toBe(true)
+      expect(p).not.toEqual(shape!.passes[i])
+    })
   })
 
   it('produces nothing for marks whose notes are not in the layout', () => {
@@ -134,15 +105,12 @@ describe('layoutReminders', () => {
     ).toEqual([])
   })
 
-  it('keeps two horizontally close ticks on the same side without stacking rows', () => {
+  it('orders marks left to right', () => {
     const layout = miniLayout()
     const shapes = layoutReminders(layout, [
       { notes: [3], level: 'faint' },
-      { notes: [5], level: 'faint' },
+      { notes: [0], level: 'firm' },
     ])
-    expect(shapes).toHaveLength(2)
-    expect(Math.abs(shapes[1]!.cx - shapes[0]!.cx)).toBeLessThan(6)
-    expect(shapes[0]!.tickY0).toBeCloseTo(shapes[1]!.tickY0)
-    expect(shapes[0]!.tickY1).toBeCloseTo(shapes[1]!.tickY1)
+    expect(shapes.map((s) => s.mark.notes[0])).toEqual([0, 3])
   })
 })

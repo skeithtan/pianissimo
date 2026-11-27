@@ -340,7 +340,7 @@ discarded (U63). The portrait cursor shares the glide's eased progress between t
 live cursor geometry, with CSS seek transitions disabled during playback/respacing (U64).
 `CorrectionMark.repeat` (`shared/corrections.ts`, `excerpt.ts`: double ring and ` ×N` label
 when `repeat >= 2`) and `shared/reminders.ts` / `setReminders` on `StripView` and `PageView`
-(quiet pencil carets in the margin band pointing at the staff, below corrections, non-interactive)
+(a highlighter swipe behind the noteheads, never a glyph, under the engraving, non-interactive)
 are driven by `PracticeSession` (reminders gated by `hints.reminders`, off by default).
 Full API: `src/render/README.md`. Browser tests:
 `tests/e2e/render-*.spec.ts` with the harness in `tests/harness/` (not in the production build).
@@ -444,7 +444,7 @@ queued key events are handled first. `practiceModel` applies a user tempo; `crea
 Mistake memory, reminders, drill and review analysis (`app/session/`): `PracticeSession` keeps
 one `SpotMemory` per hand selection (folded outside the MIDI input path in `#frame`, seeded from
 stored attempts on timers, in time order, via `seedSpots`), syncs `engine.setGuard(mem.guardFor(tl), tl)`
-in non-strict scored mode, and syncs quiet pencil reminders (`StripSink.setReminders`, capped at
+in non-strict scored mode, and syncs quiet reminders (`StripSink.setReminders`, capped at
 24, `firm` first, off by default via `hints.reminders`, shown only outside review, Listen and
 Follow). `app/session/drill.ts` (`drillRange`: two onsets before a spot to one after)
 backs `canDrill` / `drillSpot` / `endDrill` (target 3 clean passes, ladder suspended, unpersisted

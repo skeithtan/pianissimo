@@ -37,8 +37,9 @@
   --pn-alert: var(--danger, #c42b2b);
   /* The teacher's red pen (setCorrections). */
   --pn-correction: var(--danger, #c42b2b);
-  /* Quiet pencil reminders (setReminders): derived from score ink for light and dark themes. */
-  --pn-reminder: color-mix(in srgb, var(--pn-ink) 55%, transparent);
+  /* Quiet reminders (setReminders): opaque highlighter hues, never the score's ink. */
+  --pn-reminder: var(--score-reminder, #ffd6e5);
+  --pn-reminder-firm: var(--score-reminder-firm, #ffb0cd);
   --pn-label: var(--score-label, var(--pn-ink));
   --pn-staff-opacity: var(--score-staff-opacity, 1);
   /* --color-loop is the solid loop hue; the band over the notes is a light tint of it so the
@@ -681,10 +682,12 @@
   transform: none;
 }
 
-/* Quiet pencil reminders (setReminders): small pencil carets in the margin band beyond the staves,
-   sitting below the corrections layer in layout px so they scroll and zoom with the notation.
-   Fades in/out in 180 ms with no stagger or movement; reduced motion disables animation via the
-   .pn-strip * rule. Never interactive. */
+/* Quiet reminders (setReminders): a pink highlighter swipe behind the noteheads of a place that
+   went wrong recently, one per staff, slanted like a chisel tip; firm adds a second, stronger
+   pass. The layer sits under the engraving and over the loop band, in layout px so it scrolls and
+   zooms with the notation. Opaque fills, so the loop band never tints them. Fades in/out in
+   180 ms with no stagger or movement; reduced motion disables animation via the .pn-strip * rule.
+   Never interactive. */
 .pn-reminders {
   position: absolute;
   left: 0;
@@ -706,17 +709,12 @@
   animation: pn-reminder-out 180ms var(--pn-ease-in) both;
 }
 
-.pn-reminder-stroke {
-  fill: none;
-  stroke: var(--pn-reminder);
-  stroke-width: 1.75px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: 0.65;
+.pn-reminder-pass {
+  fill: var(--pn-reminder);
 }
 
-.pn-reminder-firm .pn-reminder-stroke {
-  opacity: 0.9;
+.pn-reminder-second {
+  fill: var(--pn-reminder-firm);
 }
 
 @keyframes pn-reminder-in {

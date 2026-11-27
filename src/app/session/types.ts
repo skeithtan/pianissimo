@@ -65,8 +65,8 @@ export interface StripSink {
    */
   setCorrections?(marks: readonly CorrectionMark[]): void
   /**
-   * Quiet pencil reminders at recent mistake spots during the next pass (below corrections;
-   * `render/shared/reminders.ts`); `[]` clears them.
+   * Quiet highlighter reminders at recent mistake spots during the next pass (under the
+   * engraving; `render/shared/reminders.ts`); `[]` clears them.
    */
   setReminders?(marks: readonly ReminderMark[]): void
   /**

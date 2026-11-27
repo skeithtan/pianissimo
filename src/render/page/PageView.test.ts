@@ -974,15 +974,13 @@ describe('PageView fixes', () => {
     expect(y).toBeLessThan(sys.y1 + 40)
   })
 
-  it('draws reminders in a layer below corrections and places ticks in the right system', () => {
+  it('draws reminders in a layer under the engraving and places marks on their notes', () => {
     const { v, layout, root } = view()
     const content = root.querySelector('.pn-page-content')!
-    const remLayer = content.querySelector('.pn-reminders')
-    const corrLayer = content.querySelector('.pn-corrs')
-    expect(remLayer).not.toBeNull()
-    expect(remLayer!.getAttribute('aria-hidden')).toBe('true')
+    const remLayer = content.querySelector('.pn-reminders')!
+    expect(remLayer.getAttribute('aria-hidden')).toBe('true')
     const children = [...content.children]
-    expect(children.indexOf(remLayer!)).toBeLessThan(children.indexOf(corrLayer!))
+    expect(children.indexOf(remLayer)).toBeLessThan(children.indexOf(content.querySelector('.pn-segs')!))
 
     // Note 8 is top staff of system 1; note 9 is bottom staff of system 1.
     v.setReminders([
@@ -993,13 +991,16 @@ describe('PageView fixes', () => {
     v.flushNow()
     const marks = [...root.querySelectorAll<SVGElement>('.pn-reminders > .pn-reminder')]
     expect(marks).toHaveLength(2)
-    const sys1 = layout.systems![1]!
-    const topMarkY = Number.parseFloat(marks[0]!.style.top) + layout.top
-    const botMarkY = Number.parseFloat(marks[1]!.style.top) + layout.top
-    expect(topMarkY).toBeLessThan(sys1.staves[0]!.top)
-    expect(topMarkY).toBeGreaterThan(layout.systems![0]!.staves[1]!.bottom)
-    expect(botMarkY).toBeGreaterThan(sys1.staves[1]!.bottom)
-    expect(marks[1]!.querySelectorAll('.pn-reminder-stroke')).toHaveLength(2)
+    marks.forEach((mark, i) => {
+      const head = layout.notes[8 + i]!.head
+      const y0 = Number.parseFloat(mark.style.top) + layout.top
+      const x0 = Number.parseFloat(mark.style.left)
+      expect(y0).toBeLessThan(head.y)
+      expect(y0 + Number.parseFloat(mark.getAttribute('height')!)).toBeGreaterThan(head.y + head.h)
+      expect(x0).toBeLessThan(head.x)
+      expect(x0 + Number.parseFloat(mark.getAttribute('width')!)).toBeGreaterThan(head.x + head.w)
+    })
+    expect(marks[1]!.classList.contains('pn-reminder-firm')).toBe(true)
 
     // Same marks again do not rebuild.
     const first = marks[0]!

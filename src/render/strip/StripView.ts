@@ -244,7 +244,7 @@ export class StripView {
   private readonly stickyInner: HTMLDivElement
   private readonly stickyStaff: HTMLDivElement
   private readonly loopEl: HTMLDivElement
-  /** Quiet pencil reminders (`setReminders`): layout px inside the content, below corrections. */
+  /** Quiet reminders (`setReminders`): layout px inside the content, under the engraving. */
   private readonly reminderLayer: HTMLDivElement
   /** Teacher's corrections (`setCorrections`): layout px inside the content, above the notation. */
   private readonly corrLayer: HTMLDivElement
@@ -504,8 +504,8 @@ export class StripView {
 
     this.content.append(
       this.loopEl,
-      this.segLayer,
       this.reminderLayer,
+      this.segLayer,
       this.corrLayer,
       this.startHandle,
       this.endHandle,
@@ -687,9 +687,9 @@ export class StripView {
   }
 
   /**
-   * Quiet pencil reminders at recent trouble spots: small ticks in the margin band beyond the
-   * staves, on a layer below corrections that scrolls and zooms with the notation. Built once in
-   * the next frame; `[]` clears them. The same marks again are a no-op. Never takes pointer events.
+   * Quiet reminders at recent trouble spots: a highlighter swipe behind each place's noteheads, on
+   * a layer under the engraving that scrolls and zooms with the notation. Built once in the next
+   * frame; `[]` clears them. The same marks again are a no-op. Never takes pointer events.
    */
   setReminders(marks: readonly ReminderMark[]): void {
     const key = remindersKey(marks)

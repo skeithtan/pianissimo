@@ -1,12 +1,12 @@
 /**
- * Quiet pencil reminders at past mistakes (U167): off by default, enabled from Settings →
+ * Quiet highlighter reminders at past mistakes (U167): off by default, enabled from Settings →
  * Hints, hidden while the red-pen review shows, handed over on the next pass's first correct note
  * (U101), faint after one mistake and firm after two of the last three, cleared after a clean
  * visit. Fake Web MIDI; the seeded Two Hands piece looped.
  *
  * REMINDER_SHOTS=<directory outside the repository> also saves screenshots of strip (iPad
  * landscape) and page (iPad upright), light and dark, at the playing zoom, mid-pass with one
- * faint and one firm caret visible, on the seeded piece and on a dense passage.
+ * faint and one firm highlight visible, on the seeded piece and on a dense passage.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -91,8 +91,8 @@ async function openLoop(page: Page, settings: Partial<AppSettings> = {}): Promis
   await page.getByRole('button', { name: 'Start', exact: true }).click()
 }
 
-test.describe('pencil reminders at past mistakes', () => {
-  test('off by default; enabling in Settings shows faint and firm carets after review hand-over and clears them on a clean pass', async ({
+test.describe('highlighter reminders at past mistakes', () => {
+  test('off by default; enabling in Settings shows faint and firm highlights after review hand-over and clears them on a clean pass', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1194, height: 834 })
@@ -109,17 +109,17 @@ test.describe('pencil reminders at past mistakes', () => {
     await expect(page.locator('.pn-corr')).toHaveCount(0)
     await expect(page.locator('.pn-reminder')).toHaveCount(0)
 
-    // Turn on "Pencil marks at past mistakes" in Settings → Hints while paused.
+    // Turn on "Highlight past mistakes" in Settings → Hints while paused.
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     await page.getByRole('tab', { name: 'Reading help', exact: true }).click()
-    const toggle = page.getByRole('switch', { name: 'Pencil marks at past mistakes' })
+    const toggle = page.getByRole('switch', { name: 'Highlight past mistakes' })
     await expect(toggle).not.toBeChecked()
     await toggle.click()
     await expect(toggle).toBeChecked()
     await page.keyboard.press('Escape')
 
-    // Resume pass 2 from start: faint caret at D4 now shows (no review active).
+    // Resume pass 2 from start: faint highlight at D4 now shows (no review active).
     await page.getByRole('button', { name: 'Start', exact: true }).click()
     await expect(page.locator('.pn-reminder')).toHaveCount(1)
     await expect(page.locator('.pn-reminder-firm')).toHaveCount(0)
@@ -127,18 +127,18 @@ test.describe('pencil reminders at past mistakes', () => {
     // Pass 2: wrong again at D4 (now firm) and wrong once at F4 (now faint).
     await playGroups(page, TWO_HANDS_GROUPS, { 1: [61], 3: [66] }, [1])
     await expect(page.getByTestId('attempt-result')).toContainText('2 wrong notes')
-    // During the review: red marks show, carets are hidden.
+    // During the review: red marks show, highlights are hidden.
     await expect(page.locator('.pn-corr')).not.toHaveCount(0)
     await expect(page.locator('.pn-reminder')).toHaveCount(0)
 
-    // Next pass's first correct note ends the review: red marks go, 1 firm + 1 faint caret appear.
+    // Next pass's first correct note ends the review: red marks go, 1 firm + 1 faint highlight appear.
     await nextPass(page)
     await playWhenDue(page, ...TWO_HANDS_GROUPS[0]!)
     await expect(page.locator('.pn-corr')).toHaveCount(0)
     await expect(page.locator('.pn-reminder')).toHaveCount(2)
     await expect(page.locator('.pn-reminder-firm')).toHaveCount(1)
 
-    // Finish pass 3 cleanly: after the review ends, both carets are gone.
+    // Finish pass 3 cleanly: after the review ends, both highlights are gone.
     for (let i = 1; i < TWO_HANDS_GROUPS.length; i++) {
       await playWhenDue(page, ...TWO_HANDS_GROUPS[i]!)
     }
@@ -217,7 +217,7 @@ test.describe('reminder screenshots', () => {
       await nextPass(page)
       await playGroups(page, TWO_HANDS_GROUPS, { 1: [61], 3: [66] }, [1])
       await nextPass(page)
-      // Mid-pass: first note ends review → 1 firm (D4) and 1 faint (F4) caret visible.
+      // Mid-pass: first note ends review → 1 firm (D4) and 1 faint (F4) highlight visible.
       await playWhenDue(page, ...TWO_HANDS_GROUPS[0]!)
       await expect(page.locator('.pn-corr')).toHaveCount(0)
       await expect(page.locator('.pn-reminder')).toHaveCount(2)

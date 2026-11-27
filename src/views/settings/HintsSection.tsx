@@ -201,8 +201,8 @@ export function HintsSection() {
           onChange={(damageFlash) => updateSettings({ hints: { damageFlash } })}
         />
         <Toggle
-          label={msg('Pencil marks at past mistakes')}
-          description={msg('Small marks above the staff where you went wrong recently. They never name a note.')}
+          label={msg('Highlight past mistakes')}
+          description={msg('Highlight the notes where you went wrong recently, without naming them.')}
           checked={hints.reminders}
           onChange={(reminders) => updateSettings({ hints: { reminders } })}
         />

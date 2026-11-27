@@ -75,6 +75,8 @@
   --score-cursor: color-mix(in srgb, var(--accent) 20%, transparent);
   --score-timing-rushing: #53749b;
   --score-timing-dragging: #a36643;
+  --score-reminder: #ffd6e5;
+  --score-reminder-firm: #ffb0cd;
 
   --warning: #9a5b00;
   --warning-bg: #fff0d1;
@@ -168,6 +170,8 @@
     --score-cursor: color-mix(in srgb, var(--accent) 20%, transparent);
     --score-timing-rushing: #a0c0de;
     --score-timing-dragging: #edae8b;
+    --score-reminder: #603447;
+    --score-reminder-firm: #94466a;
     --bg: #0e1110;
     --bg-elevated: #1a1f1b;
     --bg-sunken: #232a24;
@@ -232,6 +236,8 @@
   --score-cursor: color-mix(in srgb, var(--accent) 20%, transparent);
   --score-timing-rushing: #a0c0de;
   --score-timing-dragging: #edae8b;
+  --score-reminder: #603447;
+  --score-reminder-firm: #94466a;
   --bg: #0e1110;
   --bg-elevated: #1a1f1b;
   --bg-sunken: #232a24;
@@ -388,6 +394,8 @@ a {
   --score-cursor: color-mix(in srgb, #59643b 20%, transparent);
   --score-timing-rushing: #53749b;
   --score-timing-dragging: #a36643;
+  --score-reminder: #ffd6e5;
+  --score-reminder-firm: #ffb0cd;
 }
 
 /* Pinned light paper also needs the existing light semantic inks. Scope them to the score so

@@ -1779,16 +1779,15 @@ describe('StripView teacher corrections', () => {
 })
 
 describe('reminders (setReminders)', () => {
-  it('mounts the reminders layer below the corrections layer with aria-hidden', () => {
+  it('mounts the reminders layer under the engraving, above the loop band, with aria-hidden', () => {
     view(40)
     const content = host.querySelector('.pn-content')!
-    const rem = content.querySelector('.pn-reminders')
-    const corr = content.querySelector('.pn-corrs')
-    expect(rem).not.toBeNull()
-    expect(corr).not.toBeNull()
-    expect(rem!.getAttribute('aria-hidden')).toBe('true')
+    const rem = content.querySelector('.pn-reminders')!
+    expect(rem.getAttribute('aria-hidden')).toBe('true')
     const children = [...content.children]
-    expect(children.indexOf(rem!)).toBeLessThan(children.indexOf(corr!))
+    const at = (sel: string) => children.indexOf(content.querySelector(sel)!)
+    expect(at('.pn-loop')).toBeLessThan(at('.pn-reminders'))
+    expect(at('.pn-reminders')).toBeLessThan(at('.pn-segs'))
   })
 
   it('draws reminders on the next frame, skips identical sets, and clears on []', () => {
@@ -1803,9 +1802,7 @@ describe('reminders (setReminders)', () => {
     const marks = [...host.querySelectorAll('.pn-reminders > .pn-reminder')]
     expect(marks).toHaveLength(2)
     expect(marks[0]!.classList.contains('pn-reminder-faint')).toBe(true)
-    expect(marks[0]!.querySelectorAll('.pn-reminder-stroke')).toHaveLength(1)
     expect(marks[1]!.classList.contains('pn-reminder-firm')).toBe(true)
-    expect(marks[1]!.querySelectorAll('.pn-reminder-stroke')).toHaveLength(2)
 
     // Identical set again is a no-op (same DOM nodes, no leaving marks).
     const firstNode = marks[0]!
@@ -1833,7 +1830,7 @@ describe('reminders (setReminders)', () => {
     const v1 = new StripView(host, layout1, {})
     v1.setReminders([{ notes: [0], level: 'faint' }])
     v1.flushNow()
-    const left1 = Number.parseFloat(host.querySelector<SVGElement>('.pn-reminder')!.style.left)
+    const left1 = Number.parseFloat(host.querySelector<HTMLElement>('.pn-reminder')!.style.left)
     v1.destroy()
 
     host.innerHTML = ''
@@ -1843,7 +1840,7 @@ describe('reminders (setReminders)', () => {
     const v2 = new StripView(host, layout2, {})
     v2.setReminders([{ notes: [0], level: 'faint' }])
     v2.flushNow()
-    const left2 = Number.parseFloat(host.querySelector<SVGElement>('.pn-reminder')!.style.left)
+    const left2 = Number.parseFloat(host.querySelector<HTMLElement>('.pn-reminder')!.style.left)
     expect(left2 - left1).toBeCloseTo(40)
     v2.destroy()
   })

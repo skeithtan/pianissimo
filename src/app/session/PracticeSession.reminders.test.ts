@@ -1,5 +1,5 @@
 /**
- * Quiet pencil reminders in PracticeSession (U167): off by default, never shown during a
+ * Quiet highlighter reminders in PracticeSession (U167): off by default, never shown during a
  * review, handed over as the review ends (first correct note, Keep time count-in, dismiss),
  * levels (`faint` vs `firm`), removed after a clean visit, capped at 24 (`firm` first then score
  * order), never shown in Follow or Listen, never computed inside a MIDI key event, and
@@ -55,7 +55,7 @@ function playPass(h: Harness, wrong: Partial<Record<number, number[]>> = {}): vo
 
 const withReminders = () => testSettings({ hints: { ...DEFAULT_SETTINGS.hints, reminders: true } })
 
-describe('PracticeSession pencil reminders', () => {
+describe('PracticeSession highlighter reminders', () => {
   it('stays off by default even after mistakes and review hand-over', async () => {
     const h = harness(score, { range: loop })
     await h.session.start()
@@ -68,7 +68,7 @@ describe('PracticeSession pencil reminders', () => {
     expect(h.strip.reminders).toEqual([])
   })
 
-  it('hides during the review and hands over to faint and firm carets on the first correct note or dismiss', async () => {
+  it('hides during the review and hands over to faint and firm highlights on the first correct note or dismiss', async () => {
     const h = harness(score, { range: loop }, { settings: withReminders() })
     await h.session.start()
 
@@ -78,12 +78,12 @@ describe('PracticeSession pencil reminders', () => {
     expect(h.strip.corrections.length).toBeGreaterThan(0)
     expect(h.strip.reminders).toEqual([])
 
-    // Ready for pass 2: review still shows, carets still hidden.
+    // Ready for pass 2: review still shows, highlights still hidden.
     ready(h)
     expect(h.session.ui.get().reviewing).toBe(true)
     expect(h.strip.reminders).toEqual([])
 
-    // First correct note of pass 2 ends the review: red marks go and faint carets appear.
+    // First correct note of pass 2 ends the review: red marks go and faint highlights appear.
     const callsBeforeMidi = h.strip.reminderCalls
     h.midi.on(PITCHES[0]!, h.clock.now)
     h.midi.off(PITCHES[0]!, h.clock.now + 20)
@@ -96,7 +96,7 @@ describe('PracticeSession pencil reminders', () => {
       { notes: [5], level: 'faint' },
     ])
 
-    // Mid-pass: playing later notes does not recompute or move the carets.
+    // Mid-pass: playing later notes does not recompute or move the highlights.
     const callsMidPass = h.strip.reminderCalls
     h.step(CHORD_SLIP_MS)
     h.play(PITCHES[1]!)
@@ -123,7 +123,7 @@ describe('PracticeSession pencil reminders', () => {
     h.play(PITCHES[7]!)
     h.step(200)
 
-    // Review shows again → carets cleared.
+    // Review shows again → highlights cleared.
     expect(h.session.ui.get().reviewing).toBe(true)
     expect(h.strip.reminders).toEqual([])
 
@@ -165,7 +165,7 @@ describe('PracticeSession pencil reminders', () => {
     expect(h.strip.corrections.length).toBeGreaterThan(0)
     expect(h.strip.reminders).toEqual([])
 
-    // Repeat starts next count-in; red marks stay until downbeat, so carets wait until downbeat.
+    // Repeat starts next count-in; red marks stay until downbeat, so highlights wait until downbeat.
     while (h.session.ui.get().countIn === null) h.step(50)
     expect(h.strip.reminders).toEqual([])
     while (h.session.ui.get().countIn !== null) h.step(50)

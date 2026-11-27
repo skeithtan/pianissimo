@@ -227,7 +227,7 @@ describe('normalizeSettings', () => {
     })
   })
 
-  describe('pencil reminders', () => {
+  describe('highlighter reminders', () => {
     it('defaults to off, also for settings stored before the field existed', () => {
       expect(DEFAULT_SETTINGS.hints.reminders).toBe(false)
       expect(normalizeSettings({}).hints.reminders).toBe(false)
