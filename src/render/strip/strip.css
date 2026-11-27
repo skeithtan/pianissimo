@@ -824,7 +824,7 @@
   position: absolute;
   top: 0;
   height: 100%;
-  border-radius: calc(26px * var(--pn-inv-zoom));
+  border-radius: calc(8px * var(--pn-inv-zoom));
   background: var(--pn-loop);
   pointer-events: none;
   opacity: 0;
