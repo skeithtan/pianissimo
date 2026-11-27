@@ -10,7 +10,14 @@ describe('mergeSettings', () => {
     const next = mergeSettings(base, { naming: { showOctave: false }, hints: { fadeMs: 150 } })
     expect(next.naming.showOctave).toBe(false)
     expect(next.naming.system).toBe('letter') // sibling kept
-    expect(next.hints).toEqual({ autoThreshold: 1, lifetime: 30, fadeMs: 150, damageFlash: true, showTimingCues: true })
+    expect(next.hints).toEqual({
+      autoThreshold: 1,
+      lifetime: 30,
+      fadeMs: 150,
+      damageFlash: true,
+      showTimingCues: true,
+      reminders: false,
+    })
     expect(JSON.stringify(base)).toBe(frozen)
   })
 

@@ -28,6 +28,16 @@
   line-height: var(--leading-tight);
 }
 
+.patterns {
+  margin: 0;
+  color: var(--fg);
+}
+
+.fixed {
+  margin: 0;
+  color: var(--fg);
+}
+
 .clean {
   margin: 0;
   color: var(--success);
@@ -125,9 +135,33 @@
 }
 .reason[data-level='repeated'],
 .reason[data-level='habit'],
-.reason[data-level='trouble'] {
+.reason[data-level='trouble'],
+.reason[data-level='hesitation'] {
   color: var(--danger);
   font-weight: 600;
+}
+
+.historyDots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-inline-start: auto;
+}
+
+.dotWrong,
+.dotClean {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.dotWrong {
+  background: var(--danger);
+}
+
+.dotClean {
+  border: 1.5px solid var(--fg-muted);
 }
 
 /* The bar at its own size when it fits the card, scaled down to the card's width when not; never
@@ -197,16 +231,25 @@
   line-height: var(--leading-normal, 1.4);
 }
 
-/* Mistake playback (U100): two small labeled buttons under the words. */
+/* Mistake playback (U100): two small labeled buttons under the words, plus Drill this spot. */
 .listen {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
 }
+.excerptActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
 .listenButtons {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+.drillButton {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 .listenButton {
   display: inline-flex;

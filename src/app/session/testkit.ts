@@ -14,6 +14,7 @@ import { ManualClock, RecordingBackend } from '../../core/playback/testkit'
 import { PracticeSession, type SessionOptions } from './PracticeSession'
 import type { Selection } from './selection'
 import type { CorrectionMark } from './corrections'
+import type { ReminderMark } from '../../render/strip/StripView'
 import type {
   FlashSink,
   FrameApi,
@@ -174,6 +175,12 @@ export class FakeStrip implements StripSink {
   setCorrections(marks: readonly CorrectionMark[]): void {
     this.corrections = marks
     this.correctionCalls++
+  }
+  reminders: readonly ReminderMark[] = []
+  reminderCalls = 0
+  setReminders(marks: readonly ReminderMark[]): void {
+    this.reminders = marks
+    this.reminderCalls++
   }
   /** Every `setReview` call (U97), in order. */
   reviews: boolean[] = []

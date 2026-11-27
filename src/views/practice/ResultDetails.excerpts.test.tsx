@@ -85,7 +85,14 @@ function render(groups: GroupOutcome[], toleranceMs = 150) {
     targetReached: false,
     timing: { groups: groups.length, onTime: groups.length - 1, early: 0, late: 1, missed: 0 },
   }
-  const details: Details = { attemptId: record.id, records: [record], timeline, marks: new Map() }
+  const details: Details = {
+    attemptId: record.id,
+    records: [record],
+    timeline,
+    marks: new Map(),
+    spots: new Map(),
+    fixed: [],
+  }
   const snippet = new Store<SnippetState | null>(null)
   const session = {
     resultDetails: () => details,
@@ -93,6 +100,8 @@ function render(groups: GroupOutcome[], toleranceMs = 150) {
     snippetBlocked: vi.fn(() => null),
     playSnippet: vi.fn(async () => null),
     stopSnippet: vi.fn(),
+    canDrill: vi.fn(() => false),
+    drillSpot: vi.fn(() => false),
   }
   const props = {
     session,

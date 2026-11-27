@@ -50,6 +50,7 @@ import {
   DEFAULT_WRONG_FEEDBACK_MS,
   PlayFollower,
   PracticeEngine,
+  buildTimeline,
   comparisonContextOf,
   fadeOutOpacity,
   groupAtOrAfter,
@@ -62,14 +63,22 @@ import {
   type TransportKind,
 } from '../../core/engine'
 import { groupReached } from '../../core/audio/groups'
-import { timingAccuracy } from '../../core/history'
+import { SpotMemory, timingAccuracy, type SpotVisit } from '../../core/history'
 import { HintPedalTrigger } from '../../core/midi/hintPedal'
 import { NATURAL, labelFor, labelForMidi } from '../../core/naming'
 import type { MidiRouteEvent } from '../../core/midi/adapter'
 import { CC_ALL_NOTES_OFF, type MidiInputEvent } from '../../core/midi/types'
-import { onsetPositions, passageFromBounds, passageKey, samePassage } from '../../core/model/passage'
+import {
+  onsetPositions,
+  passageBounds,
+  passageFromBounds,
+  passageKey,
+  samePassage,
+  type PassageBounds,
+} from '../../core/model/passage'
 import {
   contextKey,
+  handAssignmentId,
   type AttemptRecord,
   type InterruptReason,
   type PassageRange,
@@ -77,7 +86,7 @@ import {
 } from '../../core/model/practice'
 import type { LearnerHands, ScoreModel } from '../../core/model/score'
 import type { LadderSettings } from '../../core/storage/records'
-import { type Rational, ZERO, add, eq, key as ratKey, lt, toNumber } from '../../core/music/rational'
+import { type Rational, ZERO, add, eq, ge, key as ratKey, lt, toNumber } from '../../core/music/rational'
 import { hasTempo, secondsBetween, type TempoMapData } from '../../core/music/tempo'
 import {
   buildClickTrack,
@@ -108,12 +117,23 @@ import {
   playbackDestination,
   type PlaybackKind,
 } from './output'
-import { clampPassage, sameSelection, selectionTimeline, startPlan, type Selection, type StartPlan } from './selection'
+import { drillRange } from './drill'
+import {
+  clampPassage,
+  rangeText,
+  sameSelection,
+  selectionTimeline,
+  startPlan,
+  type Selection,
+  type StartPlan,
+} from './selection'
 import { buildGuideKeys, sameGuideKeys } from './guide'
 import { correctionMarks, correctionMarksByGroup, type CorrectionMark } from './corrections'
+import type { ReminderMark } from '../../render/strip/StripView'
 import { REPEATED_MISTAKE_HISTORY, repeatedMistakes } from './mistakes'
+import { pausedGroups } from './pauses'
 import { roughPassage } from './rough'
-import { addTraversal, runRecord, type PassRecord, type ReadingRun } from './run'
+import { addTraversal, runRecord, type PassRecord, type ReadingRun, type RunRecord } from './run'
 import {
   PassCapture,
   SNIPPET_PEDALS,
@@ -145,6 +165,7 @@ import type {
   GuideState,
   Interruption,
   LadderUi,
+  PiecePatch,
   MicEstimate,
   MicFollowerLike,
   MidiBackendLike,
@@ -157,6 +178,11 @@ import type {
   StageCue,
   StripSink,
 } from './types'
+
+/** Maximum number of quiet pencil reminder carets shown on one passage (`firm` first). */
+const MAX_REMINDERS = 24
+/** Stored records folded into the mistake memory per timer turn (a whole-piece record is long). */
+const SEED_FOLDS_PER_TURN = 8
 
 export interface SessionOptions {
   readonly pieceId: string
@@ -285,6 +311,16 @@ export const KEEP_TIME_GRACE_MS = 100
 /** Presses kept from the count-in's last stretch: a chord on the downbeat and a slip or two. */
 const COUNT_IN_PRESSES = 16
 const RESUME_SAVE_MS = 5000
+const DRILL_REPEAT_TARGET = 3
+
+/** What a spot drill replaced, restored by `endDrill` (U168). */
+interface DrillReturn {
+  readonly loop: PassageRange | null
+  readonly repeat: boolean
+  readonly repeatTarget: number | null
+  readonly ladderSettings: LadderSettings | null
+  ui: { readonly returnText: string }
+}
 /** Estimates below this confidence never move the cursor (about 0.5 on synthetic audio; tune on recordings). */
 const MIC_CONFIDENCE = 0.5
 const MIC_STARTING = 'Starting the microphone…'
@@ -293,6 +329,7 @@ const MIC_FAILED_TEXT = 'The microphone could not be started.'
 
 const ACTIVE: readonly Phase[] = ['preparing', 'ready', 'running']
 const RETRY_CUE: StageCue = { kind: 'retry' }
+const ONCE_MORE_CUE: StageCue = { kind: 'once-more' }
 /** How long `revealAtCursor` names stay when hints are set to last until the correct note (no attempt here). */
 export const REVEAL_FALLBACK_S = 4
 
@@ -310,6 +347,12 @@ const INTERRUPT_TEXT: Readonly<Record<InterruptReason, string>> = {
   'mode-change': 'Practice switched mode.',
   'user-stop': 'Stopped.',
   'user-restart': 'Restarted.',
+}
+
+interface SeedSlice {
+  readonly hands: LearnerHands
+  readonly passage: PassageRange | null
+  readonly records: AttemptRecord[]
 }
 
 export class PracticeSession {
@@ -407,6 +450,8 @@ export class PracticeSession {
   #ladder: LadderUi | null
   /** The speed the ladder set for the next attempt, applied when the Repeat reset comes. */
   #ladderNext: number | null = null
+  /** Active spot drill's return state, or null when not drilling. */
+  #drill: DrillReturn | null = null
   /** A lead-in before the loop (Repeat mode), until the attempt it leads into is replaced. */
   #leadIn: LeadIn | null = null
   /** Passage keys of lead-ins: their reading traversals are not recorded. */
@@ -416,6 +461,8 @@ export class PracticeSession {
   /** Engine group i is transport gate i + this (the lead-in's group count once the attempt took over). */
   #gateOffset = 0
   #streak = 0
+  /** Consecutive passed and fluent (pause-free) attempts for the speed ladder. */
+  #ladderStreak = 0
   #lastResult: AttemptSummary | null = null
   /**
    * The next pass played its first correct note while the last result shows (U101): the bar of
@@ -429,6 +476,27 @@ export class PracticeSession {
   #resultExit: 'played' | 'dismissed' = 'dismissed'
   /** Recent passes of one comparison context, oldest first (repeated mistakes, P24). */
   #recentPasses: PassRecord[] = []
+  /** Mistake memory by place in the score (scored passes), lazily created per hand selection. */
+  readonly #spots = new Map<LearnerHands, SpotMemory>()
+  /** Scored records waiting to be folded into `#spots` outside the MIDI input path. */
+  readonly #spotQueue: { readonly record: AttemptRecord; readonly timeline: Timeline }[] = []
+  /** True after `#foldSpots` added something until `#syncGuard` updates the engine. */
+  #spotsDirty = false
+  /** Monotonic counter bumped whenever `#spots` folds live or seeded visits (drives `#syncReminders`). */
+  #spotsVersion = 0
+  /** Engine timeline object for which `setGuard` was last called (null outside non-strict scored mode). */
+  #guardTimeline: Timeline | null = null
+  /** Last reminder sync key; null forces the next `#syncReminders` to push to the strip. */
+  #remindersState: { readonly show: boolean; readonly timeline: Timeline | null; readonly version: number } | null =
+    null
+  /** Stored-history slices waiting to be folded into `#spots`, one distinct passage per timer turn. */
+  readonly #seedQueue: SeedSlice[] = []
+  /**
+   * Stored records whose timeline is built, folded in time order once every slice is built: the
+   * memory forgets a place after quiet visits, so a newer visit folded first would bring it back.
+   */
+  readonly #seedFolds: { readonly record: AttemptRecord; readonly mem: SpotMemory; readonly timeline: Timeline }[] = []
+  #seedHandle: unknown = null
   /**
    * The completed pass whose repeated mistakes, and outside Repeat its rough bars, the next UI
    * publish works out, and its timeline.
@@ -629,6 +697,7 @@ export class PracticeSession {
     this.#lastVersion = -1
     this.#lockState = ''
     this.#reviewShown = null
+    this.#remindersState = null
     this.#lastPersistent = null
     this.#labelsDirty = true
     strip.setLabels(this.#labels.texts)
@@ -749,6 +818,7 @@ export class PracticeSession {
       }
       this.#lastResult = null
       this.#streak = 0
+      this.#ladderStreak = 0
     } else {
       if (this.#engine.mode !== 'reading') {
         this.#engine.reconfigure(
@@ -864,6 +934,7 @@ export class PracticeSession {
         )
         this.#lastResult = null
         this.#streak = 0
+        this.#ladderStreak = 0
         // A lead-in set up by a seek has no transport until Start: Ready needs the loop's.
         this.#ensureTransport((t) => this.#tryPrepared(t))
         this.#prepareAttempt(now)
@@ -875,6 +946,7 @@ export class PracticeSession {
       // Again / Restart is a new run, at the speed the ladder announced.
       this.#lastResult = null
       this.#streak = 0
+      this.#ladderStreak = 0
       this.#process(now)
       return
     }
@@ -884,6 +956,7 @@ export class PracticeSession {
       // Again / Restart is a new run of passes toward the target.
       this.#lastResult = null
       this.#streak = 0
+      this.#ladderStreak = 0
       this.#ensureTransport((t) => this.#tryPrepared(t))
       this.#prepareAttempt(now)
       this.#process(now)
@@ -1161,6 +1234,7 @@ export class PracticeSession {
       // A new run, as Start of an attempt is.
       this.#lastResult = null
       this.#streak = 0
+      this.#ladderStreak = 0
     }
     this.#readingStarted = true
     const t = this.#accomp
@@ -2520,8 +2594,11 @@ export class PracticeSession {
 
   /** Consecutive clean passes after which Repeat stops restarting (null: no limit). */
   setRepeatTarget(target: number | null): void {
-    if (target === this.#repeatTarget) return
+    const drill = this.#drill
+    if (target === this.#repeatTarget && (drill === null || target === drill.repeatTarget)) return
     this.#repeatTarget = target
+    // A choice made during a drill is the learner's: saved, and kept when the drill ends.
+    if (drill) this.#drill = { ...drill, repeatTarget: target }
     this.#deps.piece.save({ repeatTarget: target }, true)
     this.#publishUi()
   }
@@ -2531,12 +2608,15 @@ export class PracticeSession {
    * can set an opening speed of 75% when the user selects it.
    */
   setLadder(ladder: LadderSettings | null): void {
-    if (sameLadder(ladder, this.#ladderSettings)) return
+    const drill = this.#drill
+    if (sameLadder(ladder, this.#ladderSettings) && (drill === null || sameLadder(ladder, drill.ladderSettings))) return
     const speed = this.#sel.multiplier
     const startAt = ladder?.goal === LADDER_FULL_SPEED_GOAL ? fullSpeedLadderStart(speed) : speed
     this.#ladderSettings = ladder
     this.#ladder = ladder ? startLadder(ladder, startAt) : null
     this.#ladderNext = null
+    // A choice made during a drill is the learner's: saved, and kept when the drill ends.
+    if (drill) this.#drill = { ...drill, ladderSettings: ladder }
     this.#deps.piece.save({ ladder }, true)
     // Both piece updates are coalesced by the saver. The new speed takes the manual tempo-change path.
     if (startAt !== speed) this.#select({ hands: this.#sel.hands, multiplier: startAt }, this.#loop, this.#repeat)
@@ -2544,18 +2624,55 @@ export class PracticeSession {
   }
 
   /**
+   * Fold stored attempts of this piece into the mistake memory (not live: they never arm the
+   * retry hold). On the session's timers: one distinct passage's timeline per turn, then the
+   * records oldest first, a few per turn.
+   */
+  seedSpots(records: readonly AttemptRecord[]): void {
+    if (this.#disposed || records.length === 0) return
+    const scoreVersionId = this.#model.scoreVersionId
+    const handsId = handAssignmentId(this.#model.hands)
+    const eligible = records.filter(
+      (r) =>
+        r.kind === 'scored' &&
+        r.groups !== undefined &&
+        r.context.scoreVersionId === scoreVersionId &&
+        r.context.handsId === handsId &&
+        r.context.hands !== 'none',
+    )
+    if (eligible.length === 0) return
+    eligible.sort((a, b) => a.createdAt - b.createdAt)
+    const byKey = new Map<string, SeedSlice>()
+    for (const record of eligible) {
+      const hands = record.context.hands as LearnerHands
+      const k = `${hands}|${passageKey(record.context.passage)}`
+      let slice = byKey.get(k)
+      if (!slice) {
+        slice = { hands, passage: record.context.passage, records: [] }
+        byKey.set(k, slice)
+        this.#seedQueue.push(slice)
+      }
+      slice.records.push(record)
+    }
+    this.#scheduleSeed()
+  }
+
+  /**
    * What the expanded result card ranks (DECISIONS U99): the last result's record with the
-   * records before it, its timeline and its correction marks per group. Built on demand (the
-   * learner expands the card), never in the MIDI input path; null when there is no result, or its
-   * record is gone.
+   * records before it, its timeline, its correction marks per group and its visit history per
+   * place. Built on demand (the learner expands the card), never in the MIDI input path; null when
+   * there is no result, or its record is gone.
    */
   resultDetails(): ResultDetails | null {
+    this.#foldSpots()
     const result = this.#lastResult
     const latest = this.#resultRecords.at(-1)
     const timeline = this.#resultTimeline
     if (!result || !latest || latest.id !== result.id || !timeline) return null
-    const marks = correctionMarksByGroup(latest, timeline, this.#model, this.#settings.naming)
-    return { attemptId: result.id, records: this.#resultRecords, timeline, marks }
+    const spots = this.#spotsByGroup(timeline, latest)
+    const { byGroup: marks } = this.#marksWithRepeats(latest, timeline, spots)
+    const fixed = this.#fixedBy(latest, timeline, spots)
+    return { attemptId: result.id, records: this.#resultRecords, timeline, marks, spots, fixed }
   }
 
   /**
@@ -2690,6 +2807,65 @@ export class PracticeSession {
     this.#scheduleFrame()
   }
 
+  /** Whether a drill can start for `group` of the shown result's timeline. */
+  canDrill(attemptId: string, group: number): boolean {
+    return this.#drillRangeFor(attemptId, group) !== null
+  }
+
+  /**
+   * Drill the place at `group` of the shown result's timeline (U168): Repeat over a few onsets
+   * around it, 3 clean passes, the ladder suspended, never saved as the piece's loop. False when
+   * there is no such result or place, or no drill range exists there.
+   */
+  drillSpot(attemptId: string, group: number): boolean {
+    const range = this.#drillRangeFor(attemptId, group)
+    if (!range) return false
+    this.#stopSnippet()
+    this.#drill ??= {
+      loop: this.#loop,
+      repeat: this.#repeat,
+      repeatTarget: this.#repeatTarget,
+      ladderSettings: this.#ladderSettings,
+      ui: { returnText: rangeText(this.#model, this.#repeat ? this.#loop : null, this.#sel.hands) },
+    }
+    this.#repeatTarget = DRILL_REPEAT_TARGET
+    this.#ladderSettings = null
+    this.#ladder = null
+    this.#ladderNext = null
+    this.#select({ hands: this.#sel.hands, multiplier: this.#sel.multiplier }, range, true, false, true)
+    this.#publishUi()
+    return true
+  }
+
+  /** Leave the drill and restore the loop, Repeat state, Repeat target and ladder it replaced. No-op when not drilling. */
+  endDrill(): void {
+    const saved = this.#drill
+    if (!saved || this.#disposed) return
+    this.#stopSnippet()
+    this.#forgetDrill(this.#sel.multiplier)
+    this.#select({ hands: this.#sel.hands, multiplier: this.#sel.multiplier }, saved.loop, saved.repeat, false, true)
+    this.#publishUi()
+  }
+
+  /** The drill ends: the Repeat target and ladder it replaced come back (the drill's own were never saved). */
+  #forgetDrill(speed: number): void {
+    const saved = this.#drill
+    if (!saved) return
+    this.#drill = null
+    this.#repeatTarget = saved.repeatTarget
+    this.#ladderSettings = saved.ladderSettings
+    this.#ladder = saved.ladderSettings ? startLadder(saved.ladderSettings, speed) : null
+    this.#ladderNext = null
+  }
+
+  #drillRangeFor(attemptId: string, group: number): PassageRange | null {
+    if (this.#disposed || !this.#inputAvailable || this.#mode === 'listen' || this.#mode === 'follow') return null
+    if (this.#lastResult?.id !== attemptId || !this.#resultTimeline) return null
+    const g = this.#resultTimeline.groups[group]
+    if (!g || g.synthetic) return null
+    return drillRange(this.#model, this.#resultTimeline.hands, g.position)
+  }
+
   // ── Selection ─────────────────────────────────────────────────────────────────────────
 
   /**
@@ -2730,34 +2906,43 @@ export class PracticeSession {
    * in Keep time, and for an attempt that was still waiting at Ready). Paused, interrupted or never
    * started, a loop change only moves the loop, as before.
    */
-  #select(base: Omit<Selection, 'range'>, loop: PassageRange | null, repeat: boolean, ladder = false): void {
+  #select(
+    base: Omit<Selection, 'range'>,
+    loop: PassageRange | null,
+    repeat: boolean,
+    ladder = false,
+    drill = false,
+  ): void {
     // Any selection change cancels a ladder speed waiting for the Repeat reset.
     this.#ladderNext = null
     const next: Selection = { ...base, range: repeat ? loop : null }
     const prev = this.#sel
     const repeatChanged = repeat !== this.#repeat
     const loopChanged = !samePassage(loop, this.#loop)
+    // A loop, Repeat or hand change of the learner's own during a drill forgets the return; speed changes keep it.
+    if (!drill && (base.hands !== prev.hands || loopChanged || repeatChanged)) this.#forgetDrill(base.multiplier)
     if (!loop) this.#repeatAfterFollow = false
     // Repeat opened or closed, or the loop cleared, is saved on the piece (U98).
     const saveRepeat = repeatChanged || (loopChanged && !loop)
-    if (base.hands !== prev.hands || base.multiplier !== prev.multiplier || loopChanged || saveRepeat) {
+    if (!drill && (base.hands !== prev.hands || base.multiplier !== prev.multiplier || loopChanged || saveRepeat)) {
       // The learner's own change comes from a tap or a drag (never the MIDI path) and a reload
       // right after must find it: written at once (the saver coalesces). Only the speed ladder's
-      // step stays debounced: it runs from the MIDI path, which never starts a write.
-      this.#deps.piece.save(
-        {
-          lastHands: base.hands,
-          lastPassage: loop,
-          lastMultiplier: base.multiplier,
-          ...(saveRepeat ? { repeatOpen: repeat } : {}),
-        },
-        !ladder,
-      )
+      // step stays debounced: it runs from the MIDI path, which never starts a write. A drill's
+      // loop is never saved as the piece's loop.
+      const patch: PiecePatch = this.#drill
+        ? { lastHands: base.hands, lastMultiplier: base.multiplier }
+        : {
+            lastHands: base.hands,
+            lastPassage: loop,
+            lastMultiplier: base.multiplier,
+            ...(saveRepeat ? { repeatOpen: repeat } : {}),
+          }
+      this.#deps.piece.save(patch, !ladder)
     }
     this.#loop = loop
     this.#repeat = repeat
     if (!repeat) this.#pendingRepeat = false
-    if (sameSelection(next, prev)) {
+    if (!drill && sameSelection(next, prev)) {
       if (repeatChanged) this.#process(this.#deps.clock())
       return
     }
@@ -2781,7 +2966,7 @@ export class PracticeSession {
         ? 'hand-change'
         : repeatChanged
           ? 'mode-change'
-          : !samePassage(next.range, prev.range)
+          : drill || !samePassage(next.range, prev.range)
             ? 'range-change'
             : 'tempo-change'
     // The loop changed while Repeat played (U94): it plays on over the new loop, from where it
@@ -2884,7 +3069,7 @@ export class PracticeSession {
           ? groupAtOrAfter(this.#timeline, cursorOnset)
           : 0
 
-    if (keepScored && from && plan.action === 'scored' && plan.enabled && this.#mode === 'wait') {
+    if (!drill && keepScored && from && plan.action === 'scored' && plan.enabled && this.#mode === 'wait') {
       // Inside the new loop but not at its start, or before it while a lead-in read toward the
       // loop: a lead-in from there that plays at once, as a seek while Repeat plays (U70). Past the
       // loop, or at its start: the attempt at the loop start below. Keep time has no lead-ins.
@@ -2899,6 +3084,7 @@ export class PracticeSession {
       if (scoredActive && plan.action === 'scored' && plan.enabled) {
         this.#engine.reconfigure({ reason, timeline: attemptTimeline, mode: 'scored', ...this.#scoredKind() }, now)
         this.#streak = 0
+        this.#ladderStreak = 0
         this.#ensureTransport((t) => this.#tryPrepared(t))
         this.#prepareAttempt(now)
       } else {
@@ -2954,6 +3140,7 @@ export class PracticeSession {
       this.#labels.setFadeMs(next.hints.fadeMs)
       this.#engine.updateSettings({ hints: next.hints }, now)
       if (!next.hints.damageFlash) this.#flash?.clear()
+      if (prev.hints.reminders !== next.hints.reminders) this.#scheduleFrame()
     }
     if (prev.labels !== next.labels) {
       this.#engine.updateSettings({ labelSettings: labelSnapshot(next.labels) }, now)
@@ -3089,6 +3276,7 @@ export class PracticeSession {
     }
     this.#drain(now)
     this.#disposed = true
+    this.#drill = null
     this.#browseHold = null
     this.#stopListening()
     this.#disposePlay(false)
@@ -3097,8 +3285,12 @@ export class PracticeSession {
     for (const off of this.#unsubs.splice(0)) off()
     if (this.#frameHandle !== null) this.#deps.frames.cancel(this.#frameHandle)
     if (this.#tickHandle !== null) this.#deps.timers.clearTimeout(this.#tickHandle)
+    if (this.#seedHandle !== null) this.#deps.timers.clearTimeout(this.#seedHandle)
     this.#frameHandle = null
     this.#tickHandle = null
+    this.#seedHandle = null
+    this.#seedQueue.length = 0
+    this.#seedFolds.length = 0
     this.#clearCorrections()
     this.#stopSnippet()
     this.#capture.clear()
@@ -3621,9 +3813,19 @@ export class PracticeSession {
       return
     }
     this.#rememberPass(record)
+    const timeline = [this.#engine.timeline, this.#timeline].find(
+      (t) =>
+        contextKey(
+          comparisonContextOf(t, record.context.transport, record.context.matchingRules, record.context.scorePlayback),
+        ) === record.contextKey,
+    )
+    // Folded into the mistake memory in the next frame, outside the input path.
+    if (timeline) this.#spotQueue.push({ record, timeline })
     if (record.completion !== 'completed') return
     this.#capture.finish(record.id)
+    const fluent = !timeline || pausedGroups(record, timeline).length === 0
     this.#streak = record.passed ? this.#streak + 1 : 0
+    this.#ladderStreak = record.passed && fluent ? this.#ladderStreak + 1 : 0
     this.#ladderNext = null
     let ladder: AttemptSummary['ladder'] | undefined
     if (this.#repeat && this.#ladder) {
@@ -3631,22 +3833,20 @@ export class PracticeSession {
         this.#ladder,
         this.#sel.multiplier,
         record.passed,
-        this.#streak,
+        this.#ladderStreak,
         this.#repeatTarget ?? LADDER_DEFAULT_TARGET,
+        fluent,
       )
       this.#ladder = step.ladder
       this.#ladderNext = step.next ?? null
       ladder = step.note
     }
-    // A climb keeps Repeat going: the target applies again at the new speed.
-    const climbing = ladder?.climbedTo !== undefined
-    const targetReached = !climbing && this.#repeatTarget !== null && this.#streak >= this.#repeatTarget
-    const timeline = [this.#engine.timeline, this.#timeline].find(
-      (t) =>
-        contextKey(
-          comparisonContextOf(t, record.context.transport, record.context.matchingRules, record.context.scorePlayback),
-        ) === record.contextKey,
-    )
+    // A climb or a pause-held pass keeps Repeat going: the target applies again at the speed. While
+    // the ladder climbs it decides, from fluent passes only (P40).
+    const climbing = ladder?.climbedTo !== undefined || ladder?.held === true
+    const ladderActive = this.#repeat && this.#ladder !== null && !this.#ladder.done
+    const targetReached =
+      !climbing && !ladderActive && this.#repeatTarget !== null && this.#streak >= this.#repeatTarget
     const summary: AttemptSummary = {
       id: record.id,
       passed: record.passed,
@@ -3687,14 +3887,153 @@ export class PracticeSession {
     if (recent.length > REPEATED_MISTAKE_HISTORY) recent.shift()
   }
 
+  #spotsFor(hands: LearnerHands): SpotMemory {
+    let mem = this.#spots.get(hands)
+    if (!mem) {
+      mem = new SpotMemory({
+        scoreVersionId: this.#model.scoreVersionId,
+        handsId: handAssignmentId(this.#model.hands),
+        hands,
+      })
+      this.#spots.set(hands, mem)
+    }
+    return mem
+  }
+
+  /**
+   * Visit history per group of `timeline` up to and including `record` (P38): from the mistake
+   * memory for a scored pass; a Wait run, never in the memory, from the runs before it.
+   */
+  #spotsByGroup(timeline: Timeline, record: PassRecord): ReadonlyMap<number, readonly SpotVisit[]> {
+    if (record.kind === 'run') return runVisits(this.#resultRecords, record)
+    const out = new Map<number, readonly SpotVisit[]>()
+    if (record.kind !== 'scored') return out
+    const mem = this.#spots.get(timeline.hands)
+    if (!mem) return out
+    for (let i = 0; i < timeline.groups.length; i++) {
+      const group = timeline.groups[i]!
+      if (group.synthetic) continue
+      const visits = mem.history(group.position)
+      if (visits.length === 0) continue
+      const idx = visits.findIndex((v) => v.attemptId === record.id)
+      const cut = idx >= 0 ? visits.slice(0, idx + 1) : visits.filter((v) => v.at <= record.createdAt)
+      if (cut.length > 0) out.set(i, cut)
+    }
+    return out
+  }
+
+  /** Groups `record` played clean whose visit before it was not ("Fixed this pass"). */
+  #fixedBy(record: PassRecord, timeline: Timeline, spots: ReadonlyMap<number, readonly SpotVisit[]>): number[] {
+    if (record.kind === 'scored') return this.#spots.get(timeline.hands)?.fixedBy(record, timeline) ?? []
+    const out: number[] = []
+    for (const [group, visits] of spots) {
+      const last = visits.at(-1)
+      const before = visits.at(-2)
+      if (last?.attemptId === record.id && last.clean && before && !before.clean) out.push(group)
+    }
+    return out.sort((a, b) => a - b)
+  }
+
+  #foldSpots(): boolean {
+    if (this.#spotQueue.length === 0) return false
+    let folded = false
+    for (const { record, timeline } of this.#spotQueue.splice(0)) {
+      if (record.context.hands === 'none') continue
+      if (this.#spotsFor(record.context.hands).fold(record, timeline, true)) folded = true
+    }
+    if (folded) {
+      this.#spotsDirty = true
+      this.#spotsVersion++
+    }
+    return folded
+  }
+
+  /** The engine guards the wrong keys of each place's latest live visit (P38), in waiting practice only. */
+  #syncGuard(): void {
+    if (this.#engine.mode !== 'scored' || this.#engine.transport === 'strict') {
+      this.#guardTimeline = null
+      return
+    }
+    const tl = this.#engine.timeline
+    if (!this.#spotsDirty && tl === this.#guardTimeline) return
+    this.#spotsDirty = false
+    this.#guardTimeline = tl
+    const mem = this.#spots.get(tl.hands)
+    this.#engine.setGuard(mem ? mem.guardFor(tl) : null, tl)
+  }
+
+  #scheduleSeed(): void {
+    if (this.#disposed || this.#seedHandle !== null) return
+    if (this.#seedQueue.length === 0 && this.#seedFolds.length === 0) return
+    this.#seedHandle = this.#deps.timers.setTimeout(() => {
+      this.#seedHandle = null
+      if (this.#disposed) return
+      const slice = this.#seedQueue.shift()
+      if (slice) {
+        let timeline: Timeline | null = null
+        try {
+          timeline = buildTimeline(this.#model, { hands: slice.hands, range: slice.passage, multiplier: 1 })
+        } catch {
+          timeline = null
+        }
+        if (timeline) {
+          const mem = this.#spotsFor(slice.hands)
+          for (const record of slice.records) this.#seedFolds.push({ record, mem, timeline })
+        }
+        // Every slice built: the folds go oldest first, across passages.
+        if (this.#seedQueue.length === 0) this.#seedFolds.sort((a, b) => b.record.createdAt - a.record.createdAt)
+      } else {
+        let folded = false
+        for (let i = 0; i < SEED_FOLDS_PER_TURN && this.#seedFolds.length > 0; i++) {
+          const { record, mem, timeline } = this.#seedFolds.pop()!
+          if (mem.fold(record, timeline, false)) folded = true
+        }
+        if (folded) {
+          this.#spotsVersion++
+          if (this.#settings.hints.reminders) this.#scheduleFrame()
+        }
+      }
+      this.#scheduleSeed()
+    }, 0)
+  }
+
+  #marksWithRepeats(
+    record: PassRecord,
+    timeline: Timeline,
+    spots: ReadonlyMap<number, readonly SpotVisit[]>,
+  ): { readonly byGroup: Map<number, CorrectionMark>; readonly anyRepeat: boolean } {
+    const byGroup = correctionMarksByGroup(record, timeline, this.#model, this.#settings.naming)
+    let anyRepeat = false
+    for (const g of record.groups ?? []) {
+      const mark = byGroup.get(g.group)
+      if (!mark) continue
+      const repeat = markRepeat(mark, g.wrongPitches, spots.get(g.group))
+      if (repeat !== undefined) {
+        byGroup.set(g.group, { ...mark, repeat })
+        anyRepeat = true
+      }
+    }
+    return { byGroup, anyRepeat }
+  }
+
   /** The result card's summary, with its repeated mistakes and rough bars once they are worked out. */
   #resultForUi(): AttemptSummary | null {
+    this.#foldSpots()
     const pending = this.#resultPending
     const result = this.#lastResult
     const record = this.#resultRecords.at(-1)
     if (pending && result?.id === pending.id && record) {
       this.#resultPending = null
-      const found = repeatedMistakes(this.#resultRecords, pending.timeline, this.#model)
+      const spots = this.#spotsByGroup(pending.timeline, record)
+      const found = repeatedMistakes(record, pending.timeline, this.#model, spots)
+      if (this.#corrections.length > 0) {
+        // Recurring wrong keys are redrawn as a double ring with a count.
+        const { byGroup, anyRepeat } = this.#marksWithRepeats(record, pending.timeline, spots)
+        if (anyRepeat) {
+          this.#corrections = [...byGroup.values()]
+          if (this.#correctionsVisible) this.#strip?.setCorrections?.(this.#corrections)
+        }
+      }
       const rough = pending.repeat
         ? null
         : roughPassage(
@@ -4250,6 +4589,8 @@ export class PracticeSession {
    */
   #frame(now: number, force: boolean): void {
     if (this.#disposed) return
+    this.#foldSpots()
+    this.#syncGuard()
     if (this.#play) {
       this.#framePlay(now, force, this.#play)
       return
@@ -4292,7 +4633,7 @@ export class PracticeSession {
       visible: showing,
       reason: s.lastWrongReason === 'early' ? 'early' : 'wrong',
       pulse: this.#pulse,
-      cue: showing ? (s.retryGroup ? RETRY_CUE : (this.#cue?.cue ?? null)) : null,
+      cue: showing ? (s.onceMore ? ONCE_MORE_CUE : s.retryGroup ? RETRY_CUE : (this.#cue?.cue ?? null)) : null,
     })
 
     const labelsChanging = this.#frameLabels(now, strip, s)
@@ -4464,22 +4805,25 @@ export class PracticeSession {
     this.#tickHandle = null
     this.#tickAt = at
     if (at === Infinity) return
-    this.#tickHandle = this.#deps.timers.setTimeout(
-      () => {
-        this.#tickHandle = null
-        this.#tickAt = Infinity
-        const t = Math.max(this.#deps.clock(), at)
-        this.#checkKeepTimeActivity(t)
-        this.#engine.tick(t)
-        if (this.#play) {
-          this.#play.follower.tick(t)
-          this.#processPlay()
-        }
-        this.#tryPrepared(t)
-        this.#process(t)
-      },
-      Math.max(0, at - now),
-    )
+    const run = (deferred: boolean) => {
+      // A timer firing late may run before a key press queued meanwhile: let the press go first, once.
+      if (!deferred && this.#deps.clock() - at > 8) {
+        this.#tickHandle = this.#deps.timers.setTimeout(() => run(true), 0)
+        return
+      }
+      this.#tickHandle = null
+      this.#tickAt = Infinity
+      const t = Math.max(this.#deps.clock(), at)
+      this.#checkKeepTimeActivity(t)
+      this.#engine.tick(t)
+      if (this.#play) {
+        this.#play.follower.tick(t)
+        this.#processPlay()
+      }
+      this.#tryPrepared(t)
+      this.#process(t)
+    }
+    this.#tickHandle = this.#deps.timers.setTimeout(() => run(false), Math.max(0, at - now))
   }
 
   // ── Derived state ─────────────────────────────────────────────────────────────────────
@@ -4647,6 +4991,7 @@ export class PracticeSession {
       leadIn: false,
       repeatTarget: this.#repeatTarget,
       ladder: this.#ladder,
+      drill: null,
       lastResult: null,
       resultDimmed: false,
       resultExit: this.#resultExit,
@@ -4714,6 +5059,7 @@ export class PracticeSession {
       leadIn,
       repeatTarget: this.#repeatTarget,
       ladder: this.#ladder,
+      drill: this.#drill?.ui ?? null,
       lastResult: this.#resultForUi(),
       resultDimmed: this.#lastResult !== null && this.#resultPlayedIn !== null,
       resultExit: this.#resultExit,
@@ -4734,6 +5080,11 @@ export class PracticeSession {
 
   /** Recompute the current controls without changing the musical session. */
   refreshLanguage(): void {
+    if (this.#drill) {
+      this.#drill.ui = {
+        returnText: rangeText(this.#model, this.#drill.repeat ? this.#drill.loop : null, this.#sel.hands),
+      }
+    }
     this.#publishUi()
   }
 
@@ -4865,11 +5216,74 @@ export class PracticeSession {
     )
   }
 
+  /**
+   * Quiet pencil reminders at recent mistake spots (U167, off by default): nothing unless the
+   * setting is on, the engine is scored on its own timeline (not Follow, not Listen) and the
+   * review is not showing. Recomputed only on fold, timeline, review, setting or mode changes;
+   * never per key.
+   */
+  #syncReminders(): void {
+    const strip = this.#strip
+    if (!strip?.setReminders) return
+    const reviewShowing = this.#reviewing() || (this.#correctionsVisible && this.#corrections.length > 0)
+    const show =
+      this.#settings.hints.reminders &&
+      this.#engine.mode === 'scored' &&
+      this.#play === null &&
+      this.#listen === null &&
+      !reviewShowing
+    if (!show) {
+      if (this.#remindersState !== null && !this.#remindersState.show) return
+      this.#remindersState = { show: false, timeline: null, version: this.#spotsVersion }
+      strip.setReminders([])
+      return
+    }
+    const tl = this.#engine.timeline
+    if (
+      this.#remindersState !== null &&
+      this.#remindersState.show &&
+      this.#remindersState.timeline === tl &&
+      this.#remindersState.version === this.#spotsVersion
+    ) {
+      return
+    }
+    this.#remindersState = { show: true, timeline: tl, version: this.#spotsVersion }
+    strip.setReminders(this.#reminderMarks(tl))
+  }
+
+  /** At most 24 reminder carets from `SpotMemory.hotSpots`, `firm` first then score order. */
+  #reminderMarks(tl: Timeline): ReminderMark[] {
+    const mem = this.#spots.get(tl.hands)
+    if (!mem) return []
+    const hot = mem.hotSpots(tl)
+    if (hot.length === 0) return []
+    let bounds: PassageBounds | null = null
+    try {
+      bounds = passageBounds(this.#model, tl.range)
+    } catch {
+      bounds = null
+    }
+    const items: { readonly group: number; readonly level: 'faint' | 'firm'; readonly notes: readonly number[] }[] = []
+    for (const spot of hot) {
+      const group = tl.groups[spot.group]
+      if (!group) continue
+      const notes = group.notes.filter((n) => {
+        const note = this.#model.notes[n]
+        return note !== undefined && (!bounds || (ge(note.onset, bounds.start) && lt(note.onset, bounds.end)))
+      })
+      if (notes.length === 0) continue
+      items.push({ group: spot.group, level: spot.level, notes })
+    }
+    items.sort((a, b) => (a.level === 'firm' ? 0 : 1) - (b.level === 'firm' ? 0 : 1) || a.group - b.group)
+    return items.slice(0, MAX_REMINDERS).map(({ notes, level }) => ({ notes, level }))
+  }
+
   /** Loop handles, drag inspection and the cursor's repeat button by state. */
   #syncLock(): void {
     const strip = this.#strip
     if (!strip) return
     this.#syncReview()
+    this.#syncReminders()
     // A lead-in that read to its end still plays on to the wrap: as running.
     const running = this.#engine.state.phase === 'running' || this.#leadInTail()
     // Loop handles only in Repeat mode (U10), never while an attempt (or a lead-in into it) runs
@@ -4925,6 +5339,58 @@ export class PracticeSession {
     const m = settings.pedal.hintPedal
     return m ? new HintPedalTrigger(m) : null
   }
+}
+
+const REPEAT_MARK_KINDS: ReadonlySet<CorrectionMark['kind']> = new Set(['wrong', 'accidental', 'octave'])
+
+/** Longest passes-running count (>= 2) among this pass's wrong keys at the mark's group. */
+function markRepeat(
+  mark: CorrectionMark,
+  wrongPitches: readonly number[] | undefined,
+  visits: readonly SpotVisit[] | undefined,
+): number | undefined {
+  if (!REPEAT_MARK_KINDS.has(mark.kind) || !wrongPitches?.length || !visits?.length) return undefined
+  let best = 0
+  for (const pitch of wrongPitches) {
+    let count = 0
+    for (let i = visits.length - 1; i >= 0; i--) {
+      if (!visits[i]!.wrong.includes(pitch)) break
+      count++
+    }
+    if (count > best) best = count
+  }
+  return best >= 2 ? best : undefined
+}
+
+/**
+ * A Wait run's visits per group, from the runs of its comparison context in `records` up to and
+ * including `latest` (oldest first). A run that did not play a group adds no visit there.
+ */
+function runVisits(records: readonly PassRecord[], latest: RunRecord): Map<number, SpotVisit[]> {
+  const runs = records.filter((r): r is RunRecord => r.kind === 'run' && r.contextKey === latest.contextKey)
+  const end = runs.findIndex((r) => r.id === latest.id)
+  const upTo = end >= 0 ? runs.slice(0, end + 1) : [...runs, latest]
+  const out = new Map<number, SpotVisit[]>()
+  upTo.forEach((run, i) => {
+    for (const g of run.groups) {
+      const missed = g.missed === true
+      const visit: SpotVisit = {
+        attemptId: run.id,
+        at: i,
+        live: true,
+        multiplier: run.context.multiplier,
+        strict: false,
+        wrong: [...new Set(g.wrongPitches ?? [])].sort((a, b) => a - b),
+        pauseMs: g.lateMs,
+        missed,
+        clean: g.wrongAttacks === 0 && !missed,
+      }
+      const visits = out.get(g.group)
+      if (visits) visits.push(visit)
+      else out.set(g.group, [visit])
+    }
+  })
+  return out
 }
 
 /** The timing summary of a Keep time record (`timingAccuracy`); nothing for any other record. */

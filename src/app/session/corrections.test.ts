@@ -4,7 +4,8 @@ import type { AttemptRecord, GroupOutcome, PassageRange } from '../../core/model
 import type { NamingSettings } from '../../core/model/settings'
 import type { Step } from '../../core/music/pitch'
 import { type Rational, rat } from '../../core/music/rational'
-import { LATE_MARK_MS, SPREAD_MARK_MS, correctionMarks, type CorrectionScore } from './corrections'
+import { userTempoMap } from '../../core/music/tempo'
+import { LATE_MARK_MS, SPREAD_MARK_MS, classifyCorrections, correctionMarks, type CorrectionScore } from './corrections'
 
 const NAMING: NamingSettings = {
   system: 'letter',
@@ -15,11 +16,12 @@ const NAMING: NamingSettings = {
 }
 
 /** A performed note with only the fields `correctionMarks` reads. */
-const note = (onset: Rational, step: Step, alter: number, octave: number, keyFifths = 0) => ({
+const note = (onset: Rational, step: Step, alter: number, octave: number, keyFifths = 0, arpeggio?: number) => ({
   onset,
   sounding: { step, alter, octave },
   ottavaShift: 0,
   accidentalContext: { keyFifths, carried: [] },
+  ...(arpeggio === undefined ? {} : { arpeggio }),
 })
 
 /** Two bars of a whole note each. */
@@ -37,6 +39,8 @@ const score = {
     note(rat(3, 4), 'B', -1, 4), // 4: B♭4
     note(rat(1), 'C', 0, 5), // 5: C5, bar 2
     note(rat(3, 2), 'D', 0, 5), // 6: D5, bar 2
+    note(rat(7, 4), 'C', 0, 4, 0, 0), // 7: C4 } a marked rolled chord
+    note(rat(7, 4), 'G', 0, 4, 0, 0), // 8: G4 }
   ],
 } as unknown as CorrectionScore
 
@@ -50,6 +54,7 @@ const timeline = {
     { notes: [5], pitches: [72], notesByPitch: [[5]] },
     // A tie continuation sounding into bar 2 from note 4 (whose head is in bar 1), with note 6.
     { notes: [4, 6], pitches: [70, 74], notesByPitch: [[4], [6]] },
+    { notes: [7, 8], pitches: [60, 67], notesByPitch: [[7], [8]] },
   ],
 } as unknown as Timeline
 
@@ -176,6 +181,17 @@ describe('correctionMarks', () => {
     ).toEqual([{ notes: [1, 2], kind: 'spread', text: 'Together' }])
   })
 
+  it('a marked rolled chord is not marked "Together", but other marks still apply', () => {
+    // Group 6 has arpeggio: 0; group 1 is an unmarked chord.
+    expect(marks([outcome(6, 0, 0, 0, { spreadMs: 400 })])).toEqual([])
+    expect(marks([outcome(6, 1, 0, 0, { spreadMs: 400, wrongPitches: [62] })])).toEqual([
+      { notes: [7, 8], kind: 'wrong', text: 'Wrong note' },
+    ])
+    expect(marks([outcome(1, 0, 0, 0, { spreadMs: 400 })])).toEqual([
+      { notes: [1, 2], kind: 'spread', text: 'Together' },
+    ])
+  })
+
   it('a re-attacked tie is "Tied, hold it"', () => {
     expect(marks([outcome(2, 0, 0, 0, { tieEndPresses: 1 })])).toEqual([
       { notes: [3], kind: 'tie', text: 'Tied, hold it' },
@@ -225,10 +241,31 @@ describe('rhythm mode (strict) marks', () => {
     ])
   })
 
-  it('a wrong pitch outranks a miss', () => {
+  it('marks a missed group "Too late" only when every required pitch was pressed late', () => {
+    // Group 1 is a chord [60, 76]; group 2 is a single note [65].
+    expect(strictMarks([outcome(1, 0, 0, 0, { missed: true, latePitches: [76, 60], lateSlipMs: 200 })])).toEqual([
+      { notes: [1, 2], kind: 'late', text: 'Too late' },
+    ])
+    expect(strictMarks([outcome(2, 0, 0, 0, { missed: true, latePitches: [65], lateSlipMs: 220 })])).toEqual([
+      { notes: [3], kind: 'late', text: 'Too late' },
+    ])
+    // Partly late chord stays "Missed".
+    expect(strictMarks([outcome(1, 0, 0, 0, { missed: true, latePitches: [60], lateSlipMs: 200 })])).toEqual([
+      { notes: [1, 2], kind: 'missed', text: 'Missed' },
+    ])
+    // Never-pressed group stays "Missed".
+    expect(strictMarks([outcome(1, 0, 0, 0, { missed: true })])).toEqual([
+      { notes: [1, 2], kind: 'missed', text: 'Missed' },
+    ])
+  })
+
+  it('a wrong pitch outranks a miss and a late-played miss', () => {
     expect(strictMarks([outcome(2, 1, 0, 0, { missed: true, wrongPitches: [61] })])).toEqual([
       { notes: [3], kind: 'wrong', text: 'Wrong note' },
     ])
+    expect(
+      strictMarks([outcome(2, 1, 0, 0, { missed: true, latePitches: [65], lateSlipMs: 200, wrongPitches: [61] })]),
+    ).toEqual([{ notes: [3], kind: 'wrong', text: 'Wrong note' }])
   })
 
   it('late means beyond the record tolerance, not the gated threshold', () => {
@@ -247,9 +284,56 @@ describe('rhythm mode (strict) marks', () => {
     ])
   })
 
-  it('gated records keep the LATE_MARK_MS threshold and never get "Missed"', () => {
+  it('gated records keep the LATE_MARK_MS threshold when tempo is absent and never get "Missed"', () => {
     expect(marks([outcome(2, 0, 0, LATE_MARK_MS, { missed: true })])).toEqual([
       { notes: [3], kind: 'late', text: 'Too late' },
+    ])
+  })
+
+  it('gated "Too late" threshold depends on tempo: 300 ms is marked at 120 bpm (250 ms) and not at 60 bpm (500 ms)', () => {
+    const withTempo = (bpm: number, multiplier = 1): Timeline =>
+      ({
+        ...timeline,
+        tempo: userTempoMap(bpm),
+        multiplier,
+        groups: timeline.groups.map((g, i) => ({ ...g, position: rat(i, 4) })),
+      }) as unknown as Timeline
+    const rec = record([outcome(2, 0, 0, 300)])
+    expect(correctionMarks(rec, withTempo(120, 1), score, NAMING)).toEqual([
+      { notes: [3], kind: 'late', text: 'Too late' },
+    ])
+    expect(correctionMarks(rec, withTempo(60, 1), score, NAMING)).toEqual([])
+    expect(correctionMarks(rec, withTempo(120, 0.5), score, NAMING)).toEqual([])
+  })
+
+  it('classifyCorrections returns every applicable class in priority order while correctionMarks keeps the first', () => {
+    const g1 = timeline.groups[1]! // chord [60, 76]
+    // Wrong key + tie + spread + early in gated mode (gated pause is not added alongside a plain wrong key).
+    const multi = outcome(1, 3, 1, 900, { wrongPitches: [61], tieEndPresses: 1, spreadMs: 400 })
+    expect(classifyCorrections(multi, g1, timeline, score, NAMING, undefined).map((c) => c.kind)).toEqual([
+      'accidental',
+      'tie',
+      'spread',
+      'early',
+    ])
+    expect(marks([multi])[0]?.kind).toBe('accidental')
+
+    // No wrong key: tie + spread + early + gated pause all returned in order.
+    const noWrong = outcome(1, 1, 1, 900, { wrongPitches: [], tieEndPresses: 1, spreadMs: 400 })
+    expect(classifyCorrections(noWrong, g1, timeline, score, NAMING, undefined).map((c) => c.kind)).toEqual([
+      'tie',
+      'spread',
+      'early',
+      'late',
+    ])
+    expect(marks([noWrong])[0]?.kind).toBe('tie')
+
+    // Strict mode: wrong key + missed + early all returned in order.
+    const strictMulti = outcome(1, 2, 1, 0, { wrongPitches: [62], missed: true })
+    expect(classifyCorrections(strictMulti, g1, timeline, score, NAMING, 150).map((c) => c.kind)).toEqual([
+      'wrong',
+      'missed',
+      'early',
     ])
   })
 })

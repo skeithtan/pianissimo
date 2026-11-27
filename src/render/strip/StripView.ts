@@ -30,6 +30,7 @@ import {
   layoutCorrections,
   type CorrectionMark,
 } from '../shared/corrections'
+import { REMINDER_LEAVE_MS, buildReminder, layoutReminders, remindersKey, type ReminderMark } from '../shared/reminders'
 import { ACTION_RADIUS, staffGap } from '../shared/cursorAction'
 import { TimingCue } from '../shared/timingCue'
 import {
@@ -76,6 +77,7 @@ import './strip.css'
 export type { LoopRange } from './loop'
 
 export type { CorrectionMark } from '../shared/corrections'
+export type { ReminderMark } from '../shared/reminders'
 
 export interface StripOptions {
   /** Fraction of the viewport where the cursor rests (default 1/3). */
@@ -242,6 +244,8 @@ export class StripView {
   private readonly stickyInner: HTMLDivElement
   private readonly stickyStaff: HTMLDivElement
   private readonly loopEl: HTMLDivElement
+  /** Quiet pencil reminders (`setReminders`): layout px inside the content, below corrections. */
+  private readonly reminderLayer: HTMLDivElement
   /** Teacher's corrections (`setCorrections`): layout px inside the content, above the notation. */
   private readonly corrLayer: HTMLDivElement
   private readonly startHandle: HTMLButtonElement
@@ -326,6 +330,10 @@ export class StripView {
   private pendingCorrections: readonly CorrectionMark[] | null = null
   private corrLeaveTimer: ReturnType<typeof setTimeout> | null = null
   private corrMeasurer: TextMeasurer | null = null
+  /** Identity of the reminders last asked for; `pendingReminders` waits for the next frame. */
+  private reminderKey = ''
+  private pendingReminders: readonly ReminderMark[] | null = null
+  private reminderLeaveTimer: ReturnType<typeof setTimeout> | null = null
 
   private loop: LoopRange | null = null
   /**
@@ -465,6 +473,8 @@ export class StripView {
     this.loopEl = div('pn-loop')
     this.loopEl.style.height = `${layout.height}px`
     this.segLayer = div('pn-segs')
+    this.reminderLayer = div('pn-reminders')
+    this.reminderLayer.setAttribute('aria-hidden', 'true')
     this.corrLayer = div('pn-corrs')
     this.corrLayer.setAttribute('aria-hidden', 'true')
     // Screen-space cursor, outside the scrolled content; its bar spans the staves (applyCursorBar).
@@ -492,7 +502,15 @@ export class StripView {
     this.endHandle = this.button('pn-loop-ctl pn-handle pn-handle-end', icon.right, '')
     this.clearBtn = this.button('pn-loop-ctl pn-loop-clear', icon.clear, '')
 
-    this.content.append(this.loopEl, this.segLayer, this.corrLayer, this.startHandle, this.endHandle, this.clearBtn)
+    this.content.append(
+      this.loopEl,
+      this.segLayer,
+      this.reminderLayer,
+      this.corrLayer,
+      this.startHandle,
+      this.endHandle,
+      this.clearBtn,
+    )
     this.stickyEl = div('pn-sticky')
     this.stickyEl.setAttribute('aria-hidden', 'true')
     this.stickyInner = div('pn-sticky-inner')
@@ -665,6 +683,19 @@ export class StripView {
     if (key === this.corrKey) return
     this.corrKey = key
     this.pendingCorrections = marks
+    this.schedule()
+  }
+
+  /**
+   * Quiet pencil reminders at recent trouble spots: small ticks in the margin band beyond the
+   * staves, on a layer below corrections that scrolls and zooms with the notation. Built once in
+   * the next frame; `[]` clears them. The same marks again are a no-op. Never takes pointer events.
+   */
+  setReminders(marks: readonly ReminderMark[]): void {
+    const key = remindersKey(marks)
+    if (key === this.reminderKey) return
+    this.reminderKey = key
+    this.pendingReminders = marks
     this.schedule()
   }
 
@@ -990,6 +1021,7 @@ export class StripView {
     if (this.ctlLeaveTimer) clearTimeout(this.ctlLeaveTimer)
     if (this.wrapTimer) clearTimeout(this.wrapTimer)
     if (this.corrLeaveTimer) clearTimeout(this.corrLeaveTimer)
+    if (this.reminderLeaveTimer) clearTimeout(this.reminderLeaveTimer)
     if (this.wheelRelease) clearTimeout(this.wheelRelease)
     this.resize?.disconnect()
     this.swipe.destroy()
@@ -1538,6 +1570,7 @@ export class StripView {
     this.applyCursorBar()
     this.placeActionButton()
     this.applyLoop()
+    if (this.pendingReminders) this.applyReminders()
     if (this.pendingCorrections) this.applyCorrections()
     const stickyW = this.applySticky(tx, view.x0)
     // A cursor carried off with its note fades out before the pinned signatures, as the notes do.
@@ -1940,6 +1973,30 @@ export class StripView {
     })
   }
 
+  /**
+   * Replaces the reminders: shown ticks fade out (removed immediately under reduced motion, or on
+   * `animationend` / fallback timer), and new ones are built once without stagger.
+   */
+  private applyReminders(): void {
+    const marks = this.pendingReminders ?? []
+    this.pendingReminders = null
+    const leaving = [...this.reminderLayer.children].filter((el) => !el.classList.contains('pn-reminder-leave'))
+    if (this.reducedMotion) {
+      for (const el of [...this.reminderLayer.children]) el.remove()
+    } else if (leaving.length) {
+      for (const el of leaving) el.classList.add('pn-reminder-leave')
+      if (this.reminderLeaveTimer) clearTimeout(this.reminderLeaveTimer)
+      this.reminderLeaveTimer = setTimeout(() => {
+        this.reminderLeaveTimer = null
+        for (const el of [...this.reminderLayer.querySelectorAll('.pn-reminder-leave')]) el.remove()
+      }, REMINDER_LEAVE_MS)
+    }
+    const doc = this.root.ownerDocument
+    for (const shape of layoutReminders(this.layout, marks)) {
+      this.reminderLayer.append(buildReminder(doc, shape, this.layout.top))
+    }
+  }
+
   /** Where the cursor sits within a band, as a percentage for `transform-origin`. */
   private loopOrigin(x0: number, width: number): string {
     if (!(width > 0)) return '50%'
@@ -2128,6 +2185,10 @@ export class StripView {
     this.on(this.corrLayer, 'animationend', (e) => {
       const el = e.target as Element | null
       if (el?.parentNode === this.corrLayer && el.classList.contains('pn-corr-leave')) el.remove()
+    })
+    this.on(this.reminderLayer, 'animationend', (e) => {
+      const el = e.target as Element | null
+      if (el?.parentNode === this.reminderLayer && el.classList.contains('pn-reminder-leave')) el.remove()
     })
     for (const el of [this.startHandle, this.endHandle, this.clearBtn]) {
       this.on(el, 'animationend', () => {

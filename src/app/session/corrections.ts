@@ -12,11 +12,11 @@ import type { NamingSettings } from '../../core/model/settings'
 import { ge, lt } from '../../core/music/rational'
 import { NATURAL, labelFor, labelForMidi } from '../../core/naming'
 import type { CorrectionMark } from '../../render/strip/StripView'
+import { LATE_MARK_MS, pauseThresholdMs } from './pauses'
 
 export type { CorrectionMark }
+export { LATE_MARK_MS }
 
-/** A group completed at least this long after the music reached it is marked "Too late" (ms). */
-export const LATE_MARK_MS = 350
 /** A chord whose first and last attacks are at least this far apart is marked "Together" (ms). */
 export const SPREAD_MARK_MS = 90
 
@@ -32,8 +32,10 @@ type Group = Timeline['groups'][number]
  * One mark per group with a problem, in group order. A group with several gets the first of:
  * a wrong accidental ("F♯, not F"), a wrong octave ("Wrong octave ↑"), another wrong key ("Wrong
  * note(s)"), a re-attacked tie ("Tied, hold it"), a spread chord ("Together"), too soon, too
- * late. In a strict (rhythm mode) record a group the music passed is "Missed" (after the wrong
- * classes), and "Too late" means more than the record's tolerance after its scheduled time. A mark's notes are the group's performed-note indices (the strip's note ids) whose onset
+ * late. In a strict (rhythm mode) record a group the music passed is "Too late" when every
+ * required pitch was pressed late (`latePitches`), otherwise "Missed" (after the wrong classes),
+ * and a completed group is "Too late" when more than the record's tolerance after its scheduled
+ * time. A mark's notes are the group's performed-note indices (the strip's note ids) whose onset
  * lies inside the attempt's passage: a ring never goes around notes outside it (a tie head before
  * the loop start), and a mark with none left is dropped.
  * `score` spells the target as the score does, with the `naming` settings. Records without
@@ -66,7 +68,7 @@ export function correctionMarksByGroup(
       return note !== undefined && (!bounds || (ge(note.onset, bounds.start) && lt(note.onset, bounds.end)))
     })
     if (notes.length === 0) continue
-    const mark = classify(g, group, score, naming, record.rhythm?.toleranceMs)
+    const mark = classify(g, group, timeline, score, naming, record.rhythm?.toleranceMs)
     if (mark) marks.set(g.group, { notes, ...mark })
   }
   return marks
@@ -83,40 +85,85 @@ function attemptBounds(record: CorrectedPass, score: CorrectionScore): PassageBo
   }
 }
 
+/**
+ * Every applicable correction class at one onset group, in priority order: wrong key (at most
+ * one of accidental, octave, or plain wrong), re-attacked tie, spread chord, then timing
+ * (strict: missed/late, early, offset late; gated: early, pause late when no plain wrong key).
+ * `classify` returns the first element so the score keeps one red-pen mark per place.
+ */
+export function classifyCorrections(
+  g: GroupOutcome,
+  group: Group,
+  timeline: Timeline,
+  score: Pick<ScoreModel, 'notes'>,
+  naming: NamingSettings,
+  strictToleranceMs: number | undefined,
+): Omit<CorrectionMark, 'notes'>[] {
+  const out: Omit<CorrectionMark, 'notes'>[] = []
+  const wrongPitches = g.wrongPitches ?? []
+  let wrongMark: Omit<CorrectionMark, 'notes'> | null = null
+  for (const p of wrongPitches) {
+    const text = accidentalSlip(p, group, score, naming)
+    if (text) {
+      wrongMark = { kind: 'accidental', text }
+      break
+    }
+  }
+  if (!wrongMark) {
+    for (const p of wrongPitches) {
+      const text = octaveSlip(p, group)
+      if (text) {
+        wrongMark = { kind: 'octave', text }
+        break
+      }
+    }
+  }
+  if (!wrongMark) {
+    // `wrongAttacks` includes the too-early ones (right pitch, too soon) and may include tie-end
+    // presses; the wrong pitches, when recorded, are the plain wrong keys.
+    const wrong = g.wrongPitches
+      ? g.wrongPitches.length
+      : Math.max(0, g.wrongAttacks - g.earlyAttacks - (g.tieEndPresses ?? 0))
+    if (wrong > 0) wrongMark = { kind: 'wrong', text: wrong > 1 ? msg('Wrong notes') : msg('Wrong note') }
+  }
+  if (wrongMark) out.push(wrongMark)
+  if ((g.tieEndPresses ?? 0) > 0) out.push({ kind: 'tie', text: msg('Tied, hold it') })
+  const isRoll = group.notes.some((n) => score.notes[n]?.arpeggio !== undefined)
+  if ((g.spreadMs ?? 0) >= SPREAD_MARK_MS && group.pitches.length >= 2 && !isRoll) {
+    out.push({ kind: 'spread', text: msg('Together') })
+  }
+  if (strictToleranceMs !== undefined) {
+    // Rhythm mode: the music never waited, so lateness is the offset from the scheduled time.
+    if (g.missed === true) {
+      const latePitches = g.latePitches
+      if (
+        latePitches !== undefined &&
+        group.pitches.length > 0 &&
+        group.pitches.every((p) => latePitches.includes(p))
+      ) {
+        out.push({ kind: 'late', text: msg('Too late') })
+      } else {
+        out.push({ kind: 'missed', text: msg('Missed') })
+      }
+    }
+    if (g.earlyAttacks > 0) out.push({ kind: 'early', text: msg('Too soon') })
+    if (g.missed !== true && (g.offsetMs ?? 0) > strictToleranceMs) out.push({ kind: 'late', text: msg('Too late') })
+    return out
+  }
+  if (g.earlyAttacks > 0) out.push({ kind: 'early', text: msg('Too soon') })
+  if (!wrongMark && g.lateMs >= pauseThresholdMs(timeline, group)) out.push({ kind: 'late', text: msg('Too late') })
+  return out
+}
+
 function classify(
   g: GroupOutcome,
   group: Group,
+  timeline: Timeline,
   score: CorrectionScore,
   naming: NamingSettings,
   strictToleranceMs: number | undefined,
 ): Omit<CorrectionMark, 'notes'> | null {
-  const wrongPitches = g.wrongPitches ?? []
-  for (const p of wrongPitches) {
-    const text = accidentalSlip(p, group, score, naming)
-    if (text) return { kind: 'accidental', text }
-  }
-  for (const p of wrongPitches) {
-    const text = octaveSlip(p, group)
-    if (text) return { kind: 'octave', text }
-  }
-  // `wrongAttacks` includes the too-early ones (right pitch, too soon) and may include tie-end
-  // presses; the wrong pitches, when recorded, are the plain wrong keys.
-  const wrong = g.wrongPitches
-    ? g.wrongPitches.length
-    : Math.max(0, g.wrongAttacks - g.earlyAttacks - (g.tieEndPresses ?? 0))
-  if (wrong > 0) return { kind: 'wrong', text: wrong > 1 ? msg('Wrong notes') : msg('Wrong note') }
-  if ((g.tieEndPresses ?? 0) > 0) return { kind: 'tie', text: msg('Tied, hold it') }
-  if ((g.spreadMs ?? 0) >= SPREAD_MARK_MS && group.pitches.length >= 2) return { kind: 'spread', text: msg('Together') }
-  if (strictToleranceMs !== undefined) {
-    // Rhythm mode: the music never waited, so lateness is the offset from the scheduled time.
-    if (g.missed === true) return { kind: 'missed', text: msg('Missed') }
-    if (g.earlyAttacks > 0) return { kind: 'early', text: msg('Too soon') }
-    if ((g.offsetMs ?? 0) > strictToleranceMs) return { kind: 'late', text: msg('Too late') }
-    return null
-  }
-  if (g.earlyAttacks > 0) return { kind: 'early', text: msg('Too soon') }
-  if (g.lateMs >= LATE_MARK_MS) return { kind: 'late', text: msg('Too late') }
-  return null
+  return classifyCorrections(g, group, timeline, score, naming, strictToleranceMs)[0] ?? null
 }
 
 /**
@@ -125,7 +172,12 @@ function classify(
  * as the score does with its accidental always shown (♮ for a natural), the pressed key on the
  * target's letter. Null when no required pitch qualifies.
  */
-function accidentalSlip(pitch: number, group: Group, score: CorrectionScore, naming: NamingSettings): string | null {
+function accidentalSlip(
+  pitch: number,
+  group: Group,
+  score: Pick<ScoreModel, 'notes'>,
+  naming: NamingSettings,
+): string | null {
   const shown = { ...naming, alwaysShowEffectiveAccidentals: true }
   const pressed = [labelForMidi(pitch, shown, 'sharp'), labelForMidi(pitch, shown, 'flat')]
   for (let k = 0; k < group.pitches.length; k++) {

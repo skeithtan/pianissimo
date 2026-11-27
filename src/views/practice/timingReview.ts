@@ -36,9 +36,9 @@ export interface TimingReviewData {
 
 /** The pass's original timeline keeps exact loop boundaries and repeat occurrences in order. */
 export function buildTimingReview(details: ResultDetails): TimingReviewData | null {
-  const attempt = details.records.at(-1)
+  const attempt = details.records.find((record) => record.id === details.attemptId)
   if (
-    attempt?.id !== details.attemptId ||
+    !attempt ||
     attempt.kind === 'run' ||
     attempt.context.transport !== 'strict' ||
     attempt.completion !== 'completed' ||

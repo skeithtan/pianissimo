@@ -52,6 +52,8 @@ async function expectStripAt(page: Page, before: string): Promise<void> {
 
 /** Waits until the score's view (strip transform or page scroll) has not changed for 200 ms (the review zoom has landed). */
 async function settled(page: Page): Promise<void> {
+  const card = page.getByTestId('attempt-result')
+  if ((await card.count()) > 0) await expect(card).not.toHaveAttribute('data-intro', 'true')
   await page.waitForTimeout(800)
   let last = await viewSignature(page)
   for (let i = 0; i < 30; i++) {
@@ -63,7 +65,11 @@ async function settled(page: Page): Promise<void> {
 }
 
 /** One pass over bars 1–2 with wrong keys pressed before given groups (by index 0–5). */
-async function pass(page: Page, wrong: Partial<Record<number, number[]>> = {}): Promise<void> {
+async function pass(
+  page: Page,
+  wrong: Partial<Record<number, number[]>> = {},
+  onceMore: readonly number[] = [],
+): Promise<void> {
   const groups = [[60, 48], [62], [64], [65], [67, 71, 74, 43], [48]]
   for (let i = 0; i < groups.length; i++) {
     const keys = wrong[i]
@@ -72,6 +78,10 @@ async function pass(page: Page, wrong: Partial<Record<number, number[]>> = {}): 
       await play(page, ...keys)
     }
     await playWhenDue(page, ...groups[i]!)
+    if (onceMore.includes(i)) {
+      await page.waitForTimeout(100)
+      await play(page, ...groups[i]!)
+    }
   }
 }
 
@@ -114,9 +124,9 @@ async function rankedPasses(page: Page, settings: Partial<AppSettings> = {}): Pr
   await openLoop(page, settings)
   await pass(page, { 1: [61] })
   await nextPass(page)
-  await pass(page, { 1: [61], 2: [63] })
+  await pass(page, { 1: [61], 2: [63] }, [1])
   await nextPass(page)
-  await pass(page, { 1: [61], 2: [63], 4: [30, 69], 5: [60] })
+  await pass(page, { 1: [61], 2: [63], 4: [30, 69], 5: [60] }, [1, 2])
   await expect(page.getByTestId('attempt-result')).toContainText('three passes running')
 }
 
@@ -616,6 +626,30 @@ test.describe('the result details open in place (U99)', () => {
     expect(page.url()).toBe(url)
     await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
   })
+
+  test('recurring marks show double rings and place history dots, and a clean pass lists Fixed this pass', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1194, height: 834 })
+    await rankedPasses(page)
+    await settled(page)
+    await toggle(page).click()
+    const first = details(page).getByTestId('result-excerpt').first()
+    const repeatMark = first.getByTestId('excerpt-music').locator('.pn-corr-repeat')
+    await expect(repeatMark.first()).toBeVisible()
+    await expect(repeatMark.first().locator('.pn-corr-label')).toHaveText(/×3$/)
+    const dots = first.getByTestId('place-history').first()
+    await expect(dots).toBeVisible()
+    await expect(dots.locator('[data-visit="wrong"]')).toHaveCount(3)
+
+    // Fold, play a clean pass, and verify the fixed bars appear under "Fixed this pass".
+    await fold(page)
+    await nextPass(page)
+    await pass(page)
+    await expect(page.getByTestId('attempt-result')).toContainText('Clean pass')
+    await toggle(page).click()
+    await expect(details(page).getByTestId('result-fixed')).toHaveText('Fixed this pass: bar 1, bar 2')
+  })
 })
 
 test.describe('mistake playback in the card (U100)', () => {
@@ -1021,4 +1055,94 @@ test('the timing plot labels fit in every language', async ({ page }) => {
     }
     await fold(page)
   }
+})
+
+test.describe('drill this spot from the review', () => {
+  test('drills a mistake spot, reaches 3 clean passes, and returns to the original loop', async ({ page }) => {
+    await page.setViewportSize({ width: 1194, height: 834 })
+    await openLoop(page)
+    // Pass 1: wrong note at group 4 (bar 2 beat 1 chord [67, 71, 74, 43]).
+    await pass(page, { 4: [69] })
+    const card = page.getByTestId('attempt-result')
+    await expect(card).toContainText('1 wrong note')
+
+    // Open details and tap "Drill this spot".
+    await toggle(page).click()
+    const drillBtn = details(page).getByTestId('drill-spot').first()
+    await expect(drillBtn).toBeVisible()
+    await drillBtn.click()
+
+    // Details close, loop shrinks to the drill range (Bar 1, beat 3 – Bar 2) with target 3, and session is ready.
+    await expect(details(page)).toHaveCount(0)
+    const repeatPanel = page.getByRole('group', { name: 'Repeat passage' })
+    await expect(repeatPanel).toContainText('Bar 1, beat 3')
+    await expect(repeatPanel).toContainText('Until 3 clean')
+    await nextPass(page)
+
+    // Play three clean passes of the drilled spot (bar 1 beat 3 reattacks held LH 48 with 64, then 65, bar 2 chord, 48).
+    const drillGroups = [[64, 48], [65], [67, 71, 74, 43], [48]]
+    for (let p = 0; p < 3; p++) {
+      await nextPass(page)
+      for (const chord of drillGroups) await playWhenDue(page, ...chord)
+    }
+
+    // Target reached: the card offers "Back to Bars 1–2" as its primary choice.
+    await toggle(page).click()
+    const backBtn = details(page).getByTestId('drill-back')
+    await expect(backBtn).toBeVisible()
+    await expect(backBtn).toContainText('Back to Bars 1–2')
+    await expect(backBtn).toHaveAttribute('data-variant', 'primary')
+    await backBtn.click()
+
+    // Original loop and Repeat goal are restored.
+    await expect(repeatPanel).toContainText('Bar 1')
+    await expect(repeatPanel).not.toContainText('beat 3')
+    await expect(repeatPanel).toContainText('No limit')
+    await expect(card).toHaveCount(0)
+  })
+})
+
+test.describe('review wording and Once more cue', () => {
+  test('a key grazed with the right note reads "You also pressed", and a repeated lone wrong key shows the "Once more" cue', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1194, height: 834 })
+    await openLoop(page)
+
+    // Pass 1: graze D♭ (61) together with D4 (62) (0 ms apart -> within 60 ms), and press E♭ (63) alone before E4 (64).
+    const groups = [[60, 48], [62], [64], [65], [67, 71, 74, 43], [48]]
+    await playWhenDue(page, ...groups[0]!)
+    // Group 1 (D4): strike D♭ and D4 together.
+    await playWhenDue(page, 62)
+    await play(page, 61)
+    // Group 2 (E4): strike E♭ alone well before E4.
+    await page.waitForTimeout(250)
+    await play(page, 63)
+    await playWhenDue(page, ...groups[2]!)
+    for (let i = 3; i < groups.length; i++) await playWhenDue(page, ...groups[i]!)
+
+    await expect(page.getByTestId('attempt-result')).toContainText('2 wrong notes')
+    await toggle(page).click()
+    await expect(details(page)).toContainText('You also pressed D♭ with D♮')
+    await expect(details(page)).toContainText('You pressed E♭ where E♮ is written')
+    await toggle(page).click()
+
+    // Pass 2: repeat lone E♭ (63) at group 2 -> "Try again", first E4 taken back -> "Once more", second E4 completes.
+    await nextPass(page)
+    await playWhenDue(page, ...groups[0]!)
+    await playWhenDue(page, ...groups[1]!)
+    await page.waitForTimeout(250)
+    await play(page, 63)
+    const cue = page.getByTestId('stage-cue')
+    await expect(cue).toHaveAttribute('data-kind', 'retry')
+    await expect(cue).toHaveText('Try again')
+    await playWhenDue(page, 64)
+    await expect(cue).toHaveAttribute('data-kind', 'once-more')
+    await expect(cue).toHaveText('Once more')
+    await page.waitForTimeout(100)
+    await play(page, 64)
+    await expect(cue).toHaveCount(0)
+    for (let i = 3; i < groups.length; i++) await playWhenDue(page, ...groups[i]!)
+    await expect(page.getByTestId('attempt-result')).toContainText('1 wrong note')
+  })
 })

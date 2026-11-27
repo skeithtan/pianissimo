@@ -324,7 +324,7 @@ describe('Per-group outcomes in the attempt record', () => {
     const rest = { spreadMs: 0, tieEndPresses: 0 }
     expect(r!.groups).toEqual([
       { group: 0, wrongAttacks: 0, earlyAttacks: 0, lateMs: 0, wrongPitches: [], ...rest },
-      { group: 1, wrongAttacks: 1, earlyAttacks: 0, lateMs: 50, wrongPitches: [A3], ...rest },
+      { group: 1, wrongAttacks: 1, earlyAttacks: 0, lateMs: 50, wrongPitches: [A3], extraPitches: [A3], ...rest },
       { group: 2, wrongAttacks: 0, earlyAttacks: 0, lateMs: 0, wrongPitches: [], ...rest },
       // The too-early F4 had the right pitch: not a wrong pitch.
       { group: 3, wrongAttacks: 1, earlyAttacks: 1, lateMs: 100, wrongPitches: [], ...rest },

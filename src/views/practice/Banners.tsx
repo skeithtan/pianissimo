@@ -178,6 +178,7 @@ export function ladderResultText(r: AttemptSummary, multiplier: number): string 
   if (!l) return null
   if (l.climbedTo !== undefined) return msg('Speed up: next at {0}', formatSpeedPercent(l.climbedTo))
   if (l.done) return msg('Goal reached: {0}', formatSpeedPercent(multiplier))
+  if (l.held) return msg('Clean, with pauses: staying at {0}', formatSpeedPercent(multiplier))
   return null
 }
 
@@ -214,6 +215,8 @@ export interface AttemptResultProps {
   /** Outside Repeat, for a run with mistakes: loop its rough bars (U142); absent: no Loop action. */
   readonly onLoop?: () => void
   readonly onDismiss: () => void
+  /** Leave an active spot drill and restore the previous passage and settings. */
+  readonly onEndDrill?: () => void
   /**
    * The expanded result, held by the owner so a rotation that moves the dock (strip ↔ page)
    * keeps the card open; absent: the card holds it itself.
@@ -385,9 +388,12 @@ export function AttemptResult(p: AttemptResultProps) {
   const actions = (
     <ResultChoices
       bars={shown.rough && p.onLoop ? barsShortText(p.model, shown.rough) : null}
-      again={!inRepeat.current || shown.targetReached}
+      again={!inRepeat.current || (shown.targetReached && !ui.drill)}
+      drill={ui.drill && p.onEndDrill ? ui.drill : null}
+      goalReached={shown.targetReached}
       onLoop={p.onLoop}
       onAgain={p.onRestart}
+      onEndDrill={p.onEndDrill}
     />
   )
   return (
@@ -400,6 +406,7 @@ export function AttemptResult(p: AttemptResultProps) {
       onRestore={restore}
       multiplier={ui.multiplier}
       goal={inRepeat.current ? ui.repeatTarget : null}
+      drill={ui.drill}
       expanded={expanded}
       intro={!!r && introId === r.id && !expanded && !ui.resultDimmed}
       opening={shown.id === opening?.id && opening.phone === phone ? opening : null}
@@ -428,23 +435,37 @@ export function AttemptResult(p: AttemptResultProps) {
 
 /**
  * What the expanded card offers to do next, one row under its verdict (U142): loop the run's rough
- * bars, and play it again. Nothing when there is neither.
+ * bars, go back from a spot drill (U168), and play it again. Nothing when there is none of them.
  */
 function ResultChoices({
   bars,
   again,
+  drill,
+  goalReached,
   onLoop,
   onAgain,
+  onEndDrill,
 }: {
   /** The bars Loop loops ("9–12"), or null without it. */
   bars: string | null
   again: boolean
+  /** The spot drill to leave, or null. */
+  drill: SessionUi['drill']
+  /** The drill's goal is reached: going back is the next step. */
+  goalReached: boolean
   onLoop: (() => void) | undefined
   onAgain: () => void
+  onEndDrill: (() => void) | undefined
 }) {
-  if (bars === null && !again) return null
+  if (bars === null && !again && drill === null) return null
+  const back = drill !== null && goalReached ? 'primary' : 'secondary'
   return (
     <div class={styles.resultChoices} data-testid="result-choices">
+      {drill !== null ? (
+        <Button variant={back} icon="back" data-testid="drill-back" data-variant={back} onClick={onEndDrill}>
+          {msg('Back to {0}', drill.returnText)}
+        </Button>
+      ) : null}
       {bars !== null ? (
         <Button variant="primary" icon="repeat" data-testid="result-loop" onClick={onLoop}>
           {msg('Loop {0}', bars)}
@@ -554,6 +575,7 @@ function ResultCard({
   onRestore,
   multiplier,
   goal,
+  drill,
   expanded,
   intro,
   opening,
@@ -582,6 +604,8 @@ function ResultCard({
   multiplier: number
   /** The Repeat target ("until N clean") shown as dots, or null. */
   goal: number | null
+  /** A spot drill is on (U168): its goal does not turn Repeat off. */
+  drill: SessionUi['drill']
   expanded: boolean
   intro: boolean
   /** Where the pill was when it was tapped (null: no motion, as with reduced motion). */
@@ -779,7 +803,7 @@ function ResultCard({
         {ladder}
       </span>
     ) : null,
-    r.targetReached ? <span key="goal">{msg('Goal reached. Repeat is off.')}</span> : null,
+    r.targetReached && !drill ? <span key="goal">{msg('Goal reached. Repeat is off.')}</span> : null,
   ].filter((part) => part !== null)
   return (
     <div

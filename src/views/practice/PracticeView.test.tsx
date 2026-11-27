@@ -295,13 +295,17 @@ describe('PracticeView', () => {
     const phase = () => $(view!.container, '[data-activity]')?.dataset['phase']
     const note = () => $(view!.container, '[data-testid="result-note"]')?.textContent ?? null
     // Bar 1: C D E F over the low C; a C♯ slips in before the D on every pass.
-    const pass = async () => {
+    const pass = async (onceMore = false) => {
       for (let k = 0; k < 400 && phase() !== 'ready'; k++) act(() => r.clock.advance(20))
       tap(r, 60, 48)
       act(() => r.clock.advance(300))
       tap(r, 61)
       act(() => r.clock.advance(700))
       tap(r, 62)
+      if (onceMore) {
+        act(() => r.clock.advance(100))
+        tap(r, 62)
+      }
       act(() => r.clock.advance(1000))
       tap(r, 64)
       act(() => r.clock.advance(1000))
@@ -310,10 +314,10 @@ describe('PracticeView', () => {
       await settle(r, 2)
     }
     await pass()
-    await pass()
+    await pass(true)
     expect($(view.container, '[data-testid="attempt-result"]')).not.toBeNull()
     expect(note()).toBeNull()
-    await pass()
+    await pass(true)
     expect(note()).toBe('D♭ instead of D♮ in bar 1, three passes running')
     // A naming change rewords the line on the card already shown.
     act(() => {

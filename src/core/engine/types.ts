@@ -212,6 +212,11 @@ export interface EngineState {
   readonly inputComplete: boolean
   /** A repeated extra key invalidated the notes played at this onset. */
   readonly retryGroup: boolean
+  /**
+   * The retry was triggered by a guarded wrong key pressed alone and the first clean stroke was
+   * taken back; true until the group completes (or a wrong key resets the stroke).
+   */
+  readonly onceMore: boolean
   /** Accompaniment: input complete, waiting for the transport to reach the position. */
   readonly waitingForTransport: boolean
   /** Highest transport gate reached (−1 before the first). */

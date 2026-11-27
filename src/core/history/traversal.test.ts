@@ -13,6 +13,15 @@ describe('traversal classification', () => {
     expect(isErrorBearing(traversal(1, 'error', 7))).toBe(true)
   })
 
+  it('counts non-synthetic missed groups as error-bearing, including legacy records without the field', () => {
+    const missed = { ...traversal(1, 'clean'), groupsWithErrors: 2, missedGroups: 2 }
+    expect(isErrorBearing(missed)).toBe(true)
+    const legacyMissed = { ...traversal(1, 'clean'), wrongAttacks: 0, groupsWithErrors: 1 }
+    expect(isErrorBearing(legacyMissed)).toBe(true)
+    const syntheticOnly = { ...traversal(1, 'clean'), groupsWithErrors: 1, missedGroups: 0 }
+    expect(isErrorBearing(syntheticOnly)).toBe(false)
+  })
+
   it('treats every assistance source as assisted', () => {
     expect(isAssisted(traversal(1, 'clean'))).toBe(false)
     expect(isAssisted(traversal(1, 'assisted'))).toBe(true)

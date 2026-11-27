@@ -202,6 +202,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
       fadeMs: num(hints['fadeMs'], d.hints.fadeMs, 0, 10_000),
       damageFlash: bool(hints['damageFlash'], d.hints.damageFlash),
       showTimingCues: bool(hints['showTimingCues'], d.hints.showTimingCues),
+      reminders: bool(hints['reminders'], d.hints.reminders),
     },
     pedal: {
       hintPedal: 'hintPedal' in pedal ? hintPedal(pedal['hintPedal'], d.pedal.hintPedal) : d.pedal.hintPedal,

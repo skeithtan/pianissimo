@@ -187,6 +187,10 @@ async function threeWrongPasses(page: Page, settings: Partial<AppSettings> = {})
     await page.waitForTimeout(300)
     await play(page, 61)
     await playWhenDue(page, 62)
+    if (pass > 1) {
+      await page.waitForTimeout(100)
+      await play(page, 62)
+    }
     await playWhenDue(page, 64)
     await playWhenDue(page, 65)
     await playWhenDue(page, 67, 71, 74, 43)
@@ -361,6 +365,9 @@ test.describe('the review after a completed pass (U97)', () => {
     await threeWrongPasses(page)
     const card = page.getByTestId('attempt-result')
     await expect(card.getByTestId('result-note')).toHaveText(REPEATED)
+    const repeatMark = page.locator('.pn-corr.pn-corr-repeat')
+    await expect(repeatMark).toHaveCount(1)
+    await expect(repeatMark.locator('.pn-corr-label')).toHaveText(/×3$/)
     // The line stays inside the pill and the pill clear of the reviewed passage.
     const note = (await card.getByTestId('result-note').boundingBox())!
     const cardBox = (await card.boundingBox())!

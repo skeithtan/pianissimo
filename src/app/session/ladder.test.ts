@@ -39,4 +39,33 @@ describe('speed ladder rules', () => {
     expect(sameLadder(settings, null)).toBe(false)
     expect(sameLadder(settings, { goal: 1, step: 0.1 })).toBe(false)
   })
+
+  it('holds on a passed, non-fluent pass even at the target streak', () => {
+    const l = startLadder(settings, 0.6)
+    const step = ladderAfterAttempt(l, 0.6, true, 3, 3, false)
+    expect(step).toEqual({ ladder: l, note: { held: true } })
+    expect(step.ladder).toBe(l)
+    expect(step.next).toBeUndefined()
+  })
+
+  it('a failed pass ignores fluent: nothing changes', () => {
+    const l = startLadder(settings, 0.5)
+    expect(ladderAfterAttempt(l, 0.6, false, 0, 3, false)).toEqual({ ladder: l })
+  })
+
+  it('a done ladder returns no note even on a non-fluent pass', () => {
+    const done = startLadder(settings, 1)
+    expect(done.done).toBe(true)
+    const step = ladderAfterAttempt(done, 1, true, 3, 3, false)
+    expect(step).toEqual({ ladder: done })
+    expect(step.ladder).toBe(done)
+    expect(step.note).toBeUndefined()
+  })
+
+  it('a non-fluent pass at the goal holds instead of finishing the climb', () => {
+    const atGoal = { ...startLadder(settings, 0.95), done: false }
+    const held = ladderAfterAttempt(atGoal, 1, true, 3, 3, false)
+    expect(held).toEqual({ ladder: atGoal, note: { held: true } })
+    expect(held.ladder.done).toBe(false)
+  })
 })

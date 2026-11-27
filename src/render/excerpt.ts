@@ -12,7 +12,13 @@
  * closes.
  */
 import { estimateMeasurer, type TextMeasurer } from './labels/metrics'
-import { layoutCorrections, penRing, type CorrectionMark } from './shared/corrections'
+import {
+  correctionGroupClass,
+  correctionLabelText,
+  layoutCorrections,
+  ringStrokes,
+  type CorrectionMark,
+} from './shared/corrections'
 import { barLabel } from './shared/scoreLanguage'
 import type { PreparedLayout, StaffGeometry } from './types'
 
@@ -310,7 +316,7 @@ function numberMarkup(label: string, box: { x: number; y: number; h: number }): 
 }
 
 function correctionMarkup(shape: ReturnType<typeof layoutCorrections>[number]): string {
-  const out: string[] = [`<g class="pn-ex-corr pn-corr-${shape.mark.kind}">`]
+  const out: string[] = [`<g class="${correctionGroupClass('pn-ex-corr', shape.mark)}">`]
   for (const k of shape.links)
     out.push(`<line class="pn-corr-link" x1="${r2(k.x1)}" y1="${r2(k.y1)}" x2="${r2(k.x2)}" y2="${r2(k.y2)}"/>`)
   const label = shape.label
@@ -318,13 +324,14 @@ function correctionMarkup(shape: ReturnType<typeof layoutCorrections>[number]): 
     out.push(
       `<line class="pn-corr-leader" x1="${r2(label.leader.x)}" y1="${r2(label.leader.y1)}" x2="${r2(label.leader.x)}" y2="${r2(label.leader.y2)}"/>`,
     )
-  for (const ring of shape.rings)
-    out.push(
-      `<path class="pn-corr-ring" d="${penRing(ring.cx, ring.cy, ring.rx, ring.ry)}" transform="rotate(-3 ${r2(ring.cx)} ${r2(ring.cy)})"/>`,
-    )
+  for (const ring of shape.rings) {
+    for (const stroke of ringStrokes(ring, shape.mark)) {
+      out.push(`<path class="pn-corr-ring" d="${stroke.d}" transform="${stroke.transform}"/>`)
+    }
+  }
   if (label)
     out.push(
-      `<text class="pn-corr-label pn-corr-halo" x="${r2(label.x)}" y="${r2(label.y)}" text-anchor="middle">${escapeText(shape.mark.text)}</text>`,
+      `<text class="pn-corr-label pn-corr-halo" x="${r2(label.x)}" y="${r2(label.y)}" text-anchor="middle">${escapeText(correctionLabelText(shape.mark))}</text>`,
     )
   out.push('</g>')
   return out.join('')

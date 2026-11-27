@@ -4,6 +4,8 @@ import { attemptRecord } from '../history/testkit'
 import { DEFAULT_SETTINGS } from '../model/settings'
 import type { ScorePackage } from '../model/score'
 import { DB_VERSION, openPianissimoDb } from './schema'
+import type { Db } from './schema'
+import { listRecentAttempts } from './attempts'
 import { openStorage } from './storage'
 import type { PianissimoStorage } from './storage'
 import { newPieceRecord } from './records'
@@ -496,5 +498,56 @@ describe('attempts', () => {
       completion: 'interrupted',
       interruptReason: 'pause',
     })
+  })
+
+  it("lists a piece's most recent attempts, newest first, without mixing pieces", async () => {
+    const s = await storage()
+    const { piece } = await importPiece(s, 'v1')
+    const other = await importPiece(s, 'v2')
+    const a1 = attemptFor(piece.id, [[1, 'clean']], { id: `${piece.id}-100-1`, createdAt: 100 })
+    const a2 = attemptFor(piece.id, [[1, 'clean']], { id: `${piece.id}-200-2`, createdAt: 200 })
+    const a3 = attemptFor(piece.id, [[1, 'clean']], {
+      id: `${piece.id}-300-3`,
+      createdAt: 300,
+      context: { ...a1.context, multiplier: 0.5 },
+      contextKey: 'slow',
+    })
+    const a4 = attemptFor(piece.id, [[1, 'clean']], { id: `${piece.id}-400-4`, createdAt: 500 })
+    const a5 = attemptFor(piece.id, [[1, 'clean']], {
+      id: `${piece.id}-500-5`,
+      createdAt: 400,
+      context: { ...a1.context, scoreVersionId: 'v0' },
+      contextKey: 'old-version',
+    })
+    const o1 = attemptFor(other.piece.id, [[1, 'clean']], { id: `${other.piece.id}-900-1`, createdAt: 900 })
+    const o2 = attemptFor(other.piece.id, [[1, 'clean']], { id: `${other.piece.id}-950-2`, createdAt: 950 })
+    // Stored out of order across both pieces.
+    await s.addAttempts([a3, o1, a5, a1, o2, a4, a2])
+
+    const top3 = await s.listRecentAttempts(piece.id, 3)
+    expect(top3.map((x) => x.id)).toEqual([a4.id, a5.id, a3.id])
+    expect(top3.every((x) => x.pieceId === piece.id)).toBe(true)
+
+    const all = await s.listRecentAttempts(piece.id, 10)
+    expect(all.map((x) => x.id)).toEqual([a4.id, a5.id, a3.id, a2.id, a1.id])
+    expect(all.every((x) => x.pieceId === piece.id)).toBe(true)
+
+    expect(await s.listRecentAttempts(piece.id, 0)).toEqual([])
+    expect(await s.listRecentAttempts(other.piece.id, 5).then((xs) => xs.map((x) => x.id))).toEqual([o2.id, o1.id])
+  })
+
+  it('returns empty without opening a transaction for non-positive or non-finite limits', async () => {
+    let opened = false
+    const fakeDb = {
+      transaction() {
+        opened = true
+        throw new Error('transaction should not be opened')
+      },
+    } as unknown as Db
+
+    for (const limit of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(await listRecentAttempts(fakeDb, 'piece-v1', limit)).toEqual([])
+    }
+    expect(opened).toBe(false)
   })
 })

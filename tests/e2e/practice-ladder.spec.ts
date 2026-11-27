@@ -36,13 +36,20 @@ test('the default ladder climbs after three clean passes, holds after failures, 
 
   await page.getByRole('button', { name: 'Start', exact: true }).click()
   const card = page.getByTestId('attempt-result')
-  const pass = async (wrong = false) => {
+  const pass = async (wrong = false, onceMore = false) => {
     await waitForOnset(page, 60, 48)
     if (wrong) {
       await play(page, 61)
       await waitForOnset(page, 60, 48)
+      // Past the strike of the wrong key (P33), so that it was pressed alone.
+      if (onceMore) await page.waitForTimeout(200)
     }
     await play(page, 60, 48)
+    if (onceMore) {
+      // The same lone wrong key as the pass before: the first clean strike is taken back (P39).
+      await expect(page.getByTestId('stage-cue')).toHaveAttribute('data-kind', 'once-more')
+      await play(page, 60, 48)
+    }
     await playWhenDue(page, 62)
     await playWhenDue(page, 64)
     await playWhenDue(page, 65)
@@ -60,7 +67,7 @@ test('the default ladder climbs after three clean passes, holds after failures, 
   await expect(speedButton).toHaveAccessibleName(/Speed 80%/, { timeout: 20_000 })
   await expect(panel.getByTestId('ladder-line')).toHaveText('80% → 100%')
   for (let failure = 0; failure < 2; failure++) {
-    await pass(true)
+    await pass(true, failure > 0)
     await expect(card).toContainText('1 wrong note')
   }
   await waitForOnset(page, 60, 48)
@@ -84,4 +91,57 @@ test('the default ladder climbs after three clean passes, holds after failures, 
   await expect(
     reopened.getByRole('radiogroup', { name: 'Ladder goal' }).getByRole('radio', { name: '100%' }),
   ).toBeChecked()
+})
+
+test('a hesitant clean pass holds the ladder speed instead of climbing', async ({ page }) => {
+  await installFakeMidi(page)
+  await seedPiece(page)
+  await openSeededPractice(page)
+
+  await page.getByRole('button', { name: 'Repeat from here' }).click()
+  const panel = page.getByTestId('repeat-controls')
+  const goalButton = panel.getByRole('button', { name: /^Repeat goal: / })
+  await goalButton.click()
+  const options = panel.getByRole('dialog', { name: 'Repeat options' })
+  await options.getByRole('radiogroup', { name: 'Repeat until' }).getByRole('radio', { name: '3' }).click()
+  await options.getByRole('switch', { name: 'Speed ladder' }).check()
+  await goalButton.click()
+
+  const speedButton = page.getByRole('button', { name: /Open speed options/ })
+  await expect(speedButton).toHaveAccessibleName(/Speed 75%/)
+  await page.getByRole('button', { name: 'Start', exact: true }).click()
+
+  const card = page.getByTestId('attempt-result')
+  const fluentPass = async () => {
+    await playWhenDue(page, 60, 48)
+    await playWhenDue(page, 62)
+    await playWhenDue(page, 64)
+    await playWhenDue(page, 65)
+  }
+
+  // Two fluent clean passes, then a clean pass with a long pause (> 600 ms) at D4: holds at 75%.
+  await fluentPass()
+  await expect(card).toContainText('Clean pass')
+  await fluentPass()
+  await expect(card).toContainText('2 clean in a row')
+
+  await playWhenDue(page, 60, 48)
+  await waitForOnset(page, 62)
+  await page.waitForTimeout(800)
+  await play(page, 62)
+  await playWhenDue(page, 64)
+  await playWhenDue(page, 65)
+
+  await expect(card).toContainText('Clean pass')
+  await expect(card.getByTestId('ladder-result')).toHaveText('Clean, with pauses: staying at 75%')
+  await expect(speedButton).toHaveAccessibleName(/Speed 75%/)
+  // Still repeats at 75%; a fresh streak of 3 fluent clean passes climbs to 80%.
+  await expect(page.locator('[data-activity]')).toHaveAttribute('data-phase', 'ready', { timeout: 15_000 })
+  await fluentPass()
+  await expect(speedButton).toHaveAccessibleName(/Speed 75%/)
+  await fluentPass()
+  await expect(speedButton).toHaveAccessibleName(/Speed 75%/)
+  await fluentPass()
+  await expect(card.getByTestId('ladder-result')).toHaveText('Speed up: next at 80%')
+  await expect(speedButton).toHaveAccessibleName(/Speed 80%/, { timeout: 20_000 })
 })

@@ -185,6 +185,21 @@ describe('Hints', () => {
     click(toggle(panel, 'Red flash on a wrong note'))
     expect(settings.value.hints.damageFlash).toBe(true)
   })
+
+  it('turns pencil marks at past mistakes on and off (off by default)', () => {
+    const panel = openSection(open(), 'Reading help', 'Hints')
+    const marks = toggle(panel, 'Pencil marks at past mistakes')
+    expect(marks.checked).toBe(false)
+    expect(panel.textContent).toContain(
+      'Small marks above the staff where you went wrong recently. They never name a note.',
+    )
+    click(marks)
+    expect(settings.value.hints.reminders).toBe(true)
+    expect(toggle(panel, 'Pencil marks at past mistakes').checked).toBe(true)
+    expect(settings.value.hints.damageFlash).toBe(true) // nothing else changes
+    click(toggle(panel, 'Pencil marks at past mistakes'))
+    expect(settings.value.hints.reminders).toBe(false)
+  })
 })
 
 describe('Keep time', () => {

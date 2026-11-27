@@ -75,5 +75,6 @@
   "6066": "Vous avez votre fichier?",
   "6085": "Supprimer les enregistrements incomplets?",
   "6086": "Voulez-vous vraiment supprimer cet enregistrement?",
-  "6087": "Voulez-vous vraiment supprimer ces enregistrements? Touchez ceux que vous voulez garder."
+  "6087": "Voulez-vous vraiment supprimer ces enregistrements? Touchez ceux que vous voulez garder.",
+  "6118": "Lu dans la clé d’avant le changement? Cette portée est maintenant en {0}."
 }

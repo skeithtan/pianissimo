@@ -4,6 +4,7 @@
  * disconnect interruption, the input monitor under an overlay and volumes.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { CHORD_SLIP_MS } from '../../core/engine'
 import { buildScore } from '../../core/engine/testkit'
 import type { PracticeMode } from '../../core/model/practice'
 import { DEFAULT_SETTINGS } from '../../core/model/settings'
@@ -320,7 +321,10 @@ describe('a new run during the tail of a Repeat pass', () => {
     await again(h)
     h.frames.flush()
     expect(h.session.engine.state.phase).toBe('ready')
-    h.play(60, 62, 64, 65)
+    // The first note is guarded after the failed pass, so it completes after the hold.
+    h.play(60)
+    h.step(CHORD_SLIP_MS)
+    h.play(62, 64, 65)
     expect(h.session.ui.get().lastResult?.targetReached).toBe(true)
     for (let i = 0; i < 50; i++) h.step(100)
     return h
@@ -583,5 +587,190 @@ describe('Human-held guard on the MIDI output', () => {
     h.frames.flush()
     expect(h.session.ui.get().activity).toBe('listening')
     expect(guards).toEqual([false, true])
+  })
+})
+
+describe('Late tick timer and pending early press', () => {
+  // Group 1 (62) and group 2 (64) are 1/16 beat (62.5 ms at 60 BPM) apart — within EARLY_PRESS_GRACE_MS.
+  const closeNotes = buildScore({
+    notes: [
+      { at: 0, midi: 60 },
+      { at: 1, midi: 62 },
+      { at: 1.0625, midi: 64 },
+      { at: 2, midi: 65 },
+    ],
+    bars: 1,
+  })
+
+  function manualTimers(getNow: () => number) {
+    let nextId = 1
+    const queue: Array<{ id: number; at: number; delay: number; fn: () => void }> = []
+    return {
+      timers: {
+        setTimeout(fn: () => void, ms: number): unknown {
+          const id = nextId++
+          queue.push({ id, at: getNow() + Math.max(0, ms), delay: ms, fn })
+          return id
+        },
+        clearTimeout(handle: unknown): void {
+          const i = queue.findIndex((t) => t.id === handle)
+          if (i >= 0) queue.splice(i, 1)
+        },
+      },
+      get dueCount() {
+        const now = getNow()
+        return queue.filter((t) => t.at <= now).length
+      },
+      fireNext(): boolean {
+        const now = getNow()
+        let best = -1
+        for (let i = 0; i < queue.length; i++) {
+          if (queue[i]!.at <= now && (best < 0 || queue[i]!.at < queue[best]!.at)) best = i
+        }
+        if (best < 0) return false
+        const [t] = queue.splice(best, 1)
+        t!.fn()
+        return true
+      },
+    }
+  }
+
+  it('defers a late tick once so an earlier-stamped key event completes the group and accepts the pending press', async () => {
+    let now = 1000
+    const tq = manualTimers(() => now)
+    const advanceUntil = (pred: () => boolean) => {
+      for (let i = 0; i < 400 && !pred(); i++) {
+        now += 20
+        while (tq.fireNext()) {
+          // drain due timers
+        }
+      }
+      expect(pred()).toBe(true)
+    }
+    const h = harness(
+      closeNotes,
+      { range: { fromOcc: 0, toOcc: 0 } },
+      { deps: { clock: () => now, timers: tq.timers } },
+    )
+    h.session.setMode('time')
+    await h.session.start()
+    advanceUntil(() => h.session.engine.state.phase === 'running')
+    h.midi.on(60, now)
+    h.midi.off(60, now)
+    // Advance close to gate 1 (1000 ms after gate 0), stopping 20 ms before it so the pending
+    // press's deadline (now + 150) falls strictly before group 1's missed-note close (gate 1 + 150).
+    const gate1At = now + 1000
+    advanceUntil(() => now >= gate1At - 20)
+    expect(h.session.engine.state.groupIndex).toBe(1)
+
+    // Early press of next group's pitch (64): pending until engine.nextDeadline().
+    h.midi.on(64, now)
+    h.midi.off(64, now)
+    const deadline = h.session.engine.nextDeadline()!
+    expect(deadline).toBe(now + 150)
+    expect(h.session.engine.state.groupIndex).toBe(1)
+    expect(h.flash.hits).toHaveLength(0)
+
+    // Drain transport timers before the pending-press deadline (gates 1 and 2 arrive here).
+    for (; now + 10 < deadline;) {
+      now += 10
+      while (tq.fireNext()) {
+        // drain
+      }
+    }
+    now = deadline - 1
+    while (tq.fireNext()) {
+      // drain
+    }
+
+    // Main thread stalls so the deadline timer fires > 8 ms after its scheduled time.
+    now = deadline + 15
+    expect(tq.dueCount).toBe(1)
+    expect(tq.fireNext()).toBe(true)
+
+    // Queued MIDI event stamped BEFORE the deadline arrives after the late timer callback.
+    h.midi.on(62, deadline - 10)
+    h.midi.off(62, deadline - 10)
+    while (tq.fireNext()) {
+      // drain any remaining due timers
+    }
+    h.frames.flush()
+
+    // Group 1 completed and pending 64 completed group 2; no 'ahead' wrong attack.
+    expect(h.session.engine.state.groupIndex).toBe(3)
+    expect(h.flash.hits).toHaveLength(0)
+    // Finish the pass to confirm zero wrong attacks recorded.
+    advanceUntil(() => h.session.engine.state.transportGate >= 3)
+    h.midi.on(65, now)
+    h.midi.off(65, now)
+    expect(h.attempts[0]).toMatchObject({ completion: 'completed', wrongAttacks: 0 })
+  })
+
+  it('still ticks and expires the pending press as ahead when no key event arrives', async () => {
+    let now = 1000
+    const tq = manualTimers(() => now)
+    const advanceUntil = (pred: () => boolean) => {
+      for (let i = 0; i < 400 && !pred(); i++) {
+        now += 20
+        while (tq.fireNext()) {
+          // drain due timers
+        }
+      }
+      expect(pred()).toBe(true)
+    }
+    const h = harness(
+      closeNotes,
+      { range: { fromOcc: 0, toOcc: 0 } },
+      { deps: { clock: () => now, timers: tq.timers } },
+    )
+    h.session.setMode('time')
+    await h.session.start()
+    advanceUntil(() => h.session.engine.state.phase === 'running')
+    h.midi.on(60, now)
+    h.midi.off(60, now)
+    const gate1At = now + 1000
+    advanceUntil(() => now >= gate1At - 20)
+
+    h.midi.on(64, now)
+    h.midi.off(64, now)
+    const deadline = h.session.engine.nextDeadline()!
+    expect(deadline).toBe(now + 150)
+
+    // Drain transport timers before the pending-press deadline.
+    for (; now + 10 < deadline;) {
+      now += 10
+      while (tq.fireNext()) {
+        // drain
+      }
+    }
+    now = deadline - 1
+    while (tq.fireNext()) {
+      // drain
+    }
+
+    // First run is > 8 ms late: re-queues once with 0 delay, does not expire yet.
+    now = deadline + 15
+    expect(tq.dueCount).toBe(1)
+    expect(tq.fireNext()).toBe(true)
+    h.frames.flush()
+    expect(h.flash.hits).toHaveLength(0)
+    expect(tq.dueCount).toBe(1)
+
+    // Second run ticks normally without re-queuing again, expiring the pending press as 'ahead'.
+    expect(tq.fireNext()).toBe(true)
+    h.frames.flush()
+    expect(h.session.engine.state.groupIndex).toBe(1)
+    expect(h.flash.hits).toHaveLength(1)
+    expect(tq.dueCount).toBe(0)
+
+    // Complete the pass to verify the wrong attack was counted.
+    h.midi.on(62, now)
+    h.midi.off(62, now)
+    h.midi.on(64, now)
+    h.midi.off(64, now)
+    advanceUntil(() => h.session.engine.state.transportGate >= 3)
+    h.midi.on(65, now)
+    h.midi.off(65, now)
+    expect(h.attempts[0]).toMatchObject({ completion: 'completed', wrongAttacks: 1 })
   })
 })

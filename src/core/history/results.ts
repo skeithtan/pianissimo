@@ -37,9 +37,9 @@ export interface TimingAccuracy {
   readonly onTime: number
   /** Completed more than the tolerance before their scheduled time. */
   readonly early: number
-  /** Completed more than the tolerance after their scheduled time. */
+  /** Completed more than the tolerance after their scheduled time, or missed with a late press. */
   readonly late: number
-  /** Groups the music passed before they were complete. */
+  /** Groups the music passed before they were complete, with no late press. */
   readonly missed: number
   /** Mean signed offset over completed groups in ms (negative = rushing); 0 with none. */
   readonly meanOffsetMs: number
@@ -50,7 +50,7 @@ export interface TimingAccuracy {
 /**
  * Timing accuracy of a strict-transport attempt from its per-group outcomes; null for gated and
  * free attempts and for records without per-group outcomes. Early and late mean beyond
- * `rhythm.toleranceMs`.
+ * `rhythm.toleranceMs` (missed groups with `latePitches` count as late, not missed).
  */
 export function timingAccuracy(a: AttemptRecord): TimingAccuracy | null {
   if (a.context.transport !== 'strict' || a.rhythm === undefined || a.groups === undefined) return null
@@ -59,22 +59,24 @@ export function timingAccuracy(a: AttemptRecord): TimingAccuracy | null {
   let early = 0
   let late = 0
   let missed = 0
+  let completed = 0
   let sum = 0
   let sumAbs = 0
   for (const g of a.groups) {
     if (g.offsetMs !== undefined) {
+      completed++
       sum += g.offsetMs
       sumAbs += Math.abs(g.offsetMs)
       if (g.offsetMs < -tolerance) early++
       else if (g.offsetMs > tolerance) late++
       else onTime++
     } else if (g.missed === true) {
-      missed++
+      if ((g.latePitches?.length ?? 0) > 0) late++
+      else missed++
     }
   }
-  const completed = onTime + early + late
   return {
-    groups: completed + missed,
+    groups: onTime + early + late + missed,
     onTime,
     early,
     late,
@@ -181,7 +183,7 @@ export interface ContextResults {
   readonly bestClean: AttemptRecord | null
   /** Every clean unassisted completion, best first. */
   readonly cleanRanking: readonly AttemptRecord[]
-  /** Completed without assistance but with wrong attacks, newest first. */
+  /** Completed without assistance, with wrong attacks or missed groups, newest first. */
   readonly unassistedWithErrors: readonly AttemptRecord[]
   /** Completed with assistance (names or keyboard), newest first; kept apart from rankings. */
   readonly assisted: readonly AttemptRecord[]
@@ -208,7 +210,9 @@ function summarize(contextKey: string, attempts: readonly AttemptRecord[]): Cont
     context: first.context,
     bestClean: cleanRanking[0] ?? null,
     cleanRanking,
-    unassistedWithErrors: completed.filter((a) => !isAssistedAttempt(a) && a.wrongAttacks > 0).sort(newestFirst),
+    unassistedWithErrors: completed
+      .filter((a) => !isAssistedAttempt(a) && !isCleanUnassistedCompletion(a))
+      .sort(newestFirst),
     assisted: completed.filter(isAssistedAttempt).sort(newestFirst),
     cleanCompletions: completed.filter(isCleanCompletion).sort(compareCleanRuns),
     notClean: completed.filter((a) => !isCleanCompletion(a)).sort(newestFirst),

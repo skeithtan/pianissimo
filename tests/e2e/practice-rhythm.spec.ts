@@ -343,7 +343,7 @@ test.describe('Keep time', () => {
     // Repeat mode counts in again; this time D4 comes 400 ms late, outside the +/-150 ms window.
     const second = await playAfterCountIn(page, bar1(400))
     expect(second).toEqual([4, 3, 2, 1])
-    await expect(card).toContainText('1 missed')
+    await expect(card).toContainText('1 late')
     await expect(card).toContainText('On time 3 of 4')
     await expect(card).not.toContainText('Clean pass')
 
@@ -369,8 +369,10 @@ test.describe('Keep time', () => {
     await expect(page.locator('main')).toHaveAttribute('data-view', 'practice')
     await expect(details.getByTestId('result-facts')).toContainText('On time 3 of 4')
     await details.getByText('All the numbers for this pass').click()
+    await expect(details.locator('[data-row="late"]')).toContainText('Late groups')
+    await expect(details.locator('[data-row="late"]')).toContainText('1')
     await expect(details.locator('[data-row="missed"]')).toContainText('Missed groups')
-    await expect(details.locator('[data-row="missed"]')).toContainText('1')
+    await expect(details.locator('[data-row="missed"]')).toContainText('0')
     await expect(details.locator('[data-row="on-time"]')).toContainText('3')
     await expect(details.locator('[data-row="tolerance"]')).toContainText('150')
     // The late press of D4 came after its group was missed, so the attempt is not a pass.

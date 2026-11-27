@@ -132,16 +132,32 @@ is in `nextDeadline` and is applied by `tick` or the next input. Completion is n
 completes, its pitches accepted before that last strike may be pressed once more within the gap (`replay` of the
 completed group).
 
-## Repeated extra keys (DECISIONS P26)
+## Repeated extra keys (DECISIONS P26, P38, P39)
 
-On the automatic next waiting-practice pass, a previously mistaken group holds provisional
-completion for up to `CHORD_SLIP_MS`, capped halfway to the next onset. A matching wrong pitch
-cancels completion, clears the group's accepted attacks and pending early presses, and requires
-fresh attacks after the remainder of the stroke (`STRIKE_GAP_MS` for a chord, `ROLL_STRIKE_GAP_MS` for a roll,
-extended by each discarded right key; `CHORD_SLIP_MS` for one note). The extra key still counts as a wrong attack.
-The completion event keeps the timestamp of the last accepted attack on the successful retry.
+A group is guarded by the previous automatic pass's wrong keys (`continueRepeat`, P26) and by
+`setGuard(guard, timeline)` (P38: wrong keys per group index from the session's mistake memory;
+stored whatever the mode, applied only in scored non-strict mode, kept by `restart`, dropped when
+`reconfigure` brings a different timeline). A guarded group holds provisional completion for up to
+`CHORD_SLIP_MS`, capped halfway to the next onset. A matching wrong pitch cancels completion, clears
+the group's accepted attacks and pending early presses, and requires fresh attacks after the
+remainder of the stroke (`STRIKE_GAP_MS` for a chord, `ROLL_STRIKE_GAP_MS` for a roll, extended by
+each discarded right key; `CHORD_SLIP_MS` for one note). Inside that retry window a pitch tied into
+the current group stays a tie-end press, while a key of the next group is discarded silently like
+the right keys. When the guarded key is pressed **alone** (no right key within that remainder before
+or after it), the first clean stroke that would complete the group is taken back
+(`EngineState.onceMore`, P39) and a second completes it through the usual hold; a guarded key in a
+strike with right keys keeps the single retry. The extra key still counts as a wrong attack. The
+completion event keeps the timestamp of the last accepted attack on the successful retry.
 
-## Per-group outcomes (teacher corrections, E15–E16)
+Opening the confirmation hold extends the deadlines of already-pending presses by its length, so a
+guarded onset keeps the full grace of E12. In accompaniment transport, completing a group from a
+hold credits the delay (from when the hold opened) to the next group's early-press grace only
+(`#holdCredit`, `#graceFor`), because the session releases the transport gate only when the hold
+ends. `transportArrived` resolves a due hold before expiring pending presses. Known limit: with
+onsets closer than about 180 ms, a next-group press made during the hold waits for its gate instead
+of completing its group at once, so the note after it can be judged too early.
+
+## Per-group outcomes (teacher corrections, E15–E16, E19)
 
 Scored and reading records carry `groups: GroupOutcome[]`, one per reached group, ascending
 (completed groups and, when the attempt or traversal ended early, the current one; a reading
@@ -153,7 +169,10 @@ with its own presses). A completed group is one with an entry in `onsets`.
 | `wrongAttacks`, `earlyAttacks` | Wrong attacks attributed to the group; of them, right pitches too early (E12). |
 | `lateMs` | Whole ms from the gate's arrival (`transportArrived`) to the group's input completion, an ordinary-reading pause left out; 0 when completed at or before arrival, not completed, or in free mode. **The group whose press started the clock is never late** (the transport waits at the first gate for that press, P9), unless the attempt began with `runningStart: true` (a lead-in handing over while the transport runs into the loop), where it is measured like any other group. |
 | `wrongPitches` | MIDI pitches of the group's wrong attacks that were not too early, in order, repeats included. |
+| `extraPitches` | Distinct wrong pitches struck within `CHORD_SLIP_MS` of a right strike (press order); present (possibly empty) whenever `wrongPitches` is non-empty, absent on older records. |
 | `spreadMs` | Whole ms between the first and last accepted attack (engine press times; replays ignored; an ordinary-reading pause left out); 0 for a one-pitch group or an incomplete one. |
+| `lateHand` | Two-hand chord: the hand (`'L'` or `'R'`) whose accepted attacks all came after the other hand's; absent on single-hand or interleaved chords. |
+| `latePitches`, `lateSlipMs` | Strict transport: distinct pitches of a missed group pressed late as late slips (and ms after the scheduled time of the first); still not wrong attacks. |
 | `tieEndPresses` | Presses of a pitch in the group's `tiedPitches` while it is current, or within the early grace before it (pending like a next-group press; expiring before the group comes it is a `'pitch'` error of the current group). A pending next-group press whose pitch is also tied into the current group expires as a tie-end press instead of `'ahead'`. A tie-end press emits `wrong` with reason `'tie-end'` (feedback end unchanged) and is **not** a wrong attack: no totals, first-pass, bar traversal, red wash, local marker, held-wrong marking, hint count or ottava warning, and `lastWrongReason` is kept. The review can mark the tied note. |
 
 `tiedPitches` (timeline): learner tie continuations go to the first group at or after their
@@ -190,17 +209,21 @@ onset group is judged against its scheduled time, the transport's arrival at its
    `waitingForTransport`.
 4. **Closing by the clock.** Group i closes at `arrival(i) + toleranceMs` if still incomplete:
    event `missed { group, notes, time }`, outcome `missed: true`, `missedGroups` + 1, a group with
-   errors of its bar (whose traversal can still be `complete`: missed groups count as traversed),
-   hint retired, local marker cleared, then group i + 1 is current (or the attempt completes).
+   errors of its bar (and `MeasureTraversal.missedGroups`, counting non-synthetic misses, present
+   whenever the bar had a miss; the traversal can still be `complete`: missed groups count as
+   traversed), hint retired, local marker cleared, then group i + 1 is current (or the attempt
+   completes).
    A press exactly at the close time is still on time; a `tick` at that time closes.
    `nextDeadline()` includes the close once gate i has arrived. An arrival at a later gate than
    the current group (the clock is ahead) closes the groups whose gates it skipped at once, in
    order; a group whose own gate arrived earlier keeps its own close. Arrivals at gates already
    reached or at groups already left change nothing.
 5. **Late slip.** A press of a pitch of the group that just closed as missed (and not a pitch of
-   the current group), before the transport reaches the current group's gate or within
-   `toleranceMs` after the close (whichever is later), emits `wrong` with
-   reason `'late'`: like `'tie-end'` it is not a wrong attack and is not recorded (no totals,
+   the current group), before the transport reaches the immediate next group's gate or within
+   `toleranceMs` after the close (whichever is later), emits `wrong` with reason `'late'`: like
+   `'tie-end'` it is not a wrong attack (no totals, first-pass or bar wrong-attack count), and
+   records the pitch on that missed group's `latePitches` / `lateSlipMs` so review and timing
+   accuracy tell a late press from a never-played note.
    bar counts, red wash, hint count, marker, `lastWrongReason`). O(1): only the last closed
    group is remembered.
 6. **Next group.** Presses for group i + 1 while i is current are pending as in E12, with

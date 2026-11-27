@@ -1,11 +1,13 @@
 import { msg } from '../../i18n/messages'
 /**
- * Repeated mistakes (DECISIONS P24): the same wrong key at the same place of a loop or the piece,
- * pass after pass, found in the per-group outcomes of the session's recent passes (pure). The
- * session computes them in its frame, never in the MIDI input path, and hands them to the result
- * card as `AttemptSummary.repeatedMistakes`; `repeatedMistakeLine` words one for it.
+ * Repeated mistakes (DECISIONS P24): the same wrong key at the same place in the score, pass after
+ * pass, read from its visit history (`SpotVisit` per group, pure): the session's mistake memory for
+ * scored passes, the runs before it for a Wait run. The session computes them in its frame, never
+ * in the MIDI input path, and hands them to the result card as `AttemptSummary.repeatedMistakes`;
+ * `repeatedMistakeLine` words one for it.
  */
 import { barLabel, type Timeline } from '../../core/engine'
+import type { SpotVisit } from '../../core/history'
 import type { ScoreModel } from '../../core/model/score'
 import type { NamingSettings } from '../../core/model/settings'
 import { NATURAL, labelFor, labelForMidi, type NoteLabel } from '../../core/naming'
@@ -37,40 +39,44 @@ export interface RepeatedMistake {
   readonly wrongPitch: number
   /** Passes running, the latest included, with this wrong key at this group (≥ the threshold). */
   readonly passes: number
+  /** True when the wrong key was struck together with a right key on the latest pass (`extraPitches`). */
+  readonly together?: boolean
 }
 
 /**
- * The repeated mistakes of the latest attempt in `records` (oldest first): each wrong pitch of
- * its per-group outcomes that also occurred at the same group in the passes before it, counted
- * back while each earlier pass of the same comparison context that reached the group had it.
- * A pass that did not reach the group (stopped earlier, jumped over) is skipped; one that reached
- * it without that wrong key ends the count. Only scored attempts and Wait runs with per-group
- * outcomes count (never one reading traversal), and the timeline must be the one the latest pass
+ * The repeated mistakes of `latest`: each wrong pitch of its per-group outcomes whose visit
+ * history in `spots` (keyed by group index of `timeline`, oldest first, `latest` included) has
+ * that wrong key running from the latest visit for at least `minPasses` passes. A place with no
+ * history in `spots` behaves as this pass only (1 pass). Only scored attempts and Wait runs with
+ * per-group outcomes count (never one reading traversal), and `timeline` must be the one `latest`
  * ran on. Sorted by passes (most first), then by group.
  */
 export function repeatedMistakes(
-  records: readonly PassRecord[],
+  latest: PassRecord | undefined,
   timeline: Timeline,
   model: Pick<ScoreModel, 'notes' | 'occurrences'>,
+  spots: ReadonlyMap<number, readonly SpotVisit[]>,
   minPasses: number = REPEATED_MISTAKE_PASSES,
 ): RepeatedMistake[] {
-  const latest = records.at(-1)
   if (!latest || latest.kind === 'reading' || !latest.groups) return []
-  const run = records.filter((r) => r.kind !== 'reading' && r.groups && r.contextKey === latest.contextKey)
   const out: RepeatedMistake[] = []
   for (const outcome of latest.groups) {
     const group = timeline.groups[outcome.group]
     if (!group) continue
+    const visits = spots.get(outcome.group)
     for (const wrongPitch of new Set(outcome.wrongPitches ?? [])) {
       let passes = 0
-      for (let i = run.length - 1; i >= 0; i--) {
-        const earlier = run[i]!.groups!.find((g) => g.group === outcome.group)
-        if (!earlier) continue
-        if (!(earlier.wrongPitches ?? []).includes(wrongPitch)) break
-        passes++
+      if (visits && visits.length > 0) {
+        for (let i = visits.length - 1; i >= 0; i--) {
+          if (!visits[i]!.wrong.includes(wrongPitch)) break
+          passes++
+        }
+      } else {
+        passes = 1
       }
       if (passes < minPasses) continue
       const k = standInFor(wrongPitch, group, model)
+      const together = outcome.extraPitches?.includes(wrongPitch) === true
       out.push({
         group: outcome.group,
         occ: group.occ,
@@ -80,6 +86,7 @@ export function repeatedMistakes(
         expectedNote: group.notesByPitch[k]?.[0] ?? group.notes[0]!,
         wrongPitch,
         passes,
+        together,
       })
     }
   }
@@ -173,6 +180,7 @@ export function repeatedMistakeLine(
   naming: NamingSettings,
 ): string {
   const [wrong, expected] = pressNames(m.wrongPitch, m.expectedPitch, m.expectedNote, score, naming)
-  const passes = COUNTS[m.passes] ?? String(m.passes)
+  const passes = msg(COUNTS[m.passes] ?? String(m.passes))
+  if (m.together) return msg('{0} with {1} in bar {2}, {3} passes running', wrong, expected, m.bar, passes)
   return msg('{0} instead of {1} in bar {2}, {3} passes running', wrong, expected, m.bar, passes)
 }

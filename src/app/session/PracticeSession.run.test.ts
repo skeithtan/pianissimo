@@ -120,7 +120,12 @@ describe('a Wait run that reaches the end of the piece (U142)', () => {
     expect(ui(h).corrections).toBe(3)
     const details = h.session.resultDetails()!
     expect(details.attemptId).toBe(result(h)!.id)
-    expect(rankMistakes(details.records, details.timeline, piece, details.marks).map((m) => [m.bar, m.level])).toEqual([
+    expect(
+      rankMistakes(details.records.at(-1), details.timeline, piece, details.marks, details.spots).map((m) => [
+        m.bar,
+        m.level,
+      ]),
+    ).toEqual([
       ['5', 'extra'],
       ['5', 'extra'],
       ['9', 'extra'],

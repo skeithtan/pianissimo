@@ -1696,6 +1696,157 @@ describe('StripView teacher corrections', () => {
     expect(y2).toBeGreaterThan(y1!)
     expect(single!.querySelector('.pn-corr-link')).toBeNull()
   })
+
+  it('draws a recurring mistake (repeat >= 2) with pn-corr-repeat, two rings per staff and ×N label', () => {
+    const { v } = view(40)
+    v.setCorrections([
+      { notes: [0], kind: 'wrong', text: 'Wrong note', repeat: 3 },
+      { notes: [2, 3], kind: 'spread', text: 'Together', repeat: 2 },
+    ])
+    v.flushNow()
+    const [single, chord] = [...host.querySelectorAll('.pn-corrs > .pn-corr')]
+    expect(single!.getAttribute('class')).toBe('pn-corr pn-corr-wrong pn-corr-repeat')
+    expect(labelOf(single!)!.textContent).toBe('Wrong note ×3')
+    const singleRings = [...single!.querySelectorAll('.pn-corr-ring')]
+    expect(singleRings).toHaveLength(2)
+    expect(singleRings[0]!.getAttribute('d')).not.toBe(singleRings[1]!.getAttribute('d'))
+    expect(singleRings[0]!.getAttribute('transform')).not.toBe(singleRings[1]!.getAttribute('transform'))
+    // Chord on two staves: two rings per staff (4 total), spread link unchanged.
+    expect(chord!.getAttribute('class')).toBe('pn-corr pn-corr-spread pn-corr-repeat')
+    expect(labelOf(chord!)!.textContent).toBe('Together ×2')
+    expect(chord!.querySelectorAll('.pn-corr-ring')).toHaveLength(4)
+    expect(chord!.querySelector('.pn-corr-link')).not.toBeNull()
+  })
+
+  it('draws marks with repeat absent, 0 or 1 identically to ordinary marks', () => {
+    const htmlFor = (repeat?: number) => {
+      const { v } = view(40)
+      const mark =
+        repeat === undefined
+          ? { notes: [0], kind: 'wrong' as const, text: 'Wrong note' }
+          : { notes: [0], kind: 'wrong' as const, text: 'Wrong note', repeat }
+      v.setCorrections([mark])
+      v.flushNow()
+      const html = host.querySelector('.pn-corrs > .pn-corr')!.outerHTML
+      v.destroy()
+      return html
+    }
+    const base = htmlFor(undefined)
+    expect(htmlFor(0)).toBe(base)
+    expect(htmlFor(1)).toBe(base)
+  })
+
+  it('redraws when only repeat changes (e.g. repeat: 2 to repeat: 3)', () => {
+    const { v } = view(40)
+    v.setCorrections([{ notes: [0], kind: 'wrong', text: 'Wrong note', repeat: 2 }])
+    v.flushNow()
+    v.setCorrections([{ notes: [0], kind: 'wrong', text: 'Wrong note', repeat: 3 }])
+    v.flushNow()
+    const current = host.querySelector('.pn-corr:not(.pn-corr-leave)')!
+    expect(labelOf(current)!.textContent).toBe('Wrong note ×3')
+  })
+
+  it('drops the label of a recurring mark when no row has room, keeping its double ring', () => {
+    const { v } = view(40)
+    const long = 'x'.repeat(100)
+    v.setCorrections([
+      { notes: [20], kind: 'wrong', text: long },
+      { notes: [22], kind: 'wrong', text: long },
+      { notes: [24], kind: 'wrong', text: long },
+      { notes: [26], kind: 'wrong', text: long, repeat: 3 },
+    ])
+    v.flushNow()
+    const dropped = [...host.querySelectorAll('.pn-corr')][3]!
+    expect(dropped.classList.contains('pn-corr-repeat')).toBe(true)
+    expect(labelOf(dropped)).toBeNull()
+    expect(dropped.querySelector('.pn-corr-leader')).toBeNull()
+    expect(dropped.querySelectorAll('.pn-corr-ring')).toHaveLength(2)
+  })
+
+  it('keeps setCorrections SVG output byte-identical', () => {
+    const { v } = view(40)
+    v.setCorrections([{ notes: [0], kind: 'wrong', text: 'Wrong note' }])
+    v.flushNow()
+    const html = host.querySelector('.pn-corrs > .pn-corr')!.outerHTML
+    expect(html).toContain('class="pn-corr pn-corr-wrong"')
+    expect(html).toContain('class="pn-corr-leader"')
+    expect(html).toContain('class="pn-corr-ring"')
+    expect(html).toContain('class="pn-corr-label pn-corr-halo"')
+    expect(html).toBe(
+      '<svg class="pn-corr pn-corr-wrong" viewBox="45.7 31 88.6 108.75" width="88.6" height="108.75" style="left: 45.7px; top: -29px;"><line class="pn-corr-leader" x1="90" y1="51" x2="90" y2="105.04"></line><path class="pn-corr-ring" d="M76.1 112.52A16.18 15.08 0 0 0 76.53 128.56A16.44 15.32 0 0 0 92.47 135.26A16.69 15.55 0 0 0 106.07 124.61A16.94 15.79 0 0 0 101.6 108.33A17.2 16.03 0 0 0 83.66 104.98A17.45 16.26 0 0 0 72.47 118.8" transform="rotate(-3 90 120)"></path><text class="pn-corr-label pn-corr-halo" x="90" y="47" text-anchor="middle" data-row="0">Wrong note</text></svg>',
+    )
+  })
+})
+
+describe('reminders (setReminders)', () => {
+  it('mounts the reminders layer below the corrections layer with aria-hidden', () => {
+    view(40)
+    const content = host.querySelector('.pn-content')!
+    const rem = content.querySelector('.pn-reminders')
+    const corr = content.querySelector('.pn-corrs')
+    expect(rem).not.toBeNull()
+    expect(corr).not.toBeNull()
+    expect(rem!.getAttribute('aria-hidden')).toBe('true')
+    const children = [...content.children]
+    expect(children.indexOf(rem!)).toBeLessThan(children.indexOf(corr!))
+  })
+
+  it('draws reminders on the next frame, skips identical sets, and clears on []', () => {
+    const { v } = view(40)
+    v.setReminders([
+      { notes: [0], level: 'faint' },
+      { notes: [1], level: 'firm' },
+      { notes: [9999], level: 'faint' },
+    ])
+    expect(host.querySelectorAll('.pn-reminder')).toHaveLength(0)
+    v.flushNow()
+    const marks = [...host.querySelectorAll('.pn-reminders > .pn-reminder')]
+    expect(marks).toHaveLength(2)
+    expect(marks[0]!.classList.contains('pn-reminder-faint')).toBe(true)
+    expect(marks[0]!.querySelectorAll('.pn-reminder-stroke')).toHaveLength(1)
+    expect(marks[1]!.classList.contains('pn-reminder-firm')).toBe(true)
+    expect(marks[1]!.querySelectorAll('.pn-reminder-stroke')).toHaveLength(2)
+
+    // Identical set again is a no-op (same DOM nodes, no leaving marks).
+    const firstNode = marks[0]!
+    v.setReminders([
+      { notes: [0], level: 'faint' },
+      { notes: [1], level: 'firm' },
+      { notes: [9999], level: 'faint' },
+    ])
+    v.flushNow()
+    expect(host.querySelector('.pn-reminders > .pn-reminder')).toBe(firstNode)
+    expect(host.querySelector('.pn-reminder-leave')).toBeNull()
+
+    // Clearing fades out and removes on animationend.
+    v.setReminders([])
+    v.flushNow()
+    const leaving = [...host.querySelectorAll('.pn-reminder')]
+    expect(leaving).toHaveLength(2)
+    expect(leaving.every((el) => el.classList.contains('pn-reminder-leave'))).toBe(true)
+    for (const el of leaving) el.dispatchEvent(new Event('animationend', { bubbles: true }))
+    expect(host.querySelectorAll('.pn-reminder')).toHaveLength(0)
+  })
+
+  it('redraws reminders at new positions after a re-layout', () => {
+    const layout1 = testLayout(40)
+    const v1 = new StripView(host, layout1, {})
+    v1.setReminders([{ notes: [0], level: 'faint' }])
+    v1.flushNow()
+    const left1 = Number.parseFloat(host.querySelector<SVGElement>('.pn-reminder')!.style.left)
+    v1.destroy()
+
+    host.innerHTML = ''
+    const layout2 = testLayout(40)
+    const n0 = layout2.notes[0]!
+    ;(layout2.notes as unknown as unknown[])[0] = { ...n0, head: { ...n0.head, x: n0.head.x + 40 } }
+    const v2 = new StripView(host, layout2, {})
+    v2.setReminders([{ notes: [0], level: 'faint' }])
+    v2.flushNow()
+    const left2 = Number.parseFloat(host.querySelector<SVGElement>('.pn-reminder')!.style.left)
+    expect(left2 - left1).toBeCloseTo(40)
+    v2.destroy()
+  })
 })
 
 describe('a notehead copied into a neighboring segment', () => {

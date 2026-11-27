@@ -217,4 +217,19 @@ describe('rhythm mode scorecard', () => {
     expect(card.timing).toBe('none')
     expect(card.rows.map((r) => r.id)).toEqual(['completion', 'wrong-attacks', 'first-pass', 'assistance'])
   })
+
+  it('splits missed groups into late and missed rows while averaging offsets over completed groups', () => {
+    const groups = [
+      g(0, { offsetMs: 20 }),
+      g(1, { offsetMs: 40 }),
+      g(2, { missed: true, latePitches: [60], lateSlipMs: 210 }),
+      g(3, { missed: true }),
+    ]
+    const card = buildScorecard(strict(groups, { missedGroups: 2, passed: false }))
+    expect(row(card, 'on-time')?.value).toBe('2 of 4 (50%)')
+    expect(row(card, 'early')?.value).toBe('0')
+    expect(row(card, 'late')?.value).toBe('1')
+    expect(row(card, 'missed')?.value).toBe('1')
+    expect(row(card, 'offset')?.value).toBe('+30 ms')
+  })
 })

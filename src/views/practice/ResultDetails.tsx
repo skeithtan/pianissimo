@@ -11,13 +11,23 @@ import { msg, messageLanguage } from '../../i18n/messages'
  * passes sit below the corrections (a Wait run has none: it is not stored, U142). Nothing here
  * navigates: a history row shows that pass's numbers in the card; an excerpt is only a picture.
  */
+import type { ComponentChildren } from 'preact'
 import { memo } from 'preact/compat'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { AttemptSummary, SnippetState } from '../../app/session'
 import type { SnippetKind } from '../../app/session/snippets'
-import { passesText, pressGhost, rankMistakes, wrongPressLine, type RankedMistake } from '../../app/session/ranking'
+import {
+  passesText,
+  patternLines,
+  pressGhost,
+  rankMistakes,
+  wrongPressLine,
+  type RankedMistake,
+} from '../../app/session/ranking'
+import { mistakePatterns } from '../../app/session/patterns'
 import { getStorage } from '../../app/services'
-import type { ScoreModel } from '../../core/model/score'
+import { barLabel as scoreBarLabel } from '../../core/engine'
+import type { Hand, ScoreModel } from '../../core/model/score'
 import type { NamingSettings } from '../../core/model/settings'
 import { canvasMeasurer, estimateMeasurer, type PreparedLayout } from '../../render'
 import type { CorrectionMark } from '../../render/shared/corrections'
@@ -41,8 +51,10 @@ import styles from './resultDetails.module.css'
 const MORE_STEP = 6
 /** Wrong-key sentences listed per place; more are counted. */
 const LINES_PER_PLACE = 4
+/** Maximum bar labels listed in "Fixed this pass" before summarizing the rest. */
+const FIXED_BAR_LIMIT = 6
 
-const KEEPS: ReadonlySet<RankedMistake['level']> = new Set(['repeated', 'habit', 'trouble'])
+const KEEPS: ReadonlySet<RankedMistake['level']> = new Set(['repeated', 'habit', 'trouble', 'hesitation'])
 
 const keepsHappening = (plan: ExcerptPlan<RankedMistake>) => KEEPS.has(plan.items[0]?.level ?? 'timing')
 
@@ -67,7 +79,12 @@ function drawBar(
 ) {
   const marks: CorrectionMark[] = plan.items
     .filter((m) => m.mark)
-    .map((m) => ({ notes: m.notes, kind: m.mark!.kind as CorrectionMark['kind'], text: m.mark!.text }))
+    .map((m) => ({
+      notes: m.notes,
+      kind: m.mark!.kind as CorrectionMark['kind'],
+      text: m.mark!.text,
+      ...(m.mark!.repeat !== undefined ? { repeat: m.mark!.repeat } : {}),
+    }))
   const ghosts = plan.items.flatMap((m) =>
     m.presses.map((press) => pressGhost(press, m.notes, model)).filter((g): g is GhostNote => g !== null),
   )
@@ -96,7 +113,13 @@ const PEEK_ABOVE = 4
 export function drawPeek(p: ResultDetailsProps): PeekDrawing | null {
   const details = p.session.resultDetails()
   if (details?.attemptId !== p.result.id || !p.layout) return null
-  const mistakes = (p.rank ?? rankMistakes)(details.records, details.timeline, p.model, details.marks)
+  const mistakes = (p.rank ?? rankMistakes)(
+    details.records.at(-1),
+    details.timeline,
+    p.model,
+    details.marks,
+    details.spots,
+  )
   const { shown } = planBars(mistakes, null, EXCERPT_LIMIT)
   const plan = shown.find(keepsHappening) ?? shown[0]
   const lead = plan?.items[0]
@@ -129,13 +152,24 @@ export function PeekExcerpt({ drawing }: { drawing: PeekDrawing }) {
   )
 }
 
-function Caption({ bar, level, reason }: { bar: string; level: RankedMistake['level']; reason: string }) {
+function Caption({
+  bar,
+  level,
+  reason,
+  children,
+}: {
+  bar: string
+  level: RankedMistake['level']
+  reason: string
+  children?: ComponentChildren
+}) {
   return (
     <div class={styles.caption}>
       <span class={styles.bar}>{msg('Bar {0}', bar)}</span>
       <span class={styles.reason} data-level={level}>
         {reason}
       </span>
+      {children}
     </div>
   )
 }
@@ -147,7 +181,10 @@ export function ResultDetails(p: ResultDetailsProps) {
     return current?.attemptId === p.result.id ? current : null
   }, [p.session, p.result.id])
   const mistakes = useMemo(
-    () => (details ? (p.rank ?? rankMistakes)(details.records, details.timeline, p.model, details.marks) : []),
+    () =>
+      details
+        ? (p.rank ?? rankMistakes)(details.records.at(-1), details.timeline, p.model, details.marks, details.spots)
+        : [],
     [details, p.model, p.rank, messageLanguage()],
   )
   const timing = useMemo(
@@ -180,6 +217,44 @@ export function ResultDetails(p: ResultDetailsProps) {
       },
     [],
   )
+  const drill = useMemo(
+    () => (group: number) => {
+      const { session: s, id } = latest.current
+      s.drillSpot(id, group)
+    },
+    [],
+  )
+  const drillGroup = (plan: ExcerptPlan<RankedMistake>): number | null => {
+    const group = plan.items[0]?.group
+    return group !== undefined && session.canDrill(p.result.id, group) ? group : null
+  }
+  const patterns = useMemo(() => {
+    const record = details?.records.at(-1)
+    if (!details || !record) return []
+    return patternLines(mistakePatterns(record, details.timeline, p.model), p.naming)
+  }, [details, p.model, p.naming, messageLanguage()])
+  const fixedLine = useMemo(() => {
+    if (!details || details.fixed.length === 0) return null
+    const bars: string[] = []
+    const seen = new Set<string>()
+    for (const g of details.fixed) {
+      const group = details.timeline.groups[g]
+      if (!group) continue
+      const label = scoreBarLabel(p.model, group.occ)
+      if (seen.has(label)) continue
+      seen.add(label)
+      bars.push(label)
+    }
+    if (bars.length === 0) return null
+    const shownBars = bars
+      .slice(0, FIXED_BAR_LIMIT)
+      .map((b) => msg('bar {0}', b))
+      .join(', ')
+    const rest = bars.length - FIXED_BAR_LIMIT
+    return rest > 0
+      ? msg('Fixed this pass: {0}, and {1} more', shownBars, rest)
+      : msg('Fixed this pass: {0}', shownBars)
+  }, [details, p.model, messageLanguage()])
   const excerpt = (plan: ExcerptPlan<RankedMistake>, index: number) => (
     <Excerpt
       key={plan.occ}
@@ -192,6 +267,8 @@ export function ResultDetails(p: ResultDetailsProps) {
       blockedPlayed={session.snippetBlocked(p.result.id, plan.occ, 'played')}
       blockedWritten={session.snippetBlocked(p.result.id, plan.occ, 'written')}
       onListen={toggle}
+      drillGroup={drillGroup(plan)}
+      onDrill={drill}
       timing={timing}
       // Every affected bar stays in the list (U108); its notation is mounted only near the view.
       virtual={hasTimingCorrections}
@@ -207,6 +284,16 @@ export function ResultDetails(p: ResultDetailsProps) {
         {verdict(p.result)}
       </p>
       {p.actions}
+      {patterns.length > 0 ? (
+        <p class={styles.patterns} data-testid="result-patterns">
+          {patterns.join(' ')}
+        </p>
+      ) : null}
+      {fixedLine ? (
+        <p class={styles.fixed} data-testid="result-fixed">
+          {fixedLine}
+        </p>
+      ) : null}
       {clean ? (
         <p class={styles.clean} data-testid="result-clean">
           {clean}
@@ -272,6 +359,7 @@ function ListenControls({
   blockedPlayed,
   blockedWritten,
   onListen,
+  onDrill,
 }: {
   occ: number
   bar: string
@@ -280,6 +368,8 @@ function ListenControls({
   blockedPlayed: string | null
   blockedWritten: string | null
   onListen: ListenToggle
+  /** Drill this spot (U168), when it can be drilled. */
+  onDrill: (() => void) | undefined
 }) {
   const [refused, setRefused] = useState<string | null>(null)
   const kinds: SnippetKind[] = ['played', 'written']
@@ -288,28 +378,41 @@ function ListenControls({
   const note = on?.shortened ? msg('Long pauses are shortened.') : (refused ?? blocked[0] ?? blocked[1])
   return (
     <div class={styles.listen} data-testid="excerpt-listen">
-      <div class={styles.listenButtons} role="group" aria-label={msg('Listen to bar {0}', bar)}>
-        {kinds.map((kind, i) => {
-          const sounding = on?.kind === kind
-          return (
-            <button
-              key={kind}
-              type="button"
-              class={styles.listenButton}
-              aria-pressed={sounding}
-              disabled={!sounding && blocked[i] !== null}
-              title={blocked[i] ?? undefined}
-              data-kind={kind}
-              onClick={() => {
-                setRefused(null)
-                void onListen(occ, kind).then((why) => setRefused(why))
-              }}
-            >
-              <Icon name={sounding ? 'stop' : 'play'} size={16} />
-              <span>{msg(SNIPPET_LABEL[kind])}</span>
-            </button>
-          )
-        })}
+      <div class={styles.excerptActions}>
+        <div class={styles.listenButtons} role="group" aria-label={msg('Listen to bar {0}', bar)}>
+          {kinds.map((kind, i) => {
+            const sounding = on?.kind === kind
+            return (
+              <button
+                key={kind}
+                type="button"
+                class={styles.listenButton}
+                aria-pressed={sounding}
+                disabled={!sounding && blocked[i] !== null}
+                title={blocked[i] ?? undefined}
+                data-kind={kind}
+                onClick={() => {
+                  setRefused(null)
+                  void onListen(occ, kind).then((why) => setRefused(why))
+                }}
+              >
+                <Icon name={sounding ? 'stop' : 'play'} size={16} />
+                <span>{msg(SNIPPET_LABEL[kind])}</span>
+              </button>
+            )
+          })}
+        </div>
+        {onDrill ? (
+          <button
+            type="button"
+            class={`${styles.listenButton} ${styles.drillButton}`}
+            data-testid="drill-spot"
+            onClick={onDrill}
+          >
+            <Icon name="repeat" size={16} />
+            <span>{msg('Drill this spot')}</span>
+          </button>
+        ) : null}
       </div>
       {note ? <p class={styles.listenNote}>{note}</p> : null}
     </div>
@@ -326,6 +429,9 @@ interface ExcerptProps {
   blockedPlayed: string | null
   blockedWritten: string | null
   onListen: ListenToggle
+  /** The group "Drill this spot" drills, or null when this bar cannot be drilled. */
+  drillGroup: number | null
+  onDrill: (group: number) => void
   timing: TimingReviewData | null
   /** A long list (every off-beat bar, U108): the notation is mounted only while near the view. */
   virtual: boolean
@@ -350,6 +456,8 @@ const Excerpt = memo(function Excerpt({
   blockedPlayed,
   blockedWritten,
   onListen,
+  drillGroup,
+  onDrill,
   timing,
   virtual,
   deferMusic,
@@ -395,8 +503,15 @@ const Excerpt = memo(function Excerpt({
       dangerouslySetInnerHTML={{ __html: markup.svg }}
     />
   ) : null
-  const lines = plan.items.flatMap((m) => itemLines(m, model, naming))
-  const extra = lines.length - LINES_PER_PLACE
+  const pressLines = plan.items.flatMap((m) =>
+    m.presses.map((press) => ({ text: wrongPressLine(press, model, naming), flag: passesText(press.passes) })),
+  )
+  const extra = pressLines.length - LINES_PER_PLACE
+  // Past the limit: the first wrong keys, the count of the rest, then each place's other lines.
+  const lines =
+    extra > 0 ? pressLines.slice(0, LINES_PER_PLACE - 1) : plan.items.flatMap((m) => itemLines(m, model, naming))
+  const trailing = extra > 0 ? plan.items.flatMap((m) => extraItemLines(m)) : []
+  const histories = plan.items.filter((m) => m.history.length >= 2)
   return (
     <figure
       class={styles.excerpt}
@@ -407,7 +522,11 @@ const Excerpt = memo(function Excerpt({
       aria-label={msg('Bar {0}', barLabel)}
     >
       <figcaption>
-        <Caption bar={barLabel} level={level} reason={lead?.reason ?? timingTitle} />
+        <Caption bar={barLabel} level={level} reason={lead?.reason ?? timingTitle}>
+          {histories.map((m) => (
+            <PlaceHistory key={m.group} history={m.history} />
+          ))}
+        </Caption>
       </figcaption>
       {showMusic && (markup || timedBar) ? (
         <div
@@ -438,15 +557,18 @@ const Excerpt = memo(function Excerpt({
           style={musicHeight !== null ? { height: `${musicHeight}px` } : undefined}
         />
       ) : null}
-      {lines.length ? (
+      {lines.length || trailing.length ? (
         <ul class={styles.lines}>
-          {lines.slice(0, extra > 0 ? LINES_PER_PLACE - 1 : LINES_PER_PLACE).map((line, i) => (
+          {lines.map((line, i) => (
             <li key={i} data-repeat={line.flag ? '' : undefined}>
               {line.text}
               {line.flag ? <strong class={styles.flag}> ({line.flag})</strong> : null}
             </li>
           ))}
           {extra > 0 ? <li class={styles.muted}>{msg('and {0} more wrong keys here', extra + 1)}</li> : null}
+          {trailing.map((line, i) => (
+            <li key={`t-${i}`}>{line.text}</li>
+          ))}
         </ul>
       ) : null}
       {timing && timedBar ? (
@@ -462,6 +584,7 @@ const Excerpt = memo(function Excerpt({
         blockedPlayed={blockedPlayed}
         blockedWritten={blockedWritten}
         onListen={onListen}
+        onDrill={drillGroup !== null ? () => onDrill(drillGroup) : undefined}
       />
     </figure>
   )
@@ -475,11 +598,53 @@ const MARK_WORDS: Readonly<Record<string, string>> = {
   tie: 'A tied note pressed again: hold it instead',
 }
 
+/** Dots for the place's recent passes, oldest first: wrong or clean. */
+function PlaceHistory({ history }: { history: readonly ('wrong' | 'clean')[] }) {
+  const words = history.map((v) => (v === 'wrong' ? msg('wrong') : msg('clean'))).join(', ')
+  return (
+    <span
+      class={styles.historyDots}
+      role="img"
+      data-testid="place-history"
+      aria-label={msg('Last {0} passes here: {1}', history.length, words)}
+    >
+      {history.map((v, i) => (
+        <span key={i} class={v === 'wrong' ? styles.dotWrong : styles.dotClean} data-visit={v} aria-hidden="true" />
+      ))}
+    </span>
+  )
+}
+
+function markDetailLine(kind: string, fallback: string, lateHand?: Hand | null): string {
+  if (kind === 'spread') {
+    if (lateHand === 'L') return msg('Not together: the left hand came after the right.')
+    if (lateHand === 'R') return msg('Not together: the right hand came after the left.')
+    return msg('Not together: the chord was spread out')
+  }
+  const words = MARK_WORDS[kind]
+  return words ? msg(words) : fallback
+}
+
+/** A place's lines besides its wrong keys: its mark without one, hunting, and its other problems. */
+function extraItemLines(m: RankedMistake): { text: string; flag: string }[] {
+  const out: { text: string; flag: string }[] = []
+  if (m.presses.length === 0) {
+    out.push({ text: markDetailLine(m.mark?.kind ?? '', m.mark?.text ?? m.reason, m.lateHand), flag: '' })
+  }
+  if (m.hunting) {
+    out.push({ text: msg('You tried several keys here: read the note first, then play.'), flag: '' })
+  }
+  for (const more of m.also ?? []) {
+    out.push({ text: markDetailLine(more.kind, more.text, m.lateHand), flag: '' })
+  }
+  return out
+}
+
 function itemLines(m: RankedMistake, model: ScoreModel, naming: NamingSettings): { text: string; flag: string }[] {
-  if (m.presses.length > 0)
-    return m.presses.map((press) => ({ text: wrongPressLine(press, model, naming), flag: passesText(press.passes) }))
-  const words = (m.mark && MARK_WORDS[m.mark.kind]) ?? m.mark?.text ?? m.reason
-  return [{ text: msg(words), flag: '' }]
+  return [
+    ...m.presses.map((press) => ({ text: wrongPressLine(press, model, naming), flag: passesText(press.passes) })),
+    ...extraItemLines(m),
+  ]
 }
 
 function PassFacts({ result, goal }: { result: AttemptSummary; goal: number | null }) {

@@ -21,7 +21,21 @@ export interface CorrectionMark {
   readonly notes: readonly number[]
   readonly kind: 'wrong' | 'early' | 'late' | 'accidental' | 'octave' | 'spread' | 'tie' | 'missed'
   readonly text: string
+  /**
+   * Passes running, the latest included, with the same mistake at this place (2 or more). Drawn
+   * as a double ring with "×N" after the label. Absent or below 2: an ordinary mark.
+   */
+  readonly repeat?: number
 }
+
+/** Extra class on a recurring correction mark's group (`repeat >= 2`). */
+export const CORRECTION_REPEAT_CLASS = 'pn-corr-repeat'
+/** Inner ring rotation (deg): a slight hand-drawn slant. */
+export const CORRECTION_RING_ROTATE = -3
+/** Extra radii for the outer ring of a recurring mark (`repeat >= 2`, layout px). */
+export const CORRECTION_REPEAT_RING_PAD = 4
+/** Outer ring rotation for a recurring mark (deg): offset from the inner stroke so it reads as a second circle. */
+export const CORRECTION_REPEAT_RING_ROTATE = 3
 
 /** Space between the corrected notes' box and the red ring around them (layout px). */
 export const CORRECTION_PAD = 10
@@ -91,9 +105,51 @@ export interface CorrectionShape extends CorrectionRings {
   readonly links: readonly CorrectionLink[]
 }
 
+export interface CorrectionRingStroke {
+  readonly d: string
+  readonly transform: string
+}
+
+/** Whether `mark` represents a recurring mistake (2 or more passes running). */
+export function isRepeatMark(mark: CorrectionMark): boolean {
+  return mark.repeat !== undefined && mark.repeat >= 2
+}
+
+/** Label text for a correction mark: appends ` ×N` when `repeat >= 2`. */
+export function correctionLabelText(mark: CorrectionMark): string {
+  return isRepeatMark(mark) ? `${mark.text} ×${mark.repeat}` : mark.text
+}
+
+/** Class list for a correction mark's group (`base` is `'pn-corr'` or `'pn-ex-corr'`). */
+export function correctionGroupClass(base: string, mark: CorrectionMark): string {
+  return isRepeatMark(mark) ? `${base} pn-corr-${mark.kind} ${CORRECTION_REPEAT_CLASS}` : `${base} pn-corr-${mark.kind}`
+}
+
+/**
+ * Pen strokes for one ring: the ordinary stroke, plus an outer stroke at radii +
+ * `CORRECTION_REPEAT_RING_PAD` rotated to `CORRECTION_REPEAT_RING_ROTATE` for recurring marks.
+ */
+export function ringStrokes(ring: CorrectionRing, mark: CorrectionMark): CorrectionRingStroke[] {
+  const cx = r2(ring.cx)
+  const cy = r2(ring.cy)
+  const strokes: CorrectionRingStroke[] = [
+    {
+      d: penRing(ring.cx, ring.cy, ring.rx, ring.ry),
+      transform: `rotate(${CORRECTION_RING_ROTATE} ${cx} ${cy})`,
+    },
+  ]
+  if (isRepeatMark(mark)) {
+    strokes.push({
+      d: penRing(ring.cx, ring.cy, ring.rx + CORRECTION_REPEAT_RING_PAD, ring.ry + CORRECTION_REPEAT_RING_PAD),
+      transform: `rotate(${CORRECTION_REPEAT_RING_ROTATE} ${cx} ${cy})`,
+    })
+  }
+  return strokes
+}
+
 /** Stable identity of a set of marks (the same marks again are a no-op). */
 export function correctionsKey(marks: readonly CorrectionMark[]): string {
-  return marks.map((m) => `${m.kind}:${m.notes.join(',')}:${m.text}`).join('|')
+  return marks.map((m) => `${m.kind}:${m.notes.join(',')}:${m.text}:${isRepeatMark(m) ? m.repeat : ''}`).join('|')
 }
 
 /**
@@ -154,7 +210,7 @@ function correctionRings(layout: PreparedLayout, mark: CorrectionMark): Correcti
 }
 
 /** The staves of `system` (page) or of the strip. */
-function stavesOf(layout: PreparedLayout, system: number): readonly StaffGeometry[] {
+export function stavesOf(layout: PreparedLayout, system: number): readonly StaffGeometry[] {
   return layout.systems?.[system]?.staves ?? layout.staves
 }
 
@@ -180,10 +236,18 @@ function placeLabels(
     const pos = staves.findIndex((s) => s.index === own[0]!.staff)
     const side = pos < staves.length / 2 ? 'above' : 'below'
     const ring = side === 'above' ? own[0]! : own[own.length - 1]!
-    const w = measurer.width(m.mark.text, CORRECTION_FONT)
+    const w = measurer.width(correctionLabelText(m.mark), CORRECTION_FONT)
     const lx0 = ring.cx - w / 2
     const lx1 = ring.cx + w / 2
-    const edge = bandEdge(layout, staves, side, ring, lx0, lx1)
+    const edge = bandEdge(
+      layout,
+      staves,
+      side,
+      ring.system,
+      lx0,
+      lx1,
+      side === 'above' ? ring.cy - ring.ry : ring.cy + ring.ry,
+    )
     const bandKey = `${system}:${side}`
     let band = placed.get(bandKey)
     if (!band) placed.set(bandKey, (band = []))
@@ -210,7 +274,7 @@ function placeLabels(
         if (link) links.push(link)
       }
     }
-    const pad = 4
+    const pad = 4 + (isRepeatMark(m.mark) ? CORRECTION_REPEAT_RING_PAD : 0)
     return {
       ...m,
       label,
@@ -224,29 +288,31 @@ function placeLabels(
 }
 
 /**
- * Where a correction label's band starts beside the staves (layout px; the box edge nearest the
- * staff): beyond the top (bottom) staff line, the mark's own ring, measure numbers, ottava
- * brackets and note names over the label's width, and the nearby noteheads by
- * `CORRECTION_STEM_CLEAR` (their stems and beams). Only marks of the ring's system count (page
- * mode: by `system`, ottavas by their y extent). Nothing finer is known of the engraving.
+ * Where a margin-band mark (correction label or reminder tick) starts beside the staves (layout
+ * px; the box edge nearest the staff): beyond the top (bottom) staff line, an optional extra edge
+ * such as a correction's own ring, measure numbers, ottava brackets and note names over `[lx0,
+ * lx1]`, and the nearby noteheads by `CORRECTION_STEM_CLEAR` (their stems and beams). Only marks
+ * of `system` count (page mode: by `system`, ottavas by their y extent). Nothing finer is known of
+ * the engraving.
  */
-function bandEdge(
+export function bandEdge(
   L: PreparedLayout,
   staves: readonly StaffGeometry[],
   side: 'above' | 'below',
-  ring: CorrectionRing,
+  system: number,
   lx0: number,
   lx1: number,
+  extraEdge?: number,
 ): number {
   const staff = side === 'above' ? staves[0] : staves[staves.length - 1]
-  const sys = L.systems?.[ring.system]
+  const sys = L.systems?.[system]
   const near = (b: Box) => b.x < lx1 + CORRECTION_GAP && b.x + b.w > lx0 - CORRECTION_GAP
   const onStaff = (s: number) => staff === undefined || s === staff.index
-  const inSystem = (system: number | undefined) => !sys || (system ?? 0) === ring.system
+  const inSystem = (s: number | undefined) => !sys || (s ?? 0) === system
   const occIn = (occ: number) => inSystem(L.occurrences[occ]?.system)
   const boxIn = (b: Box) => !sys || (b.y < sys.y1 && b.y + b.h > sys.y0)
   if (side === 'above') {
-    let edge = Math.min(staff?.top ?? Infinity, ring.cy - ring.ry) - CORRECTION_GAP
+    let edge = Math.min(staff?.top ?? Infinity, extraEdge ?? Infinity) - CORRECTION_GAP
     for (const g of L.notes) {
       if (g && onStaff(g.staff) && inSystem(g.system) && near(g.head))
         edge = Math.min(edge, g.head.y - CORRECTION_STEM_CLEAR)
@@ -262,7 +328,7 @@ function bandEdge(
     }
     return edge
   }
-  let edge = Math.max(staff?.bottom ?? -Infinity, ring.cy + ring.ry) + CORRECTION_GAP
+  let edge = Math.max(staff?.bottom ?? -Infinity, extraEdge ?? -Infinity) + CORRECTION_GAP
   for (const g of L.notes) {
     if (g && onStaff(g.staff) && inSystem(g.system) && near(g.head))
       edge = Math.max(edge, g.head.y + g.head.h + CORRECTION_STEM_CLEAR)
@@ -281,7 +347,7 @@ export function buildCorrection(doc: Document, shape: CorrectionShape, top: numb
   const w = r2(shape.x1 - shape.x0)
   const h = r2(shape.y1 - shape.y0)
   const svg = doc.createElementNS(SVG_NS, 'svg')
-  svg.setAttribute('class', `pn-corr pn-corr-${shape.mark.kind}`)
+  svg.setAttribute('class', correctionGroupClass('pn-corr', shape.mark))
   svg.setAttribute('viewBox', `${r2(shape.x0)} ${r2(shape.y0)} ${w} ${h}`)
   svg.setAttribute('width', String(w))
   svg.setAttribute('height', String(h))
@@ -302,11 +368,13 @@ export function buildCorrection(doc: Document, shape: CorrectionShape, top: numb
   const label = shape.label
   if (label) line('pn-corr-leader', label.leader.x, label.leader.y1, label.leader.x, label.leader.y2)
   for (const ring of shape.rings) {
-    const path = doc.createElementNS(SVG_NS, 'path')
-    path.setAttribute('class', 'pn-corr-ring')
-    path.setAttribute('d', penRing(ring.cx, ring.cy, ring.rx, ring.ry))
-    path.setAttribute('transform', `rotate(-3 ${r2(ring.cx)} ${r2(ring.cy)})`)
-    svg.append(path)
+    for (const stroke of ringStrokes(ring, shape.mark)) {
+      const path = doc.createElementNS(SVG_NS, 'path')
+      path.setAttribute('class', 'pn-corr-ring')
+      path.setAttribute('d', stroke.d)
+      path.setAttribute('transform', stroke.transform)
+      svg.append(path)
+    }
   }
   if (label) {
     const text = doc.createElementNS(SVG_NS, 'text')
@@ -315,7 +383,7 @@ export function buildCorrection(doc: Document, shape: CorrectionShape, top: numb
     text.setAttribute('y', String(r2(label.y)))
     text.setAttribute('text-anchor', 'middle')
     text.dataset.row = String(label.row)
-    text.textContent = shape.mark.text
+    text.textContent = correctionLabelText(shape.mark)
     svg.append(text)
   }
   return svg

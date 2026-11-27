@@ -64,6 +64,11 @@ export interface HintSettings {
   readonly damageFlash: boolean
   /** Show live rushing and dragging cues and their matching cursor tint. */
   readonly showTimingCues: boolean
+  /**
+   * Quiet pencil carets in the margin band at recent mistake spots during the next pass (default
+   * off until owner review). Never name a note; never count as assistance.
+   */
+  readonly reminders: boolean
 }
 
 export interface HintPedalMapping {
@@ -225,7 +230,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     },
     tiedContinuations: false,
   },
-  hints: { autoThreshold: 1, lifetime: 30, fadeMs: 300, damageFlash: true, showTimingCues: true },
+  hints: { autoThreshold: 1, lifetime: 30, fadeMs: 300, damageFlash: true, showTimingCues: true, reminders: false },
   pedal: { hintPedal: null, hintPedalAction: 'names', observedControllers: [] },
   route: {
     inputId: null,

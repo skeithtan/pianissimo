@@ -8,7 +8,7 @@ import type { PieceHistory } from '../history/types'
 import type { AttemptRecord } from '../model/practice'
 import type { ScorePackage, SourceFileRecord } from '../model/score'
 import type { AppSettings } from '../model/settings'
-import { addAttempts, getAttempt, listAttempts } from './attempts'
+import { addAttempts, getAttempt, listAttempts, listRecentAttempts } from './attempts'
 import type { AttemptQuery } from './attempts'
 import type { RestoreOptions, RestoreReport } from './backup'
 import { HistoryWriter } from './historyWriter'
@@ -111,6 +111,12 @@ export interface PianissimoStorage {
   // Results
   addAttempts(records: readonly AttemptRecord[]): Promise<void>
   listAttempts(query: AttemptQuery): Promise<AttemptRecord[]>
+  /**
+   * The piece's most recent attempts, newest first, at most `limit` (all score versions and
+   * contexts: the caller filters). Reads only what it returns: a cursor over the `pieceId` index
+   * from the end, never the piece's whole history.
+   */
+  listRecentAttempts(pieceId: string, limit: number): Promise<AttemptRecord[]>
   getAttempt(id: string): Promise<AttemptRecord | undefined>
 
   // Suggested practice
@@ -190,6 +196,7 @@ export async function openStorage(
 
     addAttempts: (records) => addAttempts(db, records),
     listAttempts: (query) => listAttempts(db, query),
+    listRecentAttempts: (pieceId, limit) => listRecentAttempts(db, pieceId, limit),
     getAttempt: (id) => getAttempt(db, id),
 
     loadPieceHistory: (pieceId) => history.getHistory(pieceId),

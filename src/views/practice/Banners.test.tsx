@@ -60,6 +60,7 @@ const UI: SessionUi = {
   canRestartLoop: false,
   repeatTarget: null,
   ladder: null,
+  drill: null,
   lastResult: null,
   resultDimmed: false,
   resultExit: 'dismissed',
@@ -204,6 +205,8 @@ describe('Banners', () => {
     expect(line()).toBe('Speed up: next at 65%')
     view.rerender(result({ repeat: true, lastResult: { ...RESULT, ladder: { done: true } }, multiplier: 1 }))
     expect(line()).toBe('Goal reached: 100%')
+    view.rerender(result({ repeat: true, lastResult: { ...RESULT, ladder: { held: true } }, multiplier: 0.75 }))
+    expect(line()).toBe('Clean, with pauses: staying at 75%')
     view.rerender(result({ repeat: true, lastResult: RESULT }))
     expect(line()).toBeUndefined()
     expect(ladderResultText({ ...RESULT, ladder: {} }, 1)).toBeNull()
@@ -816,5 +819,39 @@ describe('GuidePanel', () => {
     advance(301)
     expect(region()).toBeNull()
     expect(slot()).not.toBeNull()
+  })
+})
+
+describe('AttemptResult drill return action (U168)', () => {
+  const openCard = () =>
+    click($(view!.container, '[data-testid="attempt-result"] [data-testid="result-details-toggle"]'))
+  const back = () => $(view!.container, '[data-testid="result-choices"] [data-testid="drill-back"]')
+
+  it('offers "Back to …" in the card while drilling, primary once the goal is reached, and calls onEndDrill', () => {
+    const onEndDrill = vi.fn()
+    const drilling = (streak: number, targetReached: boolean) =>
+      result(
+        {
+          repeat: true,
+          repeatTarget: 3,
+          drill: { returnText: 'Bars 5–8' },
+          lastResult: { ...RESULT, streak, targetReached },
+        },
+        { onEndDrill },
+      )
+    view = mount(drilling(1, false))
+    expect($(view.container, '[data-testid="drill-back"]')).toBeNull()
+    openCard()
+    expect(back()!.textContent).toContain('Back to Bars 5–8')
+    expect(back()!.dataset['variant']).toBe('secondary')
+    click(back()!)
+    expect(onEndDrill).toHaveBeenCalledTimes(1)
+
+    view.unmount()
+    view = mount(drilling(3, true))
+    openCard()
+    expect(back()!.dataset['variant']).toBe('primary')
+    expect(byText(view.container, 'Again')).toBeNull()
+    expect(view.container.textContent).not.toContain('Goal reached. Repeat is off.')
   })
 })

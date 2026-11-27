@@ -3,7 +3,7 @@
  * spread and tie-end presses; those of reading traversals feed a Wait run's result (U142).
  */
 import { describe, expect, it } from 'vitest'
-import { CHORD_SLIP_MS } from './engine'
+import { CHORD_SLIP_MS, STRIKE_GAP_MS } from './engine'
 import { EngineDriver, buildScore } from './testkit'
 import { buildTimeline } from './timeline'
 import type { EngineConfig } from './types'
@@ -57,7 +57,16 @@ describe('reading traversals (U142)', () => {
     const [r] = d.records()
     expect(r).toMatchObject({ kind: 'reading', interruptReason: 'seek', passed: false, groupsFirstPass: 0 })
     expect(r!.groups).toEqual([
-      { group: 1, wrongAttacks: 1, earlyAttacks: 0, lateMs: 0, wrongPitches: [B3], spreadMs: 0, tieEndPresses: 0 },
+      {
+        group: 1,
+        wrongAttacks: 1,
+        earlyAttacks: 0,
+        lateMs: 0,
+        wrongPitches: [B3],
+        extraPitches: [B3],
+        spreadMs: 0,
+        tieEndPresses: 0,
+      },
       { group: 2, wrongAttacks: 0, earlyAttacks: 0, lateMs: 0, wrongPitches: [], spreadMs: 0, tieEndPresses: 0 },
     ])
     expect(r!.onsets.map((o) => o.group)).toEqual([1])
@@ -219,5 +228,190 @@ describe('tie-end presses', () => {
     expect(d.of('wrong').map((e) => [e.group, e.reason])).toEqual([[1, 'tie-end']])
     d.tap(E4, C4)
     expect(d.records()[0]).toMatchObject({ completion: 'completed', wrongAttacks: 0 })
+  })
+})
+
+describe('extraPitches (with the stroke vs alone)', () => {
+  const chord = buildScore({
+    notes: [
+      { at: 0, midi: C4 },
+      { at: 0, midi: E4 },
+      { at: 1, midi: G4 },
+    ],
+  })
+
+  it('a neighbor key with a chord in both orders (20 ms apart) is extra', () => {
+    // Wrong key 20 ms after a right key, before the chord completes.
+    const after = scored(chord)
+    after.tap(C4).wait(20).tap(F4).wait(20).tap(E4).tap(G4)
+    expect(after.records()[0]!.groups![0]).toMatchObject({ wrongPitches: [F4], extraPitches: [F4] })
+
+    // Wrong key 20 ms before the first right key.
+    const before = scored(chord)
+    before.tap(F4).wait(20).tap(C4, E4).tap(G4)
+    expect(before.records()[0]!.groups![0]).toMatchObject({ wrongPitches: [F4], extraPitches: [F4] })
+  })
+
+  it('a wrong key alone 300 ms before the right one is not extra (extraPitches: [])', () => {
+    const d = scored(chord)
+    d.tap(F4).wait(300).tap(C4, E4).tap(G4)
+    const g0 = d.records()[0]!.groups![0]!
+    expect(g0.wrongPitches).toEqual([F4])
+    expect(g0.extraPitches).toEqual([])
+  })
+
+  it('a chord slip is extra on the previous group', () => {
+    const d = scored(chord)
+    d.tap(C4, E4).wait(20).tap(F4).wait(200).tap(G4)
+    const r = d.records()[0]!
+    expect(r.groups![0]).toMatchObject({ wrongPitches: [F4], extraPitches: [F4] })
+    expect(r.groups![1]!.wrongPitches).toEqual([])
+    expect('extraPitches' in r.groups![1]!).toBe(false)
+  })
+
+  it('wrong key then right key 59 ms later is extra; 61 ms later is not', () => {
+    const inside = scored(chord)
+    inside.tap(F4).wait(59).tap(C4, E4).tap(G4)
+    expect(inside.records()[0]!.groups![0]!.extraPitches).toEqual([F4])
+
+    const outside = scored(chord)
+    outside.tap(F4).wait(61).tap(C4, E4).tap(G4)
+    expect(outside.records()[0]!.groups![0]!.extraPitches).toEqual([])
+  })
+
+  it('an ahead expiry is judged by its own press time', () => {
+    // G4 (next group) pressed 20 ms after C4 of group 0, then expires after 120 ms grace -> extra.
+    const withRight = scored(chord)
+    // The strike with the wrong key ended (P33): the chord is struck again whole.
+    withRight.tap(C4).wait(20).tap(G4).wait(200).tap(C4, E4).tap(G4)
+    expect(withRight.records()[0]!.groups![0]).toMatchObject({ wrongPitches: [G4], extraPitches: [G4] })
+
+    // G4 pressed 20 ms BEFORE C4 of group 0, then expires -> still extra (right strike was 20 ms after press).
+    const beforeRight = scored(chord)
+    beforeRight.tap(G4).wait(20).tap(C4).wait(200).tap(C4, E4).tap(G4)
+    expect(beforeRight.records()[0]!.groups![0]).toMatchObject({ wrongPitches: [G4], extraPitches: [G4] })
+
+    // G4 pressed alone, no right strike within 60 ms -> not extra.
+    const alone = scored(chord)
+    alone.tap(G4).wait(200).tap(C4, E4).tap(G4)
+    expect(alone.records()[0]!.groups![0]).toMatchObject({ wrongPitches: [G4], extraPitches: [] })
+  })
+
+  it('a group with no wrong key has no extraPitches field', () => {
+    const d = scored(chord)
+    d.tap(C4, E4).tap(G4)
+    const r = d.records()[0]!
+    expect('extraPitches' in r.groups![0]!).toBe(false)
+    expect('extraPitches' in r.groups![1]!).toBe(false)
+  })
+
+  it('a right strike discarded inside a retry window still counts as together with the wrong key', () => {
+    const d = scored(chord)
+    d.engine.setGuard(new Map([[0, new Set([F4])]]), d.engine.timeline)
+    // Guarded F4 triggers the retry window (the rest of the strike, P33); C4 20 ms later is
+    // discarded by it, but still counts as a right strike -> F4 is extra.
+    d.tap(F4).wait(20).tap(C4).wait(STRIKE_GAP_MS).tap(C4, E4).wait(100).tap(G4)
+    expect(d.records()[0]!.groups![0]).toMatchObject({ wrongPitches: [F4], extraPitches: [F4] })
+  })
+
+  it('prunes aged-out undecided wrong presses so a later wrong key with the chord is still extra', () => {
+    const d = scored(chord)
+    const D4 = 62
+    for (let i = 0; i < 8; i++) d.tap(B3).wait(200)
+    d.tap(D4).wait(10).tap(C4, E4).tap(G4)
+    expect(d.records()[0]!.groups![0]!.extraPitches).toEqual([D4])
+  })
+})
+
+describe('lateHand for two-hand chords', () => {
+  const C3 = 48
+  const E3 = 52
+  const G3 = 55
+
+  function scoredBoth(model: ReturnType<typeof buildScore>): EngineDriver {
+    const t = buildTimeline(model, { hands: 'both', range: null, multiplier: 1 })
+    return new EngineDriver(t, { mode: 'scored', pieceId: 'p', prepared: true, transport: 'free' })
+  }
+
+  it('records lateHand when every accepted attack of one hand came before every accepted attack of the other', () => {
+    const m = buildScore({
+      notes: [
+        { at: 0, midi: C3, hand: 'L' },
+        { at: 0, midi: G3, hand: 'L' },
+        { at: 0, midi: C4, hand: 'R' },
+        { at: 0, midi: E4, hand: 'R' },
+        { at: 1, midi: C3, hand: 'L' },
+        { at: 1, midi: G4, hand: 'R' },
+      ],
+    })
+    const d = scoredBoth(m)
+    // Group 0: both R notes (1000, 1010) before both L notes (1030, 1040) -> lateHand: 'L'.
+    d.tap(C4).wait(10).tap(E4).wait(20).tap(C3).wait(10).tap(G3)
+    // Group 1: L (1050) before R (1070) -> lateHand: 'R'.
+    d.wait(10).tap(C3).wait(20).tap(G4)
+    const r = d.records()[0]!
+    expect(r.groups![0]!.lateHand).toBe('L')
+    expect(r.groups![1]!.lateHand).toBe('R')
+  })
+
+  it('omits lateHand when the hands are interleaved', () => {
+    const m = buildScore({
+      notes: [
+        { at: 0, midi: C3, hand: 'L' },
+        { at: 0, midi: E3, hand: 'L' },
+        { at: 0, midi: C4, hand: 'R' },
+      ],
+    })
+    const d = scoredBoth(m)
+    // L (C3) -> R (C4) -> L (E3): interleaved.
+    d.tap(C3).wait(15).tap(C4).wait(15).tap(E3)
+    const g0 = d.records()[0]!.groups![0]!
+    expect('lateHand' in g0).toBe(false)
+  })
+
+  it('omits lateHand for a one-hand chord', () => {
+    const m = buildScore({
+      notes: [
+        { at: 0, midi: C4, hand: 'R' },
+        { at: 0, midi: E4, hand: 'R' },
+        { at: 0, midi: G4, hand: 'R' },
+      ],
+    })
+    const d = scoredBoth(m)
+    d.tap(C4).wait(20).tap(E4).wait(20).tap(G4)
+    const g0 = d.records()[0]!.groups![0]!
+    expect('lateHand' in g0).toBe(false)
+  })
+
+  it('omits lateHand when a pitch is shared by notes of both hands', () => {
+    const m = buildScore({
+      notes: [
+        { at: 0, midi: C3, hand: 'L' },
+        { at: 0, midi: C4, hand: 'L' },
+        { at: 0, midi: C4, hand: 'R' },
+        { at: 0, midi: E4, hand: 'R' },
+      ],
+    })
+    const d = scoredBoth(m)
+    d.tap(E4).wait(20).tap(C4).wait(20).tap(C3)
+    const g0 = d.records()[0]!.groups![0]!
+    expect('lateHand' in g0).toBe(false)
+  })
+
+  it('computes lateHand cleanly from the post-retry stroke after a retry reset', () => {
+    const m = buildScore({
+      notes: [
+        { at: 0, midi: C3, hand: 'L' },
+        { at: 0, midi: C4, hand: 'R' },
+        { at: 1, midi: G4, hand: 'R' },
+      ],
+    })
+    const d = scoredBoth(m)
+    d.engine.setGuard(new Map([[0, new Set([F4])]]), d.engine.timeline)
+    // First stroke: L (C3) then guarded F4 20 ms later -> retry clears accept timing.
+    d.tap(C3).wait(20).tap(F4)
+    // Post-retry stroke: R (C4) before L (C3) -> lateHand must be 'L', not polluted by pre-retry C3.
+    d.wait(STRIKE_GAP_MS).tap(C4).wait(25).tap(C3).wait(100).tap(G4)
+    expect(d.records()[0]!.groups![0]!.lateHand).toBe('L')
   })
 })

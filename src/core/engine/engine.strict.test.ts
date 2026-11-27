@@ -384,7 +384,53 @@ describe('Strict transport: missing by the clock', () => {
     at(START + 3000)
     d.tap(F4)
     const bar = d.of('measure').map((m) => m.traversal)[0]!
-    expect(bar).toMatchObject({ occ: 0, complete: true, wrongAttacks: 0, groupsWithErrors: 1 })
+    expect(bar).toMatchObject({ occ: 0, complete: true, wrongAttacks: 0, groupsWithErrors: 1, missedGroups: 1 })
+  })
+
+  it('a missed synthetic loop-boundary group reports missedGroups: 0', () => {
+    const model = buildScore({
+      notes: [
+        { at: 2, dur: 4, midi: C4 },
+        { at: 6, midi: G4 },
+      ],
+    })
+    const t = buildTimeline(model, { hands: 'right', range: { fromOcc: 1, toOcc: 1 }, multiplier: 1 })
+    expect(t.groups[0]?.synthetic).toBe(true)
+    const sched = transportGates(t).map((p) => START + toNumber(p) * MS_PER_WHOLE)
+    let next = 0
+    const d = new EngineDriver(
+      t,
+      {
+        mode: 'scored',
+        pieceId: 'p',
+        prepared: true,
+        transport: 'strict',
+        rhythm: { toleranceMs: 150 },
+        transportEta: (g, at) => {
+          const s = sched[g]
+          return s === undefined ? null : Math.max(0, s - at)
+        },
+      },
+      1000,
+    )
+    const at = (time: number): void => {
+      d.now = time
+      while (next < sched.length && sched[next]! <= time) {
+        d.engine.transportArrived(next, sched[next]!)
+        next++
+      }
+      d.engine.tick(time)
+      d.flush()
+    }
+    d.now = START
+    d.engine.startRunning(START)
+    at(START)
+    // Miss the synthetic boundary group at sched[0], then play the real note at sched[1].
+    at(sched[0]! + 150)
+    at(sched[1]!)
+    d.tap(G4)
+    const bar = d.records()[0]!.measures[0]!
+    expect(bar).toMatchObject({ occ: 1, complete: true, wrongAttacks: 0, groupsWithErrors: 1, missedGroups: 0 })
   })
 
   it('the attempt completes when the last group closes missed', () => {
@@ -956,5 +1002,172 @@ describe('Strict transport: the first downbeat played in the count-in (countInPr
     gated.now = 1010
     gated.tap(C4)
     expect(gated.state).toMatchObject({ phase: 'running', clockStartedAt: 1010, inputComplete: true })
+  })
+})
+
+describe('Strict transport: late slips recorded on missed groups', () => {
+  it('records latePitches and lateSlipMs on a missed group without counting a wrong attack', () => {
+    const { d, at, go } = session()
+    go()
+    d.tap(C4)
+    // Group 1 (D4) scheduled at START + 1000, closes at START + 1150.
+    at(START + 1150)
+    expect(d.state.groupIndex).toBe(2)
+    // Press D4 at START + 1200 (200 ms after scheduled time, 50 ms after close).
+    at(START + 1200)
+    d.tap(D4)
+    expect(d.of('wrong').map((w) => [w.group, w.pitch, w.reason])).toEqual([[1, D4, 'late']])
+    expect(d.state.wrongAttacks).toBe(0)
+
+    at(START + 2000)
+    d.tap(E4)
+    at(START + 3000)
+    d.tap(F4)
+    at(START + 4000)
+    d.tap(G4)
+    const r = d.records()[0]!
+    expect(r).toMatchObject({ completion: 'completed', wrongAttacks: 0, missedGroups: 1, passed: false })
+    expect(r.groups![1]).toMatchObject({ group: 1, missed: true, latePitches: [D4], lateSlipMs: 200 })
+  })
+
+  it('records two late slips of a missed chord (distinct, in press order) with lateSlipMs from the first', () => {
+    const chordSpec: ScoreSpec = {
+      notes: [
+        { at: 0, midi: C4 },
+        { at: 1, midi: E4 },
+        { at: 1, midi: G4 },
+        { at: 2, midi: F4 },
+      ],
+    }
+    const { d, at, go } = session(chordSpec)
+    go()
+    d.tap(C4)
+    // Group 1 ([E4, G4]) scheduled at START + 1000, closes at START + 1150.
+    at(START + 1150)
+    at(START + 1180)
+    d.tap(G4) // first late slip: 180 ms after scheduled time
+    at(START + 1210)
+    d.tap(E4) // second late slip: 210 ms after scheduled time
+    at(START + 1220)
+    d.tap(G4) // duplicate pitch: kept distinct
+    at(START + 2000)
+    d.tap(F4)
+    const r = d.records()[0]!
+    expect(r.wrongAttacks).toBe(0)
+    expect(r.groups![1]).toMatchObject({ group: 1, missed: true, latePitches: [G4, E4], lateSlipMs: 180 })
+  })
+
+  it('a missed group never pressed has neither latePitches nor lateSlipMs', () => {
+    const { d, at, go } = session()
+    go()
+    d.tap(C4)
+    // Miss group 1 completely, play groups 2, 3, 4 on time.
+    at(START + 2000)
+    d.tap(E4)
+    at(START + 3000)
+    d.tap(F4)
+    at(START + 4000)
+    d.tap(G4)
+    const g1 = d.records()[0]!.groups![1]!
+    expect(g1.missed).toBe(true)
+    expect('latePitches' in g1).toBe(false)
+    expect('lateSlipMs' in g1).toBe(false)
+  })
+
+  it('does not record a late slip after a later group has been completed', () => {
+    const seq: ScoreSpec = {
+      notes: [
+        { at: 0, midi: C4 },
+        { at: 1, midi: E4 },
+        { at: 2, midi: G4 },
+        { at: 3, midi: 69 }, // A4
+      ],
+    }
+    const { d, at, go } = session(seq)
+    go()
+    d.tap(C4)
+    // Group 1 (E4) scheduled at START + 1000, closes missed at START + 1150.
+    at(START + 1150)
+    expect(d.state.groupIndex).toBe(2)
+    // Group 2 (G4) completed on gate 2 at START + 2000.
+    at(START + 2000)
+    d.tap(G4)
+    expect(d.state.groupIndex).toBe(3)
+    // Pressing E4 at START + 2500 with group 3 current must be an ordinary wrong attack, not a late slip on group 1.
+    at(START + 2500)
+    d.tap(E4)
+    expect(d.of('wrong').map((w) => [w.group, w.pitch, w.reason])).toEqual([[3, E4, 'pitch']])
+    expect(d.state.wrongAttacks).toBe(1)
+
+    at(START + 3000)
+    d.tap(69)
+    const r = d.records()[0]!
+    expect(r.groups![1]!.missed).toBe(true)
+    expect('latePitches' in r.groups![1]!).toBe(false)
+    expect('lateSlipMs' in r.groups![1]!).toBe(false)
+    expect(r.groups![3]).toMatchObject({ wrongAttacks: 1, wrongPitches: [E4] })
+  })
+
+  it('fast run: a press within the tolerance of the miss close stays a late slip even after a later group completed', () => {
+    // Quarters 200 ms apart (msPerWhole = 800), tolerance 150 ms.
+    const seq: ScoreSpec = {
+      notes: [
+        { at: 0, midi: C4 },
+        { at: 1, midi: E4 },
+        { at: 2, midi: G4 },
+        { at: 3, midi: 69 }, // A4
+      ],
+    }
+    const { d, at, go } = session(seq, 150, {}, 800)
+    go()
+    d.tap(C4)
+    // Gate 1 at +200, group 1 (E4) closes missed at +350.
+    at(START + 350)
+    expect(d.state.groupIndex).toBe(2)
+    // Gate 2 at +400, group 2 (G4) completed on time at +400.
+    at(START + 400)
+    d.tap(G4)
+    expect(d.state.groupIndex).toBe(3)
+    // Press E4 at gate 1 + 260 (= START + 460), 110 ms after close (<= 150): gentle 'late', recorded on group 1.
+    at(START + 460)
+    d.tap(E4)
+    expect(d.of('wrong').map((w) => [w.group, w.pitch, w.reason])).toEqual([[1, E4, 'late']])
+    expect(d.state.wrongAttacks).toBe(0)
+
+    at(START + 600)
+    d.tap(69)
+    const r = d.records()[0]!
+    expect(r.wrongAttacks).toBe(0)
+    expect(r.groups![1]).toMatchObject({ group: 1, missed: true, latePitches: [E4], lateSlipMs: 260 })
+  })
+
+  it('fast run: one millisecond beyond the tolerance of the miss close is an ordinary wrong key', () => {
+    const seq: ScoreSpec = {
+      notes: [
+        { at: 0, midi: C4 },
+        { at: 1, midi: E4 },
+        { at: 2, midi: G4 },
+        { at: 3, midi: 69 }, // A4
+      ],
+    }
+    const { d, at, go } = session(seq, 150, {}, 800)
+    go()
+    d.tap(C4)
+    at(START + 350) // group 1 closes missed at +350
+    at(START + 400)
+    d.tap(G4) // group 2 completed at +400
+    // Press E4 at +501 (151 ms after close = 1 ms beyond tolerance): ordinary wrong key on group 3.
+    at(START + 501)
+    d.tap(E4)
+    expect(d.of('wrong').map((w) => [w.group, w.pitch, w.reason])).toEqual([[3, E4, 'pitch']])
+    expect(d.state.wrongAttacks).toBe(1)
+
+    at(START + 600)
+    d.tap(69)
+    const r = d.records()[0]!
+    expect(r.groups![1]!.missed).toBe(true)
+    expect('latePitches' in r.groups![1]!).toBe(false)
+    expect('lateSlipMs' in r.groups![1]!).toBe(false)
+    expect(r.groups![3]).toMatchObject({ wrongAttacks: 1, wrongPitches: [E4] })
   })
 })

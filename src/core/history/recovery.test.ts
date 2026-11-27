@@ -55,6 +55,26 @@ describe('suggestion recovery', () => {
     expect(shown(h).active[0]?.progress.text).toBe('0 of 3 clean passes')
   })
 
+  it('a complete traversal with missed groups and no wrong attack resets the streak and flags the bar', () => {
+    const missed = { ...traversal(BAR, 'clean'), groupsWithErrors: 1, missedGroups: 1 }
+    let h = play(flagged(), BAR, ['clean', 'clean'])
+    expect(streakOf(h)).toBe(2)
+    h = ingestAttempt(h, attemptRecord({ createdAt: 6_000, measures: [missed] }), 6_000).history
+    expect(streakOf(h)).toBe(0)
+    expect(active(h)).toHaveLength(1)
+
+    let freshHistory = fresh()
+    for (let i = 0; i < 3; i += 1) {
+      freshHistory = ingestAttempt(
+        freshHistory,
+        attemptRecord({ createdAt: 7_000 + i, measures: [missed] }),
+        7_000 + i,
+      ).history
+    }
+    expect(active(freshHistory)).toHaveLength(1)
+    expect(active(freshHistory)[0]).toMatchObject({ coreFrom: BAR, coreTo: BAR })
+  })
+
   it('practice at another tempo, speed, hand selection or hand assignment cannot resolve the original context', () => {
     const slower = comparisonContext({ multiplier: 0.75 })
     const rightOnly = comparisonContext({ hands: 'right' })

@@ -43,6 +43,7 @@ import {
   layoutCorrections,
   type CorrectionMark,
 } from '../shared/corrections'
+import { REMINDER_LEAVE_MS, buildReminder, layoutReminders, remindersKey, type ReminderMark } from '../shared/reminders'
 import { clampRange, sameRange, tapSelect, type LoopRange } from '../strip/loop'
 import { occAtPosition } from '../strip/scroll'
 import {
@@ -166,6 +167,7 @@ export class PageView {
   private readonly content: HTMLDivElement
   private readonly loopLayer: HTMLDivElement
   private readonly segLayer: HTMLDivElement
+  private readonly reminderLayer: HTMLDivElement
   private readonly corrLayer: HTMLDivElement
   private readonly overlay: HTMLDivElement
   private readonly cursorEl: HTMLDivElement
@@ -259,6 +261,9 @@ export class PageView {
   private pendingCorrections: readonly CorrectionMark[] | null = null
   private corrLeaveTimer: ReturnType<typeof setTimeout> | null = null
   private corrMeasurer: TextMeasurer | null = null
+  private reminderKey = ''
+  private pendingReminders: readonly ReminderMark[] | null = null
+  private reminderLeaveTimer: ReturnType<typeof setTimeout> | null = null
 
   private loop: LoopRange | null = null
   private loopShown: { r: LoopRange | null; show: boolean; scale: number } = { r: null, show: false, scale: NaN }
@@ -370,9 +375,11 @@ export class PageView {
     this.content.style.height = `${layout.height}px`
     this.loopLayer = div('pn-page-loops')
     this.segLayer = div('pn-segs')
+    this.reminderLayer = div('pn-reminders')
+    this.reminderLayer.setAttribute('aria-hidden', 'true')
     this.corrLayer = div('pn-corrs')
     this.corrLayer.setAttribute('aria-hidden', 'true')
-    this.content.append(this.loopLayer, this.segLayer, this.corrLayer)
+    this.content.append(this.loopLayer, this.segLayer, this.reminderLayer, this.corrLayer)
 
     // Screen-px overlay riding with the page: cursor, loop handles and ✕ keep their size at any zoom.
     this.overlay = div('pn-page-over')
@@ -539,6 +546,14 @@ export class PageView {
     if (key === this.corrKey) return
     this.corrKey = key
     this.pendingCorrections = marks
+    this.schedule()
+  }
+
+  setReminders(marks: readonly ReminderMark[]): void {
+    const key = remindersKey(marks)
+    if (key === this.reminderKey) return
+    this.reminderKey = key
+    this.pendingReminders = marks
     this.schedule()
   }
 
@@ -856,6 +871,7 @@ export class PageView {
     this.respace?.cancel()
     if (this.frame) cancelAnimationFrame(this.frame)
     if (this.corrLeaveTimer) clearTimeout(this.corrLeaveTimer)
+    if (this.reminderLeaveTimer) clearTimeout(this.reminderLeaveTimer)
     if (this.zoomTimer) clearTimeout(this.zoomTimer)
     if (this.settleTimer) clearTimeout(this.settleTimer)
     this.glideAnim?.cancel()
@@ -1119,6 +1135,7 @@ export class PageView {
     this.applyLabels()
     this.applyCursor(gx)
     this.applyLoop(gx)
+    if (this.pendingReminders) this.applyReminders()
     if (this.pendingCorrections) this.applyCorrections()
     const visY0 = toY(this.scrollY)
     const visY1 = toY(this.scrollY + this.hostH)
@@ -1574,6 +1591,26 @@ export class PageView {
     })
   }
 
+  private applyReminders(): void {
+    const marks = this.pendingReminders ?? []
+    this.pendingReminders = null
+    const leaving = [...this.reminderLayer.children].filter((el) => !el.classList.contains('pn-reminder-leave'))
+    if (this.reducedMotion) {
+      for (const el of [...this.reminderLayer.children]) el.remove()
+    } else if (leaving.length) {
+      for (const el of leaving) el.classList.add('pn-reminder-leave')
+      if (this.reminderLeaveTimer) clearTimeout(this.reminderLeaveTimer)
+      this.reminderLeaveTimer = setTimeout(() => {
+        this.reminderLeaveTimer = null
+        for (const el of [...this.reminderLayer.querySelectorAll('.pn-reminder-leave')]) el.remove()
+      }, REMINDER_LEAVE_MS)
+    }
+    const doc = this.root.ownerDocument
+    for (const shape of layoutReminders(this.layout, marks)) {
+      this.reminderLayer.append(buildReminder(doc, shape, this.layout.top))
+    }
+  }
+
   // ---------------------------------------------------------------- input
 
   private button(cls: string, html: string, label: string): HTMLButtonElement {
@@ -1653,6 +1690,10 @@ export class PageView {
     this.on(this.corrLayer, 'animationend', (e) => {
       const el = e.target as Element | null
       if (el?.parentNode === this.corrLayer && el.classList.contains('pn-corr-leave')) el.remove()
+    })
+    this.on(this.reminderLayer, 'animationend', (e) => {
+      const el = e.target as Element | null
+      if (el?.parentNode === this.reminderLayer && el.classList.contains('pn-reminder-leave')) el.remove()
     })
     this.on(this.clearBtn, 'pointerdown', (e) => e.stopPropagation())
     this.on(this.clearBtn, 'click', (e) => {

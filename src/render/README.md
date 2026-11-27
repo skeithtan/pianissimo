@@ -41,8 +41,11 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
   `setCursorAction(visible)` (circular "Repeat from here" button on the cursor bar, fades; inert
   while hidden; no pressed state; it sits dead center in the gap between the staves,
   `shared/cursorAction.ts`), `setCorrections(marks: CorrectionMark[])` (teacher's red-pen
-  marks after an attempt, `{ notes, kind, text }` with kind `'wrong'|'early'|'late'|'accidental'|
-  'octave'|'spread'|'tie'|'pedal'|'missed'`; `[]` clears them),
+  marks after an attempt, `{ notes, kind, text, repeat? }` with kind `'wrong'|'early'|'late'|
+  'accidental'|'octave'|'spread'|'tie'|'pedal'|'missed'`; `repeat >= 2` draws a double ring and
+  ` ×N` label; `[]` clears them), `setReminders(marks: ReminderMark[])` (quiet pencil carets in
+  the margin band beyond the staves pointing at the staff, `{ notes, level: 'faint' | 'firm' }`,
+  `shared/reminders.ts`, below corrections, non-interactive; `[]` clears them),
   `setBrowseEnabled(bool)`, `returnToCurrent()`, `isBrowsing()`, `browsedPosition()`, `setZoom(s)`, `zoom()`,
   `occAt(clientX)`, `visibleLabels()`, `stats()`, `flushNow()` (tests), `destroy()`,
   `respaceSnapshot(nextLayout)` / `respaceFrom(snapshot)` / `whenRespaced()` / `holdLabels(on)`
@@ -190,10 +193,15 @@ OSMD 2.2.1 behind a `RendererAdapter`, a serializable `PreparedLayout`, and a fr
 - **Notehead color**: purple shows the current learner targets and green shows accepted notes.
   Notes played by the app use normal ink. Listen follows playback with the cursor.
 - **Teacher corrections** (`setCorrections`): after an attempt, a hand-drawn red ring (`--danger`,
-  2.5 px, a single pen stroke slightly more than once around with growing radius, rotated −3°)
+  2.5 px, a single pen stroke slightly more than once around with growing radius, rotated −3°;
+  recurring marks with `repeat >= 2` add a second ring and ` ×N` label)
   around each mark's noteheads — one ring per staff, union box + 10 px — and one text per mark
   (13 px bold label font, red, `pn-corr-halo`: a 3 px `paint-order: stroke` halo in the score
   paper). Every kind uses the same pen; the kind is a class (`pn-corr-<kind>`). Labels never sit
+- **Quiet pencil reminders** (`setReminders`, `shared/reminders.ts`): small symmetric pencil
+  carets (`--pn-reminder`, `faint` single, `firm` double) placed in the margin band beyond the
+  staves using `bandEdge`, on a non-interactive layer below corrections on both `StripView` and
+  `PageView`, fading in/out over 180 ms.
   over notation: a mark whose top ring is on the upper half of the staves puts its label in a band
   above the top staff, otherwise below the bottom staff, centered on its nearest ring with a 1.5 px
   leader (`pn-corr-leader`) to the ring's edge. Row 0 starts beyond the top (bottom) staff line,

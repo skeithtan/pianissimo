@@ -49,7 +49,7 @@ test.describe('practice assistance and repeat', () => {
   test('automatic hints show temporary note names that fade out on their own', async ({ page }) => {
     // A short hint lifetime and a visible fade keep the test quick without fixed sleeps.
     await seedPiece(page, {
-      hints: { autoThreshold: 1, lifetime: 1, fadeMs: 600, damageFlash: true, showTimingCues: true },
+      hints: { autoThreshold: 1, lifetime: 1, fadeMs: 600, damageFlash: true, showTimingCues: true, reminders: false },
     })
     await openSeededPractice(page)
     await startWholePiece(page)
@@ -84,7 +84,14 @@ test.describe('practice assistance and repeat', () => {
     page,
   }) => {
     await seedPiece(page, {
-      hints: { autoThreshold: 2, lifetime: 'until-correct', fadeMs: 200, damageFlash: true, showTimingCues: true },
+      hints: {
+        autoThreshold: 2,
+        lifetime: 'until-correct',
+        fadeMs: 200,
+        damageFlash: true,
+        showTimingCues: true,
+        reminders: false,
+      },
     })
     await openSeededPractice(page)
     await startWholePiece(page)

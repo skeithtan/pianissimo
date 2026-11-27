@@ -17,6 +17,7 @@ import type {
   OnsetTimestamp,
   RhythmParams,
 } from '../model/practice'
+import type { Hand } from '../model/score'
 import { contextKey, measureContextKey } from '../model/practice'
 import type { Timeline, TimelineMeasure } from './timeline'
 
@@ -27,6 +28,8 @@ interface MeasureAcc {
   completed: number
   /** Strict transport: groups of the bar closed by the clock (they count as traversed). */
   missed: number
+  /** Strict transport: missed groups excluding synthetic loop-boundary groups. */
+  missedExcludingBoundary: number
   tempHint: boolean
   keyboard: boolean
 }
@@ -36,12 +39,16 @@ interface GroupAcc {
   early: number
   lateMs: number
   readonly wrongPitches: number[]
+  readonly extraPitches: number[]
   spreadMs: number
   tieEnd: number
   /** Strict transport: completion − scheduled arrival (whole ms); null when not completed or not strict. */
   offsetMs: number | null
   onsetOffsetMs?: number
   missed: boolean
+  readonly latePitches: number[]
+  lateSlipMs?: number
+  lateHand?: Hand
 }
 
 /** How a group's completion went besides first-pass (all default to 0). */
@@ -54,6 +61,8 @@ export interface GroupCompletion {
   readonly offsetMs?: number
   /** Strict: first matched attack offset when it differs from completion. */
   readonly onsetOffsetMs?: number
+  /** Two-hand chord where every accepted attack of one hand preceded every accepted attack of the other. */
+  readonly lateHand?: Hand
 }
 
 export const READING_UNTIMED = 'Ordinary reading is not timed.'
@@ -104,6 +113,7 @@ export class AttemptLog {
         errorGroups: new Set(),
         completed: 0,
         missed: 0,
+        missedExcludingBoundary: 0,
         tempHint: false,
         keyboard: false,
       }
@@ -120,7 +130,18 @@ export class AttemptLog {
   #group(group: number): GroupAcc {
     let g = this.#groups.get(group)
     if (!g) {
-      g = { wrong: 0, early: 0, lateMs: 0, wrongPitches: [], spreadMs: 0, tieEnd: 0, offsetMs: null, missed: false }
+      g = {
+        wrong: 0,
+        early: 0,
+        lateMs: 0,
+        wrongPitches: [],
+        extraPitches: [],
+        spreadMs: 0,
+        tieEnd: 0,
+        offsetMs: null,
+        missed: false,
+        latePitches: [],
+      }
       this.#groups.set(group, g)
     }
     return g
@@ -165,6 +186,19 @@ export class AttemptLog {
     m.errorGroups.add(own ? group : fallback.group)
   }
 
+  /** Mark a wrong pitch of `group` as struck together with a right note (distinct, press order). */
+  markExtra(group: number, pitch: number): void {
+    const g = this.#group(group)
+    if (!g.extraPitches.includes(pitch)) g.extraPitches.push(pitch)
+  }
+
+  /** Strict transport: a late slip of a missed group's pitch (distinct, press order; first slip records ms). */
+  lateSlip(group: number, pitch: number, slipMs?: number): void {
+    const g = this.#group(group)
+    if (!g.latePitches.includes(pitch)) g.latePitches.push(pitch)
+    if (g.lateSlipMs === undefined && slipMs !== undefined) g.lateSlipMs = slipMs
+  }
+
   /** A press of a pitch tied into the current group: its own class, not a wrong attack (E16). */
   tieEnd(group: number): void {
     this.#group(group).tieEnd++
@@ -187,6 +221,7 @@ export class AttemptLog {
     g.spreadMs = detail.spreadMs ?? 0
     if (detail.offsetMs !== undefined) g.offsetMs = detail.offsetMs
     if (detail.onsetOffsetMs !== undefined) g.onsetOffsetMs = detail.onsetOffsetMs
+    if (detail.lateHand !== undefined) g.lateHand = detail.lateHand
     this.#measure(occ).completed++
     if (firstPass) {
       this.groupsFirstPass++
@@ -199,7 +234,7 @@ export class AttemptLog {
    * Strict transport: the clock closed the group before it was complete. It counts as a group
    * with errors of its bar and as traversed (the bar can still be complete).
    */
-  groupMissed(group: number, occ: number): void {
+  groupMissed(group: number, occ: number, syntheticBoundary = false): void {
     if (this.#completedGroups.has(group)) return
     const g = this.#group(group)
     if (g.missed) return
@@ -207,6 +242,7 @@ export class AttemptLog {
     this.missedGroups++
     const m = this.#measure(occ)
     m.missed++
+    if (!syntheticBoundary) m.missedExcludingBoundary++
     m.errorGroups.add(group)
   }
 
@@ -270,6 +306,7 @@ export class AttemptLog {
       wrongAttacks: acc?.wrong ?? 0,
       wrongAttacksExcludingBoundary: acc?.wrongExcludingBoundary ?? 0,
       groupsWithErrors: acc?.errorGroups.size ?? 0,
+      ...(missed > 0 ? { missedGroups: acc?.missedExcludingBoundary ?? 0 } : {}),
       tempHint: acc?.tempHint ?? false,
       persistentLabel,
       keyboard: acc?.keyboard ?? false,
@@ -288,11 +325,15 @@ export class AttemptLog {
         earlyAttacks: g.early,
         lateMs: g.lateMs,
         wrongPitches: [...g.wrongPitches],
+        ...(g.wrongPitches.length > 0 ? { extraPitches: [...g.extraPitches] } : {}),
         spreadMs: g.spreadMs,
         tieEndPresses: g.tieEnd,
         ...(g.offsetMs !== null ? { offsetMs: g.offsetMs } : {}),
         ...(g.onsetOffsetMs !== undefined ? { onsetOffsetMs: g.onsetOffsetMs } : {}),
         ...(g.missed ? { missed: true } : {}),
+        ...(g.latePitches.length > 0 ? { latePitches: [...g.latePitches] } : {}),
+        ...(g.lateSlipMs !== undefined ? { lateSlipMs: g.lateSlipMs } : {}),
+        ...(g.lateHand !== undefined ? { lateHand: g.lateHand } : {}),
       }))
   }
 

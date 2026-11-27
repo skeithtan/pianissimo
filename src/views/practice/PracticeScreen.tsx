@@ -756,6 +756,28 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
     const mode = isPractice(ui.mode) ? ui.mode : openingMode({ mode: ui.mode, lastHands: ui.hands }, openingEnv(), true)
     session.practiceBars(s.passage, learnerHands(s.hands), s.multiplier, mode)
   }
+
+  // Seed the session's mistake memory from the piece's recent attempts once the first layout is
+  // shown, so it never delays the first frame; once per session, failures swallowed.
+  const seededFor = useRef<PracticeSession | null>(null)
+  const liveSession = useRef<PracticeSession | null>(null)
+  useEffect(() => {
+    liveSession.current = session
+    return () => {
+      if (liveSession.current === session) liveSession.current = null
+    }
+  }, [session])
+  useEffect(() => {
+    if (prep.state !== 'ready' || seededFor.current === session) return
+    seededFor.current = session
+    void env
+      .storage()
+      .then((s) => s.listRecentAttempts(piece.id, 64))
+      .then((records) => {
+        if (liveSession.current === session) session.seedSpots(records)
+      })
+      .catch(() => {})
+  }, [session, piece.id, prep.state])
   const tempo = model.tempo
   const startPos = passageBounds(model, ui.range).start
   const source = hasTempo(tempo) ? effectiveTempoAt(tempo, startPos, 1) : null
@@ -895,6 +917,7 @@ export function PracticeScreen({ env, piece, pkg, preset, openIn, onTempoSaved }
         details={(r, actions) => <ResultDetailsLoader key={r.id} {...detailsOf(r)} actions={actions} />}
         peek={(r, state) => <ResultPeek {...detailsOf(r)} {...state} />}
         onDismiss={() => session.dismissResult()}
+        onEndDrill={() => session.endDrill()}
         expandedId={expandedResult}
         onExpandedChange={(id) => {
           if (id !== null) session.openResultDetails(id)

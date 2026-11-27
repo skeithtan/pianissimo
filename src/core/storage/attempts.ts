@@ -32,6 +32,27 @@ export async function listAttempts(db: Db, query: AttemptQuery): Promise<Attempt
   return filtered.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
 }
 
+/**
+ * The piece's most recent attempts, newest first, at most `limit` (all score versions and
+ * contexts: the caller filters). Reads only what it returns: a cursor over the `pieceId` index
+ * from the end, never the piece's whole history.
+ */
+export async function listRecentAttempts(db: Db, pieceId: string, limit: number): Promise<AttemptRecord[]> {
+  if (!Number.isFinite(limit) || limit <= 0) return []
+  const max = Math.floor(limit)
+  if (max <= 0) return []
+  const tx = db.transaction('attempts', 'readonly')
+  const records: AttemptRecord[] = []
+  let cursor = await tx.store.index('pieceId').openCursor(pieceId, 'prev')
+  while (cursor) {
+    records.push(cursor.value)
+    if (records.length >= max) break
+    cursor = await cursor.continue()
+  }
+  await tx.done
+  return records.sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))
+}
+
 export function getAttempt(db: Db, id: string): Promise<AttemptRecord | undefined> {
   return db.get('attempts', id)
 }

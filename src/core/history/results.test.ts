@@ -296,6 +296,50 @@ describe('rhythm mode results', () => {
     expect(acc).toMatchObject({ groups: 1, missed: 1, meanOffsetMs: 0, meanAbsOffsetMs: 0 })
   })
 
+  it('counts a missed group with latePitches as late, not missed, and keeps means over completed groups', () => {
+    const acc = timingAccuracy(
+      strict([
+        g(0, { offsetMs: 20 }),
+        g(1, { offsetMs: 40 }),
+        g(2, { missed: true, latePitches: [60], lateSlipMs: 210 }),
+        g(3, { missed: true }),
+      ]),
+    )
+    expect(acc).toEqual({
+      groups: 4,
+      onTime: 2,
+      early: 0,
+      late: 1,
+      missed: 1,
+      meanOffsetMs: 30,
+      meanAbsOffsetMs: 30,
+    })
+
+    const onlyLateMissed = timingAccuracy(strict([g(0, { missed: true, latePitches: [60], lateSlipMs: 210 })]))
+    expect(onlyLateMissed).toEqual({
+      groups: 1,
+      onTime: 0,
+      early: 0,
+      late: 1,
+      missed: 0,
+      meanOffsetMs: 0,
+      meanAbsOffsetMs: 0,
+    })
+  })
+
+  it('treats records without latePitches as before', () => {
+    const acc = timingAccuracy(strict([g(0, { offsetMs: 10 }), g(1, { missed: true })]))
+    expect(acc).toEqual({
+      groups: 2,
+      onTime: 1,
+      early: 0,
+      late: 0,
+      missed: 1,
+      meanOffsetMs: 10,
+      meanAbsOffsetMs: 10,
+    })
+  })
+
   it('ranks strict clean runs by mean absolute offset, then recency', () => {
     const rushing = strict([g(0, { offsetMs: -100 }), g(1, { offsetMs: -100 })])
     const tight = strict([g(0, { offsetMs: -20 }), g(1, { offsetMs: 40 })]) // signed mean ~10, abs 30
@@ -308,5 +352,29 @@ describe('rhythm mode results', () => {
     const missed = strict([g(0, { offsetMs: 0 }), g(1, { missed: true })], { missedGroups: 1, passed: false })
     const ok = strict([g(0, { offsetMs: 100 })])
     expect(summarizeContext([missed, ok], contextKey(STRICT))?.bestClean).toBe(ok)
+  })
+
+  it('places every completed scored attempt in exactly one group, including missed-only strict passes', () => {
+    const clean = strict([g(0, { offsetMs: 20 })])
+    const wrongOnly = strict([g(0, { offsetMs: 0, wrongAttacks: 1 })], { wrongAttacks: 1, passed: false })
+    const missedOnly = strict([g(0, { missed: true }), g(1, { missed: true })], {
+      wrongAttacks: 0,
+      missedGroups: 2,
+      passed: false,
+    })
+    const assistedMissed = strict([g(0, { missed: true })], {
+      wrongAttacks: 0,
+      missedGroups: 1,
+      assistance: assistedWith({ level: 'names', hintRequests: 1 }),
+      passed: false,
+    })
+    const all = [clean, wrongOnly, missedOnly, assistedMissed]
+    const r = summarizeContext(all, contextKey(STRICT))!
+    expect(r.cleanRanking).toEqual([clean])
+    expect(r.unassistedWithErrors).toEqual([missedOnly, wrongOnly])
+    expect(r.assisted).toEqual([assistedMissed])
+    const grouped = [...r.cleanRanking, ...r.unassistedWithErrors, ...r.assisted]
+    expect(grouped).toHaveLength(all.length)
+    expect(new Set(grouped.map((a) => a.id))).toEqual(new Set(all.map((a) => a.id)))
   })
 })

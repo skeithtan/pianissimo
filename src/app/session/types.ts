@@ -17,13 +17,14 @@ import type { LearnerHands, ScoreModel } from '../../core/model/score'
 import type { Rational } from '../../core/music/rational'
 import type { AppSettings } from '../../core/model/settings'
 import type { Phase, Timeline } from '../../core/engine'
+import type { SpotVisit } from '../../core/history'
 import type { RepeatedMistake } from './mistakes'
 import type { GroupMark } from './ranking'
 import type { PassRecord } from './run'
 import type { BrowserAudioModule, MetronomeModule, OutputBackend, TimerApi } from '../../core/playback'
 import type { LadderSettings, ResumePosition } from '../../core/storage/records'
 import type { GuideKey } from '../../render/keyboard/types'
-import type { CorrectionMark } from '../../render/strip/StripView'
+import type { CorrectionMark, ReminderMark } from '../../render/strip/StripView'
 import type { MetronomeScope } from './metronome'
 
 /** The subset of `StripView` the session drives (render/strip/StripView.ts). */
@@ -63,6 +64,11 @@ export interface StripSink {
    * "Too soon", "Too late"; `./corrections.ts`); `[]` clears them.
    */
   setCorrections?(marks: readonly CorrectionMark[]): void
+  /**
+   * Quiet pencil reminders at recent mistake spots during the next pass (below corrections;
+   * `render/shared/reminders.ts`); `[]` clears them.
+   */
+  setReminders?(marks: readonly ReminderMark[]): void
   /**
    * The review after a completed pass (DECISIONS U97): on while its result shows, the strip zooms
    * out to show the whole loop; off, it zooms back in to the playing frame. `returnBy` is an
@@ -245,6 +251,8 @@ export interface AttemptSummary {
     readonly climbedTo?: number
     /** The target was met at the goal: the climb is over. */
     readonly done?: boolean
+    /** A clean pass with long pauses: the speed stays, and it was not a failure. */
+    readonly held?: boolean
   }
   /**
    * Keep time (strict transport) only: how the attempt kept time (`timingAccuracy`), shown in
@@ -253,9 +261,9 @@ export interface AttemptSummary {
   readonly timing?: AttemptTiming
   /**
    * The same wrong key at the same place in this pass and the passes before it (at least
-   * `REPEATED_MISTAKE_PASSES` running, same comparison context), most passes first; absent when
-   * none (DECISIONS P24). Word one with `repeatedMistakeLine(m, model, naming)`: the result card's
-   * note line shows the first (U97).
+   * `REPEATED_MISTAKE_PASSES` running, same place in the score, at any speed and in any loop that
+   * contains it), most passes first; absent when none (DECISIONS P24). Word one with
+   * `repeatedMistakeLine(m, model, naming)`: the result card's note line shows the first (U97).
    */
   readonly repeatedMistakes?: readonly RepeatedMistake[]
   /**
@@ -279,6 +287,10 @@ export interface ResultDetails {
   readonly timeline: Timeline
   /** The attempt's correction mark per group (`correctionMarksByGroup`). */
   readonly marks: ReadonlyMap<number, GroupMark>
+  /** Visit history per group index of `timeline`, only for groups with memory, up to and including this pass. */
+  readonly spots: ReadonlyMap<number, readonly SpotVisit[]>
+  /** Group indices of `timeline` played clean in this pass whose previous visit went wrong. */
+  readonly fixed: readonly number[]
 }
 
 /** The mistake snippet playing in the expanded result card (DECISIONS U100). */
@@ -367,6 +379,8 @@ export interface SessionUi {
   readonly repeatTarget: number | null
   /** The speed ladder, or null when off. It acts only while Repeat mode is open. */
   readonly ladder: LadderUi | null
+  /** Active spot drill: `returnText` names the passage `endDrill` returns to, or null when not drilling. */
+  readonly drill: { readonly returnText: string } | null
   readonly lastResult: AttemptSummary | null
   /**
    * The next pass has played its first correct note while `lastResult` still shows (U101): the
@@ -428,6 +442,7 @@ export interface SessionProgress {
 export type StageCue =
   | { readonly kind: 'octave'; readonly direction: 'up' | 'down' }
   | { readonly kind: 'retry' }
+  | { readonly kind: 'once-more' }
   | {
       readonly kind: 'accidental'
       /** The target's name per the naming settings, accidental always shown ("F♯4", "fa♮"). */

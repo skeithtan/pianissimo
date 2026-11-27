@@ -743,6 +743,16 @@ describe('PageView', () => {
     expect(corr.querySelector('.pn-corr-label')!.textContent).toBe('Wrong note')
   })
 
+  it('draws a recurring correction in page mode with pn-corr-repeat, two rings per staff and ×N label', () => {
+    const { v, root } = view()
+    v.setCorrections([{ notes: [8, 9], kind: 'wrong', text: 'Wrong note', repeat: 3 }])
+    v.flushNow()
+    const corr = root.querySelector<SVGElement>('.pn-corr')!
+    expect(corr.getAttribute('class')).toBe('pn-corr pn-corr-wrong pn-corr-repeat')
+    expect(corr.querySelectorAll('.pn-corr-ring')).toHaveLength(4)
+    expect(corr.querySelector('.pn-corr-label')!.textContent).toBe('Wrong note ×3')
+  })
+
   it('reports the bar under a point, and on the current system with one argument', () => {
     const { v } = view()
     expect(v.occAt(GX + 200, PAGE_PAD_TOP + 380)).toBe(5)
@@ -962,6 +972,71 @@ describe('PageView fixes', () => {
     const sys = layout.systems![1]!
     expect(y).toBeGreaterThan(sys.staves[1]!.bottom)
     expect(y).toBeLessThan(sys.y1 + 40)
+  })
+
+  it('draws reminders in a layer below corrections and places ticks in the right system', () => {
+    const { v, layout, root } = view()
+    const content = root.querySelector('.pn-page-content')!
+    const remLayer = content.querySelector('.pn-reminders')
+    const corrLayer = content.querySelector('.pn-corrs')
+    expect(remLayer).not.toBeNull()
+    expect(remLayer!.getAttribute('aria-hidden')).toBe('true')
+    const children = [...content.children]
+    expect(children.indexOf(remLayer!)).toBeLessThan(children.indexOf(corrLayer!))
+
+    // Note 8 is top staff of system 1; note 9 is bottom staff of system 1.
+    v.setReminders([
+      { notes: [8], level: 'faint' },
+      { notes: [9], level: 'firm' },
+    ])
+    expect(root.querySelectorAll('.pn-reminder')).toHaveLength(0)
+    v.flushNow()
+    const marks = [...root.querySelectorAll<SVGElement>('.pn-reminders > .pn-reminder')]
+    expect(marks).toHaveLength(2)
+    const sys1 = layout.systems![1]!
+    const topMarkY = Number.parseFloat(marks[0]!.style.top) + layout.top
+    const botMarkY = Number.parseFloat(marks[1]!.style.top) + layout.top
+    expect(topMarkY).toBeLessThan(sys1.staves[0]!.top)
+    expect(topMarkY).toBeGreaterThan(layout.systems![0]!.staves[1]!.bottom)
+    expect(botMarkY).toBeGreaterThan(sys1.staves[1]!.bottom)
+    expect(marks[1]!.querySelectorAll('.pn-reminder-stroke')).toHaveLength(2)
+
+    // Same marks again do not rebuild.
+    const first = marks[0]!
+    v.setReminders([
+      { notes: [8], level: 'faint' },
+      { notes: [9], level: 'firm' },
+    ])
+    v.flushNow()
+    expect(root.querySelector('.pn-reminders > .pn-reminder')).toBe(first)
+
+    // Clearing removes them.
+    v.setReminders([])
+    v.flushNow()
+    for (const el of [...root.querySelectorAll('.pn-reminder')]) {
+      el.dispatchEvent(new Event('animationend', { bubbles: true }))
+    }
+    expect(root.querySelectorAll('.pn-reminder')).toHaveLength(0)
+  })
+
+  it('redraws page reminders at new positions after a re-layout', () => {
+    const layout1 = testPageLayout(24)
+    const v1 = new PageView(host, layout1, {})
+    v1.setReminders([{ notes: [8], level: 'faint' }])
+    v1.flushNow()
+    const left1 = Number.parseFloat(host.querySelector<SVGElement>('.pn-reminder')!.style.left)
+    v1.destroy()
+
+    host.innerHTML = ''
+    const layout2 = testPageLayout(24)
+    const n8 = layout2.notes[8]!
+    ;(layout2.notes as unknown as unknown[])[8] = { ...n8, head: { ...n8.head, x: n8.head.x + 30 } }
+    const v2 = new PageView(host, layout2, {})
+    v2.setReminders([{ notes: [8], level: 'faint' }])
+    v2.flushNow()
+    const left2 = Number.parseFloat(host.querySelector<SVGElement>('.pn-reminder')!.style.left)
+    expect(left2 - left1).toBeCloseTo(30)
+    v2.destroy()
   })
 
   it('does not resurrect a loop cleared while a handle is held', () => {

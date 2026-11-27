@@ -19,6 +19,7 @@ import en from '../../i18n/locales/en-US.json'
 import fr from '../../i18n/locales/fr-FR.json'
 import ja from '../../i18n/locales/ja-JP.json'
 import { readMessagesWith } from '../../i18n/messages'
+import { PREPARED_LAYOUT_FORMAT, type PreparedLayout } from '../../render/types'
 import { $, $$, byText, click, mount, type Mounted } from '../shared/testing'
 import type { ResultsData } from '../results/data'
 import { ResultDetails } from './ResultDetails'
@@ -73,6 +74,7 @@ function mistake(group: number, occ: number, level: RankedMistake['level'], over
     passesWrong: 1,
     passesReached: 1,
     mark: { kind: 'wrong', text: 'Wrong note' },
+    history: ['wrong'],
     ...over,
   } satisfies RankedMistake
 }
@@ -83,8 +85,22 @@ function render(
   goal: number | null = 3,
   loadHistory: () => Promise<ResultsData | null> = () => Promise.resolve(null),
   actions?: ComponentChildren,
+  opts: {
+    readonly fixed?: readonly number[]
+    readonly layout?: PreparedLayout | null
+    readonly timeline?: Details['timeline']
+    readonly model?: typeof model
+    readonly canDrill?: (attemptId: string, group: number) => boolean
+  } = {},
 ) {
-  const details: Details = { attemptId: result.id, records: [], timeline, marks: new Map() }
+  const details: Details = {
+    attemptId: result.id,
+    records: [],
+    timeline: opts.timeline ?? timeline,
+    marks: new Map(),
+    spots: new Map(),
+    fixed: opts.fixed ?? [],
+  }
   const snippet = new Store<SnippetState | null>(null)
   const session = {
     resultDetails: vi.fn(() => details),
@@ -99,15 +115,17 @@ function render(
     stopSnippet: vi.fn(() => {
       snippet.set(null)
     }),
+    canDrill: vi.fn(opts.canDrill ?? (() => true)),
+    drillSpot: vi.fn(() => true),
   }
   view = mount(
     <ResultDetails
       session={session}
       result={result}
-      model={model}
+      model={opts.model ?? model}
       naming={DEFAULT_SETTINGS.naming}
       pieceId="p"
-      layout={null}
+      layout={opts.layout ?? null}
       goal={goal}
       rank={() => mistakes}
       loadHistory={loadHistory}
@@ -173,16 +191,16 @@ describe('ResultDetails (U99)', () => {
   it('one excerpt per bar, the repeated mistake first under its own heading with its count in words', () => {
     const repeated = mistake(1, 0, 'repeated', {
       reason: 'Same wrong key three passes running',
-      presses: [{ pitch: 61, kind: 'accidental', expectedPitch: 62, expectedNote: note(1), passes: 3 }],
+      presses: [{ pitch: 61, kind: 'accidental', expectedPitch: 62, expectedNote: note(1), passes: 3, together: null }],
     })
     // Bar 1 again (a one-off): shown in bar 1's excerpt, not twice.
     const sameBar = mistake(3, 0, 'replaced', {
-      presses: [{ pitch: 65, kind: 'accidental', expectedPitch: 66, expectedNote: note(3), passes: 1 }],
+      presses: [{ pitch: 65, kind: 'accidental', expectedPitch: 66, expectedNote: note(3), passes: 1, together: null }],
     })
     const extra = mistake(4, 1, 'extra', {
       presses: [
-        { pitch: 30, kind: 'extra', expectedPitch: 67, expectedNote: note(4), passes: 1 },
-        { pitch: 69, kind: 'neighbor', expectedPitch: 67, expectedNote: note(4), passes: 1 },
+        { pitch: 30, kind: 'extra', expectedPitch: 67, expectedNote: note(4), passes: 1, together: null },
+        { pitch: 69, kind: 'neighbor', expectedPitch: 67, expectedNote: note(4), passes: 1, together: null },
       ],
     })
     const session = render([repeated, sameBar, extra])
@@ -312,11 +330,211 @@ describe('ResultDetails (U99)', () => {
         expectedPitch: 62,
         expectedNote: note(1),
         passes: 1,
+        together: null,
       })),
     })
     render([five])
     const excerpt = $(view!.container, '[data-testid="result-excerpt"]')!
     expect(excerpt.querySelector('figcaption')?.textContent).toContain('第1小節')
     expect(excerpt.textContent).toContain('この位置でさらにミスタッチ2回')
+  })
+
+  it('shows per-place history dots with accessible label for 2+ visits, and omits them for a single visit', () => {
+    const multi = mistake(1, 0, 'repeated', {
+      history: ['wrong', 'clean', 'wrong'],
+    })
+    const single = mistake(4, 1, 'replaced', {
+      history: ['wrong'],
+    })
+    render([multi, single])
+    const [first, second] = $$(view!.container, '[data-testid="result-excerpt"]')
+    const dots = $(first!, '[data-testid="place-history"]')
+    expect(dots).not.toBeNull()
+    expect(dots?.getAttribute('aria-label')).toBe('Last 3 passes here: wrong, clean, wrong')
+    expect($$(dots!, '[data-visit]').map((el) => el.dataset['visit'])).toEqual(['wrong', 'clean', 'wrong'])
+    expect($(second!, '[data-testid="place-history"]')).toBeNull()
+  })
+
+  it('shows Fixed this pass with deduplicated bars in score order and caps at 6 with "and N more"', () => {
+    // Groups 0 and 1 are both in bar 1; group 4 is in bar 2.
+    render([], { ...RESULT, passed: true, wrongAttacks: 0 }, 3, undefined, undefined, { fixed: [0, 1, 4] })
+    expect($(view!.container, '[data-testid="result-fixed"]')?.textContent).toBe('Fixed this pass: bar 1, bar 2')
+
+    // 8 bars fixed -> first 6 bars + "and 2 more".
+    const eightBars = buildScore({
+      notes: Array.from({ length: 8 }, (_, bar) => ({ at: bar * 4, midi: 60 })),
+      bars: 8,
+    })
+    const tl8 = buildTimeline(eightBars, { hands: 'right', range: { fromOcc: 0, toOcc: 7 }, multiplier: 1 })
+    view?.unmount()
+    render([], { ...RESULT, passed: true, wrongAttacks: 0 }, 3, undefined, undefined, {
+      model: eightBars,
+      timeline: tl8,
+      fixed: [0, 1, 2, 3, 4, 5, 6, 7],
+    })
+    expect($(view!.container, '[data-testid="result-fixed"]')?.textContent).toBe(
+      'Fixed this pass: bar 1, bar 2, bar 3, bar 4, bar 5, bar 6, and 2 more',
+    )
+  })
+
+  it('passes mark.repeat through to the excerpt SVG so recurring marks show the double ring and ×N', () => {
+    const layout: PreparedLayout = {
+      format: PREPARED_LAYOUT_FORMAT,
+      key: 'test',
+      mode: 'strip',
+      width: 260,
+      height: 200,
+      top: 0,
+      staves: [{ index: 0, top: 40, bottom: 80 }],
+      occurrences: [
+        {
+          occ: 0,
+          x0: 60,
+          x1: 260,
+          start: 0,
+          duration: 1,
+          anchors: [
+            [0, 100],
+            [1, 260],
+          ],
+          label: '1',
+          labelBox: { x: 62, y: 22, w: 10, h: 13 },
+        },
+      ],
+      notes: [
+        {
+          index: note(0),
+          occ: 0,
+          staff: 0,
+          hand: 'R',
+          head: { x: 74, y: 55, w: 12, h: 10 },
+          x: 80,
+          label: 0,
+          graphic: 'g0',
+        },
+        {
+          index: note(1),
+          occ: 0,
+          staff: 0,
+          hand: 'R',
+          head: { x: 114, y: 55, w: 12, h: 10 },
+          x: 120,
+          label: 1,
+          graphic: 'g1',
+        },
+      ],
+      labels: [],
+      ottavas: [],
+      contextChanges: [],
+      segments: [
+        {
+          index: 0,
+          occStart: 0,
+          occEnd: 1,
+          labelStart: 0,
+          labelEnd: 0,
+          x0: 0,
+          x1: 260,
+          svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 200"><g data-n="${note(1)}"><path d="M114 55h12v10h-12z"></path></g></svg>`,
+        },
+      ],
+    } as unknown as PreparedLayout
+    const repeated = mistake(1, 0, 'repeated', {
+      mark: { kind: 'accidental', text: 'D♮, not D♭', repeat: 3 },
+      history: ['wrong', 'wrong', 'wrong'],
+    })
+    render([repeated], RESULT, 3, undefined, undefined, { layout })
+    const music = $(view!.container, '[data-testid="excerpt-music"]')!
+    expect(music).not.toBeNull()
+    expect(music.querySelector('.pn-corr-repeat')).not.toBeNull()
+    expect(music.querySelector('.pn-corr-label')?.textContent).toContain('×3')
+  })
+
+  it('shows a "Drill this spot" button per excerpt that calls drillSpot with the first place, and hides it when unavailable', () => {
+    const first = mistake(1, 0, 'repeated')
+    const second = mistake(2, 0, 'replaced')
+    const third = mistake(4, 1, 'replaced')
+    const session = render([first, second, third], RESULT, 3)
+    const buttons = $$(view!.container, '[data-testid="drill-spot"]')
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0]!.textContent).toContain('Drill this spot')
+    click(buttons[0]!)
+    expect(session.drillSpot).toHaveBeenCalledWith(RESULT.id, 1)
+    click(buttons[1]!)
+    expect(session.drillSpot).toHaveBeenCalledWith(RESULT.id, 4)
+
+    view!.unmount()
+    view = null
+    render([first, second, third], RESULT, 3, undefined, undefined, { canDrill: (_id, group) => group !== 4 })
+    const filtered = $$(view!.container, '[data-testid="drill-spot"]')
+    expect(filtered).toHaveLength(1)
+  })
+
+  it('shows pass patterns under the verdict, hunting line, also classes, and lateHand spread wording', () => {
+    const spreadLeft = mistake(1, 0, 'timing', {
+      mark: { kind: 'spread', text: 'Together' },
+      lateHand: 'L',
+      also: [{ kind: 'late', text: 'Too late' }],
+    })
+    const spreadRight = mistake(2, 0, 'replaced', {
+      presses: [
+        { pitch: 63, kind: 'accidental', expectedPitch: 64, expectedNote: note(2), passes: 1, together: false },
+      ],
+      hunting: true,
+      lateHand: 'R',
+      also: [{ kind: 'spread', text: 'Together' }],
+    })
+    const spreadOlder = mistake(4, 1, 'timing', {
+      mark: { kind: 'spread', text: 'Together' },
+    })
+
+    const detailsRecord = {
+      id: RESULT.id,
+      kind: 'scored' as const,
+      groups: [
+        { group: 0, wrongAttacks: 1, earlyAttacks: 0, lateMs: 0, wrongPitches: [62], extraPitches: [] },
+        { group: 1, wrongAttacks: 1, earlyAttacks: 0, lateMs: 0, wrongPitches: [64], extraPitches: [] },
+        { group: 2, wrongAttacks: 1, earlyAttacks: 0, lateMs: 0, wrongPitches: [66], extraPitches: [] },
+      ],
+    }
+    const details: Details = {
+      attemptId: RESULT.id,
+      records: [detailsRecord as unknown as Details['records'][number]],
+      timeline,
+      marks: new Map(),
+      spots: new Map(),
+      fixed: [],
+    }
+    const snippet = new Store<SnippetState | null>(null)
+    const session = {
+      resultDetails: vi.fn(() => details),
+      snippet,
+      snippetBlocked: vi.fn(() => null),
+      playSnippet: vi.fn(async () => null),
+      stopSnippet: vi.fn(),
+      canDrill: vi.fn(() => false),
+      drillSpot: vi.fn(() => false),
+    }
+    view = mount(
+      <ResultDetails
+        session={session}
+        result={RESULT}
+        model={model}
+        naming={DEFAULT_SETTINGS.naming}
+        pieceId="p"
+        layout={null}
+        goal={3}
+        rank={() => [spreadLeft, spreadRight, spreadOlder]}
+      />,
+    )
+    expect($(view.container, '[data-testid="result-patterns"]')?.textContent).toBe(
+      '3 of your 3 wrong notes were the next note, played early.',
+    )
+    const excerpts = $$(view.container, '[data-testid="result-excerpt"]')
+    expect(excerpts[0]!.textContent).toContain('Not together: the left hand came after the right.')
+    expect(excerpts[0]!.textContent).toContain('Too late: played after the music reached it')
+    expect(excerpts[0]!.textContent).toContain('You tried several keys here: read the note first, then play.')
+    expect(excerpts[0]!.textContent).toContain('Not together: the right hand came after the left.')
+    expect(excerpts[1]!.textContent).toContain('Not together: the chord was spread out')
   })
 })

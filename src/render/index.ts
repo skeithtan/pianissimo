@@ -13,7 +13,14 @@ export {
   labelMetrics,
 } from './osmd/adapter'
 export { StripView } from './strip/StripView'
-export type { CorrectionMark, LoopRange, LoopSelectMode, StripOptions, StripStats } from './strip/StripView'
+export type {
+  CorrectionMark,
+  LoopRange,
+  LoopSelectMode,
+  ReminderMark,
+  StripOptions,
+  StripStats,
+} from './strip/StripView'
 export { PageView, PAGE_PAD_TOP } from './page/PageView'
 export type { PageOptions, PageStats } from './page/PageView'
 export { PAGE_GUTTER, PageGeometry, pageWidthFor } from './page/geometry'

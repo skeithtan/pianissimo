@@ -18,9 +18,10 @@ clean unassisted versus assisted), the assistance paragraph of "Persistent score
 | Choosing | `selectSuggestions(history, occurrences, { scoreVersionId, enabled, dismissed?, max? })` → `{ active, improved, disabled }` of display-ready `Suggestion`s |
 | Passages | `adjacentRuns`, `chunkRun`, `withContextBars`, `MAX_CORE_BARS` |
 | Controls | `SessionDismissals` (in-memory), `setSuggestionsDisabled`, `clearPracticeHistory` |
-| Results | `summarizeContext`, `summarizeByContext` → `ContextResults` (best clean, assisted, incomplete, streak), `practiceStreak`, `compareCleanRuns`, `isAssistedAttempt`, `isCleanUnassistedCompletion`, `meetsPassCondition` (U144: help does not affect the pass, also on older records), `timeDifferenceSec`, `timingAccuracy` (strict records: groups, onTime, early, late, missed, mean and mean absolute offset) |
+| Results | `summarizeContext`, `summarizeByContext` → `ContextResults` (best clean, assisted, incomplete, streak), `practiceStreak`, `compareCleanRuns`, `isAssistedAttempt`, `isCleanUnassistedCompletion`, `meetsPassCondition` (U144: help does not affect the pass, also on older records), `timeDifferenceSec`, `timingAccuracy` (strict records: groups, onTime, early, late — including missed groups with `latePitches` — missed, mean and mean absolute offset) |
 | Scorecard | `buildScorecard(attempt, streak?)` → typed values plus formatted `rows`; `COMPLETION_TIME_DEFINITION`, `formatSeconds` |
 | Labels | `createBarLabeler(occurrences)` ("12", "12 (pass 2)", "bars 12–14") |
+| Spots | `SpotMemory`, `wasAttempted`, `PAUSE_FLOOR_MS` (250), `SPOT_VISITS` (8), `SPOT_LIMIT` (256) (`spots.ts`: mistake memory keyed by score position, used by `PracticeSession`) |
 
 `ingest*` are pure and return `changes` (bars, whether suggestions changed, abandon keys) so
 storage writes only what moved. The same attempt ingested twice is a no-op.
@@ -34,9 +35,11 @@ another tempo, speed or hand selection therefore has separate histories and sepa
 suggestions, and never advances or erases the original one.
 
 Per bar: the five most recent **complete** traversals (`recent`) and a `cleanStreak`. Each
-traversal is reduced to `errorBearing` (any wrong attack **excluding loop-boundary reattacks**,
-`wrongAttacksExcludingBoundary`) and `assisted` (temporary hint, persistent label including
-read-ahead exposure, or keyboard guide, as attributed by the engine to that measure).
+traversal is reduced to `errorBearing` (any wrong attack or missed group **excluding
+loop-boundary reattacks**, `wrongAttacksExcludingBoundary` and `missedGroups`, with missed-only
+inferred for older stored records via `wrongAttacks === 0 && groupsWithErrors > 0`) and
+`assisted` (temporary hint, persistent label including read-ahead exposure, or keyboard guide,
+as attributed by the engine to that measure).
 
 Flagging (proposed default). At least 3 complete traversals, at least 3 error-bearing, and at
 least 60% of the available ones error-bearing. Each traversal counts once however many wrong
@@ -69,7 +72,7 @@ recency. At most three are shown; session-dismissed ones are skipped before cutt
 Results. Comparison is by `contextKey`; ordinary reading and Preview never appear. The best
 clean unassisted run is the one whose completion time is closest to the expected time
 (absolute difference; a faster time is not automatically better). Assisted runs, runs with
-wrong attacks and incomplete attempts are listed separately and never ranked. The views use
+wrong attacks or missed groups (`unassistedWithErrors`) and incomplete attempts are listed separately and never ranked. The views use
 `cleanCompletions` and `notClean`, which do not tell help apart (U144).
 
 ## Decisions and interpretations

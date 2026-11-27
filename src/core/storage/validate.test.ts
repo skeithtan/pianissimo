@@ -157,6 +157,26 @@ describe('record validators', () => {
     )
   })
 
+  it('accept measure traversals with absent or numeric missedGroups and reject non-numeric values', () => {
+    const base = attemptRecord()
+    const m = {
+      occ: 0,
+      complete: true,
+      wrongAttacks: 0,
+      wrongAttacksExcludingBoundary: 0,
+      groupsWithErrors: 1,
+      tempHint: false,
+      persistentLabel: false,
+      keyboard: false,
+    }
+    expect(attemptProblem(set(base, { measures: [m] }))).toBeNull()
+    expect(attemptProblem(set(base, { measures: [{ ...m, missedGroups: 0 }] }))).toBeNull()
+    expect(attemptProblem(set(base, { measures: [{ ...m, missedGroups: 2 }] }))).toBeNull()
+    expect(attemptProblem(set(base, { measures: [{ ...m, missedGroups: '1' }] }))).toBe(
+      'measures is missing or invalid',
+    )
+  })
+
   it('name the first bad piece field', () => {
     for (const [field, value] of [
       ['id', ''],

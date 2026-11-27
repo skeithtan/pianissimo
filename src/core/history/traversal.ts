@@ -3,11 +3,15 @@ import { RECENT_TRAVERSALS } from './types'
 import type { BarRecord, TraversalSample } from './types'
 
 /**
- * Error-bearing = at least one wrong attack, not counting synthetic loop-boundary reattacks
- * (spec: boundary reattacks must not inflate the original passage's mistake history).
+ * Error-bearing = at least one wrong attack or missed group, not counting synthetic loop-boundary
+ * reattacks (spec: boundary reattacks must not inflate the original passage's mistake history).
+ * Records stored before `missedGroups` existed signal missed-only via `wrongAttacks === 0 &&
+ * groupsWithErrors > 0`.
  */
 export function isErrorBearing(t: MeasureTraversal): boolean {
-  return t.wrongAttacksExcludingBoundary > 0
+  if (t.wrongAttacksExcludingBoundary > 0) return true
+  if (t.missedGroups !== undefined) return t.missedGroups > 0
+  return t.wrongAttacks === 0 && t.groupsWithErrors > 0
 }
 
 /** Assisted = temporary hint, persistent label (incl. read-ahead exposure) or keyboard guide. */

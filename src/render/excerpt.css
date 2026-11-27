@@ -41,6 +41,7 @@
   font-weight: 500;
 }
 
+/* Ordinary and recurring (pn-corr-repeat, two strokes per staff) correction rings use the same pen. */
 .pn-excerpt .pn-corr-ring {
   fill: none;
   stroke: var(--pn-correction);

@@ -77,6 +77,7 @@ export function addTraversal(run: ReadingRun | null, record: AttemptRecord, visi
 /** The same group on both sides of a speed change: one stretch of playing. */
 function continued(a: KeptGroup, b: KeptGroup): KeptGroup {
   const at = b.completed ? b.outcome : a.outcome
+  const extra = a.outcome.extraPitches !== undefined || b.outcome.extraPitches !== undefined
   return {
     outcome: {
       ...at,
@@ -84,6 +85,9 @@ function continued(a: KeptGroup, b: KeptGroup): KeptGroup {
       earlyAttacks: a.outcome.earlyAttacks + b.outcome.earlyAttacks,
       wrongPitches: [...(a.outcome.wrongPitches ?? []), ...(b.outcome.wrongPitches ?? [])],
       tieEndPresses: (a.outcome.tieEndPresses ?? 0) + (b.outcome.tieEndPresses ?? 0),
+      ...(extra
+        ? { extraPitches: [...new Set([...(a.outcome.extraPitches ?? []), ...(b.outcome.extraPitches ?? [])])] }
+        : {}),
     },
     completed: a.completed || b.completed,
     visit: b.visit,

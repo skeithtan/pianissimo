@@ -30,7 +30,14 @@ const custom: AppSettings = {
     },
     tiedContinuations: true,
   },
-  hints: { autoThreshold: null, lifetime: 'until-correct', fadeMs: 150, damageFlash: false, showTimingCues: false },
+  hints: {
+    autoThreshold: null,
+    lifetime: 'until-correct',
+    fadeMs: 150,
+    damageFlash: false,
+    showTimingCues: false,
+    reminders: true,
+  },
   pedal: {
     hintPedal: {
       channel: 2,
@@ -207,6 +214,7 @@ describe('normalizeSettings', () => {
         fadeMs: 300,
         damageFlash: true,
         showTimingCues: true,
+        reminders: false,
       })
       expect(loaded.version).toBe(SETTINGS_VERSION)
     })
@@ -216,6 +224,22 @@ describe('normalizeSettings', () => {
       expect(normalizeSettings({ hints: { damageFlash: true } }).hints.damageFlash).toBe(true)
       expect(normalizeSettings({ hints: { damageFlash: 0 } }).hints.damageFlash).toBe(true)
       expect(normalizeSettings({ hints: { damageFlash: null } }).hints.damageFlash).toBe(true)
+    })
+  })
+
+  describe('pencil reminders', () => {
+    it('defaults to off, also for settings stored before the field existed', () => {
+      expect(DEFAULT_SETTINGS.hints.reminders).toBe(false)
+      expect(normalizeSettings({}).hints.reminders).toBe(false)
+      const before = { ...custom, hints: { autoThreshold: 3, lifetime: 20, fadeMs: 300, damageFlash: true } }
+      expect(normalizeSettings(before).hints.reminders).toBe(false)
+    })
+
+    it('keeps a stored choice and falls back to off for a wrong type', () => {
+      expect(normalizeSettings({ hints: { reminders: true } }).hints.reminders).toBe(true)
+      expect(normalizeSettings({ hints: { reminders: false } }).hints.reminders).toBe(false)
+      expect(normalizeSettings({ hints: { reminders: 1 } }).hints.reminders).toBe(false)
+      expect(normalizeSettings({ hints: { reminders: 'yes' } }).hints.reminders).toBe(false)
     })
   })
 

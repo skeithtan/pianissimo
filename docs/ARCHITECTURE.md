@@ -256,7 +256,12 @@ history (pure, worker-safe): `ingestAttempt` / `ingestAbandon` fold engine recor
 {bars, suggestions, abandons}; `selectSuggestions` builds up to three display-ready suggestions
 plus Improved; `results` / `buildScorecard` summarize attempts per comparison context (best
 clean unassisted vs assisted, streak). Bars are keyed (measureContextKey, occ); only complete
-traversals enter the window of five.
+traversals enter the window of five. `MeasureTraversal.missedGroups` (optional; a strict bar's
+missed groups) is counted by `isErrorBearing`, which infers it for older records
+(`wrongAttacks === 0 && groupsWithErrors > 0`). `core/history/spots.ts` (`SpotMemory`, P38) is the
+mistake memory by unfolded score position, scoped by score version and hands (`PAUSE_FLOOR_MS` =
+250, `SPOT_VISITS` = 8, `SPOT_LIMIT` = 256; `guardFor` reads live visits only, `hotSpots`,
+`fixedBy`); `PracticeSession` keeps one per hand selection.
 storage (IndexedDB "pianissimo" v4, idb): `openStorage()` → `PianissimoStorage`. Stores:
 pieces, sources, packages (both keyed by scoreVersionId), settings, attempts (indexes pieceId,
 contextKey), measureHistory, suggestionState, abandonEvents, layoutCache (+meta, LRU by bytes
@@ -266,7 +271,9 @@ another tab blocks (it keeps an older version open) calls `StorageOptions.onBloc
 `app/services` shows a notice asking to close the other tab until the open goes on; this tab
 closes its own connection when a newer version asks. `commitImport` writes source + package +
 piece in one transaction; `loadSettings` merges stored settings over `DEFAULT_SETTINGS` field by
-field (`normalizeSettings`).
+field (`normalizeSettings`). `listRecentAttempts(pieceId, limit)` (`core/storage/attempts.ts`, a
+reverse cursor over `pieceId`) gives the 64 newest attempts `PracticeScreen` seeds the mistake memory
+with once the first layout shows.
 Practice records: the session calls `storage.history.queueAttempt` / `queueAbandon` (O(1),
 never in the MIDI path); the `HistoryWriter` flushes on idle, `pagehide` and visibility-hidden
 (`attachLifecycle()` once), ingests through core/history and writes attempts + changed
@@ -289,13 +296,15 @@ never undoes the rest. Settings restore keeps this device's MIDI route, metronom
 and recording input unless `route: 'backup'`. Details: `src/core/storage/README.md`.
 
 Rhythm mode results (core/history, views/results, app/session/corrections): `timingAccuracy(record)`
-summarizes a strict record's per-group `offsetMs` / `missed` against `rhythm.toleranceMs` (on
-time, early, late, missed, mean and mean absolute offset). A clean unassisted completion needs
+summarizes a strict record's per-group `offsetMs` / `missed` / `latePitches` against
+`rhythm.toleranceMs` (on time, early, late — including missed groups with late presses — missed,
+mean and mean absolute offset). A clean unassisted completion needs
 zero missed groups in every context, and strict clean runs rank by mean absolute offset.
 `buildScorecard` gives completed strict records `timing: 'rhythm'` and timing rows (on-time
 groups, early, late, missed, average offset, timing window) instead of completion, expected and
 difference rows. Progress names a strict context "Keep time · ±N ms". Teacher
-corrections add a `'missed'` mark (`CorrectionMark.kind`) and judge lateness against the
+corrections add a `'missed'` mark (`CorrectionMark.kind`; `'late'` when every pitch of a missed
+group was pressed late) and judge lateness against the
 record's tolerance for strict records.
 
 ### render/
@@ -329,6 +338,10 @@ keeps the old view until the new layout is ready). The glide follows the live vi
 playback. Rapid reversals await `whenRespaced()` before replacing the view, with stale requests
 discarded (U63). The portrait cursor shares the glide's eased progress between the layouts'
 live cursor geometry, with CSS seek transitions disabled during playback/respacing (U64).
+`CorrectionMark.repeat` (`shared/corrections.ts`, `excerpt.ts`: double ring and ` ×N` label
+when `repeat >= 2`) and `shared/reminders.ts` / `setReminders` on `StripView` and `PageView`
+(quiet pencil carets in the margin band pointing at the staff, below corrections, non-interactive)
+are driven by `PracticeSession` (reminders gated by `hints.reminders`, off by default).
 Full API: `src/render/README.md`. Browser tests:
 `tests/e2e/render-*.spec.ts` with the harness in `tests/harness/` (not in the production build).
 
@@ -425,8 +438,22 @@ includes an icon-only octave direction for same-pitch-class errors (U30); no gen
 Hiding the page saves progress without stopping playback (P10). Leaving the view ends a running
 attempt as a user stop and a paused reading pass as `'suspend'`, so both are recorded (P18). A
 Start that was paused while its sounds loaded starts nothing (`#startGen`, P19). Preparation calls `markPrepared`
-once the strip is attached and persistent-label fades have finished. `practiceModel` applies a user
-tempo; `createPieceSaver` debounces piece updates.
+once the strip is attached and persistent-label fades have finished. A scheduled session tick
+that fires more than 8 ms late re-queues itself once with a zero delay (`#scheduleTick`) so
+queued key events are handled first. `practiceModel` applies a user tempo; `createPieceSaver` debounces piece updates.
+Mistake memory, reminders, drill and review analysis (`app/session/`): `PracticeSession` keeps
+one `SpotMemory` per hand selection (folded outside the MIDI input path in `#frame`, seeded from
+stored attempts on timers, in time order, via `seedSpots`), syncs `engine.setGuard(mem.guardFor(tl), tl)`
+in non-strict scored mode, and syncs quiet pencil reminders (`StripSink.setReminders`, capped at
+24, `firm` first, off by default via `hints.reminders`, shown only outside review, Listen and
+Follow). `app/session/drill.ts` (`drillRange`: two onsets before a spot to one after)
+backs `canDrill` / `drillSpot` / `endDrill` (target 3 clean passes, ladder suspended, unpersisted
+loop, "Back to …" in the result card's choices). `app/session/pauses.ts` (`pauseThresholdMs`: half a beat
+at the practice speed, clamped 250–600 ms; `pausedGroups`) feeds gated "Too late" marks, the
+speed ladder's fluency check and the `hesitation` ranking level. `app/session/causes.ts`
+(`pressCause`, `causeClef`, `isHunting`), `app/session/patterns.ts` (`mistakePatterns`), and
+`app/session/ranking.ts` (`rankMistakes`, `wrongPressLine`, `patternLines`) stay lazily loaded
+with `ResultDetails`.
 Starting playback resolves the optional `StripSink.browsedPosition()` to an exact seek and
 calls `returnToCurrent()` to restore following, including after asynchronous sound loading.
 The strip reports the nearest onset beneath its fixed cursor while browsing. Browsing cannot go
@@ -490,7 +517,9 @@ resets the clean streak at the current speed. Automatic steps take effect at the
 through the ordinary speed-change path. `AttemptSummary.ladder` tells the result card what
 happened. The options
 default to a 100% goal (U116). Selecting it at or above 100% makes `setLadder` start a fresh
-ladder at 75% through the manual tempo-change path.
+ladder at 75% through the manual tempo-change path. The ladder counts fluent passes only
+(`#ladderStreak`, `pausedGroups(record, timeline)` empty): a clean pass with pauses holds the speed
+(`held`, "Clean, with pauses: staying at 75%", P40); `passed` and a plain Repeat target are unchanged.
 Keep time (P13, U78): every Start is a scored attempt on the engine's strict transport,
 with `rhythm.toleranceMs` from `AppSettings.rhythm`. Outside Repeat, the attempt runs from
 the playable onset at the cursor to the piece end (U128). The strict engine, count-in,
@@ -615,7 +644,8 @@ side); on a phone (`usePhone`) a fixed full-screen dialog with its own sticky he
 header calls `dismissResult`, which clears the result and marks and restores the playing zoom.
 `PracticeSession.resultDetails()` hands over the last
 result's inputs on demand; the card ranks them (`app/session/ranking.ts` `rankMistakes`, loaded with the card, fed by the last
-passes of the context and `correctionMarksByGroup`), never in the input path.
+passes of the context, each place's visits (`ResultDetails.spots`: the mistake memory's, a Wait run's from
+the runs before it) and `correctionMarksByGroup`), never in the input path.
 **Result after a run (U142).** A Wait run outside Repeat that reaches the end of the piece shows the same
 result: `app/session/run.ts` folds its reading traversals as they end (per onset group the latest time
 it was played) into an in-memory `RunRecord`, which is a pass for the pill, the card, the marks and the

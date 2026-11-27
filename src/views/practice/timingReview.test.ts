@@ -33,7 +33,7 @@ function details(
   toleranceMs = 150,
 ): ResultDetails {
   const record = attemptRecord({ context: comparisonContext({ transport }), groups, rhythm: { toleranceMs } })
-  return { attemptId: record.id, records: [record], timeline, marks: new Map() }
+  return { attemptId: record.id, records: [record], timeline, marks: new Map(), spots: new Map(), fixed: [] }
 }
 
 function group(index: number, fields: Partial<GroupOutcome>): GroupOutcome {
@@ -84,6 +84,30 @@ describe('Keep time review strip', () => {
     const review = buildTimingReview(
       details([group(0, { offsetMs: 0 }), group(4, { offsetMs: offset })], 'strict', tolerance),
     )
+    expect([...review!.bars.keys()]).toEqual([1])
+  })
+
+  it('finds the attempt by attemptId when later records follow it', () => {
+    const completed = attemptRecord({
+      context: comparisonContext({ transport: 'strict' }),
+      groups: [group(0, { offsetMs: 0 }), group(4, { offsetMs: 60 })],
+      rhythm: { toleranceMs: 150 },
+    })
+    const later = attemptRecord({
+      context: comparisonContext({ transport: 'strict' }),
+      completion: 'interrupted',
+      groups: [],
+      rhythm: { toleranceMs: 150 },
+    })
+    const review = buildTimingReview({
+      attemptId: completed.id,
+      records: [completed, later],
+      timeline,
+      marks: new Map(),
+      spots: new Map(),
+      fixed: [],
+    })
+    expect(review).not.toBeNull()
     expect([...review!.bars.keys()]).toEqual([1])
   })
 })

@@ -87,6 +87,13 @@ export function StageCue({ session }: { session: PracticeSession }) {
   const f = useStore(session.feedback)
   const cue = f.visible ? f.cue : null
   if (!cue) return null
+  if (cue.kind === 'once-more') {
+    return (
+      <div class={styles.stageCue} data-testid="stage-cue" data-kind="once-more" role="status">
+        {msg('Once more')}
+      </div>
+    )
+  }
   if (cue.kind === 'retry') {
     return (
       <div class={styles.stageCue} data-testid="stage-cue" data-kind="retry" role="status">

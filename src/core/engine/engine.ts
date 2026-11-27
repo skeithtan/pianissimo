@@ -10,7 +10,7 @@
  */
 import { CC_ALL_NOTES_OFF, CC_SOSTENUTO, CC_SUSTAIN, type MidiInputEvent } from '../midi/types'
 import { samePassage } from '../model/passage'
-import { MATCHING_RULES_VERSION } from '../model/score'
+import { MATCHING_RULES_VERSION, type Hand } from '../model/score'
 import {
   USER_ABANDON_REASONS,
   type Completion,
@@ -125,7 +125,7 @@ interface PendingPress {
   readonly from: number
   /** The group whose pitch it is: the next one, or in strict a later one within the tolerance. */
   readonly target: number
-  readonly deadline: number
+  deadline: number
   /** A pitch tied into `target` (not required anywhere): a tie-end press if `target` comes in time. */
   readonly tieEnd?: boolean
 }
@@ -134,6 +134,10 @@ type PendingOutcome = 'keep' | 'done'
 
 /** Strict: how many groups past gi + 1 a press may look for its group (keeps input O(small)). */
 const STRICT_LOOK_AHEAD_GROUPS = 16
+/** Maximum undecided wrong presses tracked per group for extra-pitch timing. */
+const MAX_UNDECIDED_WRONG = 8
+/** Maximum recent right-key strike times retained per group for extra-pitch timing. */
+const MAX_RIGHT_STRIKES = 16
 
 export class PracticeEngine {
   #timeline: Timeline
@@ -189,10 +193,19 @@ export class PracticeEngine {
   #restrikesUntil = -Infinity
   #inputComplete = false
   #previousWrongKeys: ReadonlyMap<number, ReadonlySet<number>> | null = null
+  #guard: ReadonlyMap<number, ReadonlySet<number>> | null = null
   /** Fully played at a previously mistaken onset, with time for an extra key in the same stroke. */
-  #confirmation: { readonly attack: number; readonly until: number } | null = null
+  #confirmation: { readonly attack: number; readonly openedAt: number; readonly until: number } | null = null
+  /** Accompaniment: delay added by the previous group's confirmation hold, credited to the next group's grace. */
+  #holdCredit: { readonly group: number; readonly ms: number } | null = null
   /** A repeated extra invalidated this stroke. Discard attacks from the remainder of the stroke. */
   #retryAfter = -Infinity
+  /** Press time of the wrong key that triggered/reset retry while awaiting a nearby right strike. */
+  #retryTriggerAt: number | null = null
+  /** True when the retry was triggered by a lone wrong key and the first clean stroke must be taken back. */
+  #needsTakeBack = false
+  /** True from when the first clean stroke is taken back until the group completes (or a wrong key resets). */
+  #onceMore = false
   #transportGate = -1
   /** Time the latest gate (`#transportGate`) was reached. */
   #gateAt = -Infinity
@@ -214,6 +227,17 @@ export class PracticeEngine {
   /** Earliest and latest accepted attack of the current group (chord spread). */
   #firstAcceptAt = Infinity
   #lastAcceptAt = -Infinity
+  /** Earliest and latest accepted attack per hand of the current group (for `lateHand`). */
+  #leftFirst = Infinity
+  #leftLast = -Infinity
+  #rightFirst = Infinity
+  #rightLast = -Infinity
+  /** True when a required pitch of the current group is shared by notes of both hands. */
+  #sharedHandPitch = false
+  /** Recent right-key strike times of the current group (extra-pitch timing, capped). */
+  #rightStrikes: number[] = []
+  /** Non-early wrong presses of the current group awaiting a nearby right strike (capped at 8). */
+  #undecidedWrong: { readonly pitch: number; readonly time: number }[] = []
   #pending: PendingPress[] = []
   /** Strict: close time per gate reached (arrival + tolerance; a skipped gate closes at the arrival that skipped it). */
   readonly #closeAt = new Map<number, number>()
@@ -406,10 +430,12 @@ export class PracticeEngine {
       if (this.#accepted.has(pitch)) {
         this.#accepted.set(pitch, time)
         this.#inStrike(g, time)
+        this.#recordRightStrike(gi, time)
         this.#emit({ type: 'replay', group: gi, pitch, time })
         return false
       }
       if (this.#tooEarly(gi, time)) {
+        this.#recordRightStrike(gi, time)
         this.#wrong(gi, g, pitch, time, 'early')
         return true
       }
@@ -420,13 +446,20 @@ export class PracticeEngine {
     if (
       closed !== null &&
       closed.pitches.includes(pitch) &&
-      (this.#transportGate < gi || time - closed.at <= this.#windowMs)
+      ((closed.group === gi - 1 && this.#transportGate < gi) || time - closed.at <= this.#windowMs)
     ) {
+      const scheduledAt = this.#arrivedAt.get(closed.group)
+      this.#log.lateSlip(
+        closed.group,
+        pitch,
+        scheduledAt !== undefined ? Math.max(0, wholeMs(time - scheduledAt)) : undefined,
+      )
       this.#emit({ type: 'wrong', group: closed.group, pitch, time, feedbackUntil: this.#wrongUntil, reason: 'late' })
       return false
     }
+    const next = groups[gi + 1]
     const canBuffer = time >= this.#retryAfter
-    if (canBuffer && groups[gi + 1]?.pitches.includes(pitch)) {
+    if (canBuffer && next?.pitches.includes(pitch)) {
       this.#pending.push({ pitch, time, from: gi, target: gi + 1, deadline: time + this.#windowMs })
       return false
     }
@@ -439,7 +472,8 @@ export class PracticeEngine {
       this.#tieEnd(gi, pitch, time)
       return false
     }
-    if (canBuffer && groups[gi + 1]?.tiedPitches.includes(pitch)) {
+    if (!canBuffer && (next?.pitches.includes(pitch) || next?.tiedPitches.includes(pitch))) return false
+    if (canBuffer && next?.tiedPitches.includes(pitch)) {
       this.#pending.push({ pitch, time, from: gi, target: gi + 1, deadline: time + this.#windowMs, tieEnd: true })
       return false
     }
@@ -498,6 +532,7 @@ export class PracticeEngine {
       occ: cur.occ,
       synthetic: cur.synthetic,
     })
+    this.#log.markExtra(prev, pitch)
     this.#wrongUntil = Math.max(this.#wrongUntil, time + this.#wrongFeedbackMs)
     this.#lastWrongReason = 'pitch'
     if (this.#physical.isHeld(pitch)) this.#heldWrong.add(pitch)
@@ -535,6 +570,10 @@ export class PracticeEngine {
     this.#emit({ type: 'wrong', group: gi, pitch, time, feedbackUntil: this.#wrongUntil, reason: 'tie-end' })
   }
 
+  #graceFor(gi: number): number {
+    return this.#graceMs + (this.#holdCredit?.group === gi ? this.#holdCredit.ms : 0)
+  }
+
   /**
    * Accompaniment: the gate of group `gi` is not reached within the grace of `time`. Strict: it is
    * more than the tolerance away (unknown counts as too far).
@@ -549,10 +588,81 @@ export class PracticeEngine {
     }
     if (this.#transport === 'free' || this.#transportEta === null || this.#transportGate >= gi) return false
     const eta = this.#transportEta(gi, time)
-    return eta === null || eta >= this.#graceMs
+    return eta === null || eta >= this.#graceFor(gi)
+  }
+
+  #recordRightStrike(gi: number, time: number): void {
+    if (this.#rightStrikes.length >= MAX_RIGHT_STRIKES) this.#rightStrikes.shift()
+    this.#rightStrikes.push(time)
+    if (
+      this.#retryTriggerAt !== null &&
+      Math.abs(time - this.#retryTriggerAt) <= this.#strikeRest(this.#timeline.groups[gi]!)
+    ) {
+      this.#retryTriggerAt = null
+      this.#needsTakeBack = false
+    }
+    if (this.#undecidedWrong.length === 0) return
+    let write = 0
+    for (let i = 0; i < this.#undecidedWrong.length; i++) {
+      const u = this.#undecidedWrong[i]!
+      if (Math.abs(time - u.time) <= CHORD_SLIP_MS) {
+        this.#log.markExtra(gi, u.pitch)
+      } else if (time - u.time <= CHORD_SLIP_MS) {
+        this.#undecidedWrong[write++] = u
+      }
+    }
+    this.#undecidedWrong.length = write
+  }
+
+  #hasRightStrikeNear(time: number, within: number): boolean {
+    for (let i = this.#rightStrikes.length - 1; i >= 0; i--) {
+      if (Math.abs(time - this.#rightStrikes[i]!) <= within) return true
+    }
+    return false
+  }
+
+  #resetAcceptTiming(): void {
+    this.#firstAcceptAt = Infinity
+    this.#lastAcceptAt = -Infinity
+    this.#leftFirst = Infinity
+    this.#leftLast = -Infinity
+    this.#rightFirst = Infinity
+    this.#rightLast = -Infinity
+    this.#sharedHandPitch = false
+  }
+
+  #recordAcceptHand(g: OnsetGroup, k: number, time: number): void {
+    if (this.#sharedHandPitch) return
+    let hand: Hand | 'both' | null = null
+    const notes = this.#timeline.model.notes
+    for (const ni of g.notesByPitch[k] ?? []) {
+      const h = notes[ni]!.hand
+      if (hand === null) hand = h
+      else if (hand !== h) {
+        hand = 'both'
+        break
+      }
+    }
+    if (hand === 'both') {
+      this.#sharedHandPitch = true
+    } else if (hand === 'L') {
+      if (time < this.#leftFirst) this.#leftFirst = time
+      if (time > this.#leftLast) this.#leftLast = time
+    } else if (hand === 'R') {
+      if (time < this.#rightFirst) this.#rightFirst = time
+      if (time > this.#rightLast) this.#rightLast = time
+    }
+  }
+
+  #lateHand(): Hand | undefined {
+    if (this.#sharedHandPitch || this.#leftFirst === Infinity || this.#rightFirst === Infinity) return undefined
+    if (this.#rightLast < this.#leftFirst) return 'L'
+    if (this.#leftLast < this.#rightFirst) return 'R'
+    return undefined
   }
 
   #accept(gi: number, g: OnsetGroup, k: number, time: number): void {
+    this.#recordRightStrike(gi, time)
     if (time < this.#retryAfter) {
       if (g.pitches.length > 1) this.#retryAfter = Math.max(this.#retryAfter, time + this.#strikeGap(g))
       return
@@ -563,13 +673,23 @@ export class PracticeEngine {
     this.#extendStrike(g, time)
     if (time < this.#firstAcceptAt) this.#firstAcceptAt = time
     if (time > this.#lastAcceptAt) this.#lastAcceptAt = time
+    this.#recordAcceptHand(g, k, time)
     this.#emit({ type: 'accepted', group: gi, pitch, notes: g.notesByPitch[k] ?? [], time })
     if (this.#accepted.size !== g.pitches.length) return
+    if (this.#needsTakeBack) {
+      this.#needsTakeBack = false
+      this.#retryTriggerAt = null
+      this.#onceMore = true
+      this.#accepted.clear()
+      this.#resetAcceptTiming()
+      return
+    }
     const attack = Math.max(time, this.#lastCompleteAt)
-    if (this.#previousWrongKeys?.has(gi)) {
+    if (this.#isGuarded(gi)) {
       const window = this.#mistakeWindow(gi, attack)
       if (window > 0) {
-        this.#confirmation = { attack, until: attack + window }
+        this.#confirmation = { attack, openedAt: this.#lastNow, until: attack + window }
+        for (const p of this.#pending) p.deadline += window
         return
       }
     }
@@ -587,6 +707,11 @@ export class PracticeEngine {
 
   #strikeGap(g: OnsetGroup): number {
     return g.rolled ? ROLL_STRIKE_GAP_MS : STRIKE_GAP_MS
+  }
+
+  /** The rest of a strike around a wrong key: both hands' worth for a chord, a grazed key for one note. */
+  #strikeRest(g: OnsetGroup): number {
+    return g.pitches.length > 1 ? this.#strikeGap(g) : CHORD_SLIP_MS
   }
 
   #inStrike(g: OnsetGroup, time: number): void {
@@ -617,9 +742,18 @@ export class PracticeEngine {
     if (inclusive ? this.#strikeUntil > now : this.#strikeUntil >= now) return false
     this.#strikeUntil = Infinity
     this.#accepted.clear()
-    this.#firstAcceptAt = Infinity
-    this.#lastAcceptAt = -Infinity
+    this.#resetAcceptTiming()
     return true
+  }
+
+  #isGuarded(gi: number): boolean {
+    if (this.#mode !== 'scored' || this.#strict) return false
+    return Boolean(this.#previousWrongKeys?.has(gi) || (this.#guard?.get(gi)?.size ?? 0) > 0)
+  }
+
+  #isGuardedPitch(gi: number, pitch: number): boolean {
+    if (this.#mode !== 'scored' || this.#strict) return false
+    return Boolean(this.#previousWrongKeys?.get(gi)?.has(pitch) || this.#guard?.get(gi)?.has(pitch))
   }
 
   /** Same short window as chord-slip attribution, cut off halfway to the next onset. */
@@ -635,6 +769,13 @@ export class PracticeEngine {
     if (this.#confirmation !== confirmation) return expired
     this.#confirmation = null
     const gi = this.#group!
+    if (this.#transport === 'accompaniment') {
+      const delay = Math.max(0, now - confirmation.openedAt)
+      this.#holdCredit = { group: gi + 1, ms: delay }
+      for (const p of this.#pending) {
+        if (p.target === gi + 1) p.deadline = Math.max(p.deadline, p.time + this.#graceMs + delay)
+      }
+    }
     this.#complete(gi, this.#timeline.groups[gi]!, confirmation.attack, true)
     return true
   }
@@ -648,15 +789,35 @@ export class PracticeEngine {
     this.#emit({ type: 'wrong', group: gi, pitch, time, feedbackUntil: this.#wrongUntil, reason })
     // A too-early press had the right pitch: no wrong-key marking, ottava emphasis or hint count.
     if (reason === 'early') return
-    if (!this.#inputComplete && (this.#retryAfter !== -Infinity || this.#previousWrongKeys?.get(gi)?.has(pitch))) {
+    const together = this.#hasRightStrikeNear(time, CHORD_SLIP_MS)
+    if (together) {
+      this.#log.markExtra(gi, pitch)
+    } else {
+      let write = 0
+      for (let i = 0; i < this.#undecidedWrong.length; i++) {
+        const u = this.#undecidedWrong[i]!
+        if (time - u.time <= CHORD_SLIP_MS) this.#undecidedWrong[write++] = u
+      }
+      this.#undecidedWrong.length = write
+      if (this.#undecidedWrong.length < MAX_UNDECIDED_WRONG) {
+        this.#undecidedWrong.push({ pitch, time })
+      }
+    }
+    if (!this.#inputComplete && (this.#retryAfter !== -Infinity || this.#isGuardedPitch(gi, pitch))) {
       this.#confirmation = null
       this.#accepted.clear()
-      this.#firstAcceptAt = Infinity
-      this.#lastAcceptAt = -Infinity
-      // The rest of the same strike is discarded: both hands' worth for a chord, a grazed key for one note.
-      const rest = g.pitches.length > 1 ? this.#strikeGap(g) : CHORD_SLIP_MS
-      this.#retryAfter = Math.max(this.#retryAfter, time + rest)
+      this.#resetAcceptTiming()
+      this.#retryAfter = Math.max(this.#retryAfter, time + this.#strikeRest(g))
       this.#pending = []
+      this.#onceMore = false
+      // A guarded key in the same strike as right keys (P33) asks for one retry; alone, for Once more (P39).
+      if (this.#hasRightStrikeNear(time, this.#strikeRest(g))) {
+        this.#needsTakeBack = false
+        this.#retryTriggerAt = null
+      } else {
+        this.#needsTakeBack = true
+        this.#retryTriggerAt = time
+      }
     }
     if (this.#physical.isHeld(pitch)) this.#heldWrong.add(pitch)
     this.#boundStrike(g, pitch, time)
@@ -674,6 +835,9 @@ export class PracticeEngine {
   #complete(gi: number, g: OnsetGroup, time: number, slipChecked = false): void {
     this.#inputComplete = true
     this.#retryAfter = -Infinity
+    this.#retryTriggerAt = null
+    this.#needsTakeBack = false
+    this.#onceMore = false
     this.#lastCompleteAt = time
     this.#lastCompletedGroup = gi
     this.#restrikes.clear()
@@ -683,6 +847,7 @@ export class PracticeEngine {
       this.#restrikesUntil = time + gap
     }
     const spreadMs = g.pitches.length > 1 ? Math.max(0, Math.round(this.#lastAcceptAt - this.#firstAcceptAt)) : 0
+    const lateHand = this.#lateHand()
     const offsetMs = this.#strict ? this.#offsetMs(gi, time) : null
     const onsetOffsetMs =
       !this.#strict || this.#firstAcceptAt === time ? offsetMs : this.#offsetMs(gi, this.#firstAcceptAt)
@@ -692,6 +857,7 @@ export class PracticeEngine {
       spreadMs,
       ...(offsetMs !== null ? { offsetMs } : {}),
       ...(onsetOffsetMs !== null && onsetOffsetMs !== offsetMs ? { onsetOffsetMs } : {}),
+      ...(lateHand !== undefined ? { lateHand } : {}),
     })
     if (gi === this.#timeline.groups.length - 1) this.#log.finalAttack = time
     this.#emit({
@@ -819,6 +985,7 @@ export class PracticeEngine {
     const k = g.pitches.indexOf(p.pitch)
     if (k < 0) return 'done'
     if (this.#accepted.has(p.pitch)) {
+      this.#recordRightStrike(cur, p.time)
       this.#emit({ type: 'replay', group: cur, pitch: p.pitch, time: p.time })
       return 'done'
     }
@@ -837,16 +1004,19 @@ export class PracticeEngine {
       verdict = 'accept'
     } else if (this.#transportGate >= cur) {
       const arrivedAt = this.#transportGate === cur ? this.#gateAt : -Infinity
-      verdict = arrivedAt - p.time < this.#graceMs ? 'accept' : 'early'
+      verdict = arrivedAt - p.time < this.#graceFor(cur) ? 'accept' : 'early'
     } else if (expired) {
       verdict = 'early'
     } else {
       const eta = this.#transportEta(cur, p.time)
-      verdict = eta === null ? 'keep' : eta < this.#graceMs ? 'accept' : 'early'
+      verdict = eta === null ? 'keep' : eta < this.#graceFor(cur) ? 'accept' : 'early'
     }
     if (verdict === 'keep') return 'keep'
     if (verdict === 'accept') this.#accept(cur, g, k, p.time)
-    else this.#wrong(cur, g, p.pitch, p.time, 'early')
+    else {
+      this.#recordRightStrike(cur, p.time)
+      this.#wrong(cur, g, p.pitch, p.time, 'early')
+    }
     return 'done'
   }
 
@@ -864,9 +1034,10 @@ export class PracticeEngine {
       return
     }
     this.#now(now)
+    const confirmed = this.#confirmPlayedGroup(now, true)
     const expired = this.#expirePending(now)
     if (group <= this.#transportGate) {
-      if (expired) this.#touch()
+      if (confirmed || expired) this.#touch()
       return
     }
     for (let g = this.#transportGate + 1; g <= group; g++) this.#arrivedAt.set(g, now)
@@ -933,7 +1104,7 @@ export class PracticeEngine {
   #closeMissed(at: number): void {
     const gi = this.#group!
     const g = this.#timeline.groups[gi]!
-    this.#log.groupMissed(gi, g.occ)
+    this.#log.groupMissed(gi, g.occ, g.synthetic)
     if (gi === this.#timeline.groups.length - 1) this.#log.finalAttack = at
     this.#emit({ type: 'missed', group: gi, notes: g.notes, time: at })
     this.#lastClosed = { group: gi, pitches: g.pitches, at }
@@ -1160,6 +1331,7 @@ export class PracticeEngine {
     if (keep) {
       const active = this.#attemptActive()
       if (active) this.#end('interrupted', change.reason, now)
+      if (timeline !== this.#timeline) this.#guard = null
       this.#timeline = timeline
       if (active) this.#continueTraversal(now)
       this.#touch()
@@ -1169,6 +1341,7 @@ export class PracticeEngine {
     const oldPosition = this.#currentGroup()?.position ?? null
     if (this.#attemptActive()) this.#end(completionFor(change.reason), change.reason, now)
     this.#clearGroupState(now)
+    if (timeline !== this.#timeline) this.#guard = null
     this.#timeline = timeline
     this.#mode = mode
     this.#transport = transport
@@ -1181,6 +1354,20 @@ export class PracticeEngine {
       this.#begin(now, start, wasRunning ? 'running' : 'paused')
     }
     this.#touch()
+  }
+
+  /**
+   * Wrong keys to guard per group index of `timeline` (P38), beside the previous automatic pass's
+   * own (`continueRepeat`, P26). At a guarded group, completion waits for the confirmation hold,
+   * and pressing a guarded key again clears the stroke for a retry. Ignored unless `timeline` is
+   * the engine's current timeline object; stored regardless of mode so clears and updates made in
+   * reading mode apply when switching to scored on the same timeline. It has no effect in reading
+   * mode or strict transport. Pass null to clear. `restart` keeps the guard; a `reconfigure` that
+   * brings a new timeline drops it (its group indices no longer apply).
+   */
+  setGuard(guard: ReadonlyMap<number, ReadonlySet<number>> | null, timeline: Timeline): void {
+    if (timeline !== this.#timeline) return
+    this.#guard = guard
   }
 
   /** Settings that do not change the comparison context. A changed label setting interrupts a scored attempt. */
@@ -1307,6 +1494,7 @@ export class PracticeEngine {
       missingPitches: missing,
       inputComplete: this.#inputComplete,
       retryGroup: this.#retryAfter !== -Infinity,
+      onceMore: this.#onceMore,
       waitingForTransport: this.#waitingForTransport(),
       transportGate: this.#transportGate,
       heldKeys: this.#physical.heldKeys(),
@@ -1377,6 +1565,10 @@ export class PracticeEngine {
     if (at !== undefined) this.#arrivedAt.set(this.#group!, at + ms)
     this.#firstAcceptAt += ms
     this.#lastAcceptAt += ms
+    this.#leftFirst += ms
+    this.#leftLast += ms
+    this.#rightFirst += ms
+    this.#rightLast += ms
   }
 
   /** An attempt or traversal is in progress (its log can still change). */
@@ -1421,6 +1613,7 @@ export class PracticeEngine {
     this.#pending = []
     this.#finishAt = null
     this.#previousWrongKeys = null
+    this.#holdCredit = null
     this.#lastCompleteAt = -Infinity
     this.#lastWrongReason = null
     // A traversal that begins paused shows no label of the one before: the pause would freeze its fade.
@@ -1462,15 +1655,20 @@ export class PracticeEngine {
     if (h && h.group !== group) this.#retireHint(now, 'dismissed')
     this.#group = group
     this.#accepted.clear()
-    this.#firstAcceptAt = Infinity
-    this.#lastAcceptAt = -Infinity
+    this.#resetAcceptTiming()
+    this.#rightStrikes.length = 0
+    this.#undecidedWrong.length = 0
     this.#inputComplete = false
     this.#confirmation = null
+    if (this.#holdCredit?.group !== group) this.#holdCredit = null
     this.#retryAfter = -Infinity
     this.#groupMistakes.clear()
     this.#strikeUntil = Infinity
     this.#strikeStart = -Infinity
     this.#strikeLast = -Infinity
+    this.#retryTriggerAt = null
+    this.#needsTakeBack = false
+    this.#onceMore = false
     this.#groupWrong = 0
     this.#sinceArm = 0
     this.#groupHasError = false
@@ -1484,15 +1682,20 @@ export class PracticeEngine {
     this.#retireHint(now, 'dismissed')
     this.#pending = []
     this.#accepted.clear()
-    this.#firstAcceptAt = Infinity
-    this.#lastAcceptAt = -Infinity
+    this.#resetAcceptTiming()
+    this.#rightStrikes.length = 0
+    this.#undecidedWrong.length = 0
     this.#inputComplete = false
     this.#confirmation = null
+    this.#holdCredit = null
     this.#retryAfter = -Infinity
     this.#groupMistakes.clear()
     this.#strikeUntil = Infinity
     this.#strikeStart = -Infinity
     this.#strikeLast = -Infinity
+    this.#retryTriggerAt = null
+    this.#needsTakeBack = false
+    this.#onceMore = false
     this.#groupWrong = 0
     this.#sinceArm = 0
     this.#groupHasError = false

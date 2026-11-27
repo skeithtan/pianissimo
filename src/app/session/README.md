@@ -182,8 +182,9 @@ with a problem, the first of: a wrong pitch one semitone from a required pitch o
 (`'accidental'`, "F♯, not F": the target spelled as the score does, accidental always shown, the
 naming settings honored), a wrong pitch 12 or 24 semitones from one (`'octave'`, "Wrong octave ↑"
 / "↓" toward the right one), another wrong key (`'wrong'`, "Wrong note" / "Wrong notes"), a
-re-attacked tie end (`'tie'`, "Tied, hold it"), a chord of two or more pitches spread over
-`SPREAD_MARK_MS` (90 ms) or more (`'spread'`, "Together"), a right pitch too early ("Too soon"),
+re-attacked tie end (`'tie'`, "Tied, hold it"), a non-rolled chord of two or more pitches spread
+over `SPREAD_MARK_MS` (90 ms) or more (`'spread'`, "Together"; a group with a note carrying
+`PerformedNote.arpeggio` never gets `'spread'`), a right pitch too early ("Too soon"),
 completed at least `LATE_MARK_MS` (350 ms) after the music reached the gate ("Too late"). Outcomes
 without the newer optional fields (older records) give only the older classes. A mark's notes are
 the group's note indices whose onset lies inside the attempt's passage (`passageBounds`; a tie
@@ -240,26 +241,47 @@ The card's note line is the first of `lastResult.repeatedMistakes`, worded by th
 
 Repeated mistakes (`mistakes.ts`, DECISIONS P24): `#rememberPass` keeps the last
 `REPEATED_MISTAKE_HISTORY` (8) passes (scored records, Wait runs) of the current comparison context
-(cleared when it changes); a completed one is marked pending with the timeline it ran on; the next UI
-publish (the frame, never the input path) works out `repeatedMistakes(records, timeline, model)`
-and sets `lastResult.repeatedMistakes` (absent when none): the same wrong pitch at the same group
-in `REPEATED_MISTAKE_PASSES` (3) passes running, the latest included (a pass stopped before the
-group is skipped, one that reached it without that key ends the run), most passes first. Each
-`RepeatedMistake` = `{ group, occ, bar, expectedPitches, expectedPitch, expectedNote, wrongPitch,
-passes }`; `expectedPitch` / `expectedNote` is the required note the key most likely stood for
-(same letter a semitone away, else an octave away, else the nearest). `repeatedMistakeLine(m,
-model, naming)` words it for the result card's note line (the view calls it on render, U97): "F instead of F♯ in bar 12, three passes running"
-(score spelling with its accidental, ♮ against the same letter, octave numbers only for a wrong
-octave, counts in words up to ten). Chord slips (P24) reach the session as `wrong` events of the
-group just completed: they flash and pulse like any wrong key, but no cue is computed (the cue
-points toward the current group). `SessionDeps.finalSlipMs` (default `CHORD_SLIP_MS`) is the
-engine's final-chord hold; the test harness passes 0 so scenario tests see the record at the
-final key. Tests: `mistakes.test.ts`, `PracticeSession.mistakes.test.ts`;
+(cleared when it changes); a completed one is marked pending with the timeline it ran on. Scored
+records are also queued for the mistake memory (P38): `SpotMemory` (`#spots`, one per hand
+selection) folds them in the next frame, never in the input path, and `seedSpots` folds the piece's
+stored attempts on the session's timers, in time order, without arming the guard. The frame syncs
+`engine.setGuard(mem.guardFor(tl), tl)` in non-strict scored mode. The next UI publish works out
+`repeatedMistakes(latest, timeline, model, spots)` from each place's visits (`#spotsByGroup`: the
+memory's for a scored pass, the runs before it for a Wait run, `runVisits`) and sets
+`lastResult.repeatedMistakes` (absent when none): the same wrong pitch at the same group in
+`REPEATED_MISTAKE_PASSES` (3) passes running, the latest included, surviving speed changes, ladder
+steps, Restart, abandoned passes and shifted loop edges, most passes first. Each `RepeatedMistake` =
+`{ group, occ, bar, expectedPitches, expectedPitch, expectedNote, wrongPitch, passes, together? }`;
+`expectedPitch` / `expectedNote` is the required note the key most likely stood for (same letter a
+semitone away, else an octave away, else the nearest). `repeatedMistakeLine(m, model, naming)` words
+it for the result card's note line (the view calls it on render, U97): "F instead of F♯ in bar 12,
+three passes running", or "F with F♯ …" when struck with the right keys (score spelling with its
+accidental, ♮ against the same letter, octave numbers only for a wrong octave, counts in words up to
+ten). Recurring wrong-key marks get `repeat` (≥ 2): a double ring with "×N". `resultDetails()`
+returns `spots` and `fixed` (places clean now and wrong last visit) besides the marks.
+`canDrill` / `drillSpot` / `endDrill` (U168, `drill.ts`) start and leave a drill of one place
+(target 3 clean, ladder suspended, never saved as the loop, `ui.drill`); a hand, loop or Repeat change
+of the learner's ends it the same way, and a target or ladder chosen meanwhile is kept.
+`#syncReminders()` (U167) pushes up to 24 pencil carets (`StripSink.setReminders`, `firm` first then
+score order) from `SpotMemory.hotSpots` only when `hints.reminders` is on, the engine is scored outside
+Follow and Listen, and no review is showing. `pauses.ts` (`pauseThresholdMs`: half a beat clamped
+250–600 ms, `pausedGroups`) drives gated "Too late" marks, the ladder's fluent-only streak
+(`#ladderStreak`, `ladder.held` on clean passes with pauses, P40) and the `hesitation` ranking level.
+`causes.ts`, `patterns.ts` and `ranking.ts` load with the card. Chord slips (P24) reach the session as
+`wrong` events of the group just completed: they flash and pulse like any wrong key, but no cue is
+computed (the cue points toward the current group). `SessionDeps.finalSlipMs` (default
+`CHORD_SLIP_MS`) is the engine's final-chord hold; the test harness passes 0 so scenario tests see the
+record at the final key. Tests: `mistakes.test.ts`, `causes.test.ts`, `patterns.test.ts`,
+`pauses.test.ts`, `drill.test.ts`, `PracticeSession.mistakes.test.ts`, `PracticeSession.spots.test.ts`,
+`PracticeSession.drill.test.ts`, `PracticeSession.reminders.test.ts`;
 `PracticeSession.required.test.ts` sweeps one-hand presses through the session (P23).
 
-The next automatic waiting-practice Repeat pass calls `engine.restart(now, { continueRepeat: true })`
-(P26). A recurring extra key keeps the transport at that onset and clears accepted notes there.
-The feedback store shows "Try again" until the player replays the written pitches.
+The next waiting-practice Repeat pass calls `engine.restart(now, { continueRepeat: true })`
+(P26) and keeps the session's `setGuard` active across speed and loop changes (P38). A recurring
+extra key keeps the transport at that onset and clears accepted notes there; when pressed alone,
+the first clean stroke is taken back (P39). The feedback store publishes `{ kind: 'retry' }`
+("Try again") and switches to `{ kind: 'once-more' }` ("Once more") while `engine.state.onceMore`
+is true.
 
 Stores (subscribe from the view):
 
@@ -267,7 +289,7 @@ Stores (subscribe from the view):
 | --- | --- | --- |
 | `ui: SessionUi` | phase/selection/coarse status only (published from the frame, shallow-compared; `countIn` once per count-in beat) | the screen |
 | `progress: {position, occ}` | ≤ once per frame | `ScoreOverview`, `LoopSteppers` |
-| `feedback: {visible, reason, pulse, cue}` | ≤ once per frame | `StageCue` at the cursor: `{kind: 'octave', direction}` or `{kind: 'accidental', text, accidental}` (U30 revised) |
+| `feedback: {visible, reason, pulse, cue}` | ≤ once per frame | `StageCue` at the cursor: `{kind: 'octave', direction}`, `{kind: 'accidental', text, accidental}`, `{kind: 'retry'}` or `{kind: 'once-more'}` |
 | `guide: {keys, rollDirection}` | ≤ once per frame while the guide is visible, only when a key changed (`guide.ts`) | `KeyboardGuide` |
 
 ## How it works
@@ -297,7 +319,8 @@ Stores (subscribe from the view):
   accidental always shown (♮ for a natural). Unrelated errors and early timing errors clear the
   cue, as do accepting its target pitch and lifecycle changes.
 - **Ticks.** One timer at `min(engine.nextDeadline(), hint fade start, persistent fade end)`
-  → `engine.tick(now)`.
+  → `engine.tick(now)`. A tick that fires more than 8 ms late re-queues itself once with a zero
+  delay so key events already queued are handled first.
 - **Wait** (DECISIONS P1): no passage → ordinary reading (Start resumes from the current
   position, Pause keeps progress); passage → scored attempt (Preparing → Ready → Running →
   Completed; Pause interrupts). Wait and Keep time use a gated
@@ -370,7 +393,11 @@ or a seek to a lead-in (a new run), cancels the pending speed. Start or Again (`
 the music still finishes is a new run: the pending Repeat reset is dropped and a pending speed is
 applied at once through `#ladderStep` (`#newRunAtLadderSpeed`, only while the pass that announced
 it is the engine's `completed` attempt), so the run's first attempt is prepared at the announced
-speed (card cleared, streak 0, also in Keep time). Tests: `ladder.test.ts`, `PracticeSession.ladder.test.ts`.
+speed (card cleared, streak 0, also in Keep time). `ladderAfterAttempt(..., fluent)` and
+`note.held` (a clean pass with pauses holds the speed, neither a climb nor a failure) are added
+in `ladder.ts`, not yet passed by the session. `drillRange` (`drill.ts`: a loop from two onsets
+of the selected hands before a spot to the end of the onset after it) is also added, not yet
+used by the session. Tests: `ladder.test.ts`, `PracticeSession.ladder.test.ts`.
 
 ## Keep time (DECISIONS P13)
 

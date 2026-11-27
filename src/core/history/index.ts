@@ -24,3 +24,5 @@ export {
 export type { ContextResults, PracticeStreak, TimingAccuracy } from './results'
 export { COMPLETION_TIME_DEFINITION, buildScorecard, formatSeconds } from './scorecard'
 export type { AssistanceDetails, Scorecard, ScorecardRow, ScorecardRowId, TimingKind } from './scorecard'
+export { PAUSE_FLOOR_MS, SPOT_LIMIT, SPOT_VISITS, SpotMemory, wasAttempted } from './spots'
+export type { SpotScope, SpotTimeline, SpotVisit } from './spots'

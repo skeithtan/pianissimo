@@ -128,6 +128,7 @@ function traversalOk(t: unknown): boolean {
     isNum(t['wrongAttacks']) &&
     isNum(t['wrongAttacksExcludingBoundary']) &&
     isNum(t['groupsWithErrors']) &&
+    (t['missedGroups'] === undefined || isNum(t['missedGroups'])) &&
     isBool(t['tempHint']) &&
     isBool(t['persistentLabel']) &&
     isBool(t['keyboard'])

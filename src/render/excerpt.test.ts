@@ -254,6 +254,33 @@ describe('excerptMarkup', () => {
     expect(later.svg).toMatch(/<svg class="pn-ex-sig" x="0" y="0" width="20" /)
   })
 
+  it('draws a recurring mistake in an excerpt with pn-corr-repeat, two rings per staff and ×N label', () => {
+    const layout = stripLayout(4)
+    const ordinary = excerptMarkup(layout, 1, {
+      marks,
+      measurer: estimateMeasurer,
+    })!
+    const repeat1 = excerptMarkup(layout, 1, {
+      marks: marks.map((m) => ({ ...m, repeat: 1 })),
+      measurer: estimateMeasurer,
+    })!
+    const repeat0 = excerptMarkup(layout, 1, {
+      marks: marks.map((m) => ({ ...m, repeat: 0 })),
+      measurer: estimateMeasurer,
+    })!
+    expect(repeat1.svg).toBe(ordinary.svg)
+    expect(repeat0.svg).toBe(ordinary.svg)
+
+    const repeated = excerptMarkup(layout, 1, {
+      marks: marks.map((m) => ({ ...m, repeat: 3 })),
+      measurer: estimateMeasurer,
+    })!
+    expect(repeated.svg).toContain('class="pn-ex-corr pn-corr-accidental pn-corr-repeat"')
+    expect(repeated.svg.match(/class="pn-corr-ring"/g)).toHaveLength(2)
+    expect(repeated.svg).toContain('>D♮4, not D♭4 ×3</text>')
+    expect(repeated.svg).not.toMatch(/<script|foreignObject|\son\w+=|href=/i)
+  })
+
   it('returns null for a bar that is not in the layout', () => {
     expect(excerptMarkup(stripLayout(2), 9)).toBeNull()
   })

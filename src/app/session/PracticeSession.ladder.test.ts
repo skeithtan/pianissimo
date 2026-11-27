@@ -217,6 +217,24 @@ describe('PracticeSession: speed ladder', () => {
     expect(ui(h)).toMatchObject({ multiplier: 0.6, ladder: { goal: 1 } })
   })
 
+  it('after a speed change, the first pass at the new speed still holds on the guarded wrong key', async () => {
+    const h = await open(0.6, LADDER, 1)
+    // A failure with wrong key 61 after C4 (group 0), then a slower speed.
+    fail(h)
+    h.session.setSelection({ multiplier: 0.55 })
+    h.step(100)
+    settle(h)
+    expect(ui(h).multiplier).toBe(0.55)
+    expect(h.session.engine.state.phase).toBe('ready')
+
+    // First pass at 0.55: pressing C4 and then the guarded wrong key 61 triggers the retry hold.
+    h.play(60)
+    h.tap(61)
+    h.step(CHORD_SLIP_MS * 2)
+    expect(h.session.engine.state).toMatchObject({ groupIndex: 0, retryGroup: true })
+    expect(h.session.feedback.get().cue).toEqual({ kind: 'retry' })
+  })
+
   it('setLadder persists the setting, starts at the current speed and turns off', async () => {
     const h = await open(0.75, null)
     expect(ui(h).ladder).toBeNull()
@@ -355,6 +373,64 @@ describe('PracticeSession: speed ladder', () => {
       expect(ui(h).lastResult?.ladder).toBeUndefined()
       expect(ui(h).multiplier).toBe(0.6)
       expect(h.session.engine.state.phase).toBe('ready')
+    })
+  })
+
+  describe('pauses hold the speed ladder (P40)', () => {
+    function pausedPass(h: Harness): void {
+      h.play(60)
+      for (let t = 0; t < 10000 && h.session.engine.state.transportGate < 1; t += 20) h.step(20)
+      // Pause 700 ms at group 1 (> PAUSE_MAX_MS 600 ms) with no wrong key.
+      h.step(700)
+      h.play(62, 64, 65)
+      settle(h)
+    }
+
+    it('holds speed on a clean pass with pauses, resets the fluent ladder streak, and leaves passed and Repeat target unchanged', async () => {
+      const h = await open(0.6, LADDER, 3)
+      pass(h)
+      pass(h)
+      expect(ui(h).multiplier).toBe(0.6)
+
+      // Third pass is clean but paused: passed is true, Repeat streak reaches 3, ladder holds at 60% and does not stop Repeat.
+      pausedPass(h)
+      expect(h.attempts.at(-1)?.passed).toBe(true)
+      expect(ui(h).lastResult).toMatchObject({
+        passed: true,
+        streak: 3,
+        targetReached: false,
+        ladder: { held: true },
+      })
+      expect(ui(h).multiplier).toBe(0.6)
+      expect(h.session.engine.state.phase).toBe('ready')
+
+      // Ladder needs three consecutive fluent passes to climb.
+      pass(h)
+      expect(ui(h).multiplier).toBe(0.6)
+      pass(h)
+      expect(ui(h).multiplier).toBe(0.6)
+      pass(h)
+      expect(ui(h).lastResult?.ladder).toEqual({ climbedTo: 0.65 })
+      expect(ui(h).multiplier).toBe(0.65)
+    })
+
+    it('a paused clean pass between failures keeps the speed it climbed to', async () => {
+      const h = await open(0.6, LADDER, 1)
+      pass(h)
+      expect(ui(h).multiplier).toBe(0.65)
+      fail(h)
+      pausedPass(h)
+      expect(ui(h).lastResult?.ladder).toEqual({ held: true })
+      fail(h)
+      expect(ui(h).lastResult?.ladder).toBeUndefined()
+      expect(ui(h).multiplier).toBe(0.65)
+    })
+
+    it('without a ladder, a Repeat target still counts clean passes with pauses', async () => {
+      const h = await open(0.6, null, 2)
+      pausedPass(h)
+      pausedPass(h)
+      expect(ui(h).lastResult).toMatchObject({ passed: true, streak: 2, targetReached: true })
     })
   })
 })

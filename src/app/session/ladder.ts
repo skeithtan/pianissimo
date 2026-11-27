@@ -29,12 +29,20 @@ export interface LadderStep {
   /** The speed of the next attempt, when the ladder changes it. */
   readonly next?: number
   /** What happened, for the result card. */
-  readonly note?: { readonly climbedTo?: number; readonly done?: boolean }
+  readonly note?: {
+    readonly climbedTo?: number
+    readonly done?: boolean
+    /** A clean pass with pauses: the speed stays, and it was not a failure. */
+    readonly held?: boolean
+  }
 }
 
 /**
- * One completed scored attempt at `speed`. `streak` is the consecutive-pass count including this
- * attempt, `target` the passes a rung needs. A finished ladder (`done`) does nothing more.
+ * One completed scored attempt at `speed`. `fluent` says whether a passed attempt was free of long
+ * pauses (ignored when `!passed`). `streak` is the consecutive count of attempts that were both
+ * passed and fluent, including this one; `target` is the passes a rung needs. A clean pass with
+ * pauses (`passed && !fluent`) holds the speed and leaves `ladder` unchanged. A finished ladder
+ * (`done`) does nothing more.
  */
 export function ladderAfterAttempt(
   ladder: LadderUi,
@@ -42,8 +50,11 @@ export function ladderAfterAttempt(
   passed: boolean,
   streak: number,
   target: number,
+  fluent = true,
 ): LadderStep {
-  if (ladder.done || !passed || streak < target) return { ladder }
+  if (ladder.done || !passed) return { ladder }
+  if (!fluent) return { ladder, note: { held: true } }
+  if (streak < target) return { ladder }
   if (speed >= ladder.goal - EPS) return { ladder: { ...ladder, done: true }, note: { done: true } }
   const next = Math.min(ladder.goal, offsetOnGrid(speed, ladder.step))
   if (next <= speed + EPS) return { ladder }

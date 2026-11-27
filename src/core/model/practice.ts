@@ -4,7 +4,7 @@
  * "Suggested practice".
  */
 import { type Rational, key } from '../music/rational'
-import type { HandAssignment, HandSelection } from './score'
+import type { Hand, HandAssignment, HandSelection } from './score'
 import type { PersistentLabelMode } from './settings'
 
 /**
@@ -199,6 +199,13 @@ export interface MeasureTraversal {
   /** Wrong attacks excluding those at synthetic loop-boundary reattack groups. */
   readonly wrongAttacksExcludingBoundary: number
   readonly groupsWithErrors: number
+  /**
+   * Strict transport: groups of this bar the music passed before they were complete, synthetic
+   * loop-boundary groups excluded. Present whenever the bar had a missed group (0 when only a
+   * synthetic one was missed); absent on bars without a miss and on records stored before it
+   * existed (then `wrongAttacks === 0 && groupsWithErrors > 0` means missed-only).
+   */
+  readonly missedGroups?: number
   readonly tempHint: boolean
   readonly persistentLabel: boolean
   readonly keyboard: boolean
@@ -236,6 +243,14 @@ export interface GroupOutcome {
    */
   readonly wrongPitches?: readonly number[]
   /**
+   * Of `wrongPitches`, the keys struck together with a right note of this group: within
+   * `CHORD_SLIP_MS` of a strike of one of its pitches, before or after it (a chord slip, P24, is
+   * one). An extra or brushed key, not a replacement. Distinct, in press order. Present (possibly
+   * empty) whenever the group has a wrong pitch; absent on records stored before it existed, where
+   * nothing is known about the stroke.
+   */
+  readonly extraPitches?: readonly number[]
+  /**
    * Whole milliseconds between the first and the last accepted attack of the group: how spread
    * out a chord was played (an ordinary-reading pause aside); 0 for a single note or when absent.
    */
@@ -255,6 +270,20 @@ export interface GroupOutcome {
   readonly onsetOffsetMs?: number
   /** Strict transport only: the music moved on before the group was complete. */
   readonly missed?: boolean
+  /**
+   * Strict transport: pitches of this missed group pressed after it closed (late slips, P13),
+   * distinct, in press order. Not wrong attacks. Absent when there were none.
+   */
+  readonly latePitches?: readonly number[]
+  /** Strict transport: whole ms from the group's scheduled time to its first late slip. */
+  readonly lateSlipMs?: number
+  /**
+   * The group has notes of both hands and every accepted attack of one hand came before every
+   * accepted attack of the other: the hand that came last ('L' or 'R', from the score's hand
+   * assignment of the group's notes, never inferred from the pitch). Absent when the hands
+   * interleaved, when the group is in one hand, or on older records.
+   */
+  readonly lateHand?: Hand
 }
 
 export interface AttemptRecord {
