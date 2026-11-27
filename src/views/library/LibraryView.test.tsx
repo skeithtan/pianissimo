@@ -8,6 +8,7 @@ import { detectFeatures, resetFeaturesForTests } from '../../app/features'
 import { currentView, practiceRequest, settingsOpen } from '../../app/navigation'
 import { notices, resetAppStateForTests } from '../../app/state'
 import { comparisonContext } from '../../core/history/testkit'
+import { handAssignmentId } from '../../core/model/practice'
 import { attemptFor, importPiece } from '../../core/storage/testkit'
 import { $, $$, byLabel, byText, click, mount, type, type Mounted } from '../shared/testing'
 import { DEVICE_DATES, untranslatedText, useCatalog, usePseudoCatalog } from '../shared/catalogTesting'
@@ -821,7 +822,7 @@ describe('interface languages', () => {
       view!.unmount()
 
       await importPiece(deps.storage, 'v1', { title: 'Etude', lastOpenedAt: deps.clock - 60_000 })
-      const { piece } = await importPiece(deps.storage, 'v2', {
+      const { piece, pkg } = await importPiece(deps.storage, 'v2', {
         title: 'Nocturne',
         lastOpenedAt: deps.clock - 30_000,
         lastHands: 'right',
@@ -831,7 +832,9 @@ describe('interface languages', () => {
       })
       for (let i = 0; i < 3; i++)
         deps.storage.history.queueAttempt(
-          attemptFor(piece.id, [[1, 'error']], { context: comparisonContext({ scoreVersionId: 'v2' }) }),
+          attemptFor(piece.id, [[1, 'error']], {
+            context: comparisonContext({ scoreVersionId: 'v2', handsId: handAssignmentId(pkg.model.hands) }),
+          }),
         )
       await deps.storage.history.flush()
       root = await open()

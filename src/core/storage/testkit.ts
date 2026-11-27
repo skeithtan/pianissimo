@@ -6,7 +6,7 @@ import type { ScorePackage, SourceFileRecord } from '../model/score'
 import { rat } from '../music/rational'
 import { attemptRecord, comparisonContext, traversal } from '../history/testkit'
 import type { Outcome } from '../history/testkit'
-import { contextKey } from '../model/practice'
+import { contextKey, handAssignmentId } from '../model/practice'
 import type { AttemptRecord, ComparisonContext } from '../model/practice'
 import { newPieceRecord } from './records'
 import type { PieceRecord } from './records'
@@ -109,6 +109,8 @@ export async function importPiece(
 
 let attemptCounter = 0
 
+export const DEFAULT_HANDS_ID = handAssignmentId({ byVoice: {}, ambiguousVoices: [], confirmed: false })
+
 /** A scored attempt for a piece traversing the given bars. */
 export function attemptFor(
   pieceId: string,
@@ -116,7 +118,7 @@ export function attemptFor(
   over: Partial<AttemptRecord> & { context?: ComparisonContext } = {},
 ): AttemptRecord {
   attemptCounter += 1
-  const context = over.context ?? comparisonContext()
+  const context = over.context ?? comparisonContext({ handsId: DEFAULT_HANDS_ID })
   return attemptRecord({
     id: `att-${attemptCounter}`,
     pieceId,

@@ -31,7 +31,7 @@ export function timewiseToPartwise(root: XmlElement, diag: DiagnosticSink): XmlE
       while (list.length < mi) {
         diag.warn(
           'timewise-missing-measure',
-          `Part “${id}” has no content in timewise measure ${mi + 1}. An empty measure was inserted.`,
+          `Part “${id}” has no content in timewise measure ${list.length + 1}. An empty measure was inserted.`,
         )
         const src = measures[list.length]
         list.push(el('measure', src ? { ...src.attrs } : {}))

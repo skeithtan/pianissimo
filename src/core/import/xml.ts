@@ -46,6 +46,10 @@ export function escapeXmlText(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+export function escapeXmlAttr(s: string): string {
+  return escapeXmlText(s).replace(/"/g, '&quot;')
+}
+
 const BAD_AMP = /&(?!(?:#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);)/g
 
 /** Re-escape a raw text run so it is well-formed even if it held an undefined entity. */
@@ -53,7 +57,7 @@ function safeRawText(raw: string): string {
   return raw.includes('&') ? raw.replace(BAD_AMP, '&amp;') : raw
 }
 
-function safeRawAttr(raw: string): string {
+export function safeRawAttr(raw: string): string {
   let s = raw.includes('&') ? raw.replace(BAD_AMP, '&amp;') : raw
   if (s.includes('"')) s = s.replace(/"/g, '&quot;')
   if (s.includes('<')) s = s.replace(/</g, '&lt;')

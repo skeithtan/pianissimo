@@ -316,6 +316,7 @@ const DRILL_REPEAT_TARGET = 3
 /** What a spot drill replaced, restored by `endDrill` (U168). */
 interface DrillReturn {
   readonly loop: PassageRange | null
+  readonly loopFromDrill: boolean
   readonly repeat: boolean
   readonly repeatTarget: number | null
   readonly ladderSettings: LadderSettings | null
@@ -425,6 +426,8 @@ export class PracticeSession {
   #missedPending = 0
   /** The text of an interruption the session caused (the Keep time tolerance changed). */
   #interruptText: string | null = null
+  /** Memoized interruption banner object so `ui` stays reference-equal across frames. */
+  #cachedInterruption: Interruption | null = null
 
   // Lifecycle
   #readingStarted = false
@@ -452,6 +455,8 @@ export class PracticeSession {
   #ladderNext: number | null = null
   /** Active spot drill's return state, or null when not drilling. */
   #drill: DrillReturn | null = null
+  /** True while `#loop` holds a temporary drill range, so it is never saved as `lastPassage`. */
+  #loopFromDrill = false
   /** A lead-in before the loop (Repeat mode), until the attempt it leads into is replaced. */
   #leadIn: LeadIn | null = null
   /** Passage keys of lead-ins: their reading traversals are not recorded. */
@@ -2823,6 +2828,7 @@ export class PracticeSession {
     this.#stopSnippet()
     this.#drill ??= {
       loop: this.#loop,
+      loopFromDrill: this.#loopFromDrill,
       repeat: this.#repeat,
       repeatTarget: this.#repeatTarget,
       ladderSettings: this.#ladderSettings,
@@ -2832,6 +2838,7 @@ export class PracticeSession {
     this.#ladderSettings = null
     this.#ladder = null
     this.#ladderNext = null
+    this.#loopFromDrill = true
     this.#select({ hands: this.#sel.hands, multiplier: this.#sel.multiplier }, range, true, false, true)
     this.#publishUi()
     return true
@@ -2843,6 +2850,7 @@ export class PracticeSession {
     if (!saved || this.#disposed) return
     this.#stopSnippet()
     this.#forgetDrill(this.#sel.multiplier)
+    this.#loopFromDrill = saved.loopFromDrill
     this.#select({ hands: this.#sel.hands, multiplier: this.#sel.multiplier }, saved.loop, saved.repeat, false, true)
     this.#publishUi()
   }
@@ -2921,6 +2929,8 @@ export class PracticeSession {
     const loopChanged = !samePassage(loop, this.#loop)
     // A loop, Repeat or hand change of the learner's own during a drill forgets the return; speed changes keep it.
     if (!drill && (base.hands !== prev.hands || loopChanged || repeatChanged)) this.#forgetDrill(base.multiplier)
+    // Once the learner chooses or clears a loop, `#loop` is no longer the temporary drill range.
+    if (!drill && loopChanged) this.#loopFromDrill = false
     if (!loop) this.#repeatAfterFollow = false
     // Repeat opened or closed, or the loop cleared, is saved on the piece (U98).
     const saveRepeat = repeatChanged || (loopChanged && !loop)
@@ -2929,8 +2939,9 @@ export class PracticeSession {
       // right after must find it: written at once (the saver coalesces). Only the speed ladder's
       // step stays debounced: it runs from the MIDI path, which never starts a write. A drill's
       // loop is never saved as the piece's loop.
-      const patch: PiecePatch = this.#drill
-        ? { lastHands: base.hands, lastMultiplier: base.multiplier }
+      const keepSavedLoop = this.#drill !== null || this.#loopFromDrill
+      const patch: PiecePatch = keepSavedLoop
+        ? { lastHands: base.hands, lastMultiplier: base.multiplier, ...(saveRepeat ? { repeatOpen: repeat } : {}) }
         : {
             lastHands: base.hands,
             lastPassage: loop,
@@ -4312,6 +4323,11 @@ export class PracticeSession {
     this.#outputLoading = load()
       .then((m) => {
         if (this.#disposed) return null
+        if (this.#destination() !== 'browser' || outputKey(this.#settings, 'browser') !== key) {
+          this.#soundStatus = null
+          return this.#ensureOutputSync()
+        }
+        if (this.#output) this.#disposeOutput()
         const backend = m.createBrowserAudio({ clock: this.#deps.clock, volume: this.#settings.sound.browserVolume })
         this.#output = backend
         this.#browser = backend
@@ -4946,15 +4962,17 @@ export class PracticeSession {
 
   #interruption(): Interruption | null {
     const s = this.#engine.state
-    if (s.phase !== 'interrupted') return null
+    if (s.phase !== 'interrupted') return (this.#cachedInterruption = null)
     const reason = s.interruptReason ?? 'pause'
     // No "Paused" banner: the main button reads Resume / Start (user, 2026-10-31).
-    if (reason === 'mode-change' || reason === 'user-stop' || reason === 'pause') return null
-    return {
-      reason,
-      text: this.#interruptText ?? msg(INTERRUPT_TEXT[reason]),
-      canResume: this.#engine.mode === 'reading',
+    if (reason === 'mode-change' || reason === 'user-stop' || reason === 'pause') {
+      return (this.#cachedInterruption = null)
     }
+    const text = this.#interruptText ?? msg(INTERRUPT_TEXT[reason])
+    const canResume = this.#engine.mode === 'reading'
+    const prev = this.#cachedInterruption
+    if (prev && prev.reason === reason && prev.text === text && prev.canResume === canResume) return prev
+    return (this.#cachedInterruption = { reason, text, canResume })
   }
 
   /** Follow's UI (DECISIONS P12): no attempt states, results, interruptions or hints. */

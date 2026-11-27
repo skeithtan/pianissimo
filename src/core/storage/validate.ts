@@ -4,6 +4,7 @@ import { msg } from '../../i18n/messages'
  * Each returns the first problem as readable text, or null when the record is usable. They
  * check structure the app relies on, not every field of the large score model.
  */
+import { MAX_PASSAGE_BARS } from '../history/types'
 import { PRACTICE_MODES, TRANSPORT_KINDS } from '../model/practice'
 import { SCORE_PACKAGE_FORMAT } from '../model/score'
 
@@ -206,9 +207,12 @@ function suggestionOk(s: unknown): boolean {
     isStr(s['context']['scoreVersionId']) &&
     isOneOf(s['context']['hands'], HANDS) &&
     isNum(s['context']['multiplier']) &&
+    (s['context']['multiplier'] as number) > 0 &&
     isInt(s['coreFrom']) &&
     isInt(s['coreTo']) &&
+    (s['coreFrom'] as number) >= 0 &&
     (s['coreFrom'] as number) <= (s['coreTo'] as number) &&
+    (s['coreTo'] as number) - (s['coreFrom'] as number) < MAX_PASSAGE_BARS &&
     isNum(s['createdAt']) &&
     isNum(s['updatedAt']) &&
     (s['improvedAt'] === undefined || isNum(s['improvedAt']))

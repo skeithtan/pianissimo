@@ -68,3 +68,20 @@ it('with clear(), a deferred cleanup release goes out when the human lets go (th
   const offs = out.sent.filter((m) => (m.data[0]! & 0xf0) === 0x80 && m.data[1] === 60)
   expect(offs.map((m) => m.time)).toEqual([1030])
 })
+
+it('preserves deferred release for reconnect and does not throw when output drops mid-humanInput', () => {
+  const clock = new ManualClock()
+  const out = new FakeOutput('out-1', 'Piano')
+  const be = new MidiOutputBackend({ output: out, channel: CH, clock: clock.clock })
+  be.noteOn(60, 80, 0)
+  be.humanInput(human('noteon', 60))
+  be.noteOff(60, 500)
+  out.send = () => {
+    throw new Error('disconnected')
+  }
+  expect(() => be.humanInput(human('noteoff', 60))).not.toThrow()
+  expect(be.deferredNotes()).toEqual([60])
+  const out2 = new FakeOutput('out-1', 'Piano')
+  be.reconnect(out2, 1000)
+  expect(out2.sent.map((m) => m.data)).toContainEqual([0x80 | CH, 60, 64])
+})

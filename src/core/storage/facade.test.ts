@@ -116,6 +116,20 @@ describe('suggestions for the views', () => {
     expect(await s.loadResults(piece.id)).toEqual([])
   })
 
+  it('hides stale suggestions after hand assignment or practice tempo changes', async () => {
+    const s = await storage()
+    const { piece, pkg } = await importPiece(s, 'v1')
+    for (let i = 0; i < 3; i += 1) s.history.queueAttempt(attemptFor(piece.id, bars(2, 'error')))
+    await s.history.flush()
+    expect((await s.loadSuggestions(piece.id)).active).toHaveLength(1)
+    // Reassigning hands changes handsId while keeping scoreVersionId.
+    await s.putPackage({
+      ...pkg,
+      model: { ...pkg.model, hands: { byVoice: { 'P1:1': 'L' }, ambiguousVoices: [], confirmed: true } },
+    })
+    expect((await s.loadSuggestions(piece.id)).active).toHaveLength(0)
+  })
+
   it('returns nothing for unknown pieces', async () => {
     const s = await storage()
     expect(await s.loadSuggestions('missing')).toEqual({ active: [], improved: [], disabled: false })

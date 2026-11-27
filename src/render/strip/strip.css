@@ -42,11 +42,9 @@
   --pn-reminder-firm: var(--score-reminder-firm, #ffb0cd);
   --pn-label: var(--score-label, var(--pn-ink));
   --pn-staff-opacity: var(--score-staff-opacity, 1);
-  /* The loop band is outline-led: a strong edge in the loop hue around an almost clear fill, so the
-     notation stays readable and the band never reads as one more filled control over the score (the
-     Repeat panel, the footer), which are never outlined. */
-  --pn-loop: color-mix(in srgb, var(--color-loop, var(--pn-ink)) 5%, transparent);
-  --pn-loop-edge: color-mix(in srgb, var(--color-loop, var(--pn-ink)) 85%, transparent);
+  /* --color-loop is the solid loop hue; the band over the notes is a light tint of it so the
+     notation stays readable. */
+  --pn-loop: color-mix(in srgb, var(--color-loop, var(--pn-ink)) 15%, transparent);
   /* The loop's grips and ✕ (U156): solid, ringed in the paper's color. */
   --pn-grip-bg: var(--accent-fill, #59643b);
   --pn-grip-fg: var(--accent-fg, #ffffff);
@@ -826,8 +824,7 @@
   position: absolute;
   top: 0;
   height: 100%;
-  border: calc(1.5px * var(--pn-inv-zoom)) solid var(--pn-loop-edge);
-  border-radius: calc(8px * var(--pn-inv-zoom));
+  border-radius: calc(26px * var(--pn-inv-zoom));
   background: var(--pn-loop);
   pointer-events: none;
   opacity: 0;
@@ -841,15 +838,12 @@
   opacity: 1;
 }
 
-/* A loop over several systems of the page is one band: round and outlined only where it begins and
-   ends. */
+/* A loop over several systems of the page is one band: round only where it begins and ends. */
 .pn-loop:is([data-part='first'], [data-part='middle']) {
-  border-inline-end-width: 0;
   border-start-end-radius: 0;
   border-end-end-radius: 0;
 }
 .pn-loop:is([data-part='last'], [data-part='middle']) {
-  border-inline-start-width: 0;
   border-start-start-radius: 0;
   border-end-start-radius: 0;
 }

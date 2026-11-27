@@ -127,6 +127,10 @@ function insertVisit(visits: SpotVisit[], visit: SpotVisit): boolean {
 export class SpotMemory {
   readonly #scope: SpotScope
   readonly #places = new Map<string, SpotVisit[]>()
+  /** Recent quiet live visits at places without memory yet, merged if async seeding later adds an older mistake. */
+  readonly #quietLive = new Map<string, SpotVisit[]>()
+  /** Latest timestamp at which a place recovered, so older seeded records arriving later cannot revive it. */
+  readonly #recoveredAt = new Map<string, number>()
   readonly #foldedIds = new Set<string>()
 
   constructor(scope: SpotScope) {
@@ -152,20 +156,79 @@ export class SpotMemory {
 
       const visit = toVisit(record, outcome, live)
       const posKey = key(group.position)
+      if (!live && visit.at <= (this.#recoveredAt.get(posKey) ?? -Infinity)) continue
       let visits = this.#places.get(posKey)
       if (!visits) {
-        if (isQuiet(visit)) continue
+        if (isQuiet(visit)) {
+          if (live) this.#rememberQuietLive(posKey, visit)
+          continue
+        }
         visits = [visit]
+        if (!live) {
+          const pending = this.#quietLive.get(posKey)
+          if (pending) {
+            this.#quietLive.delete(posKey)
+            // Merge only quiet live visits recorded *after* an older seeded visit arriving out of order.
+            for (const q of pending) {
+              if (q.at > visit.at) insertVisit(visits, q)
+            }
+          }
+        }
+        if (isRecovered(visits)) {
+          this.#markRecovered(posKey, visits[visits.length - 1]!.at)
+          continue
+        }
         this.#places.set(posKey, visits)
         this.#evictIfNeeded()
         if (this.#places.has(posKey)) added = true
       } else {
+        if (!live) {
+          const pending = this.#quietLive.get(posKey)
+          if (pending) {
+            this.#quietLive.delete(posKey)
+            for (const q of pending) {
+              if (q.at > visit.at) insertVisit(visits, q)
+            }
+          }
+        }
         if (!insertVisit(visits, visit)) continue
         added = true
-        if (isRecovered(visits)) this.#places.delete(posKey)
+        if (isRecovered(visits)) {
+          this.#markRecovered(posKey, visits[visits.length - 1]!.at)
+          this.#places.delete(posKey)
+        }
       }
     }
     return added
+  }
+
+  #markRecovered(posKey: string, at: number): void {
+    const prev = this.#recoveredAt.get(posKey)
+    if (prev !== undefined && prev >= at) return
+    if (prev === undefined && this.#recoveredAt.size >= SPOT_LIMIT) {
+      const oldest = this.#recoveredAt.keys().next().value
+      if (oldest !== undefined) this.#recoveredAt.delete(oldest)
+    }
+    this.#recoveredAt.set(posKey, at)
+  }
+
+  #rememberQuietLive(posKey: string, visit: SpotVisit): void {
+    let list = this.#quietLive.get(posKey)
+    if (!list) {
+      if (this.#quietLive.size >= SPOT_LIMIT) {
+        const oldest = this.#quietLive.keys().next().value
+        if (oldest !== undefined) this.#quietLive.delete(oldest)
+      }
+      list = [visit]
+      this.#quietLive.set(posKey, list)
+      return
+    }
+    insertVisit(list, visit)
+    if (list.length > RECOVERY_STREAK) list.splice(0, list.length - RECOVERY_STREAK)
+    if (list.length >= RECOVERY_STREAK) {
+      this.#markRecovered(posKey, list[list.length - 1]!.at)
+      this.#quietLive.delete(posKey)
+    }
   }
 
   /** Visits at a place, oldest first; empty when the place holds no memory. */

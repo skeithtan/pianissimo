@@ -102,8 +102,9 @@ export class SampleBank {
     }
   }
 
-  /** Start (or join) loading. Never rejects: failures leave the synth in place. */
+  /** Start (or join) loading. Never rejects: failures leave the synth in place and may be retried. */
   load(): Promise<void> {
+    if (this.statusValue === 'failed') this.loading = null
     this.loading ??= this.run()
     return this.loading
   }
@@ -120,6 +121,8 @@ export class SampleBank {
 
   private async run(): Promise<void> {
     this.statusValue = 'loading'
+    this.failedCount = 0
+    this.total = 0
     let manifest: SampleManifest
     try {
       const res = await this.o.fetch(`${this.o.baseUrl}manifest.json`)

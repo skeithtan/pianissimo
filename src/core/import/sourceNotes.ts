@@ -133,7 +133,8 @@ export function buildSourceNotes(skeleton: Skeleton, ottavas: OttavaLookup, diag
         for (const n of batch) {
           contexts.set(n, snapshot)
           if (!n.pitch) continue
-          const staffIndex = part.staffOffset + n.staff - 1
+          const staffNumber = Math.max(1, Math.min(n.staff, part.staffCount))
+          const staffIndex = part.staffOffset + staffNumber - 1
           const span = ottavas.find(staffIndex, { m: n.m, at: n.at })
           const shift = span?.shift ?? 0
           const sounding = part.data.transpose ? transposeSpelling(n.pitch, part.data.transpose) : n.pitch
@@ -167,7 +168,8 @@ export function buildSourceNotes(skeleton: Skeleton, ottavas: OttavaLookup, diag
       if (n.fermata) timing.push({ m: n.m, at: n.at, kind: 'fermata', text: 'fermata' })
       if (n.caesura) timing.push({ m: n.m, at: n.at, kind: 'other', text: 'caesura' })
 
-      const staffIndex = part.staffOffset + n.staff - 1
+      const staffNumber = Math.max(1, Math.min(n.staff, part.staffCount))
+      const staffIndex = part.staffOffset + staffNumber - 1
       const pitchInfo = writtenOf.get(n)!
       const midi = Math.round(spellingToMidi(pitchInfo.sounding))
       if (midi < 21 || midi > 108) outOfRange++
@@ -181,7 +183,7 @@ export function buildSourceNotes(skeleton: Skeleton, ottavas: OttavaLookup, diag
         measure: n.m,
         partId: part.id,
         staff: staffIndex,
-        staffNumber: n.staff,
+        staffNumber,
         voice: n.voice,
         onsetInMeasure: n.at,
         duration: n.duration,

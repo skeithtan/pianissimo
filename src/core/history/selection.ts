@@ -66,6 +66,10 @@ export interface SuggestionSelection {
 export interface SelectOptions {
   /** Only suggestions for this score version are shown; other versions' histories stay inert. */
   readonly scoreVersionId: string
+  /** Current hand assignment id (`handAssignmentId`): hides stale suggestions after hand reassignment. */
+  readonly handsId?: string
+  /** Current practice tempo map id (`tempoMapId`): hides stale suggestions after a tempo change. */
+  readonly tempoMapId?: string
   /** Global switch from settings (`suggestions.enabled`). */
   readonly enabled: boolean
   /** Session dismissals (in memory only). */
@@ -99,7 +103,12 @@ export function selectSuggestions(
 ): SuggestionSelection {
   if (!options.enabled || history.disabled) return { active: [], improved: [], disabled: true }
   const labeler = createBarLabeler(occurrences)
-  const forVersion = history.suggestions.filter((s) => s.context.scoreVersionId === options.scoreVersionId)
+  const forVersion = history.suggestions.filter(
+    (s) =>
+      s.context.scoreVersionId === options.scoreVersionId &&
+      (options.handsId === undefined || s.context.handsId === options.handsId) &&
+      (options.tempoMapId === undefined || s.context.tempoMapId === options.tempoMapId),
+  )
 
   const activeTraversal = forVersion.filter((s) => s.status === 'active' && s.kind === 'traversal')
   const activeRestart = forVersion.filter(

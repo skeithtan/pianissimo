@@ -373,14 +373,15 @@ export class OnsetMatcher {
     this.#level = this.#level === 0 ? between : this.#level + LEVEL_RATE * (between - this.#level)
     if (this.#warm > 0) {
       this.#warm--
-      if (this.#warm < FLOOR_FRAMES) this.#floor = Math.min(this.#floor, this.#level)
+      if (this.#warm < FLOOR_FRAMES) this.#floor = Math.min(this.#floor, Math.max(this.#level, FLOOR_MIN))
       base.set(energy)
       return false
     }
     // Level reference: the running peak, but never close to the noise floor, so noise alone is
-    // always small and nothing rises out of it.
-    this.#floor = Math.min(this.#floor * FLOOR_DRIFT, this.#level)
-    this.#reference = Math.max(this.#peak, this.#noiseMargin * Math.max(this.#floor, FLOOR_MIN))
+    // always small and nothing rises out of it. Keep `#floor >= FLOOR_MIN` so digital silence
+    // does not pin `0 * FLOOR_DRIFT` at zero permanently.
+    this.#floor = Math.min(Math.max(this.#floor, FLOOR_MIN) * FLOOR_DRIFT, Math.max(this.#level, FLOOR_MIN))
+    this.#reference = Math.max(this.#peak, this.#noiseMargin * this.#floor)
     const g = this.#gamma / this.#reference
 
     let absorbAll = false

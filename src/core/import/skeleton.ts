@@ -6,6 +6,7 @@ import { type Rational, ZERO, gt, isZero, lt, rat } from '../music/rational'
 import type { SourceMeasure, StaffDef } from '../model/score'
 import type { DiagnosticSink } from './diagnostics'
 import { PosIndex } from './positions'
+import { MAX_STAVES_PER_PART } from './read/part'
 import type { PartData, RawBarlines, RawTime } from './read/types'
 import type { XmlElement } from './xml'
 
@@ -50,9 +51,9 @@ export function buildSkeleton(
   const selected: SelectedPart[] = []
   const staves: StaffDef[] = []
   for (const p of parts) {
-    let staffCount = Math.max(1, p.data.staves)
+    let staffCount = Math.max(1, Math.min(p.data.staves, MAX_STAVES_PER_PART))
     let maxNoteStaff = 0
-    for (const n of p.data.notes) maxNoteStaff = Math.max(maxNoteStaff, n.staff)
+    for (const n of p.data.notes) maxNoteStaff = Math.max(maxNoteStaff, Math.min(n.staff, MAX_STAVES_PER_PART))
     if (maxNoteStaff > staffCount) {
       diag.warn(
         'staff-count',

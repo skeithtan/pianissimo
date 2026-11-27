@@ -88,7 +88,9 @@ export function metronomeAudioOutput(id: string | null): MetronomeOutput | Promi
       selected = { id, context, ready }
     }
     const output = selected
-    if (output.context.state === 'suspended') void output.context.resume().catch(() => undefined)
+    if (output.context.state !== 'running' && output.context.state !== 'closed') {
+      void output.context.resume().catch(() => undefined)
+    }
     return output.ready.then((ready) => {
       // Overtaken by another device (or closed): that request decides; this caller gets system audio.
       if (output !== selected) return fallback

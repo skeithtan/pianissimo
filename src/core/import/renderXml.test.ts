@@ -173,4 +173,15 @@ describe('implicit opening context at repeat jumps (key, clef)', () => {
     expect(textOf(child(restated, 'sign'))).toBe(clefAt.clef.sign)
     expect(textOf(child(restated, 'line'))).toBe(String(clefAt.clef.line))
   })
+
+  it('escapes XML special characters in part ids when emitting renderXml', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P&amp;1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P&amp;1"><measure number="1">${head(treble)}${n('C')}</measure></part>
+</score-partwise>`
+    const { package: pkg } = await importBytes('amp.musicxml', utf8(xml))
+    expect(pkg.renderXml).toContain('<part id="P&amp;1">')
+    expect(measuresOf(pkg.renderXml)).toHaveLength(1)
+  })
 })

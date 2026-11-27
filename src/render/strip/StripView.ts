@@ -762,6 +762,7 @@ export class StripView {
    */
   setSnapPositions(onsets: readonly Rational[]): void {
     if (onsets === this.snapSource) return
+    this.endHandleDrag()
     this.snapSource = onsets
     this.cursorKnots = buildCursorKnots(this.path, onsets)
     this.loopKnots = buildLoopKnots(this.layout.occurrences, onsets)

@@ -20,7 +20,8 @@ export function sharedAudioContext(
   create: () => AudioContext = () => new AudioContext({ latencyHint: 'interactive' }),
 ): AudioContext {
   if (!shared || shared.state === 'closed') shared = create()
-  if (shared.state === 'suspended') void shared.resume().catch(() => undefined)
+  // Also resumes WebKit's non-standard 'interrupted' state after an OS audio interruption.
+  if (shared.state !== 'running') void shared.resume().catch(() => undefined)
   return shared
 }
 

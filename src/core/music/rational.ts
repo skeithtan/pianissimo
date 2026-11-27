@@ -21,9 +21,28 @@ function gcd(a: number, b: number): number {
   return a
 }
 
+function gcdBig(a: bigint, b: bigint): bigint {
+  a = a < 0n ? -a : a
+  b = b < 0n ? -b : b
+  while (b !== 0n) {
+    const t = a % b
+    a = b
+    b = t
+  }
+  return a
+}
+
+function ratBig(n: bigint, d: bigint): Rational {
+  if (d === 0n) throw new RangeError('Rational denominator is zero')
+  if (n === 0n) return ZERO
+  const g = gcdBig(n, d)
+  const sign = d < 0n ? -1n : 1n
+  return rat(Number((sign * n) / g), Number((sign * d) / g))
+}
+
 export function rat(n: number, d = 1): Rational {
-  if (!Number.isInteger(n) || !Number.isInteger(d)) {
-    throw new RangeError(`Rational parts must be integers: ${n}/${d}`)
+  if (!Number.isSafeInteger(n) || !Number.isSafeInteger(d)) {
+    throw new RangeError(`Rational parts must be safe integers: ${n}/${d}`)
   }
   if (d === 0) throw new RangeError('Rational denominator is zero')
   if (n === 0) return ZERO
@@ -35,16 +54,71 @@ export function rat(n: number, d = 1): Rational {
 export const ZERO: Rational = Object.freeze({ n: 0, d: 1 })
 export const ONE: Rational = Object.freeze({ n: 1, d: 1 })
 
-export const add = (a: Rational, b: Rational): Rational => rat(a.n * b.d + b.n * a.d, a.d * b.d)
-export const sub = (a: Rational, b: Rational): Rational => rat(a.n * b.d - b.n * a.d, a.d * b.d)
-export const mul = (a: Rational, b: Rational): Rational => rat(a.n * b.n, a.d * b.d)
-export const div = (a: Rational, b: Rational): Rational => {
+export function add(a: Rational, b: Rational): Rational {
+  const g = gcd(a.d, b.d)
+  const ad = a.d / g
+  const bd = b.d / g
+  const p1 = a.n * bd
+  const p2 = b.n * ad
+  const num = p1 + p2
+  const den = ad * b.d
+  if (Number.isSafeInteger(p1) && Number.isSafeInteger(p2) && Number.isSafeInteger(num) && Number.isSafeInteger(den)) {
+    return rat(num, den)
+  }
+  return ratBig(BigInt(a.n) * BigInt(bd) + BigInt(b.n) * BigInt(ad), BigInt(ad) * BigInt(b.d))
+}
+
+export function sub(a: Rational, b: Rational): Rational {
+  const g = gcd(a.d, b.d)
+  const ad = a.d / g
+  const bd = b.d / g
+  const p1 = a.n * bd
+  const p2 = b.n * ad
+  const num = p1 - p2
+  const den = ad * b.d
+  if (Number.isSafeInteger(p1) && Number.isSafeInteger(p2) && Number.isSafeInteger(num) && Number.isSafeInteger(den)) {
+    return rat(num, den)
+  }
+  return ratBig(BigInt(a.n) * BigInt(bd) - BigInt(b.n) * BigInt(ad), BigInt(ad) * BigInt(b.d))
+}
+
+export function mul(a: Rational, b: Rational): Rational {
+  const g1 = gcd(a.n, b.d)
+  const g2 = gcd(b.n, a.d)
+  const an = a.n / g1
+  const bn = b.n / g2
+  const ad = a.d / g2
+  const bd = b.d / g1
+  const num = an * bn
+  const den = ad * bd
+  if (Number.isSafeInteger(num) && Number.isSafeInteger(den)) return rat(num, den)
+  return ratBig(BigInt(an) * BigInt(bn), BigInt(ad) * BigInt(bd))
+}
+
+export function div(a: Rational, b: Rational): Rational {
   if (b.n === 0) throw new RangeError('Division by zero rational')
-  return rat(a.n * b.d, a.d * b.n)
+  const g1 = gcd(a.n, b.n)
+  const g2 = gcd(b.d, a.d)
+  const an = a.n / g1
+  const bd = b.d / g2
+  const ad = a.d / g2
+  const bn = b.n / g1
+  const num = an * bd
+  const den = ad * bn
+  if (Number.isSafeInteger(num) && Number.isSafeInteger(den)) return rat(num, den)
+  return ratBig(BigInt(an) * BigInt(bd), BigInt(ad) * BigInt(bn))
 }
 
 /** Negative if a < b, zero if equal, positive if a > b. */
-export const cmp = (a: Rational, b: Rational): number => a.n * b.d - b.n * a.d
+export function cmp(a: Rational, b: Rational): number {
+  if (a.d === b.d) return a.n - b.n
+  const g = gcd(a.d, b.d)
+  const left = a.n * (b.d / g)
+  const right = b.n * (a.d / g)
+  if (Number.isSafeInteger(left) && Number.isSafeInteger(right)) return left - right
+  const diff = BigInt(a.n) * BigInt(b.d / g) - BigInt(b.n) * BigInt(a.d / g)
+  return diff < 0n ? -1 : diff > 0n ? 1 : 0
+}
 export const eq = (a: Rational, b: Rational): boolean => a.n === b.n && a.d === b.d
 export const lt = (a: Rational, b: Rational): boolean => cmp(a, b) < 0
 export const le = (a: Rational, b: Rational): boolean => cmp(a, b) <= 0

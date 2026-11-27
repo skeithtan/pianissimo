@@ -403,6 +403,62 @@ describe('quiet threshold, recovery forgetting, and capacity bounds', () => {
     expect(mem.history(rat(0, 4))).toEqual([])
   })
 
+  it('does not revive a stale hot spot when async seeding folds older mistakes after quiet live passes', () => {
+    const mem = new SpotMemory(SCOPE)
+    const tl = makeTimeline(1)
+    // Three live quiet passes arrive before async seeding drains.
+    mem.fold(scoredRecord(1, [outcome(0)], [0], { id: 'live-1', createdAt: 2000 }), tl, true)
+    mem.fold(scoredRecord(1, [outcome(0)], [0], { id: 'live-2', createdAt: 2001 }), tl, true)
+    mem.fold(scoredRecord(1, [outcome(0)], [0], { id: 'live-3', createdAt: 2002 }), tl, true)
+    // Multiple older seeded mistakes arrive oldest-first: both recover against the pending live passes.
+    mem.fold(
+      scoredRecord(1, [outcome(0, { wrongAttacks: 1, wrongPitches: [F4] })], [0], { id: 'seed-1', createdAt: 900 }),
+      tl,
+      false,
+    )
+    mem.fold(
+      scoredRecord(1, [outcome(0, { wrongAttacks: 1, wrongPitches: [F4] })], [0], { id: 'seed-2', createdAt: 1000 }),
+      tl,
+      false,
+    )
+    expect(mem.hotSpots(tl)).toEqual([])
+    expect(mem.history(rat(0, 4))).toEqual([])
+
+    // Also when a place opens and recovers between async seed batches: an older seed cannot revive it.
+    const mem2 = new SpotMemory(SCOPE)
+    mem2.fold(
+      scoredRecord(1, [outcome(0, { wrongAttacks: 1, wrongPitches: [F4] })], [0], { id: 'b1', createdAt: 900 }),
+      tl,
+      false,
+    )
+    mem2.fold(scoredRecord(1, [outcome(0)], [0], { id: 'q1', createdAt: 2001 }), tl, true)
+    mem2.fold(scoredRecord(1, [outcome(0)], [0], { id: 'q2', createdAt: 2002 }), tl, true)
+    mem2.fold(scoredRecord(1, [outcome(0)], [0], { id: 'q3', createdAt: 2003 }), tl, true)
+    mem2.fold(
+      scoredRecord(1, [outcome(0, { wrongAttacks: 1, wrongPitches: [F4] })], [0], { id: 'b2', createdAt: 1000 }),
+      tl,
+      false,
+    )
+    expect(mem2.hotSpots(tl)).toEqual([])
+    expect(mem2.history(rat(0, 4))).toEqual([])
+
+    // Quiet live pass followed by a live mistake, then an older seeded mistake: streak stays 1.
+    const mem3 = new SpotMemory(SCOPE)
+    mem3.fold(scoredRecord(1, [outcome(0)], [0], { id: 'l1', createdAt: 2000 }), tl, true)
+    mem3.fold(
+      scoredRecord(1, [outcome(0, { wrongAttacks: 1, wrongPitches: [F4] })], [0], { id: 'w1', createdAt: 3000 }),
+      tl,
+      true,
+    )
+    mem3.fold(
+      scoredRecord(1, [outcome(0, { wrongAttacks: 1, wrongPitches: [F4] })], [0], { id: 's0', createdAt: 900 }),
+      tl,
+      false,
+    )
+    expect(mem3.history(rat(0, 4)).map((v) => v.attemptId)).toEqual(['s0', 'l1', 'w1'])
+    expect(mem3.streak(rat(0, 4), F4)).toBe(1)
+  })
+
   it('caps visits per place at SPOT_VISITS (8), dropping the oldest', () => {
     expect(SPOT_VISITS).toBe(8)
     const mem = new SpotMemory(SCOPE)

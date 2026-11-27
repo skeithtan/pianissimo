@@ -4,6 +4,7 @@ import type { HandSelection } from '../model/score'
 import type { MeasureContext } from './types'
 
 const HANDS: readonly string[] = ['both', 'right', 'left', 'none']
+const TEMPO_SEGMENT = /^\d+\/[1-9]\d*@\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/
 
 /** The passage-free part of a comparison context. */
 export function toMeasureContext(c: ComparisonContext | MeasureContext): MeasureContext {
@@ -23,8 +24,9 @@ export function toMeasureContext(c: ComparisonContext | MeasureContext): Measure
 /**
  * Inverse of `measureContextKey`. Abandon events carry only the key, so suggestions built
  * from them recover hands and tempo here. Parses from the end so a score-version id may
- * contain `|`. Returns null when the key is not in the current format; the caller then
- * records the event but does not build a suggestion.
+ * contain `|` and a multi-segment `tempoMapId` (`0/1@120|4/1@140`) stays intact. Returns null
+ * when the key is not in the current format; the caller then records the event but does not
+ * build a suggestion.
  */
 export function parseMeasureContextKey(key: string): MeasureContext | null {
   const parts = key.split('|')
@@ -35,7 +37,15 @@ export function parseMeasureContextKey(key: string): MeasureContext | null {
   const transport = parts.pop()
   const rollPolicy = parts.pop()
   const multiplierText = parts.pop()
-  const tempoMapId = parts.pop()
+  const firstTempo = parts.pop()
+  if (firstTempo === undefined) return null
+  const tempoParts = [firstTempo]
+  if (TEMPO_SEGMENT.test(firstTempo)) {
+    while (parts.length >= 3 && TEMPO_SEGMENT.test(parts.at(-1)!)) {
+      tempoParts.unshift(parts.pop()!)
+    }
+  }
+  const tempoMapId = tempoParts.join('|')
   const handsId = parts.pop()
   const hands = parts.pop()
   const scoreVersionId = parts.join('|')

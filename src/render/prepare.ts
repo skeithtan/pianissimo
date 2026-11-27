@@ -28,10 +28,19 @@ export async function prepareLayout(
   })
   const hit = cache ? await cache.get(key).catch(() => undefined) : undefined
   if (hit) {
+    if (hit.report.unmappedNotes.length > 0) {
+      console.warn(`Score layout left ${hit.report.unmappedNotes.length} note(s) unmapped`, hit.report.unmappedNotes)
+    }
     options.onProgress?.('done', 1)
     return { layout: hit, cached: true }
   }
   const layout = await adapter.prepare(input, options)
+  if (layout.report.unmappedNotes.length > 0) {
+    console.warn(
+      `Score layout left ${layout.report.unmappedNotes.length} note(s) unmapped`,
+      layout.report.unmappedNotes,
+    )
+  }
   await cache?.put(layout).catch(() => undefined)
   return { layout, cached: false }
 }

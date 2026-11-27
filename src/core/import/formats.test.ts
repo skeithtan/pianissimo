@@ -1,4 +1,4 @@
-import { zipSync } from 'fflate'
+import { Zip, ZipPassThrough, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import { fixtureBytes, utf8 } from '../../../tests/unit/import/fixtures'
 import { DiagnosticSink } from './diagnostics'
@@ -186,6 +186,28 @@ describe('compressed MusicXML (.mxl)', () => {
     expect(r.packaging).toBe('mxl')
     const e = await failure('fake.mxl', new Uint8Array([1, 2, 3, 4, 5]))
     expect(e.code).toBe('mxl-damaged')
+  })
+
+  it('reads streaming zips with data descriptors even when entry payloads contain PK signatures', () => {
+    const chunks: Uint8Array[] = []
+    const zip = new Zip((err, data) => {
+      if (err) throw err
+      chunks.push(data)
+    })
+    const payload = new Uint8Array([0x3c, 0x73, 0x3e, 0x50, 0x4b, 0x03, 0x04, 0x3c, 0x2f, 0x73, 0x3e])
+    const entry = new ZipPassThrough('score.xml')
+    zip.add(entry)
+    entry.push(payload, true)
+    zip.end()
+    const total = chunks.reduce((n, c) => n + c.length, 0)
+    const archive = new Uint8Array(total)
+    let off = 0
+    for (const c of chunks) {
+      archive.set(c, off)
+      off += c.length
+    }
+    const reader = new ZipReader(archive, DEFAULT_IMPORT_LIMITS)
+    expect(reader.read('score.xml')).toEqual(payload)
   })
 
   it('lists rootfiles in container order and computes CRC-32 like zip', () => {

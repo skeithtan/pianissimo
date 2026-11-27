@@ -251,8 +251,18 @@ export function TempoControl({
     const away = (event: PointerEvent) => {
       if (root.current && !root.current.contains(event.target as Node)) setOpen(false)
     }
+    // In WebKit clicking a button inside the popover can drop focus to body, missing root's onKeyDown.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      close(true)
+    }
     document.addEventListener('pointerdown', away)
-    return () => document.removeEventListener('pointerdown', away)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      document.removeEventListener('keydown', onKeyDown)
+    }
   }, [open])
 
   useEffect(() => {
@@ -308,6 +318,7 @@ export function TempoControl({
           ref={panel}
           class={`${styles.popover} ${side === 'up' ? styles.up : ''}`}
           role="dialog"
+          tabIndex={-1}
           aria-label={msg('Playback speed')}
           data-side={side}
           style={{

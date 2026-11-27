@@ -22,6 +22,15 @@ describe('shared AudioContext', () => {
     expect(existingAudioContext()).toBe(a)
   })
 
+  it('resumes an interrupted WebKit context on subsequent calls', () => {
+    const ctx = new FakeAudioContext()
+    ctx.state = 'running'
+    sharedAudioContext(() => ctx as unknown as AudioContext)
+    ;(ctx as { state: string }).state = 'interrupted'
+    sharedAudioContext()
+    expect(ctx.state).toBe('running')
+  })
+
   it('maps performance.now() times onto the context clock, never into the past', () => {
     const ctx = new FakeAudioContext()
     ctx.currentTime = 3

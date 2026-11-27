@@ -44,20 +44,44 @@ export function useRecede(active: boolean, timers: TimerApi): Recede {
   const [receded, setReceded] = useState(false)
   const timer = useRef<unknown>(null)
   const focused = useRef(false)
+  const heldEl = useRef<Element | null>(null)
+  const observer = useRef<MutationObserver | null>(null)
   const live = useRef(active)
   live.current = active
 
+  const stopObserving = () => {
+    observer.current?.disconnect()
+    observer.current = null
+  }
   const clear = () => {
     if (timer.current !== null) timers.clearTimeout(timer.current)
     timer.current = null
   }
+  const isFocusHeld = () => {
+    if (!focused.current) return false
+    const el = heldEl.current
+    if (el && !el.isConnected) {
+      focused.current = false
+      heldEl.current = null
+      stopObserving()
+      return false
+    }
+    return true
+  }
   const later = (ms: number) => {
     clear()
-    if (!live.current || focused.current) return
+    if (!live.current || isFocusHeld()) return
     timer.current = timers.setTimeout(() => {
       timer.current = null
-      if (live.current && !focused.current) setReceded(true)
+      if (live.current && !isFocusHeld()) setReceded(true)
     }, ms)
+  }
+  const releaseFocus = () => {
+    stopObserving()
+    heldEl.current = null
+    if (!focused.current) return
+    focused.current = false
+    later(REVEAL_MS)
   }
 
   useEffect(() => {
@@ -68,6 +92,8 @@ export function useRecede(active: boolean, timers: TimerApi): Recede {
     }
     return clear
   }, [active])
+
+  useEffect(() => stopObserving, [])
 
   const reveal = () => {
     if (!live.current) return
@@ -93,15 +119,24 @@ export function useRecede(active: boolean, timers: TimerApi): Recede {
       onPointerMove: reveal,
       onFocusIn: (event) => {
         if (!holdsChromeFocus(event.target)) return
+        const el = event.target as Element
         focused.current = true
+        heldEl.current = el
+        stopObserving()
+        // Browsers (notably WebKit) do not fire focusout when a focused popover button unmounts;
+        // watch its container so the focus hold releases as soon as the element leaves the DOM.
+        const container = el.closest('[role="dialog"]')?.parentElement ?? el.parentElement
+        if (container && typeof MutationObserver !== 'undefined') {
+          const mo = new MutationObserver(() => {
+            if (heldEl.current && !heldEl.current.isConnected) releaseFocus()
+          })
+          mo.observe(container, { childList: true, subtree: true })
+          observer.current = mo
+        }
         clear()
         setReceded(false)
       },
-      onFocusOut: () => {
-        if (!focused.current) return
-        focused.current = false
-        later(REVEAL_MS)
-      },
+      onFocusOut: releaseFocus,
     },
   }
 }

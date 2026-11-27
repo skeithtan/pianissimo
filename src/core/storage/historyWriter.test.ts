@@ -10,7 +10,7 @@ import { toMeasureContext } from '../history/contextKey'
 import { HistoryWriter, MAX_FLUSH_FAILURES, defaultSchedule } from './historyWriter'
 import type { FlushReport, HistoryWriterOptions, LifecycleTargets } from './historyWriter'
 import { openPianissimoDb as openPianissimo } from './schema'
-import { attemptFor, freshName, importPiece, openFresh } from './testkit'
+import { DEFAULT_HANDS_ID, attemptFor, freshName, importPiece, openFresh } from './testkit'
 import { openStorage } from './storage'
 import type { PianissimoStorage } from './storage'
 
@@ -137,7 +137,7 @@ describe('queueing', () => {
 function abandon(occ: number, n: number): AbandonEvent {
   return {
     pieceId: PIECE,
-    measureContextKey: measureContextKey(toMeasureContext(comparisonContext())),
+    measureContextKey: measureContextKey(toMeasureContext(comparisonContext({ handsId: DEFAULT_HANDS_ID }))),
     occ,
     at: 90_000 + n,
     reason: 'user-restart',

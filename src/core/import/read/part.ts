@@ -54,10 +54,15 @@ const MARK_VELOCITY: Readonly<Record<string, number>> = {
 
 const DEFAULT_CLEF_LINE: Readonly<Record<string, number>> = { G: 2, F: 4, C: 3, percussion: 3, TAB: 5, none: 3 }
 
+/** Upper bound on staves per part; prevents malformed `<staff>` / `<staves>` numbers from inflating staff arrays. */
+export const MAX_STAVES_PER_PART = 16
+
 /** `<sound>` attributes that are navigation marks (dacapo is yes/no, the others are tokens). */
-/** A note's staff number within its part (`<staff>`, default 1). */
+/** A note's staff number within its part (`<staff>`, clamped to `[1, MAX_STAVES_PER_PART]`, default 1). */
 export function noteStaff(note: XmlElement): number {
-  return toInt(childText(note, 'staff')) ?? 1
+  const n = toInt(childText(note, 'staff'))
+  if (n === undefined || n < 1) return 1
+  return Math.min(n, MAX_STAVES_PER_PART)
 }
 
 /**
@@ -142,6 +147,14 @@ class PartReader {
   private duration(raw: string | undefined, what: string): Rational | undefined {
     const value = decimalRat(raw)
     if (value === undefined) return undefined
+    if (value.n < 0) {
+      this.diag.warn(
+        'negative-duration',
+        `Part “${this.partId}” has a negative ${what} in bar ${this.number}. It was ignored.`,
+        this.where(),
+      )
+      return undefined
+    }
     if (!this.divisionsSeen) {
       this.divisionsSeen = true
       this.diag.warn(
@@ -241,6 +254,14 @@ class PartReader {
     if (!chord) {
       this.lastNoteAt = at
       if (!grace) this.moveCursor(add(at, duration))
+    }
+    const rawStaff = toInt(childText(c, 'staff'))
+    if (rawStaff !== undefined && (rawStaff < 1 || rawStaff > MAX_STAVES_PER_PART)) {
+      this.diag.warn(
+        'staff-number',
+        `A note in bar ${this.number} specifies an invalid staff number (${rawStaff}). It was clamped.`,
+        this.where(),
+      )
     }
     const staff = noteStaff(c)
     const voice = noteVoice(c, staff)
@@ -387,7 +408,7 @@ class PartReader {
           break
         case 'staves': {
           const n = toInt(textOf(x))
-          if (n !== undefined && n > 0) this.staves = Math.max(this.staves, n)
+          if (n !== undefined && n > 0) this.staves = Math.max(this.staves, Math.min(n, MAX_STAVES_PER_PART))
           break
         }
         case 'clef':

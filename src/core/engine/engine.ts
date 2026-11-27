@@ -1207,6 +1207,7 @@ export class PracticeEngine {
   /** Reading: pause keeps progress and freezes hint timers and fades. Scored: interrupts the attempt. */
   pause(now: number): void {
     this.#now(now)
+    this.#confirmPlayedGroup(this.#lastNow, true)
     this.#finishHeld()
     if (this.#mode === 'scored') {
       this.interrupt('pause', now)
@@ -1236,6 +1237,7 @@ export class PracticeEngine {
    */
   interrupt(reason: InterruptReason, now: number): void {
     this.#now(now)
+    this.#confirmPlayedGroup(this.#lastNow, true)
     this.#finishHeld()
     if (reason === 'pause' && this.#mode === 'reading') {
       this.pause(now)
@@ -1262,6 +1264,7 @@ export class PracticeEngine {
    */
   restart(now: number, options: EngineRestart = {}): void {
     this.#now(now)
+    this.#confirmPlayedGroup(this.#lastNow, true)
     this.#finishHeld()
     this.#pending = []
     if (this.#attemptActive()) this.#end('abandoned', 'user-restart', now)
@@ -1287,6 +1290,7 @@ export class PracticeEngine {
    */
   seek(group: number, now: number): void {
     this.#now(now)
+    this.#confirmPlayedGroup(this.#lastNow, true)
     this.#finishHeld()
     if (this.#mode === 'scored') {
       if (this.#attemptActive()) this.interrupt('seek', now)
@@ -1308,6 +1312,7 @@ export class PracticeEngine {
    */
   reconfigure(change: EngineReconfigure, now: number): void {
     this.#now(now)
+    this.#confirmPlayedGroup(this.#lastNow, true)
     this.#finishHeld()
     const timeline = change.timeline ?? this.#timeline
     const mode = change.mode ?? this.#mode

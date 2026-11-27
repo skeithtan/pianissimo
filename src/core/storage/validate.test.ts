@@ -229,6 +229,27 @@ describe('record validators', () => {
         suggestions: [set(suggestion, { coreFrom: 5, coreTo: 2 })],
       }),
     ).toBe('suggestions is missing or invalid')
+    expect(
+      suggestionStateProblem({
+        pieceId: 'p',
+        disabled: false,
+        suggestions: [set(suggestion, { coreFrom: 0, coreTo: 100 })],
+      }),
+    ).toBe('suggestions is missing or invalid')
+    expect(
+      suggestionStateProblem({
+        pieceId: 'p',
+        disabled: false,
+        suggestions: [set(suggestion, { coreFrom: -1, coreTo: 0 })],
+      }),
+    ).toBe('suggestions is missing or invalid')
+    expect(
+      suggestionStateProblem({
+        pieceId: 'p',
+        disabled: false,
+        suggestions: [set(suggestion, { context: { ...suggestion.context, multiplier: 0 } })],
+      }),
+    ).toBe('suggestions is missing or invalid')
     expect(suggestionStateProblem({ pieceId: 'p', disabled: 'no', suggestions: [] })).toBe(
       'disabled is missing or invalid',
     )

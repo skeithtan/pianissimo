@@ -203,6 +203,14 @@ describe('ghostShapes', () => {
     expect(shapes[1]!.cx).toBeGreaterThan(shapes[0]!.cx)
     expect(ghostShapes(layout, [{ anchor: 999, steps: 0, accidental: '', place: [999] }])).toEqual([])
   })
+
+  it('does not overlap when an accidental-bearing ghost precedes a plain ghost at the same place', () => {
+    const [first, second] = ghostShapes(layout, [
+      { anchor: 0, steps: 0, accidental: '♯', place: [0] },
+      { anchor: 0, steps: 1, accidental: '', place: [0] },
+    ])
+    expect(second!.cx - second!.rx).toBeGreaterThan(first!.cx + first!.rx)
+  })
 })
 
 describe('excerptMarkup', () => {

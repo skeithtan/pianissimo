@@ -5,9 +5,10 @@ import type { ContextResults } from '../history/results'
 import { selectSuggestions } from '../history/selection'
 import type { SuggestionSelection } from '../history/selection'
 import type { PieceHistory } from '../history/types'
-import type { AttemptRecord } from '../model/practice'
+import { handAssignmentId, type AttemptRecord } from '../model/practice'
 import type { ScorePackage, SourceFileRecord } from '../model/score'
 import type { AppSettings } from '../model/settings'
+import { hasTempo, tempoMapId, userTempoMap } from '../music/tempo'
 import { addAttempts, getAttempt, listAttempts, listRecentAttempts } from './attempts'
 import type { AttemptQuery } from './attempts'
 import type { RestoreOptions, RestoreReport } from './backup'
@@ -219,8 +220,16 @@ export async function openStorage(
       if (!state?.suggestions.some((s) => s.context.scoreVersionId === piece.scoreVersionId)) return none
       const [pkg, pieceHistory] = await Promise.all([getPackage(db, piece.scoreVersionId), history.getHistory(pieceId)])
       if (!pkg) return none
+      const handsId = handAssignmentId(pkg.model.hands)
+      const tempo = hasTempo(pkg.model.tempo)
+        ? pkg.model.tempo
+        : piece.userTempo
+          ? userTempoMap(piece.userTempo.beatBpm, piece.userTempo.beatUnit)
+          : null
       return selectSuggestions(pieceHistory, pkg.model.occurrences, {
         scoreVersionId: piece.scoreVersionId,
+        handsId,
+        ...(tempo ? { tempoMapId: tempoMapId(tempo) } : {}),
         enabled: settings.suggestions.enabled,
         ...(dismissed ? { dismissed } : {}),
       })

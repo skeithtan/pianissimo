@@ -102,30 +102,34 @@ function stavesAt(layout: PreparedLayout, occ: number): readonly StaffGeometry[]
  */
 export function ghostShapes(layout: PreparedLayout, ghosts: readonly GhostNote[]): GhostShape[] {
   const out: GhostShape[] = []
-  const perPlace = new Map<string, number>()
+  const perPlace = new Map<string, { count: number; nextX: number }>()
   for (const g of ghosts) {
     const anchor = layout.notes[g.anchor]
     if (!anchor) continue
     const staff = stavesAt(layout, anchor.occ).find((s) => s.index === anchor.staff)
     if (!staff || !(staff.bottom > staff.top)) continue
     const key = g.place.join(',')
-    const column = perPlace.get(key) ?? 0
-    if (column >= GHOSTS_PER_PLACE) continue
-    perPlace.set(key, column + 1)
     const space = (staff.bottom - staff.top) / 4
     const half = space / 2
     const cy = anchor.head.y + anchor.head.h / 2 - g.steps * half
-    // Right of every notehead of the place (on any staff), with room for the accidental.
-    let right = anchor.head.x + anchor.head.w
-    for (const n of g.place) {
-      const h = layout.notes[n]?.head
-      if (h) right = Math.max(right, h.x + h.w)
-    }
     const rx = space * 0.72
     const ry = space * 0.54
     const accW = g.accidental ? space * 1.3 : 0
-    const step = rx * 2 + accW + space * 0.8
-    const cx = right + space * 0.9 + accW + rx + column * step
+    let slot = perPlace.get(key)
+    if (!slot) {
+      // Right of every notehead of the place (on any staff), with room for the accidental.
+      let right = anchor.head.x + anchor.head.w
+      for (const n of g.place) {
+        const h = layout.notes[n]?.head
+        if (h) right = Math.max(right, h.x + h.w)
+      }
+      slot = { count: 0, nextX: right + space * 0.9 }
+      perPlace.set(key, slot)
+    }
+    if (slot.count >= GHOSTS_PER_PLACE) continue
+    const cx = slot.nextX + accW + rx
+    slot.count += 1
+    slot.nextX = cx + rx + space * 0.8
     // Ledger lines: every staff line position between the staff and the ghost.
     const ledgers: number[] = []
     for (let y = staff.top - space; y >= cy - half * 0.5; y -= space) ledgers.push(y)

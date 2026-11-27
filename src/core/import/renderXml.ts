@@ -33,6 +33,8 @@ import {
   child,
   childText,
   childrenNamed,
+  escapeXmlAttr,
+  safeRawAttr,
   el,
   elements,
   isElement,
@@ -516,7 +518,7 @@ export function buildRenderXml(input: RenderXmlInput): string {
   if (pl) header.push(pl)
 
   out.push('<score-partwise')
-  for (const a in root.attrs) out.push(' ', a, '="', root.attrs[a] ?? '', '"')
+  for (const a in root.attrs) out.push(' ', a, '="', safeRawAttr(root.attrs[a] ?? ''), '"')
   out.push('>')
   for (const h of header) if (isElement(h)) serializeElement(h, out)
 
@@ -556,7 +558,7 @@ export function buildRenderXml(input: RenderXmlInput): string {
       })
     }
 
-    out.push('<part id="', part.id.replace(/"/g, '&quot;'), '">')
+    out.push('<part id="', escapeXmlAttr(part.id), '">')
     for (const o of occurrences) {
       const src = measureEls[o.sourceMeasure]
       const attrs: Record<string, string> = { ...(src?.attrs ?? {}), number: String(o.index + 1) }

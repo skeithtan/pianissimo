@@ -147,6 +147,39 @@ describe('import client', () => {
     await expect(pending).rejects.toMatchObject({ code: 'internal', message: 'The import failed: inline boom.' })
   })
 
+  it('does not re-run a crashing file on the main thread after the worker already responded', async () => {
+    const { client, workers, fallbacks } = setup(20)
+    const first = await client.inspect(file())
+    const c = first.candidates[0]!
+    const pending = client.build({ candidate: c.id, partIds: c.suggestedParts })
+    workers[0]!.onerror?.({ message: 'out of memory' })
+    await expect(pending).rejects.toMatchObject({
+      code: 'internal',
+      message: 'The import worker stopped unexpectedly (out of memory).',
+    })
+    expect(fallbacks).toHaveLength(0)
+    // A subsequent import still uses a fresh worker.
+    await expect(client.inspect(file())).resolves.toMatchObject({ fileName: 'two-hands.musicxml' })
+    expect(workers).toHaveLength(2)
+  })
+
+  it('falls back to the main thread when constructing the worker throws synchronously', async () => {
+    const fallbacks: FakeWorker[] = []
+    const client = createImportClient({
+      createWorker: () => {
+        throw new Error('CSP blocked worker')
+      },
+      createFallbackWorker: async () => {
+        const w = new FakeWorker(0)
+        fallbacks.push(w)
+        return w
+      },
+      log: () => undefined,
+    })
+    await expect(client.inspect(file())).resolves.toMatchObject({ fileName: 'two-hands.musicxml' })
+    expect(fallbacks).toHaveLength(1)
+  })
+
   it('dispose cancels and refuses further jobs', async () => {
     const { client } = setup(10)
     const pending = client.inspect(file())

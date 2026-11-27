@@ -281,9 +281,15 @@ export class MidiAdapter {
   private readonly dispatch = (ev: MidiInputEvent): void => {
     this.physical.apply(ev)
     // Subscribers are copied on write, so one unsubscribing inside its handler never makes the
-    // next one miss this event.
+    // next one miss this event. Isolate throws so one subscriber cannot drop input for others.
     const subs = this.subscribers
-    for (let i = 0; i < subs.length; i++) subs[i]!(ev)
+    for (let i = 0; i < subs.length; i++) {
+      try {
+        subs[i]!(ev)
+      } catch (error) {
+        console.error('MIDI subscriber failed', error)
+      }
+    }
   }
 
   private attachInput(port: MidiInputLike): void {

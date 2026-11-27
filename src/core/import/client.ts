@@ -126,8 +126,10 @@ export function createImportClient(options: ImportClientOptions = {}): ImportCli
   let nextId = 1
   let lastFile: { readonly name: string; readonly bytes: ArrayBuffer } | null = null
   let disposed = false
-  /** After a worker failure every job runs on the main thread. */
+  /** After a worker startup failure every job runs on the main thread. */
   let onMainThread = false
+  /** True once the current worker has delivered at least one message (loaded and running). */
+  let workerResponded = false
 
   const terminate = () => {
     if (!worker) return
@@ -135,10 +137,13 @@ export function createImportClient(options: ImportClientOptions = {}): ImportCli
     worker.onerror = null
     worker.terminate()
     worker = null
+    workerResponded = false
   }
 
   const attach = (w: ImportWorkerLike, inline: boolean): ImportWorkerLike => {
+    workerResponded = false
     w.onmessage = (event) => {
+      workerResponded = true
       const msg = event.data
       const job = current
       if (!job || msg.job !== job.id) return
@@ -150,13 +155,21 @@ export function createImportClient(options: ImportClientOptions = {}): ImportCli
     }
     w.onerror = (event) => {
       const job = current
+      const responded = workerResponded
       terminate()
       const detail = describeWorkerError(event)
       if (inline || onMainThread) {
         job?.fail(new ImportError('internal', `The import failed: ${detail}.`))
         return
       }
-      // The worker could not load or crashed: run this job, and the next ones, on the main thread.
+      if (responded) {
+        // The worker already loaded and crashed while processing this file: do not re-run
+        // the crashing input on the main thread (which could freeze or kill the tab).
+        log(`The import worker crashed during import (${detail}).`, event)
+        job?.fail(new ImportError('internal', `The import worker stopped unexpectedly (${detail}).`))
+        return
+      }
+      // The worker could not load: run this job, and the next ones, on the main thread.
       onMainThread = true
       log(`The import worker failed (${detail}). Importing on the main thread instead.`, event)
       if (job) dispatch(job)
@@ -179,10 +192,20 @@ export function createImportClient(options: ImportClientOptions = {}): ImportCli
         })
       return
     }
+    const hadWorker = worker !== null
     try {
       ;(worker ?? attach(createWorker(), false)).postMessage(request, transfer)
     } catch (e) {
       terminate()
+      if (!hadWorker) {
+        onMainThread = true
+        log(
+          `Could not start the import worker (${e instanceof Error ? e.message : String(e)}). Importing on the main thread instead.`,
+          e,
+        )
+        dispatch(job)
+        return
+      }
       job.fail(
         new ImportError('internal', `Could not start the import worker: ${e instanceof Error ? e.message : String(e)}`),
       )

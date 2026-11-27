@@ -74,6 +74,8 @@ export interface TransportOptions {
   readonly tickMs?: number
   /** A wake-up later than this is a stall: musical time resumes where it stopped. Default 250 ms. */
   readonly stallMs?: number
+  /** True when the page is hidden and browser timers may be throttled (default checks `document.visibilityState`). */
+  readonly isHidden?: () => boolean
   readonly metronome?: MetronomeOptions
   readonly onGateReached?: (gate: number) => void
   readonly onRangeEnd?: () => void
@@ -133,6 +135,14 @@ const EPS = 1e-9
 const MIN_NOTE_MS = 1
 const REACHED = 1
 const RELEASED = 2
+/** Lookahead used while the page is hidden so 1 Hz throttled timers do not stall or hang notes. */
+const HIDDEN_LOOKAHEAD_MS = 1200
+/** Stall threshold while hidden (above the ~1 s background timer clamp, still catches real sleep). */
+const HIDDEN_STALL_MS = 2500
+
+function defaultIsHidden(): boolean {
+  return (globalThis as { document?: { visibilityState?: string } }).document?.visibilityState === 'hidden'
+}
 
 interface Attack {
   readonly ev: NoteOnEvent | ControlEvent | ClickEvent
@@ -175,6 +185,7 @@ class MusicalTransport implements Transport {
   private offLookahead: number
   private readonly tickMs: number
   private readonly stallMs: number
+  private readonly isHidden: () => boolean
   private readonly opts: TransportOptions
 
   private att: Attack[] = []
@@ -200,6 +211,7 @@ class MusicalTransport implements Transport {
   private generation = 0
   private timer: unknown = null
   private expectedWake: number | null = null
+  private scheduledHidden = false
   /** See `shiftMs`. */
   private shift = 0
   private inTick = false
@@ -222,6 +234,7 @@ class MusicalTransport implements Transport {
     this.offLookahead = Math.min(this.lookahead, o.offLookaheadMs ?? o.backend?.offLookaheadMs ?? 0)
     this.tickMs = o.tickMs ?? 25
     this.stallMs = o.stallMs ?? 250
+    this.isHidden = o.isHidden ?? defaultIsHidden
     this.m = o.multiplier
     this.rangeStart = o.range.start
     this.rangeEnd = o.range.end
@@ -385,7 +398,7 @@ class MusicalTransport implements Transport {
     } else {
       this.pieces.push({ ms: from, sec: this.secAt(from), m: multiplier })
     }
-    if (!this.inTick) this.reschedule(now)
+    if (!this.inTick) this.reschedule(now, this.isHidden())
   }
 
   releaseGate(gate: number): void {
@@ -547,6 +560,7 @@ class MusicalTransport implements Transport {
     if (this.timer !== null) this.timers.clearTimeout(this.timer)
     this.timer = null
     this.expectedWake = null
+    this.scheduledHidden = false
     this.generation++
   }
 
@@ -591,7 +605,10 @@ class MusicalTransport implements Transport {
     if (this.timer !== null) this.timers.clearTimeout(this.timer)
     this.timer = null
     const now = this.clock()
-    if (fromTimer && this.expectedWake !== null && now - this.expectedWake > this.stallMs) {
+    const hidden = this.isHidden()
+    const stallLimit = hidden || this.scheduledHidden ? Math.max(this.stallMs, HIDDEN_STALL_MS) : this.stallMs
+    this.scheduledHidden = false
+    if (fromTimer && this.expectedWake !== null && now - this.expectedWake > stallLimit) {
       const late = now - this.expectedWake
       this.pieces = this.pieces.map((p) => ({ ...p, ms: p.ms + late }))
       this.shift += late
@@ -600,14 +617,14 @@ class MusicalTransport implements Transport {
     const gen = this.generation
     for (;;) {
       while (this.pieces.length > 1 && this.pieces[1]!.ms <= now) this.pieces.shift()
-      if (!this.emitDue(now) || gen !== this.generation) return
+      if (!this.emitDue(now, hidden) || gen !== this.generation) return
       if (this.holding === null && this.nextGate < this.gateFlags.length) {
         const g = this.nextGate
         if (this.secAt(now) >= this.gateSec[g]! - EPS) {
           this.gateFlags[g]! |= REACHED
           this.nextGate++
           if (!(this.gateFlags[g]! & RELEASED)) this.holding = g
-          this.opts.onGateReached?.(g)
+          this.notify(() => this.opts.onGateReached?.(g))
           if (gen !== this.generation || this.stateValue !== 'playing') return
           continue
         }
@@ -618,13 +635,15 @@ class MusicalTransport implements Transport {
       }
       break
     }
-    this.reschedule(now)
+    this.reschedule(now, hidden)
   }
 
   /** Hand out every due attack and release in time order. False when the backend failed. */
-  private emitDue(now: number): boolean {
-    const attHorizon = now + this.lookahead
-    const offHorizon = now + this.offLookahead
+  private emitDue(now: number, hidden: boolean): boolean {
+    const attLookahead = hidden ? Math.max(this.lookahead, HIDDEN_LOOKAHEAD_MS) : this.lookahead
+    const offLookahead = hidden ? Math.max(this.offLookahead, HIDDEN_LOOKAHEAD_MS) : this.offLookahead
+    const attHorizon = now + attLookahead
+    const offHorizon = now + offLookahead
     const b = this.blockingGate()
     const block = b >= 0 ? this.gatePos[b]! : null
     for (;;) {
@@ -696,14 +715,14 @@ class MusicalTransport implements Transport {
       const off = this.offByVoice.get(ev.voice)!
       this.pending.push({ ev: off.ev, s: off.s, onTime: time })
     }
-    if (emitted) this.opts.onEmit?.(ev, time)
+    if (emitted) this.notify(() => this.opts.onEmit?.(ev, time))
     return true
   }
 
   private deliverOff(p: PendingOff, time: number): boolean {
     const backend = this.backend
     if (backend && !this.guard(() => backend.noteOff(p.ev.note, time))) return false
-    this.opts.onEmit?.(p.ev, time)
+    this.notify(() => this.opts.onEmit?.(p.ev, time))
     return true
   }
 
@@ -716,23 +735,25 @@ class MusicalTransport implements Transport {
     this.halt()
     this.pausedSec = this.sEnd
     this.stateValue = 'ended'
-    this.opts.onRangeEnd?.()
+    this.notify(() => this.opts.onRangeEnd?.())
   }
 
-  private reschedule(now: number): void {
+  private reschedule(now: number, hidden: boolean): void {
     if (this.stateValue !== 'playing') return
     if (this.timer !== null) this.timers.clearTimeout(this.timer)
+    const attLookahead = hidden ? Math.max(this.lookahead, HIDDEN_LOOKAHEAD_MS) : this.lookahead
+    const offLookahead = hidden ? Math.max(this.offLookahead, HIDDEN_LOOKAHEAD_MS) : this.offLookahead
     let wake = now + this.tickMs
     const b = this.blockingGate()
     const block = b >= 0 ? this.gatePos[b]! : null
     for (let i = this.ptr; i < this.att.length; i++) {
       const c = this.att[i]!
       if (lt(c.ev.position, this.floor)) continue
-      if (!block || lt(c.ev.position, block)) wake = Math.min(wake, this.timeAt(c.s) - this.lookahead)
+      if (!block || lt(c.ev.position, block)) wake = Math.min(wake, this.timeAt(c.s) - attLookahead)
       break
     }
     for (const p of this.pending) {
-      wake = Math.min(wake, Math.max(this.timeAt(p.s), p.onTime + MIN_NOTE_MS) - this.offLookahead)
+      wake = Math.min(wake, Math.max(this.timeAt(p.s), p.onTime + MIN_NOTE_MS) - offLookahead)
     }
     if (this.holding === null && this.nextGate < this.gateFlags.length) {
       wake = Math.min(wake, this.timeAt(this.gateSec[this.nextGate]!))
@@ -741,10 +762,20 @@ class MusicalTransport implements Transport {
     }
     const delay = Math.max(1, Math.ceil(wake - now))
     this.expectedWake = now + delay
+    this.scheduledHidden = hidden
     this.timer = this.timers.setTimeout(() => {
       this.timer = null
       this.tick(true)
     }, delay)
+  }
+
+  /** Run an observer callback without aborting scheduling or note-off delivery on error. */
+  private notify(fn: () => void): void {
+    try {
+      fn()
+    } catch (error) {
+      console.error('Transport callback failed', error)
+    }
   }
 
   /** Run a backend call; on failure stop scheduling and report. */

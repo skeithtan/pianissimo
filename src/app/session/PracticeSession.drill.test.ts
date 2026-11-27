@@ -192,13 +192,37 @@ describe('PracticeSession drillSpot and endDrill', () => {
     h.frames.flush()
     expect(h.session.ui.get().range).toEqual({ fromOcc: 0, toOcc: 0 })
 
-    // Hand change also forgets the return.
+    // Hand change also forgets the return without saving the drill loop as lastPassage.
     playTimeline(h, { 1: [61] })
     expect(h.session.drillSpot(h.session.ui.get().lastResult!.id, 1)).toBe(true)
     expect(h.session.ui.get().drill).toEqual({ returnText: 'Bar 1' })
+    const beforeHand = h.saves.length
     h.session.setSelection({ hands: 'both' })
     h.frames.flush()
     expect(h.session.ui.get().drill).toBeNull()
+    for (const s of h.saves.slice(beforeHand)) expect(s.patch.lastPassage).toBeUndefined()
+  })
+
+  it('closing Repeat or changing hands during a drill never saves the drill loop on that or later changes', async () => {
+    const h = harness(twoBars, { hands: 'right', range: twoBarLoop, multiplier: 1 })
+    await h.session.start()
+    playTimeline(h, { 4: [66] })
+    expect(h.session.drillSpot(h.session.ui.get().lastResult!.id, 4)).toBe(true)
+    const before = h.saves.length
+    h.session.setSelection({ hands: 'both' })
+    h.session.setSelection({ multiplier: 0.8 })
+    h.session.setRepeatMode(false)
+    h.session.setRepeatMode(true)
+    h.frames.flush()
+    expect(h.session.ui.get().drill).toBeNull()
+    // Starting and ending a second drill after forgetting the first still keeps the drill range unsaved.
+    await h.session.start()
+    playTimeline(h, { 1: [61] })
+    expect(h.session.drillSpot(h.session.ui.get().lastResult!.id, 1)).toBe(true)
+    h.session.endDrill()
+    h.session.setSelection({ multiplier: 0.7 })
+    h.frames.flush()
+    for (const s of h.saves.slice(before)) expect(s.patch.lastPassage).toBeUndefined()
   })
 
   it('a forgotten drill brings back the target and ladder it suspended; a target set during a drill stays', async () => {

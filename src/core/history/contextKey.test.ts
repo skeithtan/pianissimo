@@ -55,6 +55,22 @@ describe('measure context keys', () => {
     expect(parseMeasureContextKey(measureContextKey(withPlayback))).toEqual(withPlayback)
   })
 
+  it('round-trips multi-segment tempo map ids, including with piped score ids and score playback', () => {
+    for (const over of [
+      { tempoMapId: '0/1@120|4/1@140' },
+      { tempoMapId: '0/1@120|4/1@140|8/1@96.5', scoreVersionId: 'abc|def' },
+      {
+        tempoMapId: '0/1@120|4/1@140',
+        transport: 'strict' as const,
+        matchingRules: 'strict-v1-tol-150ms',
+        scorePlayback: true as const,
+      },
+    ]) {
+      const context = toMeasureContext(comparisonContext(over))
+      expect(parseMeasureContextKey(measureContextKey(context))).toEqual(context)
+    }
+  })
+
   it('rejects keys it did not produce', () => {
     expect(parseMeasureContextKey('')).toBeNull()
     expect(parseMeasureContextKey('legacy-key')).toBeNull()

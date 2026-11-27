@@ -164,17 +164,27 @@ export class HistoryWriter {
   }
 
   /** Persist the per-piece "disable suggestions" switch (evidence keeps being recorded). */
-  async setSuggestionsDisabled(pieceId: string, disabled: boolean): Promise<void> {
-    await this.flush().catch(() => undefined)
-    await setPieceSuggestionsDisabled(this.#db, pieceId, disabled)
-    this.forget(pieceId)
+  setSuggestionsDisabled(pieceId: string, disabled: boolean): Promise<void> {
+    this.#disarm()
+    const run = this.#chain.then(async () => {
+      await this.#drain().catch(() => undefined)
+      await setPieceSuggestionsDisabled(this.#db, pieceId, disabled)
+      this.forget(pieceId)
+    })
+    this.#chain = run.catch(() => undefined)
+    return run
   }
 
   /** "Clear the piece's practice history": see `clearPieceHistory`. Queued records are written first. */
-  async clearHistory(pieceId: string, options: ClearOptions = {}): Promise<void> {
-    await this.flush().catch(() => undefined)
-    await clearPieceHistory(this.#db, pieceId, options)
-    this.forget(pieceId)
+  clearHistory(pieceId: string, options: ClearOptions = {}): Promise<void> {
+    this.#disarm()
+    const run = this.#chain.then(async () => {
+      await this.#drain().catch(() => undefined)
+      await clearPieceHistory(this.#db, pieceId, options)
+      this.forget(pieceId)
+    })
+    this.#chain = run.catch(() => undefined)
+    return run
   }
 
   /**

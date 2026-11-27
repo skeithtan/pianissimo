@@ -137,12 +137,13 @@ export class MidiOutputBackend implements OutputBackend {
     for (let n = 0; n < 128; n++) {
       const queuedOff = cleared && this.lastOff[n]! > now
       if (this.count[n] === 0 && !queuedOff) continue
-      this.count[n] = 0
       if (this.guard && this.humanHolds(n)) {
+        this.count[n] = 0
         this.deferred[n] = 1
         continue
       }
       this.sendOff(n, cleared ? now : Math.max(now, this.lastOn[n]! + 1))
+      this.count[n] = 0
     }
     this.releasePedals(now, cleared)
   }
@@ -153,9 +154,9 @@ export class MidiOutputBackend implements OutputBackend {
     if (cleared) this.forgetQueuedAttacks(now)
     for (let n = 0; n < 128; n++) {
       if (this.count[n] === 0 && this.deferred[n] === 0 && !(cleared && this.lastOff[n]! > now)) continue
+      this.sendOff(n, cleared ? now : Math.max(now, this.lastOn[n]! + 1))
       this.count[n] = 0
       this.deferred[n] = 0
-      this.sendOff(n, cleared ? now : Math.max(now, this.lastOn[n]! + 1))
     }
     this.releasePedals(now, cleared)
     let last = now
@@ -177,14 +178,14 @@ export class MidiOutputBackend implements OutputBackend {
     this.lost = false
     for (let n = 0; n < 128; n++) {
       if (this.count[n] === 0 && this.deferred[n] === 0) continue
+      this.sendOff(n, now)
       this.count[n] = 0
       this.deferred[n] = 0
-      this.sendOff(n, now)
     }
-    for (const [controller, p] of this.pedals) {
+    for (const [controller, p] of [...this.pedals]) {
       if (p.touched || p.value > 0) this.send(ccBytes(this.channel, controller, 0), now)
+      this.pedals.delete(controller)
     }
-    this.pedals.clear()
     this.lastOn.fill(Number.NEGATIVE_INFINITY)
     this.lastOff.fill(Number.NEGATIVE_INFINITY)
   }
@@ -211,9 +212,13 @@ export class MidiOutputBackend implements OutputBackend {
     if (!this.deferred[note] || this.count[note]! > 0 || this.humanHolds(note)) return
     // While the output is lost the flag stays: `reconnect()` sends this release.
     if (this.lost) return
-    this.deferred[note] = 0
     // Never before an attack of this pitch already queued with the lookahead (no `clear()`).
-    this.sendOff(note, Math.max(this.clock(), this.lastOn[note]! + 1))
+    try {
+      this.sendOff(note, Math.max(this.clock(), this.lastOn[note]! + 1))
+      this.deferred[note] = 0
+    } catch (error) {
+      if (!(error instanceof OutputLostError)) throw error
+    }
   }
 
   /** `clear()` canceled every attack queued after `now`. */
@@ -227,13 +232,13 @@ export class MidiOutputBackend implements OutputBackend {
   }
 
   private releasePedals(now: number, cleared: boolean): void {
-    for (const [controller, p] of this.pedals) {
+    for (const [controller, p] of [...this.pedals]) {
       const queued = cleared && p.time > now
       if (p.touched || p.value > 0 || queued) {
         this.send(ccBytes(this.channel, controller, 0), cleared ? now : Math.max(now, p.time + 1))
       }
+      this.pedals.delete(controller)
     }
-    this.pedals.clear()
   }
 
   private tryClear(): boolean {

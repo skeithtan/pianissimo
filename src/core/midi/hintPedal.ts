@@ -158,8 +158,16 @@ export class HintPedalLearner {
           t = { channel: ev.channel, controller: ev.controller, values: [], min: 127, max: 0, lastSeq: 0 }
           this.tracks.set(k, t)
         }
-        if (t.values.length < MAX_HISTORY) t.values.push(ev.value)
-        else t.values[MAX_HISTORY - 1] = ev.value
+        const len = t.values.length
+        if (len >= 2 && t.values[len - 1] === ev.value && t.values[len - 2] === ev.value) {
+          // Consecutive repeats add no transition information; keep history compact.
+        } else if (len < MAX_HISTORY) {
+          t.values.push(ev.value)
+        } else {
+          // Keep values[0] (initial rest baseline) and slide the recent tail so a late press+release still registers.
+          t.values.splice(1, 1)
+          t.values.push(ev.value)
+        }
         t.min = Math.min(t.min, ev.value)
         t.max = Math.max(t.max, ev.value)
         t.lastSeq = ev.seq

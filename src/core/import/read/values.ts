@@ -4,7 +4,7 @@
  */
 import { type Rational, add, div, mul, rat } from '../../music/rational'
 
-/** Exact rational for a non-negative decimal string ("3", "1.5", ".25"); undefined if invalid. */
+/** Exact rational for a signed decimal string ("3", "1.5", ".25", "-0.5"); undefined if invalid. */
 export function decimalRat(s: string | undefined): Rational | undefined {
   if (s === undefined) return undefined
   const m = /^\s*([+-]?)(\d*)(?:\.(\d*))?\s*$/.exec(s)

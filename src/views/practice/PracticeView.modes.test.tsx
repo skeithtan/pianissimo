@@ -5,7 +5,8 @@ import { act } from 'preact/test-utils'
 import { connectionOpen, currentView, practiceRequest, settingsOpen, settingsTab } from '../../app/navigation'
 import { connectionStatus, notices, resetAppStateForTests, settings, updateSettings } from '../../app/state'
 import { comparisonContext } from '../../core/history/testkit'
-import type { PracticeMode } from '../../core/model/practice'
+import { handAssignmentId, type PracticeMode } from '../../core/model/practice'
+import { tempoMapId } from '../../core/music/tempo'
 import type { BrowserAudioModule } from '../../core/playback'
 import { RecordingBackend } from '../../core/playback/testkit'
 import { attemptFor } from '../../core/storage/testkit'
@@ -439,10 +440,17 @@ describe('the footer menu', () => {
   it('Progress pauses what plays, and Practice these bars opens Repeat over them in Wait, paused (U148)', async () => {
     const r = await opened({}, { mode: 'listen' })
     const piece = (await r.storage.getPiece(r.pieceId))!
+    const pkg = (await r.storage.getPackage(piece.scoreVersionId))!
     for (let k = 0; k < 3; k++)
       r.storage.history.queueAttempt(
         attemptFor(piece.id, [[1, 'error']], {
-          context: comparisonContext({ scoreVersionId: piece.scoreVersionId, hands: 'right', multiplier: 0.5 }),
+          context: comparisonContext({
+            scoreVersionId: piece.scoreVersionId,
+            handsId: handAssignmentId(pkg.model.hands),
+            tempoMapId: tempoMapId(pkg.model.tempo),
+            hands: 'right',
+            multiplier: 0.5,
+          }),
         }),
       )
     currentView.value = 'practice'
